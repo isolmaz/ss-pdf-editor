@@ -1,3 +1,4 @@
+import type { OperationContext } from 'pdf-core/ops/types';
 import type { Translator } from 'pdf-shared';
 import { Magnifier, ReadingPane, SnapshotMenu } from 'pdf-ui/tools';
 import type { ViewerApi } from 'pdf-ui/viewer';
@@ -15,6 +16,8 @@ export interface ReadingLayersProps {
   readonly viewerRef: RefObject<ViewerApi | null>;
   /** The page being read, 0-based. */
   readonly pageNumber: number;
+  /** The working bytes with the unsaved marks written in (`createCurrentBytes`): what a snapshot shows. */
+  readonly read: (operation: OperationContext) => Promise<Uint8Array>;
 }
 
 /**
@@ -22,7 +25,7 @@ export interface ReadingLayersProps {
  * store. They read what is open from it and write their own close and zoom back, so the shell
  * re-renders for none of it: opening the pane re-renders these three and nothing else.
  */
-export function ReadingLayers({ t, locale, viewer, viewerRef, pageNumber }: ReadingLayersProps) {
+export function ReadingLayers({ t, locale, viewer, viewerRef, pageNumber, read }: ReadingLayersProps) {
   const reading = useReading((state) => state.reading);
   const snapshotOpen = useReading((state) => state.snapshotOpen);
   const magnifierOn = useReading((state) => state.magnifierOn);
@@ -40,7 +43,14 @@ export function ReadingLayers({ t, locale, viewer, viewerRef, pageNumber }: Read
         onPageChange={(page) => viewerRef.current?.goToPage(page)}
         onNotice={showNotice}
       />
-      <SnapshotMenu t={t} viewer={viewer} open={snapshotOpen} onClose={closeSnapshot} onNotice={showNotice} />
+      <SnapshotMenu
+        t={t}
+        viewer={viewer}
+        read={read}
+        open={snapshotOpen}
+        onClose={closeSnapshot}
+        onNotice={showNotice}
+      />
       <Magnifier t={t} viewer={viewer} active={magnifierOn} zoom={lensZoom} onZoomChange={setLensZoom} />
     </>
   );

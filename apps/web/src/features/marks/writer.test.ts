@@ -9,7 +9,7 @@ import type { OperationNote } from 'pdf-core/ops/types';
 import { ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Operations from '../../operations';
-import { coreStore, isBusy, setBusy } from '../core/core-store';
+import { cancelOperation, coreStore, isBusy, operationRunning, setBusy } from '../core/core-store';
 import { dropHandle, handleFor } from '../core/handles';
 import { type MarksWorld, marksWorld, t } from './marks-fixtures';
 import { applyWriterOutcome, writeLayers } from './writer';
@@ -30,6 +30,7 @@ vi.mock('../../lazy-ops', () => ({ applyLayerWrite: mocks.applyLayerWrite }));
 const produced = { name: 'produced' };
 const base = new Uint8Array([4, 5]);
 const notice = () => coreStore.get().notice;
+const signal = new AbortController().signal;
 
 function outcome(notes: readonly OperationNote[], incremental = false): OperationOutcome {
   return {
@@ -58,7 +59,7 @@ afterEach(() => dropHandle(world.tab.id));
 
 describe('applyWriterOutcome', () => {
   it('says the label and journals nothing when the writer gave the same bytes back', async () => {
-    await applyWriterOutcome(world.host, world.tab, world.handle, outcome([], true), 'panel.layers');
+    await applyWriterOutcome(world.host, world.tab, world.handle, outcome([], true), 'panel.layers', signal);
     expect(notice()).toBe(t('panel.layers'));
     expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
     expect(handleFor(world.tab.id)).toBe(world.handle);
@@ -69,7 +70,14 @@ describe('applyWriterOutcome', () => {
       { kind: 'preserved', key: 'ann.remove' },
       { kind: 'warning', key: 'ann.removed', params: { count: 3 } },
     ];
-    await applyWriterOutcome(world.host, world.tab, world.handle, outcome(notes, true), 'panel.layers');
+    await applyWriterOutcome(
+      world.host,
+      world.tab,
+      world.handle,
+      outcome(notes, true),
+      'panel.layers',
+      signal,
+    );
     expect(notice()).toBe(t('ann.removed', { count: 3 }));
     expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
   });
@@ -81,13 +89,14 @@ describe('applyWriterOutcome', () => {
       world.handle,
       outcome([{ kind: 'lost', key: 'ann.remove' }], true),
       'panel.layers',
+      signal,
     );
     expect(notice()).toBe(t('ann.remove'));
   });
 
   it('journals the produced bytes, swaps the handle and says the label', async () => {
     const result = outcome([{ kind: 'preserved', key: 'ann.remove' }]);
-    await applyWriterOutcome(world.host, world.tab, world.handle, result, 'panel.layers');
+    await applyWriterOutcome(world.host, world.tab, world.handle, result, 'panel.layers', signal);
     expect(mocks.applyProducedBytes).toHaveBeenCalledWith(
       expect.objectContaining({ tab: world.tab, handle: world.handle }),
       result.bytes,
@@ -95,6 +104,7 @@ describe('applyWriterOutcome', () => {
       { key: 'panel.layers' },
       'mupdf',
       ['layers'],
+      { signal },
     );
     expect(handleFor(world.tab.id)).toBe(produced);
     expect(notice()).toBe(t('panel.layers'));
@@ -106,7 +116,7 @@ describe('applyWriterOutcome', () => {
       { kind: 'preserved', key: 'ann.remove' },
       { kind: 'lost', key: 'ann.transform' },
     ];
-    await applyWriterOutcome(world.host, world.tab, world.handle, outcome(notes), 'panel.layers');
+    await applyWriterOutcome(world.host, world.tab, world.handle, outcome(notes), 'panel.layers', signal);
     expect(notice()).toBe(`${t('ann.removed', { count: 1 })} ${t('ann.transform')}`);
   });
 });
@@ -118,11 +128,14 @@ describe('writeLayers', () => {
     const result = outcome([]);
     mocks.applyLayerWrite.mockResolvedValue(result);
     await writeLayers(world.host, request);
+    // One controller — the registered one — reaches every step, so Cancel stops whichever runs.
+    const running = mocks.materializeBase.mock.calls[0]?.[1].signal;
+    expect(running).toBeInstanceOf(AbortSignal);
     expect(mocks.materializeBase).toHaveBeenCalledWith(
       expect.objectContaining({ tab: world.session.active, handle: world.handle }),
-      { signal: expect.any(AbortSignal) },
+      { signal: running },
     );
-    expect(mocks.applyLayerWrite).toHaveBeenCalledWith(base, request, { signal: expect.any(AbortSignal) });
+    expect(mocks.applyLayerWrite).toHaveBeenCalledWith(base, request, { signal: running });
     expect(mocks.applyProducedBytes).toHaveBeenCalledWith(
       expect.anything(),
       result.bytes,
@@ -130,6 +143,7 @@ describe('writeLayers', () => {
       { key: 'panel.layers' },
       'mupdf',
       ['layers'],
+      { signal: running },
     );
     expect(handleFor(world.tab.id)).toBe(produced);
     expect(notice()).toBe(t('panel.layers'));
@@ -151,6 +165,20 @@ describe('writeLayers', () => {
     expect(coreStore.get().notice).toBe(t('op.busy'));
     expect(mocks.materializeBase).not.toHaveBeenCalled();
     expect(isBusy()).toBe(true);
+  });
+
+  it('registers its controller, so Cancel stops the write and says nothing', async () => {
+    mocks.applyLayerWrite.mockImplementation(async (_bytes, _request, operation: { signal: AbortSignal }) => {
+      expect(operationRunning()).toBe(true);
+      cancelOperation();
+      expect(operation.signal.aborted).toBe(true);
+      throw new ToolError('aborted', { engine: 'model' });
+    });
+    await writeLayers(world.host, request);
+    expect(notice()).toBeNull();
+    expect(isBusy()).toBe(false);
+    expect(operationRunning()).toBe(false);
+    expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
   });
 
   it('says what went wrong when the write fails with a known error, and releases the lock', async () => {

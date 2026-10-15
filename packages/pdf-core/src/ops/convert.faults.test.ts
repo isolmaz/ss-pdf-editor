@@ -20,8 +20,23 @@ interface Plan {
   entryPage?: number;
   pageCount?: number;
   damaged?: Uint8Array;
+  /** When set, what the writer's buffer, the writer and each page's device report as destroyed, in order. */
+  destroyed?: string[];
+  /** Every page of the source throws this from `run`. */
+  runFails?: string;
 }
 const state: Plan = {};
+
+/** Calls to `destroy()` on `instance` are recorded as `name` in `state.destroyed`, then forwarded. */
+function reportDestroy<T extends { destroy(): void }>(name: string, instance: T): T {
+  const destroy = instance.destroy.bind(instance);
+  return Object.assign(instance, {
+    destroy: () => {
+      state.destroyed?.push(name);
+      destroy();
+    },
+  });
+}
 
 vi.mock('../engines/mupdf', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../engines/mupdf')>();
@@ -41,6 +56,20 @@ vi.mock('../engines/mupdf', async (importOriginal) => {
             }
             if (property === 'loadOutline' && state.outline !== undefined) return () => state.outline;
             if (property === 'countPages' && state.pageCount !== undefined) return () => state.pageCount;
+            if (property === 'loadPage' && state.runFails !== undefined) {
+              return (index: number) =>
+                new Proxy(target.loadPage(index), {
+                  get(page, member) {
+                    if (member === 'run') {
+                      return () => {
+                        throw new Error(state.runFails);
+                      };
+                    }
+                    const field: unknown = Reflect.get(page, member, page);
+                    return typeof field === 'function' ? field.bind(page) : field;
+                  },
+                });
+            }
             const value: unknown = Reflect.get(target, property, target);
             return typeof value === 'function' ? value.bind(target) : value;
           },
@@ -56,9 +85,21 @@ vi.mock('../engines/mupdf', async (importOriginal) => {
           return Reflect.get(target, property, target);
         },
       });
+      // The writer, the buffer it writes into and the device of each page it opens report `destroy`.
+      const writers = new Proxy(real.DocumentWriter, {
+        construct(target, args: ConstructorParameters<typeof real.DocumentWriter>) {
+          const writer = reportDestroy('DocumentWriter', new target(...args));
+          reportDestroy('Buffer', args[0]);
+          const beginPage = writer.beginPage.bind(writer);
+          writer.beginPage = (box) => reportDestroy('Device', beginPage(box));
+          return writer;
+        },
+      });
       return new Proxy(real, {
         get(target, property) {
-          return property === 'Document' ? documents : Reflect.get(target, property, target);
+          if (property === 'Document') return documents;
+          if (property === 'DocumentWriter') return writers;
+          return Reflect.get(target, property, target);
         },
       });
     },
@@ -76,7 +117,7 @@ vi.mock('../engines/mupdf-write', async (importOriginal) => {
   };
 });
 
-const { convertToPdf } = await import('./convert');
+const { convertToPdf, MAX_CONVERT_PAGES } = await import('./convert');
 
 const run = { signal: new AbortController().signal };
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -168,5 +209,32 @@ describe('the read-back of the written file', () => {
       code: 'verification-failed',
       details: { engine: 'mupdf', engineMessage: 'converted 1 pages but the file holds 2' },
     });
+  });
+});
+
+describe('what the converter hands back to the engine', () => {
+  it('destroys each page device, then the writer, then its buffer, once the PDF is written', async () => {
+    state.destroyed = [];
+    const out = await convertToPdf(request(html('<p>Text</p>')), run);
+    expect(out.report.pageCount).toBe(1);
+    expect(state.destroyed).toEqual(['Device', 'DocumentWriter', 'Buffer']);
+  });
+
+  it('destroys the writer and its buffer when the layout is stopped at the page limit', async () => {
+    state.destroyed = [];
+    state.pageCount = MAX_CONVERT_PAGES + 1;
+    await expect(convertToPdf(request(html('<p>Text</p>')), run)).rejects.toMatchObject({
+      code: 'page-limit',
+    });
+    expect(state.destroyed).toEqual(['DocumentWriter', 'Buffer']);
+  });
+
+  it('destroys the page device, the writer and its buffer when drawing a page fails', async () => {
+    state.destroyed = [];
+    state.runFails = 'boom';
+    await expect(convertToPdf(request(html('<p>Text</p>')), run)).rejects.toMatchObject({
+      details: { engine: 'mupdf', engineMessage: 'convertToPdf: boom' },
+    });
+    expect(state.destroyed).toEqual(['Device', 'DocumentWriter', 'Buffer']);
   });
 });

@@ -41,6 +41,8 @@ import { initialShellState, shellStore } from './shell-store';
 /** The props each stand-in last rendered with, for the handlers that take arguments. */
 type Props = Record<string, unknown>;
 const captured = vi.hoisted(() => ({}) as Record<string, Props>);
+/** How many times the audit stand-in was mounted: a new working version must mount a fresh one. */
+const auditMounts = vi.hoisted(() => ({ count: 0 }));
 
 /** The props the named stand-in last rendered with. */
 function seen(name: string): Props {
@@ -160,10 +162,13 @@ vi.mock('../facts/PropertiesFacts', async () => {
   };
 });
 vi.mock('../facts/RedactionAuditView', async () => {
-  const { createElement } = await import('react');
+  const { createElement, useEffect } = await import('react');
   return {
     RedactionAuditView: (props: Props) => {
       captured.audit = props;
+      useEffect(() => {
+        auditMounts.count += 1;
+      }, []);
       return createElement('section', { 'aria-label': 'audit panel' });
     },
   };
@@ -686,6 +691,21 @@ describe('RightDock redaction audit tab', () => {
     expect(screen.getByLabelText('audit panel')).toBeTruthy();
     expect(seen('audit').store).toBe(session);
     expect(seen('audit').erasedTerms).toBe(erasedWordsOf);
+  });
+
+  it('is told the working version it shows, and starts over when a new version lands', () => {
+    const tab = openTab();
+    auditMounts.count = 0;
+    renderDock('redaction-audit');
+    expect(seen('audit').workingId).toBe(tab.working.id);
+    expect(auditMounts.count).toBe(1);
+
+    act(() => session.setOverlays(tab.id, { annotations: [] }, 'ann.engineEdit'));
+
+    const version = session.active?.working.id;
+    expect(version).not.toBe(tab.working.id);
+    expect(seen('audit').workingId).toBe(version);
+    expect(auditMounts.count).toBe(2);
   });
 });
 

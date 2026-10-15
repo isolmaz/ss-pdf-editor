@@ -21,13 +21,21 @@
  * Nothing here decides whether anything is *valid*; it only finds the bytes. A malformed
  * attribute is skipped, never fatal: a file whose revocation archive cannot be read still has
  * a signature to report.
+ *
+ * It also answers which certificate of a CMS **signed** it: the one a `SignerInfo` names by its
+ * `sid` (RFC 5652 §5.3), never "the first one the set happens to list" — the set is unordered
+ * and a producer may list the CA before the signer. The matching is shared with the timestamp
+ * check, which finds its TSA certificate the same way.
  */
 
 import type { BaseBlock } from 'asn1js';
-import { fromBER } from 'asn1js';
-import { ContentInfo, SignedData } from 'pkijs';
+import { fromBER, OctetString } from 'asn1js';
+import type { SignerInfo } from 'pkijs';
+import { Certificate, ContentInfo, IssuerAndSerialNumber, SignedData } from 'pkijs';
+import { parseAsn1 } from './signature-trust';
 
 const OID_SIGNING_TIME = '1.2.840.113549.1.9.5';
+const OID_SUBJECT_KEY_IDENTIFIER = '2.5.29.14';
 const OID_TIMESTAMP_TOKEN = '1.2.840.113549.1.9.16.2.14';
 const OID_REVOCATION_ARCHIVAL = '1.2.840.113583.1.1.8';
 const OID_OCSP_RESPONSE_FORMAT = '1.3.6.1.5.5.7.16.2';
@@ -83,6 +91,92 @@ export function readSignedData(der: Uint8Array): SignedData | null {
   } catch {
     return null;
   }
+}
+
+export function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) if (left[index] !== right[index]) return false;
+  return true;
+}
+
+/** The content octets of an OCTET STRING, or of a block tagged in its place, joining the segments of a constructed (BER) one. */
+export function octets(value: BaseBlock): Uint8Array {
+  if (!value.idBlock.isConstructed) {
+    // asn1js: a primitive block always carries its content octets as `valueHexView`.
+    const primitive = value.valueBlock as unknown as { valueHexView: Uint8Array };
+    return new Uint8Array(primitive.valueHexView);
+  }
+  // asn1js: a constructed block always carries its members as `value`.
+  const constructed = value.valueBlock as unknown as { value: BaseBlock[] };
+  const parts = constructed.value.map(octets);
+  const out = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+}
+
+/** The key identifier a certificate declares, or `null`. */
+function subjectKeyIdentifier(certificate: Certificate): Uint8Array | null {
+  const extension = certificate.extensions?.find((entry) => entry.extnID === OID_SUBJECT_KEY_IDENTIFIER);
+  if (extension === undefined) return null;
+  const parsed = parseAsn1(new Uint8Array(extension.extnValue.valueBlock.valueHexView));
+  return parsed !== null && parsed.result instanceof OctetString ? octets(parsed.result) : null;
+}
+
+/** The X.509 certificates of a `SignedData`, in the order it lists them; other certificate formats are not certificates. */
+export function certificatesOf(signedData: SignedData): Certificate[] {
+  const certificates: Certificate[] = [];
+  for (const entry of signedData.certificates ?? []) {
+    if (entry instanceof Certificate) certificates.push(entry);
+  }
+  return certificates;
+}
+
+/** The certificate a `SignerInfo` names (`IssuerAndSerialNumber` or `[0]` key identifier). */
+export function certificateFor(signer: SignerInfo, certificates: readonly Certificate[]): Certificate | null {
+  // `SignerIdentifier` is a CHOICE of those two, and the pkijs schema admits nothing else. A
+  // `[0]` key identifier stays the tagged block it was read as: it is never an `OctetString`.
+  const sid = signer.sid as IssuerAndSerialNumber | BaseBlock;
+  if (sid instanceof IssuerAndSerialNumber) {
+    return (
+      certificates.find(
+        (candidate) =>
+          candidate.issuer.isEqual(sid.issuer) && candidate.serialNumber.isEqual(sid.serialNumber),
+      ) ?? null
+    );
+  }
+  const wanted = octets(sid);
+  return (
+    certificates.find((candidate) => {
+      const identifier = subjectKeyIdentifier(candidate);
+      return identifier !== null && sameBytes(identifier, wanted);
+    }) ?? null
+  );
+}
+
+/**
+ * Which certificate signed a CMS, as a position among its X.509 certificates (the order
+ * {@link certificatesOf} lists them, which is the order of the `SEQUENCE`-tagged entries of
+ * `SignedData.certificates`): `found` when the `sid` of the `SignerInfo` that carries signed
+ * attributes — the one `ops/signature-status.ts` verifies — names one of them, `absent` when
+ * it names none, and `unreadable` when this reader cannot parse the CMS (or it has no such
+ * `SignerInfo`), so nothing is known about its `sid`.
+ */
+export type SignerCertificate =
+  | { readonly status: 'found'; readonly index: number }
+  | { readonly status: 'absent' }
+  | { readonly status: 'unreadable' };
+
+export function signerCertificate(contents: Uint8Array): SignerCertificate {
+  const signedData = readSignedData(contents);
+  const signer = signedData?.signerInfos.find((info) => info.signedAttrs !== undefined);
+  if (signedData === null || signer === undefined) return { status: 'unreadable' };
+  const certificates = certificatesOf(signedData);
+  const named = certificateFor(signer, certificates);
+  return named === null ? { status: 'absent' } : { status: 'found', index: certificates.indexOf(named) };
 }
 
 /** The members of an asn1js constructed value; empty for anything else. */
@@ -155,7 +249,10 @@ export function readSignatureEvidence(contents: Uint8Array): SignatureEvidence |
       const [value] = values;
       if (value === undefined) continue;
       if (attribute.type === OID_TIMESTAMP_TOKEN) {
-        for (const token of values.slice(0, MAX_ITEMS)) {
+        // The bound is on the whole signature, not on each attribute: a CMS can repeat the
+        // attribute, and every token kept is verified in full by the caller.
+        for (const token of values) {
+          if (tokens.length >= MAX_ITEMS) break;
           tokens.push(derOf(token as BaseBlock));
         }
       } else if (attribute.type === OID_REVOCATION_ARCHIVAL) {

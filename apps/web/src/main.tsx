@@ -1,11 +1,14 @@
-import { warmPdfjs } from 'pdf-core';
+import { warmPdfjs } from 'pdf-core/engines/pdfjs-handle';
 import { SessionStore } from 'pdf-model';
 import { loadLocale } from 'pdf-shared';
 import { getStoredLocale } from 'pdf-ui/ui';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { deviceTier } from './features/core/document';
+import { flushDrafts } from './features/persistence/flush-drafts';
 import { loadEditor } from './features/shell/editor-store';
+import { RootBoundary } from './recovery';
 import { initServiceWorkerUpdates } from './serviceWorkerUpdate';
 import './app.css';
 
@@ -19,10 +22,16 @@ const store = new SessionStore();
 // The interface language's catalogue is a chunk of its own (`pdf-shared` i18n): it is
 // fetched before the first render, so the first frame is already in that language and
 // the other catalogue is never downloaded.
+//
+// The app is wrapped in the root error boundary (`recovery.tsx`): a lazy chunk that cannot be
+// fetched, or any render that throws, ends in a recovery screen with a reload button instead of
+// a white page. The shell's autosave dies with it, so the drafts are written once more first.
 const render = () =>
   createRoot(container).render(
     <StrictMode>
-      <App store={store} />
+      <RootBoundary onCrash={() => void flushDrafts(store, deviceTier())}>
+        <App store={store} />
+      </RootBoundary>
     </StrictMode>,
   );
 loadLocale(getStoredLocale()).then(render, render);

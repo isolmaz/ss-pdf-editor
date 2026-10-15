@@ -148,6 +148,7 @@ const outlinePoints = (dialog: Locator) =>
 test('the live outline follows the sheet in front of the camera, settles, and goes when the sheet is taken away', async ({
   page,
 }) => {
+  await page.clock.install();
   await scriptCamera(page);
   await openPdf(page);
   const dialog = await openScan(page);
@@ -161,8 +162,10 @@ test('the live outline follows the sheet in front of the camera, settles, and go
   const first = await outlinePoints(dialog);
   expect(first).toHaveLength(8);
   expect(first[0]).toBeLessThan(22);
-  // Two more detections later the blended outline has not moved away from the sheet.
-  await page.waitForTimeout(900);
+  // Two more detections later the blended outline has not moved away from the sheet. The
+  // detections are driven by an interval timer, so the page's clock is advanced by their cadence
+  // instead of sleeping through it; the interval callback is synchronous, so it has run by then.
+  await page.clock.runFor(900);
   const settled = await outlinePoints(dialog);
   expect(settled[0]).toBeCloseTo(first[0] as number, 0);
   expect(settled[5]).toBeGreaterThan(80);

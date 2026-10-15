@@ -3,13 +3,13 @@
 
 import { act, renderHook } from '@testing-library/react';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import { SessionStore } from 'pdf-model';
+import { type JsonValue, SessionStore, type SessionTab, workingBytesKey } from 'pdf-model';
 import type { ViewerApi } from 'pdf-ui/viewer';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { coreStore, initialCoreState, setBusy } from '../core/core-store';
 import { adoptHandle, dropHandle } from '../core/handles';
 import { factsRead, factsStore } from '../facts/facts-store';
-import { formInventoryRead, formsStore, initialFormsState } from '../forms/forms-store';
+import { formInventoryKey, formInventoryRead, formsStore, initialFormsState } from '../forms/forms-store';
 import { hideStartScreen, initialOpenState, openStore, showStartScreen } from '../open/open-store';
 import { initialSaveState, saveStore, viewerChanged } from '../save/save-store';
 import { useEditState } from './use-edit-state';
@@ -89,7 +89,7 @@ describe('useEditState', () => {
     act(() => {
       factsRead({
         tabId: tab.id,
-        version: tab.working.id,
+        bytesKey: workingBytesKey(tab),
         fonts: [],
         attachments: [],
         signatures: [],
@@ -98,10 +98,72 @@ describe('useEditState', () => {
     });
     expect(result.current.canPrepareWrite).toBe(false);
     act(() => {
-      formInventoryRead({ tabId: tab.id, version: tab.working.id, fields: [] } as never);
+      formInventoryRead({ tabId: tab.id, key: formInventoryKey(tab), fields: [] } as never);
     });
     expect(result.current.canPrepareWrite).toBe(true);
     act(() => setBusy(true));
     expect(result.current.canPrepareWrite).toBe(false);
+  });
+
+  it('keeps a write preparable through a mark step, and closes it for new bytes or a typed value until they are read', () => {
+    const tab = openTab();
+    const { result } = renderHook(() => useEditState(session, 'desktop'));
+    const readFor = (current: SessionTab) =>
+      act(() => {
+        factsRead({
+          tabId: current.id,
+          bytesKey: workingBytesKey(current),
+          fonts: [],
+          attachments: [],
+          signatures: [],
+          security: { encrypted: false, permissions: [] },
+        });
+        formInventoryRead({ tabId: current.id, key: formInventoryKey(current), fields: [] } as never);
+      });
+    const shown = () => result.current.activeTab as SessionTab;
+    const mark = (annotations: readonly object[]) =>
+      act(() => {
+        session.setOverlays(
+          tab.id,
+          { annotations, measures: [], redactions: [] } as unknown as JsonValue,
+          'ann.transform',
+        );
+      });
+    readFor(tab);
+    expect(result.current.canPrepareWrite).toBe(true);
+
+    // A mark step mints a new working id over the same bytes: nothing is read again, and Save stays open.
+    mark([{ id: 'm1' }]);
+    expect(shown().working.id).not.toBe(tab.working.id);
+    expect(result.current.canPrepareWrite).toBe(true);
+    mark([]);
+    expect(result.current.canPrepareWrite).toBe(true);
+    act(() => {
+      session.undo(tab.id);
+    });
+    expect(result.current.canPrepareWrite).toBe(true);
+
+    // A value typed into a form field is not in the bytes: the inventory is read again, with it.
+    const typed = { engineValues: { entries: [{ key: 'field', value: { value: 'Acme' } }], dropped: 0 } };
+    act(() => session.setOverlays(tab.id, typed as never, 'ann.engineEdit'));
+    expect(result.current.canPrepareWrite).toBe(false);
+    readFor(shown());
+    expect(result.current.canPrepareWrite).toBe(true);
+
+    // New bytes: the facts and the inventory are read again.
+    act(() => {
+      session.applyOperation({
+        tabId: tab.id,
+        bytes: new Uint8Array([2]),
+        pageCount: 1,
+        labelKey: 'form.note.filled',
+        engine: 'mupdf',
+        steps: [],
+        overlays: null,
+      });
+    });
+    expect(result.current.canPrepareWrite).toBe(false);
+    readFor(shown());
+    expect(result.current.canPrepareWrite).toBe(true);
   });
 });

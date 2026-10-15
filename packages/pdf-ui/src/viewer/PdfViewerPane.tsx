@@ -2,7 +2,7 @@ import { PDFJS_ASSETS } from 'pdf-core/assets';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { pdfOptionalContentConfig } from 'pdf-core/layers';
 import { decodeEngineValues, type EngineValuesDraft, encodeEngineValues } from 'pdf-model';
-import type { Translator } from 'pdf-shared';
+import { type ToolError, type Translator, toToolError } from 'pdf-shared';
 import type { EventBus, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { hideEditorMarkers } from './marker-text';
@@ -79,6 +79,8 @@ export interface ViewerApi {
    * The page's box and rotation, which is what turns a top-left-origin mark into
    * the `/QuadPoints` a PDF annotation carries: `viewBox` is `[x0, y0, x1, y1]`
    * in user space and `rotation` the page's own `/Rotate` (one of 0/90/180/270).
+   * `userUnit` is the page's `/UserUnit` (the size of one user-space unit in 1/72 inch,
+   * 1 by default), which every real-world measurement is scaled by.
    */
   pageGeometry(pageIndex: number): {
     readonly x: number;
@@ -86,6 +88,7 @@ export interface ViewerApi {
     readonly width: number;
     readonly height: number;
     readonly rotation: 0 | 90 | 180 | 270;
+    readonly userUnit?: number;
   } | null;
   /**
    * The origin of the **scrolled content**, in client coordinates, and a page element's
@@ -307,6 +310,8 @@ export function PdfViewerPane({
   onLayoutChange,
   onReplace,
 }: PdfViewerPaneProps) {
+  /** The pane's own box: the find bar and the page area, nothing else the shell draws. */
+  const paneRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   /** The overlay host: inside the scroll container, sized to the laid-out pages. */
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -331,6 +336,13 @@ export function PdfViewerPane({
    * screen, so it never goes back to "not painted".
    */
   const [painted, setPainted] = useState(false);
+  /**
+   * Why the engine stack could not be loaded, while it could not. The pane says so and offers
+   * a reload instead of preparing pages for ever: the chunk is the one thing every page of
+   * every document waits for, and a fetch that fails (offline with the chunk not cached, a
+   * release that replaced it) is not retried by the browser within this page's lifetime.
+   */
+  const [failure, setFailure] = useState<ToolError | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{
     clientX: number;
@@ -556,11 +568,29 @@ export function PdfViewerPane({
       frozenStackRef.current = frozen;
       frozen.captureView();
       frozen.freeze();
+      // A rewrite that comes before the previous one has painted drops that replacement
+      // (disposed above) and keeps the stack still frozen on screen. The shell holds the
+      // dropped stack's api, over a viewer that is gone, until the next replacement publishes
+      // its own: it is told, as for every other stack that is disposed. The ordinary freeze
+      // (the previous stack *is* the frozen one) says nothing, as above.
+      if (previous !== null && previous !== frozen) callbacksRef.current.onReady?.(null);
     }
+    setFailure(null);
 
     void (async () => {
-      const [{ EventBus, PDFFindController, PDFLinkService, PDFViewer }, _styles] = await loadPdfjsViewer();
-      if (disposed) return;
+      // As in `XfaFormDialog`, the import is guarded: a chunk the browser cannot fetch is a
+      // message in the pane, not a pane that prepares pages for ever. No api is published,
+      // and the shell is told there is none, as on every other path that leaves the pane
+      // without a viewer.
+      const engine = await loadPdfjsViewer().catch((error: unknown) => {
+        if (!disposed) {
+          callbacksRef.current.onReady?.(null);
+          setFailure(toToolError(error, 'pdfjs'));
+        }
+        return null;
+      });
+      if (engine === null || disposed) return;
+      const [{ EventBus, PDFFindController, PDFLinkService, PDFViewer }, _styles] = engine;
       // Both slots keep pdf.js styling while one is frozen, but DOM consumers
       // (printing and canvas tools) must follow only the current stack.
       primary.removeAttribute('data-active-viewer');
@@ -951,37 +981,72 @@ export function PdfViewerPane({
             width: Math.abs(x1 - x0),
             height: Math.abs(y1 - y0),
             rotation: rotation === 90 || rotation === 180 || rotation === 270 ? rotation : 0,
+            userUnit: pageView.viewport.userUnit,
           };
         },
         pointToPage: (clientX, clientY) => {
-          for (let index = 0; index < viewer.pagesCount; index += 1) {
+          const count = viewer.pagesCount;
+          // The page's content box in client pixels. The border is transparent and
+          // outside the page content, so both the containment test and the conversion
+          // start at the content box — the same frame `pageRect` reports and the
+          // canvas paints in. `null`: the viewer has no page view at that index.
+          const contentBox = (index: number) => {
             const pageView = viewer.getPageView(index);
-            if (pageView === undefined) continue;
+            if (pageView === undefined) return null;
             const bounds = pageView.div.getBoundingClientRect();
-            // The border is transparent and outside the page content, so both the
-            // containment test and the conversion start at the content box — the same
-            // frame `pageRect` reports and the canvas paints in.
             const left = bounds.left + pageView.div.clientLeft;
             const top = bounds.top + pageView.div.clientTop;
-            if (
-              clientX < left ||
-              clientX > left + pageView.div.clientWidth ||
-              clientY < top ||
-              clientY > top + pageView.div.clientHeight
-            ) {
-              continue;
+            return {
+              pageView,
+              left,
+              top,
+              right: left + pageView.div.clientWidth,
+              bottom: top + pageView.div.clientHeight,
+            };
+          };
+          const pageAt = (index: number) => {
+            const box = contentBox(index);
+            if (box === null) return null;
+            if (clientX < box.left || clientX > box.right || clientY < box.top || clientY > box.bottom) {
+              return null;
             }
-            const [pdfX, pdfY] = pageView.viewport.convertToPdfPoint(clientX - left, clientY - top) as [
-              number,
-              number,
-            ];
+            const [pdfX, pdfY] = box.pageView.viewport.convertToPdfPoint(
+              clientX - box.left,
+              clientY - box.top,
+            ) as [number, number];
             // PDF user space has its origin at the bottom-left and a y axis that
             // grows upward; MuPDF's page space (and therefore every redaction
             // mark) starts at the top-left corner of the page box.
-            const pdfTop = viewBoxOf(pageView.viewport.viewBox)[3];
+            const pdfTop = viewBoxOf(box.pageView.viewport.viewBox)[3];
             return { pageIndex: index, x: pdfX, y: pdfTop - pdfY };
+          };
+          const firstHit = (from: number, to: number) => {
+            for (let index = from; index < to; index += 1) {
+              const hit = pageAt(index);
+              if (hit !== null) return hit;
+            }
+            return null;
+          };
+
+          // This runs on every pointer move of every mark tool, so it does not measure
+          // the pages one by one (a 2000-page document would force that many rectangle
+          // reads per move). The viewer only ever scrolls vertically — a spread is the one
+          // layout switch — so the pages follow each other down the scroll content and
+          // those whose bottom edge is above the point come first: a binary search finds
+          // where they end. A spread puts two pages of possibly different heights side by
+          // side, so the order is exact between rows but not inside one; the search lands
+          // within one row, and the two pages either side of where it lands cover it.
+          let low = 0;
+          let high = count;
+          while (low < high) {
+            const middle = (low + high) >> 1;
+            const box = contentBox(middle);
+            // A page the viewer has not built cannot be ordered: ask every page.
+            if (box === null) return firstHit(0, count);
+            if (box.bottom < clientY) low = middle + 1;
+            else high = middle;
           }
-          return null;
+          return firstHit(Math.max(0, low - 2), Math.min(count, low + 2));
         },
       };
       viewer.setDocument(document.raw);
@@ -1097,7 +1162,16 @@ export function PdfViewerPane({
         return;
       }
       if (event.key === 'Escape') {
-        setFind((previous) => (previous.open ? INITIAL_FIND : previous));
+        // The bar's key when it is pressed in the pane (the field, the page area) or with
+        // nothing focused: a dialog, the palette, a menu or a field elsewhere in the shell
+        // owns the Escape pressed in it, and closing the bar as well would throw the
+        // reader's search away for a key that was meant for something else.
+        // `document` is the pdf.js handle prop here, not the global: reach for the DOM explicitly.
+        const target = event.target as Node;
+        const nothingFocused = target === globalThis.document.body;
+        if (find.open && (nothingFocused || (paneRef.current as HTMLElement).contains(target))) {
+          closeFind();
+        }
         return;
       }
       if (find.open && event.key === 'F3') {
@@ -1107,7 +1181,7 @@ export function PdfViewerPane({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [find.open, runAgain]);
+  }, [find.open, runAgain, closeFind]);
 
   const countLabel =
     find.query.length === 0
@@ -1119,7 +1193,7 @@ export function PdfViewerPane({
           : t('viewer.find.scanning');
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={paneRef} className="relative h-full w-full">
       {find.open ? (
         <search className="pdf-floating-shadow absolute end-3 top-3 z-40 flex items-center gap-1 rounded-md border border-kumo-line bg-kumo-base px-2 py-1">
           <input
@@ -1190,12 +1264,20 @@ export function PdfViewerPane({
         </search>
       ) : null}
       {/* pdf.js requires an absolutely positioned container with a `.pdfViewer` child. `isolate`
-          keeps the mark layers (z-20 inside it) below the find bar and the shell chrome. */}
+          keeps the mark layers (z-20 inside it) below the find bar and the shell chrome.
+          `has-[[data-touch-draw]]:touch-none`: a mark layer whose tool is a drag gesture on the
+          page (the pen, the marker, shapes, the link region) marks itself `data-touch-draw`, and
+          while one is mounted the browser must not take a finger's drag for a scroll — it would
+          pan the document and cancel the pointer (`pointercancel`) a few pixels into the stroke.
+          The touch-action of the element under the finger and of its ancestors up to the scroll
+          container decides that, and the page is not the layers' child, so it is the container
+          that carries it. The layers that are the touched element themselves set `touch-none` on
+          their own surface. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: pan drag gesture container */}
       <div
         ref={containerRef}
         onMouseDown={handlePanMouseDown}
-        className={`absolute inset-0 isolate overflow-auto bg-pdf-surround ${
+        className={`absolute inset-0 isolate overflow-auto bg-pdf-surround has-[[data-touch-draw]]:touch-none ${
           handTool ? (isPanning ? 'cursor-grabbing select-none' : 'cursor-grab select-none') : ''
         }`}
       >
@@ -1216,7 +1298,22 @@ export function PdfViewerPane({
           {overlay}
         </div>
       </div>
-      {ready && painted ? null : (
+      {failure !== null ? (
+        <div role="alert" className="absolute inset-0 z-30 grid place-items-center p-6">
+          <div className="pdf-floating-shadow flex max-w-md flex-col items-center gap-3 rounded-md border border-kumo-line bg-kumo-base px-4 py-3 text-center text-xs text-kumo-default">
+            <p>
+              {t(failure.messageKey)} {t(failure.hintKey)}
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="h-7 rounded-md bg-pdf-accent px-3 font-semibold text-pdf-on-accent hover:opacity-90"
+            >
+              {t('recovery.reload')}
+            </button>
+          </div>
+        </div>
+      ) : ready && painted ? null : (
         <div
           role="status"
           aria-live="polite"

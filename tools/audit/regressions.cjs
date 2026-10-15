@@ -43,6 +43,12 @@ function loader(mocks = {}) {
     );
     if (!filename) throw new Error(`Cannot resolve ${specifier} from ${parent}`);
     if (cache.has(filename)) return cache.get(filename).exports;
+    if (filename.endsWith('.json')) {
+      // Data files (`engine-versions.json`) are read, not transpiled.
+      const data = JSON.parse(fs.readFileSync(filename, 'utf8'));
+      cache.set(filename, { exports: data });
+      return data;
+    }
     const module = { exports: {} };
     cache.set(filename, module);
     const source = compile(fs.readFileSync(filename, 'utf8'), filename);
@@ -60,27 +66,33 @@ const load = loader();
 const model = load('pdf-model');
 const _appNotices = load(path.join(ROOT, 'apps/web/src/notices.ts'));
 const _recentHandles = load(path.join(ROOT, 'apps/web/src/recent-handles.ts'));
-const appPath = path.join(ROOT, 'apps/web/src/App.tsx');
-const appSource = ts.createSourceFile(
-  appPath,
-  fs.readFileSync(appPath, 'utf8'),
-  ts.ScriptTarget.Latest,
-  true,
-  ts.ScriptKind.TSX,
-);
-function callback(name, bindings) {
-  let source;
-  function visit(node) {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
-      const init = node.initializer;
-      if (init && ts.isCallExpression(init)) source = init.arguments[0]?.getText(appSource);
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(appSource);
-  if (!source) throw new Error(`Missing callback ${name}`);
-  const code = compile(`const result = ${source};`, 'callback.ts');
-  return Function(...Object.keys(bindings), `${code}\nreturn result;`)(...Object.values(bindings));
+
+/**
+ * The shell binds each feature function to its session in a one-line callback (`App.tsx`):
+ * `saveActive`, `discardTab`, `prepareOutput`, `forgetTabDraft`, `persistTabDraft` and
+ * `opfsSave`. The harnesses below build those bindings here, with the arguments the shell
+ * passes, over the real feature functions. They do not read the bindings out of `App.tsx`'s
+ * source: an audit about the features must not break because the shell renamed a variable, and
+ * a binding the shell got wrong is the shell's own tests' to catch.
+ */
+function bindSaveActive({ store, saveDocument, t, prepareOutput }) {
+  return (tabId) => saveDocument({ session: store, t, prepareOutput }, tabId ?? store.active?.id);
+}
+function bindOpfsSave({ store, saveDraft, persistTabDraft, t }) {
+  return () => saveDraft(store, persistTabDraft, t);
+}
+function bindPersistTabDraft({ store, tier, persistDraft }) {
+  return (tabId) => persistDraft(store, tabId, tier);
+}
+function bindForgetTabDraft({ store, forgetDraft }) {
+  return (tabId) => forgetDraft(store, tabId);
+}
+function bindPrepareOutput({ store, t, prepareDocumentOutput }) {
+  return (tabId, controller, executedSteps = []) =>
+    prepareDocumentOutput({ session: store, t }, tabId, controller, executedSteps);
+}
+function bindDiscardTab({ store, tRef, forgetTabDraft, discardDocument }) {
+  return (id) => discardDocument({ session: store, translator: tRef, forgetTabDraft }, id);
 }
 
 /**
@@ -126,6 +138,8 @@ async function check(name, run) {
   }
 }
 const tick = () => new Promise((resolve) => setImmediate(resolve));
+/** The release version the harness's manifest names; the worker under test is stamped `v1`. */
+let swManifestVersion = 'v1';
 const documentInput = (extra = {}) => ({
   name: 'sample.pdf',
   bytes: new Uint8Array([1, 2, 3]),
@@ -218,7 +232,7 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
   const busyRef = { current: false };
   // The running operation's controller: the core's `beginOperation` / `endOperation`, in a variable.
   let operation = null;
-  // `saveActive` runs the app's own arrow over the real `features/save` save path; the notice
+  // `saveActive` is the shell's binding over the real `features/save` save path; the notice
   // line, the busy flag and the download are the doubles. The save lock is the real store's.
   const modules = saveModules({
     '../core/core-store': {
@@ -266,7 +280,7 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
     },
   };
   // The module reads the browser's `window` for the file picker: it is present for the length of a run.
-  const saveActive = callback('saveActive', bindings);
+  const saveActive = bindSaveActive(bindings);
   const run = async (...args) => {
     const had = Object.hasOwn(globalThis, 'window');
     const previous = globalThis.window;
@@ -285,12 +299,13 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
     notices,
     downloads,
     saveLock,
+    saveStore: saveStore.saveStore,
     busyRef,
     bindings,
   };
 }
 
-function swHarness({ online = true, cacheFailure = false } = {}) {
+function swHarness({ online = true, cacheFailure = false, networkStatus = 200, languages = ['tr-TR'] } = {}) {
   const handlers = new Map();
   const cached = new Map();
   const deleted = [];
@@ -318,6 +333,7 @@ function swHarness({ online = true, cacheFailure = false } = {}) {
     console,
     self: {
       location: { origin: 'https://local.test' },
+      navigator: { languages },
       addEventListener: (kind, fn) => handlers.set(kind, fn),
       clients: { claim: async () => {} },
       skipWaiting: async () => {},
@@ -340,7 +356,7 @@ function swHarness({ online = true, cacheFailure = false } = {}) {
       if (String(url).includes('/offline-manifest.json')) {
         return new Response(
           JSON.stringify({
-            version: 'v1',
+            version: swManifestVersion,
             capabilities: {
               core: ['/engines/core.js'],
               app: ['/editor/assets/index-1.js', '/editor/assets/pdf-1.js'],
@@ -352,10 +368,13 @@ function swHarness({ online = true, cacheFailure = false } = {}) {
           },
         );
       }
-      return new Response('network');
+      return new Response('network', { status: networkStatus });
     },
   };
-  vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8'), context, {
+  // The build stamps the worker with the release version the manifest carries (`assemble-dist`).
+  const source = fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8');
+  const stamped = source.replaceAll('__CACHE_VERSION__', 'v1');
+  vm.runInNewContext(stamped, context, {
     filename: 'public/sw.js',
   });
   function dispatch(kind, fields = {}) {
@@ -387,7 +406,9 @@ async function main() {
     assert.equal(await h.run(), false);
     assert.equal(target.calls.opened, 0);
     assert.equal(h.store.active.dirty, true);
-    assert.ok(h.notices.some((notice) => String(notice).includes('conflict')));
+    // A changed file is a question the dialog asks (overwrite / save as / cancel), not a failure line.
+    assert.equal(h.saveStore.get().conflict?.tabId, h.tab.id);
+    assert.equal(h.saveStore.get().conflict?.target, target.file);
   });
   await check(
     'an in-place save over a handle read back from storage asks for write access first',
@@ -486,7 +507,7 @@ async function main() {
         verification: { state: 'verified', checks: [], declared: [] },
       };
     };
-    const save = callback('saveActive', h.bindings);
+    const save = bindSaveActive(h.bindings);
     assert.equal(await save(), true);
     assert.equal(h.store.active.dirty, false);
     assert.equal(h.store.active.outputs[0].fromWorkingVersion, h.store.active.working.id);
@@ -608,6 +629,30 @@ async function main() {
     const response = await event.response();
     assert.equal(response.status, 503);
   });
+  await check('the offline answer is worded in the first browser language the interface has', async () => {
+    const answer = async (languages) => {
+      const h = swHarness({ online: false, languages });
+      const event = h.dispatch('fetch', {
+        request: {
+          method: 'GET',
+          url: 'https://local.test/editor/missing.js',
+          cache: 'reload',
+          mode: 'cors',
+        },
+      });
+      const response = await event.response();
+      assert.equal(response.status, 503);
+      assert.equal(response.headers.get('X-Offline-Missing'), 'true');
+      return response.text();
+    };
+    const turkish = 'Çevrimdışı: Bu paket henüz hazırlanmadı.';
+    const english = 'Offline: this package has not been prepared yet.';
+    assert.equal(await answer(['en-GB', 'tr']), english);
+    assert.equal(await answer(['de-DE', 'EN-us', 'tr']), english);
+    assert.equal(await answer(['tr-TR', 'en']), turkish);
+    assert.equal(await answer(['de', 'fr']), turkish);
+    assert.equal(await answer([]), turkish);
+  });
   await check('offline hard refresh preserves cached content and isolation', async () => {
     const h = swHarness({ online: false });
     const url = 'https://local.test/editor/';
@@ -679,6 +724,148 @@ async function main() {
       assert.equal(after.capabilities.core.ready, false);
     },
   );
+  await check(
+    'readiness counts a cached engine of another version as missing, and nothing for another release',
+    async () => {
+      const plain = (value) => JSON.parse(JSON.stringify(value));
+      const h = swHarness();
+      // The same file under another version's directory is another URL: it is not this build's copy.
+      h.cached.set('https://local.test/engines/vold/core.js', new Response('old'));
+      const stale = await askWorker(h, { type: 'CHECK_READINESS' });
+      assert.equal(stale.matchesBuild, true);
+      assert.deepEqual(plain(stale.capabilities.core), { ready: false, missing: ['/engines/core.js'] });
+      h.cached.set('https://local.test/engines/core.js', new Response('current'));
+      assert.equal((await askWorker(h, { type: 'CHECK_READINESS' })).capabilities.core.ready, true);
+      // The manifest on the network names another release than the one this worker was stamped with
+      // (an update is waiting): the cache is complete for a build the list no longer describes.
+      swManifestVersion = 'v2';
+      try {
+        const other = await askWorker(h, { type: 'CHECK_READINESS' });
+        assert.equal(other.matchesBuild, false);
+        assert.deepEqual(plain(other.capabilities.core), { ready: false, missing: ['/engines/core.js'] });
+        assert.equal(other.capabilities.app.ready, false);
+        const before = fetchedBeyondManifest(h).length;
+        const prepared = await askWorker(h, { type: 'PREPARE_PACKAGE', capabilities: ['app'] });
+        assert.equal(prepared.type, 'PREPARE_FAILED');
+        assert.equal(fetchedBeyondManifest(h).length, before);
+      } finally {
+        swManifestVersion = 'v1';
+      }
+    },
+  );
+  await check(
+    'a module retry is served from the cached engine and stored without the retry parameter',
+    async () => {
+      const engine = 'https://local.test/engines/mupdf/vabc/mupdf.js';
+      const offline = swHarness({ online: false });
+      offline.cached.set(engine, new Response('engine'));
+      const retry = offline.dispatch('fetch', {
+        request: { method: 'GET', url: `${engine}?retry=2`, cache: 'default', mode: 'cors' },
+      });
+      assert.equal(await (await retry.response()).text(), 'engine');
+      // Any other parameter still names another file.
+      const other = offline.dispatch('fetch', {
+        request: { method: 'GET', url: `${engine}?x=1`, cache: 'default', mode: 'cors' },
+      });
+      assert.equal((await other.response()).status, 503);
+      const online = swHarness();
+      const first = online.dispatch('fetch', {
+        request: { method: 'GET', url: `${engine}?retry=1`, cache: 'default', mode: 'cors' },
+      });
+      await first.response();
+      await Promise.all(first.lifetimes);
+      assert.deepEqual([...online.cached.keys()], [engine]);
+    },
+  );
+  await check(
+    'a code-only deploy changes the release version although the pins and stamp do not',
+    async () => {
+      const { pathToFileURL } = require('node:url');
+      const { releaseVersion } = await import(
+        pathToFileURL(path.join(ROOT, 'tools/release-version.mjs')).href
+      );
+      const pins = [
+        { path: 'engines/a/x.js', sha256: 'aa' },
+        { path: 'fonts/f.woff2', sha256: 'bb' },
+      ];
+      const base = {
+        stamp: '0.0.0',
+        pins,
+        editorHtml: '<script src="/editor/assets/index-A1.js">',
+        manifest: {
+          capabilities: { app: ['/editor/assets/index-A1.js'] },
+          shell: ['/editor/assets/en-1.js'],
+        },
+      };
+      const version = releaseVersion(base);
+      assert.match(version, /^0\.0\.0-[0-9a-f]{12}$/);
+      assert.equal(releaseVersion({ ...base, pins: [...pins].reverse() }), version);
+      const html = '<script src="/editor/assets/index-B2.js">';
+      const manifest = { ...base.manifest, capabilities: { app: ['/editor/assets/index-B2.js'] } };
+      assert.notEqual(releaseVersion({ ...base, editorHtml: html, manifest }), version);
+      assert.notEqual(releaseVersion({ ...base, editorHtml: html }), version);
+      assert.notEqual(releaseVersion({ ...base, manifest }), version);
+      assert.notEqual(releaseVersion({ ...base, pins: [{ ...pins[0], sha256: 'cc' }, pins[1]] }), version);
+    },
+  );
+  await check('verify-assets refuses a file under public/engines that no pin names', async () => {
+    const { pathToFileURL } = require('node:url');
+    const { verifyAssets } = await import(pathToFileURL(path.join(ROOT, 'tools/fetch-engines.mjs')).href);
+    const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'pins-'));
+    try {
+      const bytes = Buffer.from('engine');
+      fs.mkdirSync(path.join(dir, 'public/engines/demo'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'public/engines/demo/a.js'), bytes);
+      const sha256 = require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+      const pinsPath = path.join(dir, 'pins.json');
+      const files = [{ path: 'engines/demo/a.js', bytes: bytes.length, sha256 }];
+      fs.writeFileSync(pinsPath, JSON.stringify({ engines: { demo: { packages: [], files } } }));
+      const options = { pinsPath, publicDir: path.join(dir, 'public'), versionsPath: null };
+      assert.deepEqual(verifyAssets(options).problems, []);
+      fs.writeFileSync(path.join(dir, 'public/engines/demo/stray.js'), 'x');
+      assert.deepEqual(
+        verifyAssets(options).problems.map(({ engine, path: file, kind }) => ({ engine, file, kind })),
+        [{ engine: 'demo', file: 'engines/demo/stray.js', kind: 'unpinned' }],
+      );
+      fs.rmSync(path.join(dir, 'public/engines/demo/stray.js'));
+      // The URL versions must be the ones the pins give.
+      const versionsPath = path.join(dir, 'versions.json');
+      fs.writeFileSync(versionsPath, JSON.stringify({ versions: { demo: 'v000000000000' } }));
+      const stale = verifyAssets({ ...options, versionsPath }).problems;
+      assert.deepEqual(
+        stale.map((problem) => problem.kind),
+        ['version'],
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  await check(
+    'public/_headers: hashed editor assets and engines are immutable, shell and fonts are not',
+    async () => {
+      const { pathToFileURL } = require('node:url');
+      const { headersFor, parseHeadersFile } = await import(
+        pathToFileURL(path.join(ROOT, 'tools/vite/hosting.mjs')).href
+      );
+      const sections = parseHeadersFile(fs.readFileSync(path.join(ROOT, 'public/_headers'), 'utf8'));
+      const cache = (pathname) => headersFor(sections, pathname)['Cache-Control'];
+      // One policy, not two joined: `! Cache-Control` removes what `/editor/*` set.
+      assert.equal(cache('/editor/assets/index-abc.js'), 'public, max-age=31536000, immutable, no-transform');
+      assert.equal(
+        headersFor(sections, '/editor/assets/index-abc.js')['Cross-Origin-Embedder-Policy'],
+        'require-corp',
+      );
+      assert.equal(cache('/editor/index.html'), 'no-transform, public, max-age=0, must-revalidate');
+      assert.equal(
+        cache('/engines/mupdf/v0123456789ab/mupdf.js'),
+        'no-transform, public, max-age=31536000, immutable',
+      );
+      assert.equal(
+        cache('/fonts/noto/NotoSans-Regular.ttf'),
+        'no-transform, public, max-age=0, must-revalidate',
+      );
+    },
+  );
   await check('service-worker install caches the shell and its catalogues, only from the build', async () => {
     const h = swHarness();
     const event = h.dispatch('install');
@@ -731,8 +918,8 @@ async function main() {
       },
     };
     // The manual save runs the *shared* persistence callback: the harness builds that
-    // callback from the app's own source over the real `features/persistence` functions
-    // (the vault's removal is the one double), then the `opfsSave` command over it.
+    // callback over the real `features/persistence` functions (the vault's removal is the one
+    // double), then the `opfsSave` command over it.
     const modules = persistenceModules({
       '../core/core-store': { showNotice: (notice) => notices.push(notice), showNoticeOnce() {} },
       './draft-vault': {
@@ -748,7 +935,7 @@ async function main() {
     const persistence = modules('persistence-store.ts');
     persistence.persistenceStore.set({ draftStorage: storage });
     persistence.draftWrites.current = queue;
-    const persistTabDraft = callback('persistTabDraft', {
+    const persistTabDraft = bindPersistTabDraft({
       store,
       tier: 'desktop',
       persistDraft: modules('draft-persist.ts').persistDraft,
@@ -760,7 +947,7 @@ async function main() {
       t: (key) => key,
     };
     return {
-      run: callback('opfsSave', bindings),
+      run: bindOpfsSave(bindings),
       persist: persistTabDraft,
       persisted: persistence,
       writeStarts,
@@ -855,69 +1042,6 @@ async function main() {
     assert.ok(failing.notices.some((notice) => String(notice).includes('write-failed')));
     // The queue's own copy swallowed the failure: the next link must still run.
     await assert.doesNotReject(failing.queue.current);
-  });
-  await check('draft recovery does not rerun when only the UI language changes', async () => {
-    let effect;
-    const recoveryPath = path.join(ROOT, 'apps/web/src/features/persistence/use-draft-recovery.ts');
-    const recoverySource = ts.createSourceFile(
-      recoveryPath,
-      fs.readFileSync(recoveryPath, 'utf8'),
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    );
-    function visit(node) {
-      if (
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === 'useEffect' &&
-        node.arguments[0]?.getText(recoverySource).includes('const drafts = sortDrafts')
-      )
-        effect = node.getText(recoverySource);
-      ts.forEachChild(node, visit);
-    }
-    visit(recoverySource);
-    assert.ok(effect);
-    let previous;
-    let cleanup;
-    let reads = 0;
-    const pruned = [];
-    const bindings = {
-      // The effect forgets the file handles of recent entries that are gone, after the restore.
-      loadRecentDocuments: () => [{ id: 'kept' }],
-      pruneRecentHandles: async (keep) => {
-        pruned.push([...keep]);
-      },
-      draftStorage: () => ({
-        readDraftInventory: async () => {
-          reads += 1;
-          return { drafts: [], unreadable: [] };
-        },
-      }),
-      store: new model.SessionStore(),
-      translator: { current: () => 'en' },
-      openAndFingerprint: async () => {
-        throw new Error('nothing to restore');
-      },
-      sortDrafts: model.sortDrafts,
-      useEffect: (run, dependencies) => {
-        if (!previous || dependencies.some((value, index) => value !== previous[index])) {
-          cleanup?.();
-          previous = dependencies;
-          cleanup = run();
-        }
-      },
-    };
-    const code = compile(effect, 'effect.ts');
-    const render = () => Function(...Object.keys(bindings), code)(...Object.values(bindings));
-    render();
-    await tick();
-    bindings.translator.current = () => 'tr';
-    render();
-    await tick();
-    cleanup?.();
-    assert.equal(reads, 1);
-    assert.deepEqual(pruned, [['kept']]);
   });
   await check('a single unreadable OPFS draft does not stop other draft recovery', async () => {
     const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
@@ -1098,7 +1222,7 @@ async function main() {
         }),
     };
     const fresh = loader({
-      '/engines/tesseract/tesseract.esm.min.js': {
+      [load('pdf-core/assets').TESSERACT_ASSETS.module]: {
         __esModule: true,
         default: { createWorker: async () => worker },
       },
@@ -1129,6 +1253,54 @@ async function main() {
     assert.equal(await (await event.response()).text(), 'network');
     await Promise.all(event.lifetimes);
   });
+  await check(
+    'service-worker network-first answers a 404 or 503 for a file the cache holds from the cache',
+    async () => {
+      for (const status of [404, 503]) {
+        const h = swHarness({ networkStatus: status });
+        const url = 'https://local.test/editor/assets/PrintDialog-abc123.js';
+        h.cached.set(url, new Response('cached chunk'));
+        const event = h.dispatch('fetch', {
+          request: { method: 'GET', url, cache: 'default', mode: 'cors' },
+        });
+        const response = await event.response();
+        assert.equal(response.status, 200, `status ${status}`);
+        assert.equal(await response.text(), 'cached chunk', `status ${status}`);
+        assert.equal(response.headers.get('Cross-Origin-Resource-Policy'), 'same-origin');
+        await Promise.all(event.lifetimes);
+        // A failing answer is never written over the copy that rescued it.
+        assert.equal(await h.cached.get(url).text(), 'cached chunk', `status ${status}`);
+      }
+    },
+  );
+  await check('service-worker network-first passes a 404 on when the cache holds nothing', async () => {
+    const h = swHarness({ networkStatus: 404 });
+    const event = h.dispatch('fetch', {
+      request: {
+        method: 'GET',
+        url: 'https://local.test/editor/assets/gone-abc123.js',
+        cache: 'default',
+        mode: 'cors',
+      },
+    });
+    const response = await event.response();
+    assert.equal(response.status, 404);
+    assert.equal(await response.text(), 'network');
+    await Promise.all(event.lifetimes);
+    assert.equal(h.cached.size, 0);
+  });
+  await check(
+    'service-worker network-first still prefers a good network answer and refreshes the copy',
+    async () => {
+      const h = swHarness();
+      const url = 'https://local.test/editor/assets/PrintDialog-abc123.js';
+      h.cached.set(url, new Response('stale copy'));
+      const event = h.dispatch('fetch', { request: { method: 'GET', url, cache: 'default', mode: 'cors' } });
+      assert.equal(await (await event.response()).text(), 'network');
+      await Promise.all(event.lifetimes);
+      assert.equal(await h.cached.get(url).text(), 'network');
+    },
+  );
 
   function preparationHarness(pending = true, options = {}) {
     const {
@@ -1155,7 +1327,7 @@ async function main() {
     const asked = [];
     const confirmations = [];
     const verifyCalls = [];
-    // `prepareOutput` runs the app's own arrow over the real `features/save/prepare-output`; the
+    // `prepareOutput` is the shell's binding over the real `features/save/prepare-output`; the
     // document's facts and forms, the engine's byte operations and the prompt are the doubles.
     const savePlan = load(path.join(ROOT, 'apps/web/src/save-plan.ts'));
     const modules = saveModules({
@@ -1212,7 +1384,7 @@ async function main() {
       prepareDocumentOutput: modules('prepare-output.ts').prepareOutput,
     };
     return {
-      run: callback('prepareOutput', bindings),
+      run: bindPrepareOutput(bindings),
       tab,
       store,
       materialized: () => materialized,
@@ -1310,9 +1482,8 @@ async function main() {
       unreadable: unreadable ? ['damaged.json'] : [],
       enumerationFailed,
     };
-    // `forgetTabDraft` is the app's own cleanup callback over the real vault removal: the
-    // harness builds it from source, so a discard that stopped consulting the whole inventory
-    // would show up here as a delete it must not have made.
+    // `forgetTabDraft` is the shell's cleanup binding over the real vault removal, so a discard
+    // that stopped consulting the whole inventory would show up here as a delete it must not have made.
     const modules = persistenceModules();
     modules('persistence-store.ts').persistenceStore.set({
       channel: { peerReferences: () => [] },
@@ -1324,7 +1495,7 @@ async function main() {
         },
       },
     });
-    const forgetTabDraft = callback('forgetTabDraft', {
+    const forgetTabDraft = bindForgetTabDraft({
       store,
       forgetDraft: modules('draft-vault.ts').forgetDraft,
     });
@@ -1332,7 +1503,7 @@ async function main() {
     const pendingEngineValues = new Map([[tab.id, { entries: [], dropped: 0 }]]);
     // The redaction needles a document accumulated (`features/marks/redaction-store.ts`).
     const erasedWords = new Map();
-    // `discardTab` runs the app's own arrow over the real `features/save/close-actions`; the
+    // `discardTab` is the shell's binding over the real `features/save/close-actions`; the
     // engine handle, the staged values, the needles and the notice line are the doubles.
     const draftWrites = { current: Promise.resolve() };
     // The running operation's controller, which the core's `cancelOperation` aborts.
@@ -1361,7 +1532,7 @@ async function main() {
       discardDocument: closing('close-actions.ts').discardDocument,
     };
     return {
-      run: callback('discardTab', bindings),
+      run: bindDiscardTab(bindings),
       tab,
       bindings,
       pendingEngineValues,

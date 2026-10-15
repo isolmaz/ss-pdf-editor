@@ -168,10 +168,16 @@ export function tesseractLanguageUrl(code: OcrLanguageCode, quality: OcrQuality)
  * keyed by what the worker was initialized with — a worker is not re-initializable
  * cheaply, and mixing language sets in one worker would silently degrade accuracy.
  * A worker reads one thing at a time (a caller leases it, and gives it back): the pool
- * holds one worker, or as many as `allowOcrWorkers` allows to read pages side by side.
+ * holds one worker, or as many as its claims allow to read pages side by side.
+ *
+ * The pools are shared by whatever runs: two operations that read with the same language set
+ * share its workers. So a pool is owned by the operations that **claimed** it
+ * (`claimOcrWorkers`), and it is closed when the last of them lets go: an operation that
+ * finishes takes back only the pools nobody else still holds, never a worker another
+ * operation is reading with.
  */
 interface WorkerEntry {
-  readonly key: string;
+  readonly pool: Pool;
   /**
    * Filled in after the entry object exists — `createWorker` reports progress while
    * it is still resolving, so the logger needs a reachable entry before the worker
@@ -183,12 +189,15 @@ interface WorkerEntry {
 }
 
 interface Pool {
+  readonly key: string;
   /** Started workers, leased or idle. */
   readonly workers: Set<WorkerEntry>;
   readonly starting: Set<Promise<WorkerEntry>>;
   readonly idle: WorkerEntry[];
   /** Callers that found every worker busy and the pool full: each is woken when a worker is given back or lost. */
   readonly waiting: Array<() => void>;
+  /** The operations holding the pool, each with the number of workers it asked to read pages side by side. */
+  readonly claims: Map<OcrWorkerClaim, number>;
   closed: boolean;
 }
 
@@ -196,35 +205,92 @@ interface Pool {
 const MAX_POOL = 3;
 /** Machines reporting less memory (GiB, `navigator.deviceMemory`) than this read with one worker. */
 const MIN_MEMORY_FOR_POOL = 4;
+/**
+ * How long one read may take before its worker is taken for dead. A read is a synchronous run of
+ * the wasm core, so a worker whose thread died answers nothing at all, and without a bound the
+ * page would wait for it for ever. It is far above the slowest honest read (a dense page, three
+ * `best` models, a slow phone); the reader's own cancel ends a read sooner.
+ */
+export const OCR_READ_TIMEOUT_MS = 10 * 60_000;
 
 const pools = new Map<string, Pool>();
-/** The one pool that is allowed more than a worker (the page reader of an export), and how many. */
-let sized: { readonly key: string; readonly size: number } | null = null;
 
-/**
- * How many workers (at most `MAX_POOL`) the readers of `languages` at `quality` may use at once,
- * for pages read side by side; every other language set (the second look's English alone) has
- * one. Until a caller asks, every set has one; `terminateOcrWorkers` takes it back.
- */
-export function allowOcrWorkers(
-  count: number,
-  languages: readonly OcrLanguageCode[],
-  quality: OcrQuality,
-): void {
-  sized = { key: workerKey(languages, quality), size: Math.max(1, Math.min(MAX_POOL, Math.floor(count))) };
+/** One language set at one quality an operation is going to read with, and how many workers it may use at once. */
+export interface OcrWorkerRequest {
+  readonly languages: readonly OcrLanguageCode[];
+  readonly quality: OcrQuality;
+  /** Workers reading pages side by side, 1 to 3 (`MAX_POOL`); one by default. */
+  readonly workers?: number;
 }
 
-const sizeOf = (key: string): number => (sized?.key === key ? sized.size : 1);
+/** An operation's hold on the pools it reads with. */
+export interface OcrWorkerClaim {
+  /**
+   * Let go of every pool this claim holds. A pool nobody else holds is closed: its workers are
+   * terminated, and the promise resolves once their memory is back. A pool another operation
+   * still holds stays as it is. Calling it again does nothing.
+   */
+  release(): Promise<void>;
+}
+
+/**
+ * Hold the pools of `requests` for one operation (an OCR run, a Word export) until its `release`.
+ * A pool lets as many workers read pages side by side as the largest request of its holders asks
+ * for; a language set nobody asked about has one (the second look's English alone).
+ */
+export function claimOcrWorkers(requests: readonly OcrWorkerRequest[]): OcrWorkerClaim {
+  const held = new Set<Pool>();
+  let released: Promise<void> | undefined;
+  const claim: OcrWorkerClaim = {
+    release: () => {
+      released ??= Promise.all(
+        [...held].map(async (pool) => {
+          pool.claims.delete(claim);
+          if (pool.claims.size === 0) await closePool(pool);
+        }),
+      ).then(() => undefined);
+      return released;
+    },
+  };
+  for (const { languages, quality, workers } of requests) {
+    const pool = poolOf(languages, quality);
+    const asked = Math.max(1, Math.min(MAX_POOL, Math.floor(workers ?? 1)));
+    pool.claims.set(claim, Math.max(asked, pool.claims.get(claim) ?? 1));
+    held.add(pool);
+  }
+  return claim;
+}
+
+function poolOf(languages: readonly OcrLanguageCode[], quality: OcrQuality): Pool {
+  const key = workerKey(languages, quality);
+  let pool = pools.get(key);
+  if (pool === undefined) {
+    pool = {
+      key,
+      workers: new Set(),
+      starting: new Set(),
+      idle: [],
+      waiting: [],
+      claims: new Map(),
+      closed: false,
+    };
+    pools.set(key, pool);
+  }
+  return pool;
+}
 
 /**
  * How many workers this machine reads pages with side by side: one per core but one, at most 3
  * (each holds a wasm heap with the language models), at least 1; one on a machine that reports
- * less than 4 GiB of memory.
+ * less than 4 GiB of memory — and on one that does not report it at all. `navigator.deviceMemory`
+ * is a Chromium API: Firefox, Safari and every iOS browser leave it undefined, and those are
+ * exactly the devices where three wasm heaps with the language models get the tab killed, while
+ * one worker is only slower. An unknown amount of memory is therefore taken for a small one.
  */
 export function suggestedOcrWorkers(): number {
   const { hardwareConcurrency, deviceMemory } =
     (globalThis as { navigator?: { hardwareConcurrency?: number; deviceMemory?: number } }).navigator ?? {};
-  if ((deviceMemory ?? MIN_MEMORY_FOR_POOL) < MIN_MEMORY_FOR_POOL) return 1;
+  if (typeof deviceMemory !== 'number' || !(deviceMemory >= MIN_MEMORY_FOR_POOL)) return 1;
   return Math.max(1, Math.min(MAX_POOL, (hardwareConcurrency ?? 1) - 1));
 }
 
@@ -251,25 +317,51 @@ function abortError(): Error {
 }
 
 /**
- * Settle with whichever comes first: the engine's answer or the abort. A late
- * rejection of `work` is swallowed by the already-settled promise, so terminating a
- * worker mid-recognition cannot surface as an unhandled rejection.
+ * Settle with whichever comes first: the engine's answer, the abort, or `OCR_READ_TIMEOUT_MS`
+ * (a `timeout` error: the worker is taken for dead). A late rejection of `work` is swallowed by
+ * the already-settled promise, so terminating a worker mid-recognition cannot surface as an
+ * unhandled rejection.
  */
 async function raceWithAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) throw abortError();
   return await new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(abortError());
+    const settle = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      settle();
+      reject(abortError());
+    };
+    const timer = setTimeout(() => {
+      settle();
+      reject(
+        new ToolError('timeout', {
+          engine: 'tesseract',
+          engineMessage: `the worker did not answer within ${OCR_READ_TIMEOUT_MS / 1000} s`,
+        }),
+      );
+    }, OCR_READ_TIMEOUT_MS);
     signal.addEventListener('abort', onAbort, { once: true });
-    void work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+    work.then(
+      (value) => {
+        settle();
+        resolve(value);
+      },
+      (error: unknown) => {
+        settle();
+        reject(error);
+      },
+    );
   });
 }
 
 async function createWorkerEntry(
+  pool: Pool,
   languages: readonly OcrLanguageCode[],
   quality: OcrQuality,
 ): Promise<WorkerEntry> {
   const tesseract = await loadTesseract();
-  const key = workerKey(languages, quality);
   /**
    * The entry exists *before* the worker is created, and its `worker` is filled in
    * afterwards. It has to: tesseract reports progress ("initializing tesseract",
@@ -278,7 +370,7 @@ async function createWorkerEntry(
    * `Cannot access 'entry' before initialization` on every run — an error the user
    * never saw, but one that made OCR log a page error each time.
    */
-  const entry: WorkerEntry = { key, onProgress: undefined, worker: undefined as unknown as TesseractWorker };
+  const entry: WorkerEntry = { pool, onProgress: undefined, worker: undefined as unknown as TesseractWorker };
   entry.worker = await tesseract.createWorker([...languages], undefined, {
     workerPath: TESSERACT_ASSETS.worker,
     corePath: TESSERACT_ASSETS.core,
@@ -316,17 +408,13 @@ async function acquireWorker(
   quality: OcrQuality,
   signal: AbortSignal,
 ): Promise<WorkerEntry> {
-  const key = workerKey(languages, quality);
-  let pool = pools.get(key);
-  if (pool === undefined) {
-    pool = { workers: new Set(), starting: new Set(), idle: [], waiting: [], closed: false };
-    pools.set(key, pool);
-  }
+  const pool = poolOf(languages, quality);
   for (;;) {
     const idle = pool.idle.pop();
     if (idle !== undefined) return idle;
-    if (pool.workers.size + pool.starting.size < sizeOf(key)) {
-      const pending = createWorkerEntry(languages, quality);
+    // The room the claims ask for: the largest request of the operations holding the pool, one if none does.
+    if (pool.workers.size + pool.starting.size < Math.max(1, ...pool.claims.values())) {
+      const pending = createWorkerEntry(pool, languages, quality);
       pool.starting.add(pending);
       try {
         const entry = await pending;
@@ -345,19 +433,19 @@ async function acquireWorker(
 
 /** The worker is free for the next caller. */
 function giveBack(entry: WorkerEntry): void {
-  const pool = pools.get(entry.key);
-  if (pool === undefined || !pool.workers.has(entry)) return;
+  const { pool } = entry;
+  if (!pool.workers.has(entry)) return;
   entry.onProgress = undefined;
   pool.idle.push(entry);
   wake(pool);
 }
 
-/** Terminate a worker and forget it (the abort of its caller); a waiting caller takes its place. */
+/** Terminate a worker and forget it (the abort of its caller, a read that failed); a waiting caller takes its place. */
 async function releaseWorker(entry: WorkerEntry): Promise<void> {
   entry.onProgress = undefined;
-  const pool = pools.get(entry.key);
-  pool?.workers.delete(entry);
-  if (pool !== undefined) wake(pool);
+  const { pool } = entry;
+  pool.workers.delete(entry);
+  wake(pool);
   try {
     await entry.worker.terminate();
   } catch {
@@ -366,28 +454,32 @@ async function releaseWorker(entry: WorkerEntry): Promise<void> {
   }
 }
 
-/** Drop every cached worker — the operation's cleanup step. */
-export async function terminateOcrWorkers(): Promise<void> {
-  const dropped = [...pools.values()];
-  pools.clear();
-  sized = null;
+/** Close a pool whoever holds it: its waiting callers are sent away, its workers terminated and forgotten. */
+async function closePool(pool: Pool): Promise<void> {
+  pool.closed = true;
+  if (pools.get(pool.key) === pool) pools.delete(pool.key);
+  for (const resume of pool.waiting.splice(0)) resume();
+  // Workers still starting are waited for, then terminated with the rest.
+  await Promise.allSettled(pool.starting);
   await Promise.all(
-    dropped.map(async (pool) => {
-      pool.closed = true;
-      for (const resume of pool.waiting.splice(0)) resume();
-      // Workers still starting are waited for, then terminated with the rest.
-      await Promise.allSettled(pool.starting);
-      await Promise.all(
-        [...pool.workers].map(async (entry) => {
-          // Awaited, not fired and forgotten: `terminate()` resolves once the worker's wasm
-          // heap is actually released, and an OCR operation's caller treats this function's
-          // resolution as “the memory is back”. Returning early made that a lie.
-          await entry.worker.terminate().catch(() => undefined);
-        }),
-      );
-      pool.workers.clear();
+    [...pool.workers].map(async (entry) => {
+      // Awaited, not fired and forgotten: `terminate()` resolves once the worker's wasm
+      // heap is actually released, and an OCR operation's caller treats the resolution of
+      // its claim's `release` as “the memory is back”. Returning early made that a lie.
+      await entry.worker.terminate().catch(() => undefined);
     }),
   );
+  pool.workers.clear();
+  pool.idle.length = 0;
+}
+
+/**
+ * Drop every pool, whatever claims it — the reset of a test run or a shutdown. An operation
+ * does not call this: it lets go of its own share through its claim (`claimOcrWorkers`), which
+ * leaves the pools other operations still hold alone.
+ */
+export async function terminateOcrWorkers(): Promise<void> {
+  await Promise.all([...pools.values()].map(closePool));
 }
 
 /**
@@ -422,15 +514,7 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
   }
 
   entry.onProgress = input.onProgress;
-  const onAbort = () => {
-    void releaseWorker(entry);
-  };
-  input.signal.addEventListener('abort', onAbort, { once: true });
-  try {
-    // `recognize` runs synchronously inside the wasm core, so it cannot be
-    // interrupted from the outside; the race makes the *caller* return an AbortError
-    // immediately once the worker has been terminated, instead of waiting for a
-    // worker that will never answer again.
+  return await readOn(entry, input.signal, async () => {
     const read = () =>
       entry.worker.recognize(
         input.image,
@@ -439,19 +523,39 @@ export async function recognizePage(input: RecognizeInput): Promise<RecognizeRes
         // serialize the whole page again for nothing.
         { blocks: true, text: false, hocr: false, tsv: false },
       );
-    const result = await raceWithAbort(
-      input.automaticLayout === true ? inMode(entry.worker, PSM_AUTO, read) : read(),
-      input.signal,
-    );
+    const result = await (input.automaticLayout === true ? inMode(entry.worker, PSM_AUTO, read) : read());
     return {
       words: collectWords(result.data, input.scale),
       confidence: result.data.confidence,
     };
+  });
+}
+
+/**
+ * Run `work` on the worker the caller leased, and give it back — unless it can no longer be trusted.
+ *
+ * `recognize` runs synchronously inside the wasm core, so it cannot be interrupted from the
+ * outside; the race makes the *caller* return an AbortError immediately once the worker has been
+ * terminated, instead of waiting for a worker that will never answer again. It also bounds the
+ * wait: a worker whose thread died answers nothing, and `OCR_READ_TIMEOUT_MS` ends that read.
+ *
+ * A read that fails for any reason but the caller's abort leaves the worker in an unknown state
+ * (a crashed wasm heap, a thread that is gone). It is terminated and forgotten rather than given
+ * back, so the next page starts a fresh worker instead of failing on a dead one.
+ */
+async function readOn<T>(entry: WorkerEntry, signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+  const onAbort = () => {
+    void releaseWorker(entry);
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    return await raceWithAbort(work(), signal);
   } catch (error) {
-    if (input.signal.aborted) throw abortError();
+    if (signal.aborted) throw abortError();
+    await releaseWorker(entry);
     throw mapTesseractError(error, 'recognize');
   } finally {
-    input.signal.removeEventListener('abort', onAbort);
+    signal.removeEventListener('abort', onAbort);
     giveBack(entry);
   }
 }
@@ -499,30 +603,17 @@ export async function recognizeWord(
     giveBack(entry);
     throw abortError();
   }
-  const onAbort = () => {
-    void releaseWorker(entry);
-  };
-  input.signal.addEventListener('abort', onAbort, { once: true });
-  try {
-    return await raceWithAbort(
-      inMode(entry.worker, PSM_SINGLE_WORD, async () => {
-        const result = await entry.worker.recognize(
-          input.image,
-          {},
-          { blocks: false, text: true, hocr: false, tsv: false },
-        );
-        const text = result.data.text.trim();
-        return text.length === 0 ? null : { text, confidence: result.data.confidence };
-      }),
-      input.signal,
-    );
-  } catch (error) {
-    if (input.signal.aborted) throw abortError();
-    throw mapTesseractError(error, 'recognize');
-  } finally {
-    input.signal.removeEventListener('abort', onAbort);
-    giveBack(entry);
-  }
+  return await readOn(entry, input.signal, () =>
+    inMode(entry.worker, PSM_SINGLE_WORD, async () => {
+      const result = await entry.worker.recognize(
+        input.image,
+        {},
+        { blocks: false, text: true, hocr: false, tsv: false },
+      );
+      const text = result.data.text.trim();
+      return text.length === 0 ? null : { text, confidence: result.data.confidence };
+    }),
+  );
 }
 
 function collectWords(page: Page, scale: number): OcrWord[] {
@@ -585,15 +676,23 @@ export function mapTesseractError(error: unknown, context: string): ToolError {
 }
 
 /**
- * Availability probe for the offline readiness screen: a HEAD
- * request to the exact pinned path. It reports what the browser can actually reach,
+ * Availability probe for the offline readiness screen: a GET request to the exact pinned
+ * path, of which only the status is read. It reports what the browser can actually reach,
  * which is the question the screen asks; a network failure is an answer ("not
  * available"), not an error to surface.
+ *
+ * It is a GET and not a HEAD because the service worker answers GETs only
+ * (`public/sw.js` `isCacheable`): a HEAD goes straight to the network, so a pack the device
+ * holds in the worker's cache was reported missing offline and the run was refused as
+ * `ocr-language-missing`. The pack is a multi-megabyte model the worker downloads for itself
+ * when it starts, so the body is cancelled unread as soon as the status is known.
  */
 export async function isOcrLanguageAvailable(code: OcrLanguageCode, quality: OcrQuality): Promise<boolean> {
   try {
-    const response = await fetch(tesseractLanguageUrl(code, quality), { method: 'HEAD' });
-    return response.ok;
+    const response = await fetch(tesseractLanguageUrl(code, quality), { method: 'GET' });
+    const available = response.ok;
+    await response.body?.cancel().catch(() => undefined);
+    return available;
   } catch {
     // Offline or blocked: the language is not available right now.
     return false;

@@ -1,9 +1,20 @@
+import { ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import { JOURNAL_SCHEMA, type JournalEntry, OperationJournal } from './journal';
 
+/** What `work` throws, or `undefined` when it does not. */
+function restoreError(work: () => unknown): unknown {
+  try {
+    work();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
+
 /**
  * Behavioural contract of the single chronological journal.
- * These are the properties the undo/redo UI and the save router depend on; the
+ * These are the properties the undo/redo UI and the save plan depend on; the
  * `highlight → rotate → comment → undo×3` case is the acceptance case.
  */
 
@@ -112,6 +123,9 @@ describe('OperationJournal', () => {
       expect(() => OperationJournal.fromJSON({ ...entries.toJSON(), cursor }), String(cursor)).toThrow(
         /cursor/,
       );
+      expect(restoreError(() => OperationJournal.fromJSON({ ...entries.toJSON(), cursor }))).toBeInstanceOf(
+        ToolError,
+      );
     }
   });
 
@@ -161,6 +175,29 @@ describe('OperationJournal', () => {
     expect(() => OperationJournal.fromJSON({ schema: JOURNAL_SCHEMA + 1, entries: [], cursor: 0 })).toThrow(
       /schema/,
     );
+  });
+
+  it('reports a snapshot it cannot restore as a corrupt document, in the error contract', () => {
+    const schema = restoreError(() =>
+      OperationJournal.fromJSON({ schema: JOURNAL_SCHEMA + 1, entries: [], cursor: 0 }),
+    );
+    expect(schema).toBeInstanceOf(ToolError);
+    expect(schema).toMatchObject({
+      code: 'corrupt-document',
+      details: {
+        engine: 'model',
+        engineMessage: `journal schema ${JOURNAL_SCHEMA + 1} is not readable by this build`,
+      },
+    });
+
+    const cursor = restoreError(() =>
+      OperationJournal.fromJSON({ schema: JOURNAL_SCHEMA, entries: [], cursor: 3 }),
+    );
+    expect(cursor).toBeInstanceOf(ToolError);
+    expect(cursor).toMatchObject({
+      code: 'corrupt-document',
+      details: { engine: 'model', engineMessage: 'journal cursor 3 is outside 0…0' },
+    });
   });
 
   it('refuses a cursor that points outside the entries it restored', () => {

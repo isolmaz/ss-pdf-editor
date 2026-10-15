@@ -79,6 +79,35 @@ test('the find bar counts matches, walks them forward and back across pages and 
   await expect(bar).toHaveCount(0);
 });
 
+test('Escape in the find field closes the bar and every highlight, while the Escape of the palette leaves the search alone', async ({
+  page,
+}) => {
+  await openPdf(page);
+  await page.keyboard.press('Control+f');
+  const bar = page.getByRole('search');
+  const box = bar.getByRole('textbox', { name: 'Find in document' });
+  await box.fill('line');
+  await box.press('Enter');
+  await expect(bar.locator('span').first()).toHaveText('1 of 5 matches');
+  const highlights = page.locator(
+    '.pdfViewer[data-active-viewer] .page[data-page-number="1"] .textLayer .highlight',
+  );
+  await expect(highlights).toHaveCount(4);
+
+  // The palette owns the Escape pressed in it: the bar and the highlights stay.
+  await page.keyboard.press('Control+k');
+  await expect(page.getByRole('combobox')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('combobox')).toBeHidden();
+  await expect(bar).toBeVisible();
+  await expect(highlights).toHaveCount(4);
+
+  // Escape in the field closes the bar and takes the highlights with it.
+  await box.press('Escape');
+  await expect(bar).toHaveCount(0);
+  await expect(highlights).toHaveCount(0);
+});
+
 test('with the hand tool a drag pans the page area by the distance travelled; the selection tool does not', async ({
   page,
 }) => {

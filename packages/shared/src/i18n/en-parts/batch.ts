@@ -5,6 +5,7 @@ export const batchPart = {
   'batch.queue': 'File queue',
   'batch.queue.hint': 'Each file is processed independently; documents never leave this device.',
   'batch.name': 'Ruleset name',
+  'batch.name.default': 'ruleset',
   'batch.steps': 'Steps',
   'batch.steps.hint':
     'Checked steps run in sequence. If page scope is left empty, step applies to all pages in file.',
@@ -23,7 +24,8 @@ export const batchPart = {
   'batch.report.skipped': 'Skipped (run stopped).',
   'batch.report.cancelled': 'Batch cancelled. Completed files: {names}',
   'batch.report.summary': '{completed} completed, {failed} failed, {skipped} skipped',
+  'batch.error.range': 'Step “{step}”, page range “{value}”.',
+  'batch.error.total': 'The queued files add up to more than {max} MB.',
+  'batch.error.total.hint': 'Remove some files from the queue and run again.',
   'batch.error.queue': 'Could not read step settings.',
-  'batch.error.steps': 'Select at least one step.',
-  'batch.error.template': 'Could not read ruleset file.',
 } as const;

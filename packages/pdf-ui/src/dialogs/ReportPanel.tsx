@@ -41,7 +41,7 @@ const NOTE_HEADINGS: Record<OperationNoteKind, MessageKey> = {
  * The honesty contract as colour role: the loss group is the strong one, an
  * advisory takes the amber the rest of the product uses for warnings, and the
  * groups that describe survival recede. Status is never colour alone — each
- * group's own heading is the word (`DESIGN.md`, "The Never-Colour-Alone Rule").
+ * group's own heading is the word.
  */
 const NOTE_TONE: Record<OperationNoteKind, { readonly heading: string; readonly text: string }> = {
   lost: { heading: 'text-kumo-strong', text: 'text-kumo-default' },

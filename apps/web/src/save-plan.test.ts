@@ -5,7 +5,6 @@
  * or a rewrite reported as harmless.
  */
 
-import type { AnnotationMark } from 'pdf-core';
 import { type JsonValue, SessionStore } from 'pdf-model';
 import { describe, expect, it } from 'vitest';
 import {
@@ -157,10 +156,8 @@ describe('planSaveExecution', () => {
   const master = bytes(37, 80, 68, 70, 1, 2, 3);
   const tabOf = () =>
     new SessionStore().openDocument({ name: 'a.pdf', bytes: master, sha256: 'hash', pageCount: 1 });
-  const input = (baseBytes: Uint8Array, extra: { engineDirty?: boolean } = {}) => ({
+  const input = (baseBytes: Uint8Array) => ({
     tab: tabOf(),
-    engineDirty: extra.engineDirty ?? false,
-    annotations: [],
     baseBytes,
     encryptedOutput: false,
     executedSteps: [{ id: 'pdfjs.saveDocument', engine: 'pdfjs', note: 'engine save' }],
@@ -203,11 +200,9 @@ describe('planSaveExecution', () => {
     ]);
   });
 
-  it('leaves the steps of an undone entry out of the plan and the change set', () => {
+  it('leaves the steps of an undone entry out of the plan', () => {
     const plan = planSaveExecution({ ...input(master), tab: tabWithHistory(1) });
     expect(plan.appliedSteps.map((step) => step.id)).toEqual(['rotate', 'bates']);
-    expect(plan.changeSet.metadata).toBe(false);
-    expect(plan.changeSet.pageOrder).toBe(true);
   });
 
   it('returns the bytes of the versions the applied history produced, not undone or malformed ones', () => {
@@ -228,19 +223,6 @@ describe('planSaveExecution', () => {
       bytes(3),
       bytes(4),
     ]);
-  });
-
-  it('marks annotations changed only for unsaved engine values or live annotations', () => {
-    expect(planSaveExecution(input(master)).changeSet.annotations).toBe(false);
-    const mark = { kind: 'note' } as unknown as AnnotationMark;
-    expect(planSaveExecution({ ...input(master), annotations: [mark] }).changeSet.annotations).toBe(true);
-  });
-
-  it('marks annotations and forms changed when the engine holds unsaved values', () => {
-    expect(planSaveExecution(input(master)).changeSet.forms).toBe(false);
-    const dirty = planSaveExecution(input(master, { engineDirty: true })).changeSet;
-    expect(dirty.forms).toBe(true);
-    expect(dirty.annotations).toBe(true);
   });
 });
 

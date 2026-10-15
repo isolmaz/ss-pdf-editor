@@ -35,19 +35,21 @@ import { FolderOpen, Play, Stop, X } from '@phosphor-icons/react';
 import {
   BATCH_STEP_KINDS,
   BATCH_TEMPLATE_VERSION,
+  type BatchItem,
   type BatchPageSelection,
   type BatchReport,
   type BatchRuleSet,
   type BatchStep,
   type BatchStepKind,
+  MAX_BATCH_BYTES,
   MAX_BATCH_ITEMS,
   type BatchPageSelection as PageSelection,
   parseRuleSet,
   runBatch,
   serializeRuleSet,
 } from 'pdf-core/ops/batch';
-import type { OutputFile } from 'pdf-core/ops/types';
-import { type MessageKey, type Translator, toToolError } from 'pdf-shared';
+import type { OperationProgress, OutputFile } from 'pdf-core/ops/types';
+import { type MessageKey, progressLabel, ToolError, type Translator, toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { parsePageRange } from '../printing/pageRange';
@@ -419,13 +421,17 @@ const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
  */
 const RANGE_CEILING = 2000;
 
-/** A page field value (`''`, `all`, or typed range text) as a batch page selection. */
-function pageSelection(value: FieldValue | undefined, path: string): BatchPageSelection {
+/**
+ * A page field value (`''`, `all`, or typed range text) as a batch page selection. A range that does
+ * not parse is a `range-invalid` `ToolError` that names the step in `path` and carries the typed text
+ * in `engineMessage`, so the dialog words it from its own keys instead of showing an `Error` message.
+ */
+function pageSelection(value: FieldValue | undefined, step: BatchStepKind): BatchPageSelection {
   const raw = text(value).trim();
   if (raw === '' || raw === 'all') return 'all';
   const parsed = parsePageRange(raw, RANGE_CEILING);
   if (!parsed.ok) {
-    throw new Error(`${path}: ${raw}`);
+    throw new ToolError('range-invalid', { engine: 'ui', path: step, engineMessage: raw });
   }
   return parsed.pages.map((page) => page - 1);
 }
@@ -527,7 +533,7 @@ function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['par
       };
     case 'text-export':
       return {
-        pages: pageSelection(values.pages, 'export'),
+        pages: pageSelection(values.pages, 'text-export'),
         format: values.format === 'markdown' ? 'markdown' : 'text',
         // The rule set's own name becomes the file's stem; `runBatch` prefixes the
         // item's name, so two files never collide in the download.
@@ -595,14 +601,17 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
   const [files, setFiles] = useState<readonly File[]>([]);
   const [enabled, setEnabled] = useState<Readonly<Record<BatchStepKind, boolean>>>(DEFAULT_STEPS);
   const [values, setValues] = useState<Readonly<Record<BatchStepKind, DialogParams>>>(initialValues);
-  const [name, setName] = useState('toplu');
+  // Blank means "the interface language's default name" (`batch.name.default`), so it follows a language
+  // change and is never frozen in the language the dialog happened to open in.
+  const [name, setName] = useState('');
   const [loaded, setLoaded] = useState<BatchRuleSet | null>(null);
   const [status, setStatus] = useState<Status>('idle');
   const [progress, setProgress] = useState<{
     item: string;
     done: number;
     total: number;
-    label: MessageKey | null;
+    /** What the running operation itself reported, `null` between files. */
+    step: OperationProgress | null;
   } | null>(null);
   const [report, setReport] = useState<BatchReport | null>(null);
   const [failure, setFailure] = useState<FailureText | null>(null);
@@ -611,14 +620,23 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
   const templateInput = useRef<HTMLInputElement | null>(null);
   const [watchedDirName, setWatchedDirName] = useState<string | null>(null);
   const [isWatching, setIsWatching] = useState(false);
+  /** The folder being watched; every await of a watch checks it is still the one it started for. */
   const watchedDirHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
   const watchIntervalRef = useRef<number | null>(null);
+  const unmounted = useRef(false);
+  /** The queue as the last render saw it: the watch timer must not read it from a stale closure. */
+  const filesRef = useRef(files);
+  filesRef.current = files;
 
-  // Clean up controller and watch interval on unmount
+  // Everything that outlives a render stops with the dialog: the run, the folder timer, and a folder
+  // picked after the dialog is gone.
   useEffect(() => {
+    unmounted.current = false;
     return () => {
+      unmounted.current = true;
       controller.current?.abort();
       clearInterval(watchIntervalRef.current ?? undefined);
+      watchedDirHandleRef.current = null;
     };
   }, []);
 
@@ -653,11 +671,16 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
       }
       const win = window as unknown as WindowWithDirPicker;
       const dirHandle = await win.showDirectoryPicker();
+      // The dialog was closed while the picker was open: nothing is left to watch for.
+      if (unmounted.current) return;
       watchedDirHandleRef.current = dirHandle;
       setWatchedDirName(dirHandle.name);
       setIsWatching(true);
 
       const initialFiles = await scanDirectory(dirHandle);
+      // Stopped, replaced by another folder or closed while the folder was being listed: this
+      // listing belongs to a watch that is over, so it queues nothing and starts no timer.
+      if (watchedDirHandleRef.current !== dirHandle) return;
       if (initialFiles.length > 0) {
         setFiles(initialFiles.slice(0, MAX_BATCH_ITEMS));
         onNotice?.(t('batch.folder.scanned', { count: initialFiles.length }));
@@ -666,19 +689,19 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
       clearInterval(watchIntervalRef.current ?? undefined);
       watchIntervalRef.current = window.setInterval(async () => {
         try {
-          if (!watchedDirHandleRef.current) return;
-          const currentFiles = await scanDirectory(watchedDirHandleRef.current);
-          setFiles((prev) => {
-            const prevIds = new Set(prev.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
-            const changed =
-              currentFiles.length !== prev.length ||
-              currentFiles.some((f) => !prevIds.has(`${f.name}:${f.size}:${f.lastModified}`));
-            if (changed) {
-              onNotice?.(t('batch.folder.scanned', { count: currentFiles.length }));
-              return currentFiles.slice(0, MAX_BATCH_ITEMS);
-            }
-            return prev;
-          });
+          const currentFiles = await scanDirectory(dirHandle);
+          if (watchedDirHandleRef.current !== dirHandle) return;
+          // Decided here, from the queue as it is now: a state updater runs twice in Strict Mode,
+          // and the notice is a side effect that belongs outside it.
+          const previous = filesRef.current;
+          const previousIds = new Set(previous.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
+          const changed =
+            currentFiles.length !== previous.length ||
+            currentFiles.some((f) => !previousIds.has(`${f.name}:${f.size}:${f.lastModified}`));
+          if (changed) {
+            setFiles(currentFiles.slice(0, MAX_BATCH_ITEMS));
+            onNotice?.(t('batch.folder.scanned', { count: currentFiles.length }));
+          }
         } catch {
           // Folder access revoked or disconnected
         }
@@ -697,16 +720,22 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
     setLoaded(null);
   };
 
+  /** The name the rule set and its file carry: the typed one, else the interface language's default. */
+  const ruleSetName = name.trim() === '' ? t('batch.name.default') : name.trim();
+
   const ruleSet = useCallback((): BatchRuleSet => {
     if (loaded !== null) return loaded;
     return {
       version: BATCH_TEMPLATE_VERSION,
-      name: name.trim() === '' ? 'toplu' : name.trim(),
+      name: ruleSetName,
       steps: chosen.map((kind) => ({ kind, params: stepParams(kind, values[kind]) }) as BatchStep),
     };
-  }, [chosen, loaded, name, values]);
+  }, [chosen, loaded, ruleSetName, values]);
 
   const start = useCallback(async () => {
+    // The run owns the controller from the moment it starts, so a second press — before the first has
+    // rendered its Cancel button — is no second run racing the first for the one `controller`.
+    if (controller.current !== null) return;
     setFailure(null);
     setReport(null);
     let built: BatchRuleSet;
@@ -714,22 +743,29 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
       built = ruleSet();
     } catch (error) {
       // A page field that does not parse is the one thing the field table cannot
-      // refuse on its own (it is text, and the bound is the item's own count).
-      const detail = (error as Error).message;
-      setFailure({ message: t('batch.error.queue'), hint: detail });
+      // refuse on its own (it is text, and the bound is the item's own count): the
+      // mapped hint says what a range looks like, and the step and typed text say where.
+      const mapped = toToolError(error, 'ui');
+      // `stepParams` throws only `pageSelection`'s refusal, which always names both.
+      const where = t('batch.error.range', {
+        step: t(STEP_LABEL_KEYS[mapped.details.path as BatchStepKind]),
+        value: mapped.details.engineMessage as string,
+      });
+      setFailure({ message: t('batch.error.queue'), hint: `${t(mapped.hintKey)} ${where}` });
       setStatus('error');
       return;
     }
-    const queue = await Promise.all(
-      files.slice(0, MAX_BATCH_ITEMS).map(async (file) => ({
-        name: file.name,
-        bytes: new Uint8Array(await file.arrayBuffer()),
-      })),
-    );
+    // Sized by `File.size` and read by the engine one file at a time, as the run reaches it: a queue
+    // is never held in memory before its sizes have been checked against the bounds.
+    const queue: BatchItem[] = files.slice(0, MAX_BATCH_ITEMS).map((file) => ({
+      name: file.name,
+      size: file.size,
+      read: async () => new Uint8Array(await file.arrayBuffer()),
+    }));
     const abort = new AbortController();
     controller.current = abort;
     setStatus('running');
-    setProgress({ item: '', done: 0, total: queue.length, label: null });
+    setProgress({ item: '', done: 0, total: queue.length, step: null });
     try {
       const result = await runBatch(queue, built, {
         signal: abort.signal,
@@ -738,7 +774,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
             item: entry.itemName,
             done: entry.doneItems,
             total: entry.totalItems,
-            label: entry.operation?.labelKey ?? null,
+            step: entry.operation,
           }),
       });
       setReport(result);
@@ -752,10 +788,21 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
       );
     } catch (error) {
       const mapped = toToolError(error, 'ui');
-      setFailure({ message: t(mapped.messageKey), hint: t(mapped.hintKey) });
+      // Every file is checked against the file ceiling on its own row of the report, so the one run-wide
+      // refusal about size is the queue's total.
+      setFailure(
+        mapped.code === 'file-too-large'
+          ? {
+              message: t('batch.error.total', { max: MAX_BATCH_BYTES / (1024 * 1024) }),
+              hint: t('batch.error.total.hint'),
+            }
+          : { message: t(mapped.messageKey), hint: t(mapped.hintKey) },
+      );
       setStatus('error');
     } finally {
       controller.current = null;
+      // Whatever ended the run (a report, a cancel, a refusal), it is not "Processing" any more.
+      setProgress(null);
     }
   }, [files, onNotice, ruleSet, t]);
 
@@ -766,7 +813,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
       const json = serializeRuleSet(ruleSet());
       onDownload([
         {
-          name: `${name.trim() === '' ? 'toplu' : name.trim()}.batch.json`,
+          name: `${ruleSetName}.batch.json`,
           bytes: new TextEncoder().encode(json),
           mime: 'application/json',
         },
@@ -775,7 +822,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
       const mapped = toToolError(error, 'ui');
       setFailure({ message: t(mapped.messageKey), hint: t(mapped.hintKey) });
     }
-  }, [name, onDownload, ruleSet, t]);
+  }, [onDownload, ruleSet, ruleSetName, t]);
 
   const download = useCallback(
     (finished: BatchReport) => {
@@ -931,6 +978,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
               <input
                 className="border border-kumo-line bg-kumo-base px-2 py-1 text-xs text-kumo-default"
                 value={name}
+                placeholder={t('batch.name.default')}
                 disabled={running || loaded !== null}
                 onChange={(event) => setName(event.target.value)}
               />
@@ -969,7 +1017,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
           {progress === null ? null : (
             <div className="flex flex-col gap-1.5">
               <p role="status" aria-live="polite" className="text-xs text-kumo-subtle">
-                {progress.label === null ? t('batch.progress') : t(progress.label)}
+                {progress.step === null ? t('batch.progress') : progressLabel(t, progress.step)}
               </p>
               <Meter
                 label={t('batch.progress')}
@@ -996,9 +1044,13 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
         </div>
 
         <div className="shrink-0 pt-2 border-t border-kumo-line/40 flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} icon={X}>
-            {running ? t('batch.cancel') : t('batch.close')}
-          </Button>
+          {/* While a run is going the one way out is Cancel: it stops the run and leaves the dialog open
+              on the report. Close is offered when nothing runs. */}
+          {running ? null : (
+            <Button variant="outline" onClick={onClose} icon={X}>
+              {t('batch.close')}
+            </Button>
+          )}
           {report === null || running ? null : (
             <Button variant="outline" onClick={() => download(report)}>
               {t('batch.download')}

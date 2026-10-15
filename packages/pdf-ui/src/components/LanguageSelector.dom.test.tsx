@@ -242,6 +242,28 @@ describe('a language whose dictionary is not loaded yet', () => {
     await waitFor(() => expect(pressed()).toEqual(['Deutsch']));
   });
 
+  it('starts in its fallback and stays in the stored language when its dictionary fails to load', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      register('fi', {
+        nativeName: 'Suomi',
+        fallback: 'en',
+        load: () => Promise.reject(new Error('offline')),
+      });
+      window.localStorage.setItem(STORAGE_KEY, 'fi');
+      render(<LanguageSelector t={t} />);
+
+      expect(pressed()).toEqual(['English']);
+      await waitFor(() => expect(pressed()).toEqual(['Suomi']));
+      // The rejection was handled: give the runtime its turn to report one that was not.
+      await new Promise((settle) => setTimeout(settle, 20));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
   it('starts in Turkish when it has no fallback', async () => {
     register('nl', { nativeName: 'Nederlands' });
     window.localStorage.setItem(STORAGE_KEY, 'nl');

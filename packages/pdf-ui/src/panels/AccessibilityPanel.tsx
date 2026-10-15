@@ -63,6 +63,7 @@ import { PanelLoading, PanelMessage } from './PanelParts';
 import { PdfUaView, type WrittenOutcome } from './PdfUaView';
 import { type AccessibilityView, readingOrderStore, useReadingOrder } from './reading-order-store';
 import { TagsView } from './TagsView';
+import { useAbortableRuns } from './useAbortableRuns';
 
 /** See the header: turns a key string into a `MessageKey`. */
 const key = (value: string): MessageKey => value as MessageKey;
@@ -125,28 +126,23 @@ type ReportViewProps = Pick<
 function AccessibilityReportView({ t, read, language, onTagged, onAltWritten, onNotice }: ReportViewProps) {
   const [state, setState] = useState<PanelState>(INITIAL);
   const [drafts, setDrafts] = useState<Readonly<Record<string, string>>>({});
-  const alive = useRef(true);
+  const runs = useAbortableRuns();
   const handlers = useRef({ onNotice, t });
   handlers.current = { onNotice, t };
-
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
 
   const run = useCallback(
     async (
       work: (context: OperationContext) => Promise<WrittenOutcome | AccessibilityReport>,
       kind: 'check' | 'tag' | 'alt',
     ) => {
-      const controller = new AbortController();
+      // A panel that closes while the check or a write is working stops the engine and says
+      // nothing: a run the closing cut short is abandoned (`useAbortableRuns`).
+      const controller = runs.begin();
       const context: OperationContext = { signal: controller.signal };
       setState((current) => ({ ...current, busy: true, failure: null }));
       try {
         const result = await work(context);
-        if (!alive.current) return;
+        if (controller.signal.aborted) return;
         if ('findings' in result) {
           setState({ report: result, busy: false, stale: false, failure: null, notes: [] });
           return;
@@ -155,15 +151,15 @@ function AccessibilityReportView({ t, read, language, onTagged, onAltWritten, on
         else onAltWritten?.(result);
         setState((current) => ({ ...current, busy: false, stale: true, notes: result.notes }));
       } catch (error) {
-        if (!alive.current) return;
+        if (controller.signal.aborted) return;
         const failure = toToolError(error, 'ui');
         setState((current) => ({ ...current, busy: false, failure: failure.messageKey }));
         handlers.current.onNotice?.(handlers.current.t(failure.messageKey));
       } finally {
-        controller.abort();
+        runs.end(controller);
       }
     },
-    [onAltWritten, onTagged],
+    [onAltWritten, onTagged, runs],
   );
 
   const check = useCallback(

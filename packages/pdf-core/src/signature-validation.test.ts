@@ -220,6 +220,61 @@ describe('evaluateEvidence with several timestamp tokens', () => {
     expect(reported.validationTimeSource).not.toBe('timestamp');
   });
 
+  it('prefers a token from a trusted TSA over an earlier valid one nobody vouched for, and keeps the first of equals', async () => {
+    const setup = await pki();
+    const { ca, crl } = setup;
+    // A second PKI no one imported: its token verifies, but is not trusted.
+    const rogueCa = await issueCertificate({
+      subject: 'Rogue CA',
+      keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+      ...VALID,
+      basicConstraints: { cA: true },
+      keyUsage: ['keyCertSign', 'cRLSign'],
+    });
+    const rogueTsa = await issueCertificate(
+      {
+        subject: 'Rogue TSA',
+        keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+        ...VALID,
+        basicConstraints: { cA: false },
+        keyUsage: ['digitalSignature'],
+        extraExtensions: [extKeyUsageExtension([KP_TIME_STAMPING])],
+      },
+      rogueCa,
+    );
+    const rogue = async (covered: Uint8Array, genTime: Date) =>
+      await issueTimestampToken({ tsa: rogueTsa, covered, genTime, extraCertificates: [rogueCa] });
+    const trustedConfig = { roots: [ca.der], importedCrls: [crl] };
+
+    const untrustedFirst = await stamped(setup, async (covered) => [
+      await rogue(covered, day(3, 2)),
+      await stampOf(setup, covered, day(3, 3)),
+    ]);
+    const chosen = await evaluateEvidence({
+      ...input(untrustedFirst.cms, untrustedFirst.signer, untrustedFirst.ca),
+      ...trustedConfig,
+    });
+    expect(chosen.timestamp).toMatchObject({ status: 'valid', tsa: 'TSA', trusted: true });
+    expect(chosen.timestamp?.genTime).toBe(day(3, 3).toISOString());
+    expect(chosen.validationTimeSource).toBe('timestamp');
+
+    // Two trusted tokens: the first stays. Two untrusted ones (nothing imported): the first stays too.
+    const bothTrusted = await stamped(setup, async (covered) => [
+      await stampOf(setup, covered, day(3, 2)),
+      await stampOf(setup, covered, day(3, 3)),
+    ]);
+    const first = await evaluateEvidence({
+      ...input(bothTrusted.cms, bothTrusted.signer, bothTrusted.ca),
+      ...trustedConfig,
+    });
+    expect(first.timestamp?.genTime).toBe(day(3, 2).toISOString());
+    const noRoots = await evaluateEvidence(
+      input(untrustedFirst.cms, untrustedFirst.signer, untrustedFirst.ca),
+    );
+    expect(noRoots.timestamp).toMatchObject({ status: 'valid', tsa: 'Rogue TSA', trusted: false });
+    expect(noRoots.validationTimeSource).toBe('timestamp-untrusted');
+  });
+
   it('ignores timestamp tokens when the signature value is unknown', async () => {
     const setup = await pki();
     const { cms, signer, ca } = await stamped(setup, async (covered) => [
@@ -238,9 +293,15 @@ describe('evaluateDocumentTimestamp', () => {
     const token = await issueTimestampToken({ tsa, covered, genTime: SIGNED_AT, extraCertificates: [ca] });
     const base = { token, covered, roots: [ca.der], importedCrls: [], dss: NO_DSS, now: NOW };
 
-    const clean = await evaluateDocumentTimestamp(base);
+    // No list speaks for the TSA: its time is shown, but unknown is never clean.
+    const unlisted = await evaluateDocumentTimestamp(base);
+    expect(unlisted.timestamp).toMatchObject({ kind: 'document', status: 'valid', trusted: false });
+    expect(unlisted.revocation).toBe('indeterminate');
+
+    const empty = await issueCrl({ issuer: ca, thisUpdate: day(5, 1), nextUpdate: day(7, 1) });
+    const clean = await evaluateDocumentTimestamp({ ...base, importedCrls: [empty] });
     expect(clean.timestamp).toMatchObject({ kind: 'document', status: 'valid', trusted: true });
-    expect(clean.revocation).toBe('indeterminate'); // no list speaks for the TSA
+    expect(clean.revocation).toBe('not-revoked');
 
     // Revoked after genTime: still `revoked`, because a document timestamp has no trusted time to compare with.
     const crl = await issueCrl({

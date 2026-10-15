@@ -139,3 +139,37 @@ export async function datasetsOf(bytes: Uint8Array): Promise<string> {
   if (datasets === undefined) throw new Error('the form has no datasets packet');
   return datasets;
 }
+
+/**
+ * The form as Acrobat's Reader Extensions leave it: `/Perms` with the usage-rights signatures
+ * (`/UR3`, and the older `/UR`) next to the author's `/DocMDP` certification.
+ */
+export function withUsageRights(bytes: Uint8Array): Promise<Uint8Array> {
+  return withPdf(bytes, (doc) => {
+    const signature = (extra: Record<string, unknown>) =>
+      doc.addObject({ Type: 'Sig', Filter: 'Adobe.PPKLite', ...extra });
+    doc
+      .getTrailer()
+      .get('Root')
+      .put('Perms', {
+        UR3: signature({ SubFilter: 'adbe.pkcs7.detached' }),
+        UR: signature({ SubFilter: 'adbe.pkcs7.sha1' }),
+        DocMDP: signature({ SubFilter: 'adbe.pkcs7.detached' }),
+      });
+    return new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  });
+}
+
+/** The keys of the catalog's `/Perms`, sorted; `null` when the catalog has none. */
+export function permsKeys(bytes: Uint8Array): Promise<string[] | null> {
+  return withPdf(bytes, (doc) => {
+    const entry = doc.getTrailer().get('Root').get('Perms');
+    if (entry.isNull()) return null;
+    const perms = entry.resolve();
+    const keys: string[] = [];
+    perms.forEach((_value, key) => {
+      keys.push(String(key));
+    });
+    return keys.sort();
+  });
+}

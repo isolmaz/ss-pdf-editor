@@ -85,7 +85,7 @@ describe('useDocumentEffects', () => {
     renderHook(() => useDocumentEffects({ session, t, tab, handle }));
     expect(hooks.useDocumentLanguage).toHaveBeenCalledWith(viewer);
     expect(hooks.useFormInventory).toHaveBeenCalledWith({ store: session, t, tab, handle });
-    expect(hooks.useStoredTrust).toHaveBeenCalled();
+    expect(hooks.useStoredTrust).toHaveBeenCalledWith(t);
     expect(hooks.useDocumentFacts).toHaveBeenCalledWith(
       expect.objectContaining({ tab, handle, revision: 0 }),
     );

@@ -16,7 +16,6 @@ export const pagesPart = {
   'pages.rotate.done': '{count} sayfa döndürüldü.',
   'pages.delete': 'Sayfaları sil',
   'pages.delete.done': '{count} sayfa silindi.',
-  'pages.delete.lastPage': 'Belgenin tüm sayfaları silinemez.',
   'pages.duplicate': 'Sayfaları çoğalt',
   'pages.duplicate.done': '{count} sayfa çoğaltıldı.',
   'pages.extract.title': 'Sayfaları ayıkla',
@@ -40,4 +39,6 @@ export const pagesPart = {
   'split.partNames': 'Dosya adı öneki',
   'split.partNamesHint': 'Boş bırakılırsa belgenin adı kullanılır; numara ve uzantı otomatik eklenir.',
   'split.done': '{count} parça üretildi.',
+  'split.note.oversized':
+    '{count} sayfa tek başına seçilen boyut sınırından büyük; sayfa bölünemediği için her biri kendi dosyasında sınırı aşıyor (sayfa: {pages}).',
 } as const;

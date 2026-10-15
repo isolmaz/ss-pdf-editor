@@ -77,6 +77,36 @@ const MIN_HYPHEN_PART = 2;
 const HYPHEN = '-';
 const SPACE = ' ';
 
+/**
+ * Ideographic text — Han, kana, Bopomofo, the CJK and full-width punctuation: a line
+ * may break between any two of these characters, because the script has no spaces to
+ * break at. Hangul is **not** here: Korean is written with spaces, and its words break
+ * there like any other.
+ */
+const IDEOGRAPHIC_CLASS = String.raw`\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Bopomofo}\u3000-\u303f\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff60\uffe0-\uffe6`;
+
+/**
+ * Thai, Lao, Khmer and Burmese: also written without spaces, but a break between two
+ * of their characters is wrong — the break has to fall between *words*, which only a
+ * dictionary knows, so the runtime's own (`Intl.Segmenter`) says where they are.
+ */
+const DICTIONARY_CLASS = String.raw`\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}`;
+
+const IDEOGRAPHIC = new RegExp(`^[${IDEOGRAPHIC_CLASS}]`, 'u');
+const DICTIONARY_SCRIPT = new RegExp(`^[${DICTIONARY_CLASS}]`, 'u');
+/** Whether a piece of text holds a character of either kind: the only text that has break points inside a word. */
+const UNSPACED = new RegExp(`[${IDEOGRAPHIC_CLASS}${DICTIONARY_CLASS}]`, 'u');
+
+/** A piece of text that starts with a character that never begins a line: closing marks, sentence punctuation, the prolonged-sound mark, small kana. */
+const NO_LINE_START =
+  /^[、。，．・：；！？）］｝〕〉》」』】〙〗〟’”‥…ー々ゝゞヽヾぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ)\]}!?,.:;ๆ]/u;
+/** A piece of text that ends with a character that never ends a line: an opening bracket or quote. */
+const NO_LINE_END = /[（［｛〔〈《「『【〘〖〝‘“([{]$/u;
+
+// `und` is the root locale: the break points must not depend on the language of the machine.
+const GRAPHEMES = new Intl.Segmenter('und', { granularity: 'grapheme' });
+const WORDS = new Intl.Segmenter('und', { granularity: 'word' });
+
 /** The reflow box, resolved from the options or the block (see `ReflowOptions.box`). */
 interface BoxGeometry {
   readonly x: number;
@@ -102,7 +132,8 @@ interface PassOptions {
 interface BrokenLine {
   readonly text: string;
   /** The words of `text`, in order — the breaker's own word list, so a consumer can
-   *  place them individually without re-splitting the string. */
+   *  place them individually without re-splitting the string. A word of text written
+   *  without spaces may continue on the next line: the entry is then its part on this one. */
   readonly words: readonly string[];
   /** Distance from the box's left edge where the line's content area starts. */
   readonly indent: number;
@@ -140,6 +171,12 @@ export function measureLineWidth(text: string, fontSize: number, metrics: FontMe
  * The result is deterministic: the breaker is greedy, the shrink walk is a fixed
  * 0.5 pt series, and ties never depend on iteration order of anything but the input
  * text. An empty text occupies no height and returns no lines.
+ *
+ * Lines break at spaces, and — for text written without them — between ideographic
+ * characters (Chinese, Japanese) and between the words of Thai, Lao, Khmer and Burmese
+ * (`unitsOf`). Such a break adds no space and no hyphen. The one input that is not this
+ * package's own is the word dictionary behind the Thai-family breaks: it is the
+ * runtime's (`Intl.Segmenter`), so those break points follow its ICU data.
  */
 export function reflowBlock(request: ReflowRequest, metrics: FontMetrics): ReflowResult {
   const { block, text } = request;
@@ -253,15 +290,23 @@ function layoutPass(pass: PassOptions, text: string, fontSize: number): PassResu
 /**
  * Greedy line breaking for one paragraph, with `indent` for its first line.
  *
+ * `tokens` are the paragraph's space-separated words, each as the break units it is made
+ * of (`unitsOf`): one unit for a word of a spaced language, several for text written
+ * without spaces. A line may end between two tokens (the space is dropped) and between
+ * two units of one token (nothing is added: the pieces were adjacent in the text, and
+ * stay adjacent on the next line).
+ *
  * A word that does not fit alone is only broken when `hyphenate` is on, and then at a
  * **code-point boundary** with a hyphen — no language dictionary is consulted, so this
  * is the deterministic half of hyphenation: it never invents a bad syllable
- * break, it just does not know the good ones. A word that still cannot fit (a box
- * narrower than `MIN_HYPHEN_PART` characters plus a hyphen) is placed whole and shows
- * up as an overflow, which is the honest answer rather than an endless loop.
+ * break, it just does not know the good ones. Only a word of a spaced language is
+ * hyphenated: text that has break points of its own never gets a hyphen. A unit that
+ * still cannot fit (a box narrower than `MIN_HYPHEN_PART` characters plus a hyphen) is
+ * placed whole and shows up as an overflow, which is the honest answer rather than an
+ * endless loop.
  */
 function breakParagraph(
-  words: readonly string[],
+  tokens: readonly (readonly string[])[],
   indent: number,
   maxWidth: number,
   fontSize: number,
@@ -290,42 +335,56 @@ function breakParagraph(
     lineWidth = 0;
     lineIndent = 0;
   };
-  for (const entry of words) {
-    // The current fragment of the word: hyphenation replaces it with the remainder,
-    // so it is mutable while the entry it started from is not.
-    let word = entry;
-    // One word can take several iterations: first it is tried on the current line,
-    // then on a fresh one, then broken if the caller allowed it.
-    for (;;) {
-      const available = maxWidth - lineIndent;
-      const wordWidth = measureLineWidth(word, fontSize, metrics);
-      const candidateWidth = line === '' ? wordWidth : lineWidth + spaceWidth + wordWidth;
-      if (candidateWidth <= available + FIT_EPSILON_PT) {
-        const first = line === '';
-        lineWords.push(word);
-        line = first ? word : `${line} ${word}`;
-        lineWidth = candidateWidth;
-        break;
-      }
-      if (line !== '') {
+  for (const units of tokens) {
+    // `unitsOf` never answers an empty list, so the first unit exists. A word whose only
+    // unit holds ideographic or dictionary-script text is no spaced-language word.
+    const hyphenatable = hyphenate && units.length === 1 && !UNSPACED.test(units[0] as string);
+    for (const [position, entry] of units.entries()) {
+      // The current fragment of the unit: hyphenation replaces it with the remainder,
+      // so it is mutable while the entry it started from is not.
+      let word = entry;
+      // One unit can take several iterations: first it is tried on the current line,
+      // then on a fresh one, then broken if the caller allowed it.
+      for (;;) {
+        const available = maxWidth - lineIndent;
+        const wordWidth = measureLineWidth(word, fontSize, metrics);
+        // A unit after the first continues its token: it follows the previous one
+        // directly when they share a line, and starts a fragment of its own when they
+        // do not (the line was flushed in between, so `line` is empty).
+        const continues = position > 0 && line !== '';
+        const candidateWidth = line === '' ? wordWidth : lineWidth + (continues ? 0 : spaceWidth) + wordWidth;
+        if (candidateWidth <= available + FIT_EPSILON_PT) {
+          if (continues) {
+            // `line` is not empty, so a fragment of this token is on it already.
+            lineWords.push(`${lineWords.pop() as string}${word}`);
+            line += word;
+          } else {
+            lineWords.push(word);
+            line = line === '' ? word : `${line} ${word}`;
+          }
+          lineWidth = candidateWidth;
+          break;
+        }
+        if (line !== '') {
+          flush();
+          continue;
+        }
+        const split: { readonly head: string; readonly rest: string } | null = hyphenatable
+          ? hyphenateWord(word, available, fontSize, metrics)
+          : null;
+        if (split === null) {
+          line = word;
+          lineWords.push(word);
+          lineWidth = wordWidth;
+          break;
+        }
+        hyphenated.push(word);
+        line = split.head;
+        lineWords.push(split.head);
+        lineWidth = measureLineWidth(split.head, fontSize, metrics);
         flush();
-        continue;
+        word = split.rest;
       }
-      const split: { readonly head: string; readonly rest: string } | null = hyphenate
-        ? hyphenateWord(word, available, fontSize, metrics)
-        : null;
-      if (split === null) {
-        line = word;
-        lineWords.push(word);
-        lineWidth = wordWidth;
-        break;
-      }
-      hyphenated.push(word);
-      line = split.head;
-      lineWords.push(split.head);
-      lineWidth = measureLineWidth(split.head, fontSize, metrics);
-      flush();
-      word = split.rest;
     }
   }
   flush();
@@ -352,18 +411,67 @@ function hyphenateWord(
   return { head: `${head}${HYPHEN}`, rest: word.slice(head.length) };
 }
 
-/** Paragraphs as word lists: hard breaks start a new one, space runs collapse, and an
- *  empty paragraph is dropped (it carries no ink — the space between paragraphs is
- *  `paragraphSpacing`'s job). NBSP is deliberately **not** collapsed and **not** a
- *  break: it is the text's own "do not break here" marker. */
-function paragraphsOf(text: string): readonly (readonly string[])[] {
-  const paragraphs: string[][] = [];
+/** Paragraphs as word lists, each word as its break units (`unitsOf`): hard breaks start
+ *  a new paragraph, space runs collapse, and an empty paragraph is dropped (it carries no
+ *  ink — the space between paragraphs is `paragraphSpacing`'s job). NBSP is deliberately
+ *  **not** collapsed and **not** a break: it is the text's own "do not break here" marker. */
+function paragraphsOf(text: string): readonly (readonly (readonly string[])[])[] {
+  const paragraphs: (readonly string[])[][] = [];
   for (const raw of text.split(/\r\n|\r|\n/)) {
     const collapsed = raw.replace(/[ \t\f\r]+/g, SPACE).trim();
     if (collapsed === '') continue;
-    paragraphs.push(collapsed.split(SPACE));
+    paragraphs.push(collapsed.split(SPACE).map(unitsOf));
   }
   return paragraphs;
+}
+
+/**
+ * The pieces of one space-delimited word a line may end between; they join back into
+ * the word without a gap. A word of a spaced language is one piece — `Segmenter` is not
+ * asked about it, so a hyphenated compound or an apostrophe is never a break point.
+ *
+ * Text written without spaces has break points of its own:
+ *  - every ideographic character (Han, kana, CJK punctuation) is a piece, as it is in
+ *    CJK typesetting, where a line may end after any of them;
+ *  - a run of Thai, Lao, Khmer or Burmese is cut into words by the runtime's
+ *    dictionary (`Intl.Segmenter`), because a break inside a word is a misspelling;
+ *  - any other run (Latin letters, digits) between them stays whole.
+ * Pieces then stick together where a break would be a typographic fault: a closing mark
+ * never begins a line (it joins the piece before it) and an opening bracket never ends
+ * one (it joins the piece after it). Grapheme clusters are never split.
+ */
+function unitsOf(word: string): readonly string[] {
+  if (!UNSPACED.test(word)) return [word];
+  const runs: { kind: 'ideographic' | 'dictionary' | 'other'; text: string }[] = [];
+  for (const { segment } of GRAPHEMES.segment(word)) {
+    const kind = IDEOGRAPHIC.test(segment)
+      ? 'ideographic'
+      : DICTIONARY_SCRIPT.test(segment)
+        ? 'dictionary'
+        : 'other';
+    const last = runs[runs.length - 1];
+    // Each ideographic character is a piece of its own; the other kinds gather into runs.
+    if (kind !== 'ideographic' && last?.kind === kind) last.text += segment;
+    else runs.push({ kind, text: segment });
+  }
+  const pieces: string[] = [];
+  for (const run of runs) {
+    if (run.kind === 'dictionary') {
+      for (const { segment } of WORDS.segment(run.text)) pieces.push(segment);
+    } else {
+      pieces.push(run.text);
+    }
+  }
+  const units: string[] = [];
+  for (const piece of pieces) {
+    const previous = units[units.length - 1];
+    if (previous !== undefined && (NO_LINE_START.test(piece) || NO_LINE_END.test(previous))) {
+      units[units.length - 1] = previous + piece;
+    } else {
+      units.push(piece);
+    }
+  }
+  return units;
 }
 
 /** Where a line's content starts, relative to its content area. */

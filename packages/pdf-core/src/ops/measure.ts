@@ -53,30 +53,45 @@
  *
  * ## The file side
  *
- * A finished measurement is a real annotation carrying a `/Measure` dictionary,
- * the way Acrobat writes one, so a reader opens our ruler as a measurement
- * instead of as a stray line:
+ * A finished measurement is a real annotation carrying a `/Measure` dictionary
+ * in the form ISO 32000-1 §12.9 defines (Tables 261–263), so a reader opens our
+ * ruler as a measurement instead of as a stray line:
  *
- *   | measurement | annotation `/Subtype` | `/Measure /Subtype` |
- *   |---|---|---|
- *   | distance (two points) | `/Line` (+ `/L`) | `/RL` |
- *   | perimeter (open chain) | `/PolyLine` (+ `/Vertices`) | `/P` |
- *   | area (two corners) | `/Square` (+ `/Vertices`) | `/A` |
- *   | area (three or more points) | `/Polygon` (+ `/Vertices`) | `/A` |
+ *   | measurement | annotation `/Subtype` |
+ *   |---|---|
+ *   | distance (two points) | `/Line` (+ `/L`) |
+ *   | perimeter (open chain) | `/PolyLine` (+ `/Vertices`) |
+ *   | area (two corners) | `/Square` (+ `/Vertices`) |
+ *   | area (three or more points) | `/Polygon` (+ `/Vertices`) |
  *
- * `/R` carries the ratio in the two-number form — `[1 r]`, one drawn unit is `r`
- * real units, the user's own `1:r` — and `/X` the number format: `/U` the unit
- * label, `/D` the digits after the decimal point.
+ * Whatever the kind, the dictionary is `/Type /Measure /Subtype /RL` — the one
+ * coordinate-system subtype ISO 32000-1 defines; what separates a distance from
+ * an area is which number format array a reader applies, not a subtype:
  *
- * **The honest limits of that claim**, because they are not measurable in this
- * environment: `/A` and `/P` are the subtypes Acrobat writes (ISO 32000-1 names
- * only `/RL` and `/GEO` for a measure dictionary), and no independent reader's
- * interpretation of `/X` was observed here. What the probe does prove is that the
- * dictionary, the ratio, the unit and the geometry survive a real write and a
- * re-read of the produced bytes (`measure.test.ts`).
+ *  - `/R` is the scale as **text**: `(1 cm = 5 m)` or `(1:100)`;
+ *  - `/X`, `/D` and `/A` are **arrays** of number format dictionaries, each
+ *    `/Type /NumberFormat /U (unit label) /C factor /D precision /FD true`. `/X`'s
+ *    `/C` converts user-space units (`/UserUnit`-aware) into real-world units,
+ *    `/D`'s and `/A`'s `/C` are 1 because the unit is the same one squared for
+ *    area (the standard defines them as "from the first element of `/X`");
+ *    `/D` is the decimal precision (`100` = two digits) and `/FD true` keeps
+ *    trailing zeros, which is how the readout prints them.
+ *
+ * What the probe proves is that the dictionary, its three arrays, the ratio text,
+ * the unit and the geometry survive a real write and a re-read of the produced
+ * bytes (`measure.test.ts`). No independent reader's rendering of the dictionary
+ * was observed in this environment.
+ *
+ * ## `/UserUnit`
+ *
+ * A page's `/UserUnit` (ISO 32000-1 Table 30) is the size of one user-space unit
+ * in multiples of 1/72 inch — a CAD sheet with `/UserUnit 10` draws 720 ppi. Every
+ * distance and area in this file is in user-space units, and every conversion
+ * into real-world units multiplies by it: one user-space unit is `UserUnit / 72`
+ * inch of paper, not always `1 / 72`.
  */
 
-import type { PDFObject } from 'mupdf';
+import type { PDFDocument, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
 import {
@@ -340,6 +355,13 @@ export interface MeasureBox {
 export interface MeasurePageGeometry {
   readonly rotation: MeasureRotation;
   readonly box: MeasureBox;
+  /**
+   * The page's `/UserUnit`: the size of one user-space unit in multiples of 1/72 inch
+   * (ISO 32000-1 Table 30). Omitted means the default, 1. A caller that only draws (the
+   * overlay's grid, the pointer conversions) never needs it; the readout and the writer
+   * do, because it scales every real-world number.
+   */
+  readonly userUnit?: number;
 }
 
 /** A point, in whichever of the three spaces the function's name says. */
@@ -357,10 +379,23 @@ export function quarterTurns(angle: number): MeasureRotation {
 /** The page geometry, read the one way this codebase reads it (`ops/link-edit.ts`). */
 export function measureGeometry(page: PDFObject): MeasurePageGeometry {
   const rotate = resolved(page.getInheritable('Rotate'));
+  // `/UserUnit` is a page-level key, not an inheritable one (ISO 32000-1 Table 30).
+  const userUnit = resolved(page.get('UserUnit'));
   return {
     rotation: quarterTurns(rotate?.isNumber() === true ? rotate.asNumber() : 0),
     box: visibleBox(page),
+    userUnit: normaliseUserUnit(userUnit?.isNumber() === true ? userUnit.asNumber() : undefined),
   };
+}
+
+/**
+ * A `/UserUnit` as a usable factor: the default 1 for an absent, zero, negative or
+ * non-finite value — the standard requires a positive number, and a file that holds
+ * anything else is read as if the key were not there rather than scaling every
+ * measurement by nonsense.
+ */
+function normaliseUserUnit(value: number | undefined): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 /**
@@ -464,10 +499,26 @@ export interface Measurement {
   readonly length: number;
   /** The closed boundary's length (area mode) — the chain, plus the closing segment. */
   readonly perimeter: number;
-  /** Shoelace area of the closed chain; 0 for the open modes. */
+  /**
+   * Shoelace area of the closed chain; 0 for the open modes, and `NaN` when the
+   * boundary crosses itself ({@link Measurement.selfIntersecting}) — the signed
+   * sum then cancels one lobe against the other, so any number it gave would be a
+   * wrong area presented as a right one.
+   */
   readonly area: number;
+  /**
+   * Whether the closed boundary of an area chain of three or more clicked points
+   * crosses or touches itself (a bow-tie). Always `false` for the open modes and for
+   * the rectangle two corners span.
+   */
+  readonly selfIntersecting: boolean;
   /** Direction of the first segment, degrees counter-clockwise from `+x`, 0…360. */
   readonly bearing: number;
+  /**
+   * The page's `/UserUnit` the chain was measured on (1 when it has none): every
+   * length above is in user-space units, each of which is `userUnit / 72` inch.
+   */
+  readonly userUnit: number;
 }
 
 /** The four corners of the rectangle two points span, ascending, in click order. */
@@ -508,9 +559,16 @@ function requirePoint(point: MeasurePoint, where: string): MeasurePoint {
  *
  * A chain that cannot be measured raises a `ToolError` instead of returning a
  * number nobody can act on: fewer than two points, a non-finite coordinate, or a
- * `distance` that is not exactly two points.
+ * `distance` that is not exactly two points. An area whose boundary crosses itself
+ * is the one case that is *reported* rather than thrown — `selfIntersecting` is
+ * `true` and `area` is `NaN` — because the live readout asks for it on every
+ * pointer move while the polygon is still being drawn and must show "no value yet",
+ * not fail; the writer is the one that refuses it.
+ *
+ * `userUnit` is the page's `/UserUnit`; the geometry is in user-space units either
+ * way, it only travels with the result for the conversion into real-world units.
  */
-export function measureChain(points: readonly MeasurePoint[], mode: MeasureMode): Measurement {
+export function measureChain(points: readonly MeasurePoint[], mode: MeasureMode, userUnit = 1): Measurement {
   const where = 'measure.measureChain';
   if (points.length < 2) {
     throw new ToolError('selection-empty', {
@@ -563,7 +621,10 @@ export function measureChain(points: readonly MeasurePoint[], mode: MeasureMode)
   const last = chain[chain.length - 1] as MeasurePoint;
   const start = chain[0] as MeasurePoint;
   const perimeter = closed ? length + Math.hypot(start.x - last.x, start.y - last.y) : length;
-  const area = closed ? shoelace(chain) : 0;
+  // The rectangle two corners span cannot cross itself; only a clicked polygon can.
+  const selfIntersecting = closed && checked.length > 2 && crossesItself(chain);
+  let area = 0;
+  if (closed) area = selfIntersecting ? Number.NaN : shoelace(chain);
 
   return {
     mode,
@@ -572,11 +633,13 @@ export function measureChain(points: readonly MeasurePoint[], mode: MeasureMode)
     length,
     perimeter,
     area,
+    selfIntersecting,
     bearing: bearingDegrees(first, second),
+    userUnit: normaliseUserUnit(userUnit),
   };
 }
 
-/** The absolute polygon area, `0.5·|Σ (xᵢ·yᵢ₊₁ − xᵢ₊₁·yᵢ)|`. */
+/** The absolute polygon area, `0.5·|Σ (xᵢ·yᵢ₊₁ − xᵢ₊₁·yᵢ)|`. Only meaningful for a simple polygon. */
 function shoelace(points: readonly MeasurePoint[]): number {
   let sum = 0;
   for (const [index, point] of points.entries()) {
@@ -584,6 +647,80 @@ function shoelace(points: readonly MeasurePoint[]): number {
     sum += point.x * next.y - next.x * point.y;
   }
   return Math.abs(sum) / 2;
+}
+
+/** Twice the signed area of the triangle `a b c`: positive when `c` lies left of `a → b`. */
+function orientation(a: MeasurePoint, b: MeasurePoint, c: MeasurePoint): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+/** Whether `p`, which is collinear with `a b`, lies within the segment's bounding box. */
+function withinSegment(a: MeasurePoint, b: MeasurePoint, p: MeasurePoint): boolean {
+  return (
+    p.x >= Math.min(a.x, b.x) &&
+    p.x <= Math.max(a.x, b.x) &&
+    p.y >= Math.min(a.y, b.y) &&
+    p.y <= Math.max(a.y, b.y)
+  );
+}
+
+/** Whether two segments share a point: a proper crossing, a touch, or a collinear overlap. */
+function segmentsMeet(a: MeasurePoint, b: MeasurePoint, c: MeasurePoint, d: MeasurePoint): boolean {
+  const abc = orientation(a, b, c);
+  const abd = orientation(a, b, d);
+  const cda = orientation(c, d, a);
+  const cdb = orientation(c, d, b);
+  if (((abc > 0 && abd < 0) || (abc < 0 && abd > 0)) && ((cda > 0 && cdb < 0) || (cda < 0 && cdb > 0))) {
+    return true;
+  }
+  return (
+    (abc === 0 && withinSegment(a, b, c)) ||
+    (abd === 0 && withinSegment(a, b, d)) ||
+    (cda === 0 && withinSegment(c, d, a)) ||
+    (cdb === 0 && withinSegment(c, d, b))
+  );
+}
+
+/**
+ * Whether a closed polygon's boundary crosses or touches itself.
+ *
+ * The shoelace sum is a *signed* area: the two lobes of a bow-tie wind in opposite
+ * directions and cancel, so a bow-tie of two equal triangles measures ≈ 0 and a
+ * lopsided one measures the difference of its lobes — never the area a person
+ * would call "inside". Every pair of edges that are not neighbours is tested
+ * (`n ≤ MEASURE_LIMITS.points`, so at most a few thousand tests); neighbouring
+ * edges share exactly their common vertex by construction. Touching counts: a
+ * figure-eight pinched at a vertex cancels just the same.
+ *
+ * The ring is cleaned first. A repeated click is a zero-length edge, and clicking the
+ * first point again to close the polygon (what snapping to the chain's own vertices
+ * invites) puts its start at the end too: neither is a crossing, and the second would
+ * otherwise read as the last edge touching the first.
+ */
+function crossesItself(polygon: readonly MeasurePoint[]): boolean {
+  const ring: MeasurePoint[] = [];
+  for (const point of polygon) {
+    const previous = ring[ring.length - 1];
+    if (previous === undefined || previous.x !== point.x || previous.y !== point.y) ring.push(point);
+  }
+  const head = ring[0];
+  const tail = ring[ring.length - 1];
+  if (ring.length > 1 && head !== undefined && tail !== undefined && head.x === tail.x && head.y === tail.y) {
+    ring.pop();
+  }
+  const count = ring.length;
+  for (let first = 0; first < count; first += 1) {
+    const a = ring[first] as MeasurePoint;
+    const b = ring[(first + 1) % count] as MeasurePoint;
+    for (let second = first + 2; second < count; second += 1) {
+      // The last edge closes onto the first: they are neighbours too.
+      if (first === 0 && second === count - 1) continue;
+      const c = ring[second] as MeasurePoint;
+      const d = ring[(second + 1) % count] as MeasurePoint;
+      if (segmentsMeet(a, b, c, d)) return true;
+    }
+  }
+  return false;
 }
 
 /** The first segment's direction in degrees, counter-clockwise from `+x`, normalised to 0…360. */
@@ -599,14 +736,19 @@ export function measureMark(
   mode: MeasureMode,
 ): Measurement {
   const userPoints = points.map((point) => appToUserPoint(geometry, point));
-  return measureChain(userPoints, mode);
+  return measureChain(userPoints, mode, geometry.userUnit);
 }
 
 // ---------------------------------------------------------------------------
 // formatting
 // ---------------------------------------------------------------------------
 
-/** The product's default locale is Turkish; numbers are printed with it. */
+/**
+ * The product's default locale is Turkish; a formatter called without a locale prints
+ * with it. A caller that has the interface's locale passes it — the written
+ * `/Contents` (`writeMeasureAnnotations`) and the live readout both do, so what a
+ * person reads is in the language they use.
+ */
 export const DEFAULT_MEASURE_LOCALE = 'tr';
 
 /**
@@ -623,6 +765,11 @@ export interface MeasureFormatOptions {
   readonly locale?: string;
   /** Digits after the decimal point, instead of the magnitude rule. */
   readonly decimals?: number;
+  /**
+   * The page's `/UserUnit` (1 when omitted) for the formatters that take a bare
+   * user-space number; a {@link Measurement} carries its own.
+   */
+  readonly userUnit?: number;
 }
 
 /**
@@ -651,11 +798,12 @@ function numberFormat(locale: string, decimals: number): Intl.NumberFormat {
   const key = `${locale}|${decimals}`;
   const cached = FORMATTERS.get(key);
   if (cached !== undefined) return cached;
+  // Grouping stays on: the digits are printed the way the reader of that locale writes them
+  // (`1,234.5` in English, `1.234,5` in Turkish), which is what the file's `/Contents` must
+  // read like to someone who opens it in a viewer that knows nothing of this app.
   const format = new Intl.NumberFormat(locale, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
-    // A dimension label is not a ledger: 1.234,5 would read as two numbers.
-    useGrouping: false,
   });
   FORMATTERS.set(key, format);
   return format;
@@ -678,25 +826,32 @@ function formatValue(value: number, options: MeasureFormatOptions | undefined): 
   return formatNumber(value, decimals, locale);
 }
 
+/**
+ * User-space units that stand for **one real-world unit**. `scale.pointsPerUnit` counts
+ * 1/72-inch points of paper; a page whose `/UserUnit` is `u` has user-space units of
+ * `u` points each, so it takes `1/u` as many of them. Not finite and positive means the
+ * scale cannot convert anything (`NaN`, `0`, `±Infinity` all fail the same test).
+ */
+function userUnitsPerReal(scale: MeasureScale, userUnit: number | undefined): number {
+  return scale.pointsPerUnit / normaliseUserUnit(userUnit);
+}
+
 /** A user-space length in real-world units: `352,8 cm`. */
-export function formatLength(points: number, scale: MeasureScale, options?: MeasureFormatOptions): string {
-  if (!Number.isFinite(points) || !Number.isFinite(scale.pointsPerUnit) || scale.pointsPerUnit <= 0) {
-    return UNMEASURED;
-  }
-  return `${formatValue(points / scale.pointsPerUnit, options)} ${scale.unit}`;
+export function formatLength(userUnits: number, scale: MeasureScale, options?: MeasureFormatOptions): string {
+  const perUnit = userUnitsPerReal(scale, options?.userUnit);
+  if (!Number.isFinite(userUnits) || !Number.isFinite(perUnit) || perUnit <= 0) return UNMEASURED;
+  return `${formatValue(userUnits / perUnit, options)} ${scale.unit}`;
 }
 
 /** A user-space area in real-world square units: `1,25 m²`. */
 export function formatArea(
-  squarePoints: number,
+  squareUserUnits: number,
   scale: MeasureScale,
   options?: MeasureFormatOptions,
 ): string {
-  const perUnit = scale.pointsPerUnit;
-  if (!Number.isFinite(squarePoints) || !Number.isFinite(perUnit) || perUnit <= 0) {
-    return UNMEASURED;
-  }
-  return `${formatValue(squarePoints / (perUnit * perUnit), options)} ${scale.unit}²`;
+  const perUnit = userUnitsPerReal(scale, options?.userUnit);
+  if (!Number.isFinite(squareUserUnits) || !Number.isFinite(perUnit) || perUnit <= 0) return UNMEASURED;
+  return `${formatValue(squareUserUnits / (perUnit * perUnit), options)} ${scale.unit}²`;
 }
 
 /** A direction: `45,0°`. */
@@ -708,13 +863,15 @@ export function formatAngle(degrees: number, options?: MeasureFormatOptions): st
 
 /**
  * The number a measurement reads as in real-world units — the value every
- * formatter prints and the writer records in `/X /D`.
+ * formatter prints and whose digits the writer records as the `/D` precision.
  *
- * One function, because a file whose `/X /D` disagreed with the digits the
- * measure tool shows would be a silent lie about precision.
+ * One function, because a file whose `/D` precision disagreed with the digits the
+ * measure tool shows would be a silent lie about precision. The page's `/UserUnit`
+ * (`Measurement.userUnit`) is applied here, through the same conversion
+ * `formatLength` and `formatArea` use.
  */
 export function measuredValue(measurement: Measurement, scale: MeasureScale): number {
-  const perUnit = scale.pointsPerUnit;
+  const perUnit = userUnitsPerReal(scale, measurement.userUnit);
   if (!Number.isFinite(perUnit) || perUnit <= 0) return Number.NaN;
   return measurement.mode === 'area' ? measurement.area / (perUnit * perUnit) : measurement.length / perUnit;
 }
@@ -743,12 +900,51 @@ export function formatMeasurement(
 // the writer
 // ---------------------------------------------------------------------------
 
-/** `/Measure /Subtype` per measurement kind, as Acrobat writes it. */
-const MEASURE_SUBTYPES: Readonly<Record<MeasureMode, string>> = {
-  distance: 'RL',
-  perimeter: 'P',
-  area: 'A',
-};
+/**
+ * A text string as `/R` states the scale: the equation the user typed (`1 cm = 5 m`,
+ * ISO 32000-1 Table 262's own example form) or, for the ratio form that names no
+ * drawn unit, the ratio itself (`1:100`, also one of the standard's examples).
+ */
+function scaleText(scale: MeasureScale): string {
+  return scale.expression.includes('=') ? scale.expression : scale.ratioText;
+}
+
+/**
+ * One number format dictionary (ISO 32000-1 Table 263), the single element of each of
+ * `/X`, `/D` and `/A`:
+ *
+ *  - `/U` the unit label a reader prints after the number;
+ *  - `/C` the conversion factor — for `/X` from user-space units to this unit, for `/D`
+ *    and `/A` from `/X`'s unit (squared, for an area) to this one;
+ *  - `/D` the decimal precision, a power of ten (`100` = two digits);
+ *  - `/FD true`, so a reader keeps the trailing zeros the readout prints (`91,50 ft`).
+ */
+function numberFormatDictionary(doc: PDFDocument, unit: string, factor: number, precision: number) {
+  return { Type: 'NumberFormat', U: text(doc, unit), C: factor, D: precision, FD: true };
+}
+
+/**
+ * The `/Measure` dictionary, the same rectilinear form for every kind of measurement:
+ * `/X`, `/D` and `/A` are all written because the standard requires all three, and a
+ * reader that measures further on the annotation then finds the units it expects.
+ *
+ * `/X`'s factor is real-world units per user-space unit — `userUnit / pointsPerUnit`, so
+ * a page with `/UserUnit 2` converts twice as much per unit. `/D` and `/A` convert from
+ * `/X`'s unit to the same unit and the same unit squared, which is a factor of one. The
+ * precision is one for all three: the digits the readout shows for this measurement.
+ */
+function measureDictionary(doc: PDFDocument, mark: MeasureMark, measurement: Measurement) {
+  const unit = mark.scale.unit;
+  const precision = 10 ** significantDecimals(measuredValue(measurement, mark.scale));
+  return {
+    Type: 'Measure',
+    Subtype: 'RL',
+    R: text(doc, scaleText(mark.scale)),
+    X: [numberFormatDictionary(doc, unit, measurement.userUnit / mark.scale.pointsPerUnit, precision)],
+    D: [numberFormatDictionary(doc, unit, 1, precision)],
+    A: [numberFormatDictionary(doc, `${unit}²`, 1, precision)],
+  };
+}
 
 /**
  * A measurement the session holds but the file does not yet.
@@ -782,6 +978,15 @@ export interface MeasureOutcome extends OperationOutcome {
   readonly written: readonly string[];
 }
 
+export interface MeasureWriteOptions {
+  /**
+   * BCP-47 tag of the interface language the measurement text in `/Contents` is
+   * printed in (`1,234.5 m` for `en`, `1.234,5 m` for `tr`). The caller passes the
+   * shell's `Translator.locale`; the product default, Turkish, applies when omitted.
+   */
+  readonly locale?: string;
+}
+
 /**
  * Append one measure annotation per mark, with its appearance stream.
  *
@@ -801,9 +1006,10 @@ export async function writeMeasureAnnotations(
   bytes: Uint8Array,
   marks: readonly MeasureMark[],
   context: OperationContext,
+  options: MeasureWriteOptions = {},
 ): Promise<MeasureOutcome> {
   abortIf(context.signal);
-  if (marks.length === 0) return { ...nothingToDo(bytes), written: [] };
+  if (marks.length === 0) return { ...(await nothingToDo(bytes)), written: [] };
   if (marks.length > MEASURE_LIMITS.marks) {
     throw new ToolError('value-out-of-range', {
       engine: 'model',
@@ -865,19 +1071,9 @@ export async function writeMeasureAnnotations(
           // A PDF date, as `/M` requires (not the ISO string).
           M: text(doc, pdfDate(new Date(mark.createdAt))),
           NM: text(doc, markerFor(mark.id)),
-          Contents: text(doc, contentsFor(mark, measurement)),
+          Contents: text(doc, contentsFor(mark, measurement, options.locale)),
           AP: { N: appearance },
-          Measure: {
-            Subtype: MEASURE_SUBTYPES[mark.mode],
-            // `[1 r]`: one drawn unit is `r` real units — the user's own `1:r`.
-            R: [1, mark.scale.ratio],
-            X: {
-              U: text(doc, measurementUnit(measurement, mark.scale)),
-              // The same digits the readout shows: `/X /D` is the number of decimals
-              // the measure tool would print for this value.
-              D: significantDecimals(measuredValue(measurement, mark.scale)),
-            },
-          },
+          Measure: measureDictionary(doc, mark, measurement),
         });
         dict.put(subtype === 'Line' ? 'L' : 'Vertices', [...flatPoints(measurement.points)]);
         annotsOf(doc, page, true)?.push(dict);
@@ -936,12 +1132,30 @@ function requireMeasurable(mark: MeasureMark, geometry: MeasurePageGeometry): Me
       engineMessage: `${where}: unknown measurement mode ${String(mark.mode)}`,
     });
   }
+  // `/X`'s conversion factor is `userUnit / pointsPerUnit`: a scale that is not a positive
+  // number would put `NaN` or `Infinity` into the file where a reader reads a number.
+  if (!(Number.isFinite(mark.scale.pointsPerUnit) && mark.scale.pointsPerUnit > 0)) {
+    throw new ToolError('value-out-of-range', {
+      engine: 'model',
+      pageIndex: mark.pageIndex,
+      engineMessage: `${where}: scale converts ${mark.scale.pointsPerUnit} pt per unit, which is not a positive number`,
+    });
+  }
   const measurement = measureMark(geometry, mark.points, mark.mode);
   if (measurement.length < MEASURE_LIMITS.minPoints) {
     throw new ToolError('value-out-of-range', {
       engine: 'model',
       pageIndex: mark.pageIndex,
       engineMessage: `${where}: chain length ${measurement.length} pt is below ${MEASURE_LIMITS.minPoints} pt`,
+    });
+  }
+  // A bow-tie has no area a reader could be told: the signed sum cancels its lobes, so
+  // writing one would put a confident, wrong number in the file. Refused, not clamped.
+  if (measurement.selfIntersecting) {
+    throw new ToolError('value-out-of-range', {
+      engine: 'model',
+      pageIndex: mark.pageIndex,
+      engineMessage: `${where}: the area polygon crosses itself, so its area cannot be measured`,
     });
   }
   if (mark.mode === 'area' && measurement.area < 1) {
@@ -1063,43 +1277,54 @@ function flatPoints(points: readonly MeasurePoint[]): number[] {
  * which is the point — the measurement belongs to the annotation, not only to the
  * session that made it. The marker that tells this app's annotations from the
  * document's own is the annotation's name (`/NM`), which readers do not print.
+ *
+ * The number is printed in the interface's `locale`: the text lives in the file and is
+ * read by the person who made the measurement, in the language they work in.
  */
-function contentsFor(mark: MeasureMark, measurement: Measurement): string {
+function contentsFor(mark: MeasureMark, measurement: Measurement, locale: string | undefined): string {
   const body = mark.contents.trim();
-  const value = formatMeasurement(measurement, mark.scale);
+  const value = formatMeasurement(measurement, mark.scale, { locale });
   return `${value}${body === '' ? '' : ` ${body}`}`;
 }
 
 /**
- * The report's sentences.
- *
- * The keys are the annotation writer's own, because the facts are: these are shape
- * annotations with appearance streams written by this app's own writer, and the
- * perspective caveat (a reader may shift a few points) holds for a ruler exactly as
- * it holds for a rectangle. The measurement-specific keys this feature should carry
- * belong in a dictionary part of their own, not in this file.
+ * The report's sentences; the keys live in the measurement dictionary part
+ * (`i18n/parts/measure.ts`, with its English twin in `en-parts`).
  */
 function measureNotes(count: number): readonly OperationNote[] {
   return [
     note('changed', 'op.note.measure.written', { count }),
-    // The one thing a reader may not understand about a measure annotation: the /Measure
-    // dictionary is Acrobat's form, not ISO 32000-1's — a caveat, not reassurance.
+    // The one thing worth saying about the file: the /Measure dictionary is the ISO 32000-1
+    // form, and a reader without measurement support shows only the line and the comment.
     note('warning', 'op.note.measure.readers'),
   ];
 }
 
-/** A call that had nothing to write: same bytes, and the report says so. */
-function nothingToDo(bytes: Uint8Array): OperationOutcome {
-  return {
-    bytes,
-    report: {
-      engine: 'mupdf',
-      steps: ['measure.write.skipped'],
-      notes: [note('warning', 'op.note.measure.nothing')],
-      inputBytes: bytes.byteLength,
-      outputBytes: bytes.byteLength,
-      pageCount: 0,
-      incremental: true,
-    },
-  };
+/**
+ * A call that had nothing to write: same bytes, and the report says so.
+ *
+ * The report carries the document's **real** page count. A batch chain caches
+ * `report.pageCount` and resolves the next step's `'all'` against it, so a `0` here
+ * made every later page-scoped step select no pages at all.
+ */
+async function nothingToDo(bytes: Uint8Array): Promise<OperationOutcome> {
+  const { doc } = await openForWrite(bytes);
+  try {
+    return {
+      bytes,
+      report: {
+        engine: 'mupdf',
+        steps: ['measure.write.skipped'],
+        notes: [note('warning', 'op.note.measure.nothing')],
+        inputBytes: bytes.byteLength,
+        outputBytes: bytes.byteLength,
+        pageCount: doc.countPages(),
+        incremental: true,
+      },
+    };
+  } catch (error) {
+    throw mapMupdfError(error, 'measure.write');
+  } finally {
+    doc.destroy();
+  }
 }

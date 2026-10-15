@@ -15,8 +15,9 @@
  *
  * Every rect and destination point in this file arrives in the space a drag on the
  * **rendered** page measures in: page points, top-left origin, the page as the user
- * sees it — `/Rotate` applied, and the CropBox (MediaBox as fallback) as the box,
- * which is the same box pdf.js hands its viewer as `viewBox`. `/Rect` and `/XYZ` are
+ * sees it — `/Rotate` applied, and the CropBox clipped to the MediaBox (the MediaBox
+ * alone when there is none) as the box, which is the same box pdf.js hands its viewer
+ * as `viewBox`. `/Rect` and `/XYZ` are
  * stored in the page's **unrotated** user space instead, so the conversion runs
  * through the page's own `/Rotate`:
  *
@@ -52,8 +53,10 @@
  * nothing); the comparison runs in the displayed space both rects are converted
  * into, so the rule is literally "what the drag covers on screen". When a page's
  * `/Annots` array ends up empty it is dropped, and the annotation objects that were
- * unlinked are deleted — an annotation belongs to the page that lists it (there is
- * one `/P`), so nothing else can still reach them.
+ * unlinked are deleted — unless some page's `/Annots` still lists one. An annotation
+ * belongs to the page that lists it (there is one `/P`), but a file may list the same
+ * object on two pages (or twice on one); deleting an object that is still listed would
+ * leave the surviving entry pointing at nothing, so only the selected entry goes.
  *
  * A call that changes nothing returns the **input bytes unchanged** with
  * `incremental: true`: rewriting a file for a no-op would
@@ -73,6 +76,7 @@ import {
   resolved,
   saveRewrite,
   text,
+  visibleBox,
 } from '../engines/mupdf-write';
 import {
   note,
@@ -151,7 +155,7 @@ type PageDestination = Extract<LinkDestination, { readonly kind: 'page' }>;
 type PageRotation = 0 | 90 | 180 | 270;
 
 /**
- * What the conversion needs: the visible box (CropBox, MediaBox as fallback), the
+ * What the conversion needs: the visible box (CropBox clipped to the MediaBox), the
  * page's `/Rotate`, and the extents the page has once that rotation is applied.
  */
 interface LinkPageGeometry {
@@ -167,25 +171,13 @@ function quarterTurns(angle: number): PageRotation {
 }
 
 /**
- * `/CropBox`, or `/MediaBox` when there is none — both inheritable through the page
- * tree (§7.7.3.4) — and `/Rotate`, inheritable too. A box that is not four numbers
- * falls through to the next one; a page with neither is treated as US Letter, the
- * default MuPDF itself applies.
+ * The page's visible box (`visibleBox`: `/CropBox` clipped to the `/MediaBox`, both
+ * inheritable through the page tree, §7.7.3.4) and `/Rotate`, inheritable too.
  */
 function pageGeometry(page: PDFObject): LinkPageGeometry {
   const rotate = resolved(page.getInheritable('Rotate'));
   const rotation = quarterTurns(rotate?.isNumber() === true ? rotate.asNumber() : 0);
-  const corners = [
-    readNumbers(page.getInheritable('CropBox')),
-    readNumbers(page.getInheritable('MediaBox')),
-  ].find((values) => values.length >= 4) ?? [0, 0, 612, 792];
-  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = corners;
-  const box = {
-    x: Math.min(x0, x1),
-    y: Math.min(y0, y1),
-    width: Math.abs(x1 - x0),
-    height: Math.abs(y1 - y0),
-  };
+  const box = visibleBox(page);
   const swapped = rotation === 90 || rotation === 270;
   return {
     rotation,
@@ -575,6 +567,25 @@ interface LinkEditResult {
   readonly removedOn: Map<number, number>;
 }
 
+/** Which of the object numbers in `numbers` some page's `/Annots` array still lists. */
+function listedAnnotations(
+  doc: PDFDocument,
+  pages: readonly PDFObject[],
+  numbers: ReadonlySet<number>,
+): Set<number> {
+  const listed = new Set<number>();
+  if (numbers.size === 0) return listed;
+  for (const page of pages) {
+    const annots = annotsOf(doc, page);
+    if (annots === null) continue;
+    for (let position = 0; position < annots.length; position += 1) {
+      const entry = annots.get(position);
+      if (entry.isIndirect() && numbers.has(entry.asIndirect())) listed.add(entry.asIndirect());
+    }
+  }
+  return listed;
+}
+
 function removeLinks(
   doc: PDFDocument,
   pages: readonly PDFObject[],
@@ -654,10 +665,15 @@ function removeLinks(
     }
   }
 
-  // An annotation belongs to the page that lists it (there is one `/P`), so nothing
-  // else can reach an unlinked one; it is deleted rather than left for the save's
-  // garbage pass, and the same object listed twice is deleted once.
-  for (const number of doomed) doc.deleteObject(number);
+  // An unlinked annotation is deleted rather than left for the save's garbage pass, the
+  // same object listed twice being deleted once — but only when no page's `/Annots` lists
+  // it any more. A file may share one link object between pages (or list it twice on one
+  // page, with only one entry selected); `deleteObject` on that would leave the surviving
+  // entry pointing at a freed object. Such an object only lost the selected entries.
+  const stillListed = listedAnnotations(doc, pages, doomed);
+  for (const number of doomed) {
+    if (!stillListed.has(number)) doc.deleteObject(number);
+  }
 
   if (result.removedOn.size > 0) result.steps.push('link.remove');
   if (notFound > 0) result.notes.push(note('warning', 'op.note.link.removeNotFound', { count: notFound }));

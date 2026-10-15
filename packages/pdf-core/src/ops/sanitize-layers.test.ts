@@ -150,6 +150,75 @@ describe('sweepHiddenLayers', () => {
     }
   });
 
+  it.each([
+    ['inherits the page resources', false],
+    ['shares the page resource dictionary', true],
+  ])('keeps a hidden-layer picture an annotation appearance stream that %s still draws', (_name, shared) => {
+    const { doc, page, resources } = build();
+    try {
+      // The page's own content draws `/ImH` only inside the hidden layer; the stamp's appearance
+      // draws it too, through the same resource dictionary, and still shows it.
+      const appearance = doc.addStream('q 10 0 0 10 0 0 cm /ImH Do Q', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, 10, 10],
+        ...(shared ? { Resources: resources } : {}),
+      });
+      page.put('Annots', [
+        doc.addObject({ Type: 'Annot', Subtype: 'Stamp', Rect: [10, 10, 20, 20], AP: { N: appearance } }),
+      ]);
+      sweepHiddenLayers(doc, true);
+      expect(resources.get('XObject').get('ImH').isNull()).toBe(false);
+      expect(resources.get('XObject').get('ImV').isNull()).toBe(false);
+      expect(contentOf(doc)).not.toContain('/ImH Do');
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('reads the states of a check-box appearance, and ignores a state that is no stream', () => {
+    const { doc, page, resources } = build();
+    try {
+      const on = doc.addStream('q 10 0 0 10 0 0 cm /ImH Do Q', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, 10, 10],
+      });
+      page.put('Annots', [
+        doc.addObject({
+          Type: 'Annot',
+          Subtype: 'Widget',
+          Rect: [10, 10, 20, 20],
+          AP: { N: { On: on, Broken: 7 } },
+        }),
+      ]);
+      sweepHiddenLayers(doc, true);
+      expect(resources.get('XObject').get('ImH').isNull()).toBe(false);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('gives no use to the page for an appearance with resources of its own, or whose content cannot be read', () => {
+    const { doc, page, resources } = build();
+    try {
+      const form = (content: string, extra: Record<string, unknown>) =>
+        doc.addStream(content, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 10, 10], ...extra });
+      const annotation = (appearance: PDFObject) =>
+        doc.addObject({ Type: 'Annot', Subtype: 'Stamp', Rect: [10, 10, 20, 20], AP: { N: appearance } });
+      page.put('Annots', [
+        // Its own, written-in-place resources: the page's dictionary is not involved.
+        annotation(form('q 10 0 0 10 0 0 cm /ImH Do Q', { Resources: { XObject: {} } })),
+        // A content stream the scanner cannot delimit.
+        annotation(form('BT (BROKEN) Tj ET )', {})),
+      ]);
+      sweepHiddenLayers(doc, true);
+      expect(resources.get('XObject').get('ImH').isNull()).toBe(true);
+    } finally {
+      doc.destroy();
+    }
+  });
+
   it('leaves a region it cannot cut exactly, and says so', () => {
     // The text object opens outside the hidden region and continues after it: removing the
     // show inside would move every glyph that follows.

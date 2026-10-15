@@ -1004,6 +1004,254 @@ describe('form data interchange', () => {
   });
 });
 
+/**
+ * Buttons whose states are not `Yes`: a checkbox on as `On`, one on as `Evet`, a checkbox group
+ * whose widgets are `A` and `B`, a radio group with `/Opt` texts (states `0` and `1`), one whose
+ * `/Opt` texts `1 2 3` spell other widgets' states (`0 1 2`), one without `/Opt` (states `S` and `L`),
+ * one with a `Yes` state, a text field, and a text field `c` under a parent `p`.
+ */
+function buttons(): Uint8Array {
+  const state = (name: string) => `/AS/Off/AP<</N<</${name} 60 0 R/Off 60 0 R>>>>`;
+  return formPdf({
+    fields: '[10 0 R 11 0 R 12 0 R 13 0 R 14 0 R 20 0 R 30 0 R 40 0 R 50 0 R]',
+    annots:
+      '[10 0 R 11 0 R 15 0 R 16 0 R 17 0 R 18 0 R 14 0 R 21 0 R 31 0 R 32 0 R 33 0 R 41 0 R 42 0 R 51 0 R 52 0 R]',
+    extra: {
+      30: '<</FT/Btn/Ff 32768/T(pick)/Opt[(1)(2)(3)]/Kids[31 0 R 32 0 R 33 0 R]>>',
+      31: widgetBody(rect(320), `/Parent 30 0 R${state('0')}`),
+      32: widgetBody(rect(290), `/Parent 30 0 R${state('1')}`),
+      33: widgetBody(rect(260), `/Parent 30 0 R${state('2')}`),
+      40: '<</FT/Btn/Ff 32768/T(agree)/Kids[41 0 R 42 0 R]>>',
+      41: widgetBody(rect(230), `/Parent 40 0 R${state('Yes')}`),
+      42: widgetBody(rect(200), `/Parent 40 0 R${state('No')}`),
+      50: '<</FT/Btn/T(grp)/Kids[51 0 R 52 0 R]>>',
+      51: widgetBody(rect(170), `/Parent 50 0 R${state('A')}`),
+      52: widgetBody(rect(140), `/Parent 50 0 R${state('B')}`),
+      10: widgetBody(rect(560), `/FT/Btn/T(cbOn)/V/Off${state('On')}`),
+      11: widgetBody(rect(530), `/FT/Btn/T(cbEvet)/V/Off${state('Evet')}`),
+      12: '<</FT/Btn/Ff 32768/T(color)/Opt[(Red)(Blue)]/Kids[15 0 R 16 0 R]>>',
+      15: widgetBody(rect(500), `/Parent 12 0 R${state('0')}`),
+      16: widgetBody(rect(470), `/Parent 12 0 R${state('1')}`),
+      13: '<</FT/Btn/Ff 32768/T(size)/Kids[17 0 R 18 0 R]>>',
+      17: widgetBody(rect(440), `/Parent 13 0 R${state('S')}`),
+      18: widgetBody(rect(410), `/Parent 13 0 R${state('L')}`),
+      14: widgetBody(rect(380), '/FT/Tx/T(ad)'),
+      20: '<</T(p)/FT/Tx/Kids[21 0 R]>>',
+      21: widgetBody(rect(350), '/T(c)/Parent 20 0 R'),
+      60: blankForm(10, 10),
+    },
+  });
+}
+
+describe('FDF values written and read under the form’s own state names', () => {
+  const fdfOf = (...fields: string[]): Uint8Array =>
+    new TextEncoder().encode(
+      `%FDF-1.2\n1 0 obj\n<< /FDF << /Fields [ ${fields.join(' ')} ] >> >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n`,
+    );
+  const valueOfField = async (bytes: Uint8Array, name: string) =>
+    (await readFormFields(bytes)).find((field) => field.name === name)?.value;
+
+  it('turns a checkbox whose on-state is On on with /V /On and off with /V /Off', async () => {
+    const on = await importFormData(buttons(), fdfOf('<< /T (cbOn) /V /On >>'), 'fdf', run);
+    expect(on.applied).toBe(1);
+    expect(await valueOfField(on.bytes, 'cbOn')).toBe(true);
+    const off = await importFormData(on.bytes, fdfOf('<< /T (cbOn) /V /Off >>'), 'fdf', run);
+    expect(off.applied).toBe(1);
+    expect(await valueOfField(off.bytes, 'cbOn')).toBe(false);
+  });
+
+  it('takes the name of the on-state it has, whatever it is called, and /Yes for on whatever it is called', async () => {
+    const named = await importFormData(buttons(), fdfOf('<< /T (cbEvet) /V /Evet >>'), 'fdf', run);
+    expect(await valueOfField(named.bytes, 'cbEvet')).toBe(true);
+    const legacy = await importFormData(
+      buttons(),
+      fdfOf('<< /T (cbEvet) /V /Yes >> << /T (cbOn) /V /Yes >>'),
+      'fdf',
+      run,
+    );
+    expect(legacy.applied).toBe(2);
+    expect(await valueOfField(legacy.bytes, 'cbEvet')).toBe(true);
+    expect(await valueOfField(legacy.bytes, 'cbOn')).toBe(true);
+  });
+
+  it('selects a radio widget by the name of its state, clears the group with /Off', async () => {
+    const picked = await importFormData(
+      buttons(),
+      fdfOf('<< /T (color) /V /1 >> << /T (size) /V /L >>'),
+      'fdf',
+      run,
+    );
+    expect(picked.applied).toBe(2);
+    expect(await valueOfField(picked.bytes, 'color')).toBe('Blue');
+    expect(await valueOfField(picked.bytes, 'size')).toBe('L');
+    const cleared = await importFormData(picked.bytes, fdfOf('<< /T (color) /V /Off >>'), 'fdf', run);
+    expect(cleared.applied).toBe(1);
+    expect(await valueOfField(cleared.bytes, 'color')).toBeNull();
+    expect(await valueOfField(cleared.bytes, 'size')).toBe('L');
+  });
+
+  it('keeps the selected widget of a radio group whose /Opt texts spell the states of other widgets, through FDF and through JSON', async () => {
+    // `/Opt [(1)(2)(3)]` over states `/0 /1 /2`: the option "2" is the second widget (state /1),
+    // and the name /2 is the third widget.
+    const third = await fillFormFields(buttons(), [{ name: 'pick', value: '3' }], run);
+    expect(await valueOfField(third.bytes, 'pick')).toBe('3');
+    const fdf = new TextDecoder().decode((await exportFormData(third.bytes, 'fdf')).bytes);
+    expect(fdf).toContain('/T (pick) /V /2 >>');
+    const fromFdf = await importFormData(buttons(), fdf, 'fdf', run);
+    expect(await valueOfField(fromFdf.bytes, 'pick')).toBe('3');
+
+    const second = await fillFormFields(buttons(), [{ name: 'pick', value: '2' }], run);
+    expect(await valueOfField(second.bytes, 'pick')).toBe('2');
+    const json = new TextDecoder().decode((await exportFormData(second.bytes, 'json')).bytes);
+    const fromJson = await importFormData(buttons(), json, 'json', run);
+    expect(await valueOfField(fromJson.bytes, 'pick')).toBe('2');
+  });
+
+  it('reads a text as an option and a name as a state: a name no widget has falls back to the option of that spelling', async () => {
+    const asText = await importFormData(buttons(), fdfOf('<< /T (color) /V (Blue) >>'), 'fdf', run);
+    expect(await valueOfField(asText.bytes, 'color')).toBe('Blue');
+    const asName = await importFormData(buttons(), fdfOf('<< /T (color) /V /Blue >>'), 'fdf', run);
+    expect(await valueOfField(asName.bytes, 'color')).toBe('Blue');
+    // The text "1" is the first option (state /0); the name /1 is the second widget.
+    const textOne = await importFormData(buttons(), fdfOf('<< /T (pick) /V (1) >>'), 'fdf', run);
+    expect(await valueOfField(textOne.bytes, 'pick')).toBe('1');
+    const nameOne = await importFormData(buttons(), fdfOf('<< /T (pick) /V /1 >>'), 'fdf', run);
+    expect(await valueOfField(nameOne.bytes, 'pick')).toBe('2');
+  });
+
+  it('reads /Yes for a radio group as its Yes widget when it has one, and writes nothing when it has none', async () => {
+    const out = await importFormData(
+      buttons(),
+      fdfOf('<< /T (agree) /V /Yes >> << /T (size) /V /Yes >>'),
+      'fdf',
+      run,
+    );
+    expect(out.applied).toBe(1);
+    expect(await valueOfField(out.bytes, 'agree')).toBe('Yes');
+    expect(await valueOfField(out.bytes, 'size')).toBeNull();
+    expect(out.report.notes).toContainEqual({
+      kind: 'warning',
+      key: 'form.note.missing',
+      params: { count: 1 },
+    });
+    // The state is named Yes, and the export says so: the round trip picks the same widget.
+    const again = await importFormData(
+      buttons(),
+      new TextDecoder().decode((await exportFormData(out.bytes, 'fdf')).bytes),
+      'fdf',
+      run,
+    );
+    expect(await valueOfField(again.bytes, 'agree')).toBe('Yes');
+  });
+
+  it('exports the on-state a checkbox with several widgets is in, not its first one', async () => {
+    const out = await importFormData(buttons(), fdfOf('<< /T (grp) /V /B >>'), 'fdf', run);
+    expect(await valueOfField(out.bytes, 'grp')).toBe(true);
+    const fdf = new TextDecoder().decode((await exportFormData(out.bytes, 'fdf')).bytes);
+    expect(fdf).toContain('/T (grp) /V /B >>');
+    expect(fdf).not.toContain('/V /A ');
+  });
+
+  it('takes a checkbox state, or Off, written as JSON text', async () => {
+    const on = await fillFormFields(buttons(), [{ name: 'cbEvet', value: true }], run);
+    expect(await valueOfField(on.bytes, 'cbEvet')).toBe(true);
+    const out = await importFormData(
+      on.bytes,
+      JSON.stringify({ cbOn: 'On', cbEvet: 'Off', grp: 'B' }),
+      'json',
+      run,
+    );
+    expect(out.applied).toBe(3);
+    expect(await valueOfField(out.bytes, 'cbOn')).toBe(true);
+    expect(await valueOfField(out.bytes, 'cbEvet')).toBe(false);
+    expect(await valueOfField(out.bytes, 'grp')).toBe(true);
+  });
+
+  it('exports a checkbox as its own on-state and a radio group as the state of the selected widget', async () => {
+    const filled = await fillFormFields(
+      buttons(),
+      [
+        { name: 'cbOn', value: true },
+        { name: 'cbEvet', value: false },
+        { name: 'color', value: 'Blue' },
+        { name: 'size', value: 'L' },
+      ],
+      run,
+    );
+    const fdf = await exportFormData(filled.bytes, 'fdf');
+    const source = new TextDecoder().decode(fdf.bytes);
+    expect(source).toContain('/T (cbOn) /V /On >>');
+    expect(source).toContain('/T (cbEvet) /V /Off >>');
+    expect(source).toContain('/T (color) /V /1 >>');
+    expect(source).toContain('/T (size) /V /L >>');
+    expect(source).not.toContain('/Yes');
+    // JSON keeps what it always had: true, and the option's own text.
+    const json = JSON.parse(new TextDecoder().decode((await exportFormData(filled.bytes, 'json')).bytes)) as {
+      fields: { name: string; value: unknown }[];
+    };
+    expect(json.fields.find((field) => field.name === 'cbOn')?.value).toBe(true);
+    expect(json.fields.find((field) => field.name === 'color')?.value).toBe('Blue');
+    expect(json.fields.find((field) => field.name === 'color')).not.toHaveProperty('stateName');
+
+    // Round trip: the file this app wrote puts the same states back in a blank form.
+    const back = await importFormData(buttons(), fdf.bytes, 'fdf', run);
+    expect(back.applied).toBe(fdf.fields);
+    expect(await valueOfField(back.bytes, 'cbOn')).toBe(true);
+    expect(await valueOfField(back.bytes, 'cbEvet')).toBe(false);
+    expect(await valueOfField(back.bytes, 'color')).toBe('Blue');
+    expect(await valueOfField(back.bytes, 'size')).toBe('L');
+  });
+
+  it('counts only the values it wrote: a name the form has no state for, an array for a text field, a missing name', async () => {
+    const out = await importFormData(
+      buttons(),
+      fdfOf(
+        '<< /T (ad) /V (Ada) >>',
+        '<< /T (cbEvet) /V /Evet >>',
+        '<< /T (cbOn) /V /Maybe >>',
+        '<< /T (ad) /V [ (a) ] >>',
+        '<< /T (ghost) /V /On >>',
+      ),
+      'fdf',
+      run,
+    );
+    expect(out.applied).toBe(2);
+    expect(out.missing).toEqual(['ghost']);
+    expect(out.report.notes).toContainEqual({
+      kind: 'warning',
+      key: 'form.note.missing',
+      params: { count: 2 },
+    });
+    expect(await valueOfField(out.bytes, 'cbOn')).toBe(false);
+    expect(await valueOfField(out.bytes, 'ad')).toBe('Ada');
+  });
+
+  it('reads /V before /T, fields under /Kids as parent.child, and a hex /V as UTF-16BE text', async () => {
+    const out = await importFormData(
+      buttons(),
+      fdfOf('<< /V <FEFF00C700FC> /T (ad) >>', '<< /T (p) /Kids [ << /T (c) /V (inside) >> ] >>'),
+      'fdf',
+      run,
+    );
+    expect(out.applied).toBe(2);
+    expect(out.missing).toEqual([]);
+    expect(await valueOfField(out.bytes, 'ad')).toBe('Çü');
+    expect(await valueOfField(out.bytes, 'p.c')).toBe('inside');
+  });
+
+  it('refuses a data file from which no value could be read instead of reporting 0 values applied', async () => {
+    const noMessage = {
+      code: 'input-missing',
+      details: { engine: 'model', engineMessage: 'the form-data file carries no field values' },
+    };
+    await expect(
+      importFormData(buttons(), fdfOf('<< /T (ad) >> << /T (cbOn) /V 5 >>'), 'fdf', run),
+    ).rejects.toMatchObject(noMessage);
+    await expect(importFormData(buttons(), fdfOf(), 'fdf', run)).rejects.toMatchObject(noMessage);
+    await expect(importFormData(buttons(), '{"fields":[]}', 'json', run)).rejects.toMatchObject(noMessage);
+  });
+});
+
 describe('forms whose pages and XFA packets are written unusually', () => {
   it('finds the page of a widget when the page is a direct dictionary in /Kids', async () => {
     const bytes = handPdf({

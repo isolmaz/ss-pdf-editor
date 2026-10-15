@@ -16,10 +16,13 @@ test('fails a test whose second page logs a console error', async ({ context }) 
 test('fails a test whose second page throws an uncaught exception', async ({ context }) => {
   test.fail();
   const second = await context.newPage();
+  // The exception is thrown from a timer task: the page reports it as an event, and the test
+  // ends only after that event, so the referee has seen it.
+  const thrown = second.waitForEvent('pageerror');
   await second.evaluate(() => {
     setTimeout(() => {
       throw new Error('thrown on the second page');
     });
   });
-  await second.waitForTimeout(100);
+  await thrown;
 });

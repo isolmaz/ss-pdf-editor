@@ -18,10 +18,27 @@ export const EMU = 12700;
 /** Word's largest page side: 22 inches. */
 export const WORD_MAX_SIDE_PT = 22 * 72;
 
-/** The text without the control characters XML 1.0 cannot carry. */
+/** What XML 1.0 has no form for: the C0 controls but tab, line feed and carriage return, U+FFFE, U+FFFF. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: these are the characters being removed
+const XML_FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+
+/**
+ * A UTF-16 pair (one character above U+FFFF, such as an emoji or a mathematical letter: capture
+ * group 1) or any other surrogate code unit. A pair is a valid XML character; a surrogate with no
+ * partner is not.
+ */
+const SURROGATES = /([\uD800-\uDBFF][\uDC00-\uDFFF])|[\uD800-\uDFFF]/g;
+
+/**
+ * The text as XML 1.0 can carry it: the forbidden characters dropped, a surrogate with no partner
+ * (half an astral character, which has no UTF-8 form) replaced by U+FFFD, and every pair kept. A
+ * string with a lone surrogate would otherwise reach JSZip, which in a browser writes it as the
+ * three bytes `ED A0 80` — invalid UTF-8, which a parser refuses — where Node writes U+FFFD.
+ */
 export function xmlSafe(value: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: these are the characters being removed
-  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
+  return value
+    .replace(XML_FORBIDDEN, '')
+    .replace(SURROGATES, (_unit, pair: string | undefined) => pair ?? '\uFFFD');
 }
 
 /** XML text: the five entities, and the control characters XML 1.0 cannot carry dropped. */

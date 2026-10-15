@@ -269,6 +269,8 @@ describe('applyImageEdit refusals and reports', () => {
       'op.note.image.nothing',
       'op.note.metadata.producerKept',
     ]);
+    // The fixture has one page; a report that said 0 would make a following "all pages" step empty.
+    expect(out.report).toMatchObject({ pageCount: 1, incremental: true, outputBytes: bytes.byteLength });
   });
 
   it('refuses a page that is not in the document, empty data and a signature that is not the format', async () => {
@@ -359,6 +361,31 @@ describe('applyImageEdit refusals and reports', () => {
       'op.note.image.maskKept',
       'op.note.image.replaced',
     ]);
+    // The note is true: the old soft mask is still on the replaced image, bytes and all…
+    const softMask = (bytes: Uint8Array): number[] | null => {
+      const reread = PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+      if (reread === null) throw new Error('not a PDF');
+      try {
+        const image = reread
+          .findPage(0)
+          .get('Resources')
+          .resolve()
+          .get('XObject')
+          .resolve()
+          .get('A')
+          .resolve();
+        const mask = image.get('SMask');
+        // A stream is only a stream through its indirect reference, so no `resolve()` here.
+        return mask.isNull() ? null : Array.from(mask.readStream().asUint8Array());
+      } finally {
+        reread.destroy();
+      }
+    };
+    expect(softMask(kept.bytes)).toEqual([255, 255]);
+    // …and when it is dropped (the default) nothing of it is left on the replaced image.
+    const gone = await applyImageEdit(withMask, { replacements: [replace({ data: opaque })] }, run);
+    expect(softMask(gone.bytes)).toBeNull();
+    expect(gone.report.notes.map((entry) => entry.key)).toContain('op.note.image.maskDropped');
     // The replacement carries alpha of its own, which is its mask: nothing old is being kept.
     const own = await applyImageEdit(withMask, { replacements: [replace()], dropMask: false }, run);
     expect(own.report.notes.map((entry) => entry.key)).toEqual(['op.note.image.replaced']);

@@ -59,7 +59,67 @@ test('Save stops with a conflict when the file changed after it was opened, and 
   await rotateCurrentPage(page);
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(notice(page, 'The file changed after you opened it.')).toBeVisible({ timeout: 60_000 });
+  // A changed file is a question with three answers, not a dead end: nothing was written yet.
+  const dialog = page.getByRole('dialog').filter({ hasText: 'The file changed after you opened it.' });
+  await expect(dialog).toBeVisible({ timeout: 60_000 });
+  expect(sha(await readFile(page, 'shared.pdf'))).toBe(sha(elsewhere));
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(sha(await readFile(page, 'shared.pdf'))).toBe(sha(elsewhere));
+});
+
+test('"Overwrite" in the file-changed dialog writes the document over the changed file, and later saves are not conflicts', async ({
+  page,
+}) => {
+  await installPickers(page);
+  await page.goto('/editor/');
+  await stageFile(page, 'open', 'shared.pdf', labelledPdf('Shared', 2));
+  await openStaged(page);
+  const elsewhere = labelledPdf('Elsewhere', 3);
+  await rewriteFile(page, 'shared.pdf', elsewhere);
+
+  await rotateCurrentPage(page);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.getByRole('dialog').filter({ hasText: 'The file changed after you opened it.' });
+  await expect(dialog).toBeVisible({ timeout: 60_000 });
+
+  await dialog.getByRole('button', { name: 'Overwrite', exact: true }).click();
+  await expect(notice(page, 'Saved: shared.pdf')).toBeVisible({ timeout: 60_000 });
+  const written = await readFile(page, 'shared.pdf');
+  expect(sha(written)).not.toBe(sha(elsewhere));
+  expect(await readProducedEntry(written, 0, 'Rotate')).toBe('90');
+
+  // The file is now what this editor wrote: the next in-place Save is a plain save again.
+  await rotateCurrentPage(page);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled({ timeout: 30_000 });
+  await page.keyboard.press('Control+s');
+  await expect(dialog).toBeHidden();
+  await expect
+    .poll(async () => sha(await readFile(page, 'shared.pdf')), { timeout: 60_000 })
+    .not.toBe(sha(written));
+});
+
+test('"Save as" in the file-changed dialog leaves the changed file alone and writes the chosen one', async ({
+  page,
+}) => {
+  await installPickers(page);
+  await page.goto('/editor/');
+  await stageFile(page, 'open', 'shared.pdf', labelledPdf('Shared', 2));
+  await openStaged(page);
+  const elsewhere = labelledPdf('Elsewhere', 3);
+  await rewriteFile(page, 'shared.pdf', elsewhere);
+
+  await rotateCurrentPage(page);
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.getByRole('dialog').filter({ hasText: 'The file changed after you opened it.' });
+  await expect(dialog).toBeVisible({ timeout: 60_000 });
+
+  await stageFile(page, 'save', 'copy.pdf', new Uint8Array(0));
+  await dialog.getByRole('button', { name: 'Save as…', exact: true }).click();
+  await expect(notice(page, 'Saved: shared.pdf')).toBeVisible({ timeout: 60_000 });
+  expect(await readProducedEntry(await readFile(page, 'copy.pdf'), 0, 'Rotate')).toBe('90');
   expect(sha(await readFile(page, 'shared.pdf'))).toBe(sha(elsewhere));
 });
 

@@ -23,6 +23,7 @@ import {
   showNotice,
 } from '../core/core-store';
 import { documentContext } from '../core/document';
+import { runGatedOperation } from '../core/gated-operation';
 import { handleFor, swapHandle } from '../core/handles';
 import { closePrintDialog, closeScanDialog } from './results-store';
 
@@ -63,23 +64,28 @@ export function createResultsActions(deps: ResultsDeps): ResultsActions {
 
   /**
    * The accessibility writers' results arrive as bytes plus notes; they land in the session
-   * exactly like every other produced file (journal entry → save router), so the panel never
-   * writes a file of its own.
+   * exactly like every other produced file (journal entry → save), so the panel never
+   * writes a file of its own. It is an operation like the others: refused while one holds the
+   * document, cancellable, and a failure is a notice — the dock calls it without awaiting, so
+   * nothing here may reject.
    */
   async function applyAccessibility(outcome: AccessibilityOutcome): Promise<void> {
     const tab = deps.session.active;
     const handle = tab === null ? null : (handleFor(tab.id) ?? null);
     if (tab === null || handle === null) return;
-    const next = await applyProducedBytes(
-      documentContext(deps.session, t, tab, handle),
-      outcome.bytes,
-      workingPageCount(tab),
-      { key: 'a11y.applied', params: { count: outcome.notes.length } },
-      'mupdf',
-      outcome.steps,
-    );
-    swapHandle(t, tab.id, next);
-    showNotice(t('a11y.applied', { count: outcome.notes.length }));
+    await runGatedOperation(t, async (signal) => {
+      const next = await applyProducedBytes(
+        documentContext(deps.session, t, tab, handle),
+        outcome.bytes,
+        workingPageCount(tab),
+        { key: 'a11y.applied', params: { count: outcome.notes.length } },
+        'mupdf',
+        outcome.steps,
+        { signal },
+      );
+      swapHandle(t, tab.id, next);
+      showNotice(t('a11y.applied', { count: outcome.notes.length }));
+    });
   }
 
   /**

@@ -9,7 +9,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import { SessionStore } from 'pdf-model';
+import { SessionStore, workingBytesKey } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import type { ViewerApi } from 'pdf-ui/viewer';
@@ -18,7 +18,7 @@ import { coreStore, initialCoreState, setBusy } from '../core/core-store';
 import { adoptHandle, dropHandle } from '../core/handles';
 import { exportStore, initialExportState } from '../export/export-store';
 import { factsRead, factsStore } from '../facts/facts-store';
-import { formInventoryRead, formsStore, initialFormsState } from '../forms/forms-store';
+import { formInventoryKey, formInventoryRead, formsStore, initialFormsState } from '../forms/forms-store';
 import { hideStartScreen, initialOpenState, openStore, showStartScreen } from '../open/open-store';
 import { initialSaveState, saveStore, viewerChanged } from '../save/save-store';
 import { type EditorSurfaces, editorStore, initialEditorState } from './editor-store';
@@ -247,13 +247,13 @@ describe('ShellHeader editor state', () => {
     act(() => {
       factsRead({
         tabId: tab.id,
-        version: tab.working.id,
+        bytesKey: workingBytesKey(tab),
         fonts: [],
         attachments: [],
         signatures: [],
         security: { encrypted: false, permissions: [] },
       });
-      formInventoryRead({ tabId: tab.id, version: tab.working.id, fields: [] } as never);
+      formInventoryRead({ tabId: tab.id, key: formInventoryKey(tab), fields: [] } as never);
     });
     expect(screen.getByLabelText('editor header').dataset.canSave).toBe('true');
     expect(screen.getByLabelText('editor header').dataset.canExport).toBe('true');

@@ -29,6 +29,7 @@ import { mapMupdfError } from '../engines/mupdf';
 import { openForWrite, saveIncremental, saveRewrite, type WritableDocument } from '../engines/mupdf-write';
 import { fillFormFields, readFormFields, xfaSnapshotsOf } from './forms';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
+import { dropUsageRights } from './usage-rights';
 import {
   datasetsText,
   describeXfa,
@@ -225,6 +226,7 @@ export async function importXfaData(
       throw new ToolError('corrupt-document', { engine: 'mupdf', engineMessage: 'the datasets are not XML' });
     }
     writeDatasets(doc, replaced);
+    dropUsageRights(doc);
     return { saved: saveRewrite(doc, 'xfa.import'), info, replaced };
   });
 
@@ -275,6 +277,7 @@ export async function importXfaData(
       const restored = await withDocument(output, 'xfa.import.restore', ({ doc }) => {
         if (sameEntries(entriesOf(doc), expected)) return null;
         writeDatasets(doc, written.replaced);
+        dropUsageRights(doc);
         return saveRewrite(doc, 'xfa.import');
       });
       if (restored !== null) output = restored;

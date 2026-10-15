@@ -17,10 +17,8 @@ export {
   type ThemeSelectorProps,
   useTheme,
 } from './components/ThemeSelector';
-export { BatchDialog, type BatchDialogProps } from './dialogs/BatchDialog';
-export { ExportDialog, type ExportDialogProps, type ExportOptions } from './dialogs/ExportDialog';
-export { OperationForm, type OperationFormProps } from './dialogs/OperationForm';
-export { OperationReportPanel, type OperationReportPanelProps } from './dialogs/ReportPanel';
+// The dialogs are one list: the `./dialog` subpath's own module, re-exported whole.
+export * from './dialogs/DialogSurface';
 export type { InterfaceMode } from './dialogs/SettingsDialog';
 export type {
   DialogParams,
@@ -33,13 +31,8 @@ export type {
   OpRunContext,
   OpRunResult,
 } from './dialogs/types';
-export type { OperationRunContext } from './dialogs/useOperationRun';
 export { DIALOG_IDS, dialogById, hasDialog, isStandaloneDialog } from './ops';
-export {
-  AnnotationLayer,
-  type AnnotationLayerProps,
-  type TextSelection,
-} from './ops/AnnotationLayer';
+export { AnnotationLayer, type AnnotationLayerProps } from './ops/AnnotationLayer';
 export {
   MeasureLayer,
   type MeasureLayerProps,

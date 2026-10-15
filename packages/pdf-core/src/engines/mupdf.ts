@@ -3,7 +3,7 @@
  * to `mupdf.js`.
  *
  * MuPDF is AGPL-3.0-or-later and every byte of it is served from **our own
- * origin** (`/engines/mupdf/mupdf.js`, SHA-256 pinned); the wasm
+ * origin** (`/engines/mupdf/v<digest>/mupdf.js`, SHA-256 pinned); the wasm
  * resolves next to that file, so no runtime request ever leaves the device. The
  * module is imported by its **runtime URL** (behind a `vite-ignore` marker) so the
  * bundler neither resolves nor inlines a 9.93 MiB wasm engine into the first-paint
@@ -98,6 +98,10 @@ export function readPageRotation(page: PDFPage): 0 | 90 | 180 | 270 {
  *
  * The flip line is the box's top edge, which is what the viewer's own pointer
  * conversion uses (`PdfViewerPane.pointToPage`: `top = viewBox[3]`, `y = top − pdfY`).
+ * `x` is already user-space and passes through. A `y` therefore carries no `box.y`:
+ * the text model's reader (`text-source.ts > toUserY`) produces `box.y + box.height −
+ * userY` and the verifier (`ops/text-edit.ts`) inverts it with this same function, so
+ * a page whose box does not start at `y = 0` round-trips through all three.
  */
 export function topLeftToUserPoint(
   box: UserBox,
@@ -204,7 +208,13 @@ export const MUPDF_FULL_SAVE_OPTIONS = 'garbage=compact,compress,clean';
 let mupdfModule: Promise<Mupdf> | null = null;
 let mupdfLoadAttempt = 0;
 
-/** Memoized lazy load; the second caller shares the first request, but a failed request can retry. */
+/**
+ * Memoized lazy load; the second caller shares the first request, but a failed request can retry.
+ *
+ * The browser remembers a failed import under its URL, so a retry asks for `?retry=N` on the same
+ * (versioned, `assets.ts`) URL. `public/sw.js` looks an `/engines/` file up and stores it without
+ * that parameter, so a retry is answered from the cache the first attempt would have used.
+ */
 export function loadMupdf(): Promise<Mupdf> {
   if (mupdfModule === null) {
     const url = mupdfLoadAttempt === 0 ? MUPDF_ASSETS.js : `${MUPDF_ASSETS.js}?retry=${mupdfLoadAttempt}`;
@@ -293,11 +303,12 @@ export function savePdf(doc: PDFDocument, options: string | Record<string, unkno
 const LATIN1_CHUNK = 0x8000;
 
 /**
- * Raw bytes as a latin1 ("binary") string — the shape object-level audits need
- *: a needle can then be counted with plain
- * `indexOf` across dictionary text, hex strings and undecoded streams without
- * decoding the file as UTF-8 (a PDF is binary; UTF-8 decoding would mangle bytes
- * and hide occurrences).
+ * Raw bytes as a latin1 ("binary") string — the shape object-level audits need:
+ * a needle written as plain bytes can then be counted with plain `indexOf` across
+ * dictionary text and undecoded streams without decoding the file as UTF-8 (a PDF is
+ * binary; UTF-8 decoding would mangle bytes and hide occurrences). It does **not**
+ * find a needle inside a hex string or a UTF-16BE text string — those hold other
+ * bytes; `ops/redact-audit.ts` parses and decodes them separately.
  *
  * Chunked because `String.fromCharCode(...bytes)` on a 50 MB file overflows the
  * argument limit.

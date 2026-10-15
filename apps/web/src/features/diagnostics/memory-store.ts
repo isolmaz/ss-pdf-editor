@@ -7,7 +7,7 @@
  */
 
 import type { SessionStore } from 'pdf-model';
-import type { DeviceTier } from 'pdf-shared';
+import { type DeviceTier, LIMITS } from 'pdf-shared';
 import { useEffect } from 'react';
 import { createStore, useStore } from '../store';
 
@@ -49,7 +49,7 @@ export function memorySampled(usage: MemoryUsage): void {
  * for the engine.
  */
 export function sampleMemory(session: Pick<SessionStore, 'getSnapshot'>, tier: DeviceTier): MemoryUsage {
-  const budgetBytes = (tier === 'mobile' ? 128 : 512) * MIB;
+  const budgetBytes = LIMITS[tier].renderCacheBytes;
   const heap = (performance as unknown as { memory?: { usedJSHeapSize?: number } }).memory;
   if (typeof heap?.usedJSHeapSize === 'number' && heap.usedJSHeapSize > 0) {
     return { usedBytes: heap.usedJSHeapSize, budgetBytes };

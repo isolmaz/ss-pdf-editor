@@ -13,7 +13,6 @@ export const convertPart = {
   'convert.pageSize': 'Sayfa boyutu',
   'convert.margin': 'Kenar boşluğu (mm)',
   'convert.command': 'Belgeyi PDF’e dönüştür (Word, Excel, PowerPoint…)',
-  'convert.converting': '{name} PDF’e dönüştürülüyor…',
   'convert.opened': '{format} dosyası PDF’e dönüştürülüp yeni sekmede açıldı.',
   'convert.unsupported':
     '{kind} dosyaları dönüştürülemiyor. Desteklenen biçimler: DOCX, XLSX, PPTX, HTML, TXT, MD, CSV, TSV, EPUB, FB2. Dosyayı bunlardan birinde kaydedip yeniden deneyin.',

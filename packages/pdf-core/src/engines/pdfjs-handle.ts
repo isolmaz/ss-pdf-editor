@@ -97,6 +97,12 @@ export interface PdfPageSize {
   readonly rotation: number;
   /** The page box in PDF user space, `[x0, y0, x1, y1]` (`viewport.viewBox`). */
   readonly viewBox: readonly [number, number, number, number];
+  /**
+   * The page's `/UserUnit` — one user-space unit in 1/72 inch, 1 when the page has none.
+   * `width`/`height` already include it (pdf.js scales the viewport by it), while
+   * `viewBox` is in user units.
+   */
+  readonly userUnit: number;
 }
 
 /** One outline entry the shell can render: title plus its 0-based target page. */
@@ -357,6 +363,7 @@ export async function openWithPdfjs(
         height: viewport.height,
         rotation: viewport.rotation,
         viewBox: [x0, y0, x1, y1],
+        userUnit: viewport.userUnit,
       };
     },
 
@@ -367,6 +374,11 @@ export async function openWithPdfjs(
     async renderPage(pageIndex, canvas, renderOptions) {
       if (renderOptions.signal?.aborted) throw abortError();
       const page = await document.getPage(pageIndex + 1);
+      // The page may take a while to arrive (a worker busy parsing, a first open), and a
+      // cancel sent meanwhile has no render task to stop yet and no listener to reach one:
+      // without this look the render would start after the caller gave up and paint a canvas
+      // that was already released.
+      if (renderOptions.signal?.aborted) throw abortError();
       const pixelRatio =
         renderOptions.devicePixelRatio ?? (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1);
       const viewport = page.getViewport({

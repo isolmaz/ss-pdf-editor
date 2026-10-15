@@ -52,12 +52,14 @@ function PanelFallback({ label }: { readonly label: string }) {
 export interface PrintDialogHostProps {
   readonly t: Translator;
   readonly viewer: ViewerApi | null;
+  /** The working bytes with the unsaved marks written in (`createCurrentBytes`): what is printed. */
+  readonly read: (operation: OperationContext) => Promise<Uint8Array>;
   /** The file the dialog imposed, to open as a new tab. */
   readonly onProduced: (file: PrintedFile) => Promise<void>;
 }
 
 /** Mounted only while the store says the print dialog is open. */
-export function PrintDialogHost({ t, viewer, onProduced }: PrintDialogHostProps) {
+export function PrintDialogHost({ t, viewer, read, onProduced }: PrintDialogHostProps) {
   const printOpen = useResults((state) => state.printOpen);
   if (!printOpen) return null;
   return (
@@ -65,6 +67,7 @@ export function PrintDialogHost({ t, viewer, onProduced }: PrintDialogHostProps)
       <PrintDialog
         t={t}
         viewer={viewer}
+        read={read}
         open={printOpen}
         onClose={closePrintDialog}
         onNotice={showNotice}
@@ -103,7 +106,11 @@ export interface AccessibilityDockProps {
   readonly currentPage: number;
   readonly canEdit: boolean;
   readonly onGoToPage: (pageIndex: number) => void;
-  /** Bytes a PDF/UA fix, the tags editor or the alt-text writer produced. */
+  /**
+   * Bytes a PDF/UA fix, the tags editor or the alt-text writer produced. The handler is an
+   * operation of its own (busy gate, Cancel, failures as notices) and never rejects, which is
+   * what lets the panel's callbacks fire it without awaiting.
+   */
   readonly onWritten: (outcome: AccessibilityOutcome) => Promise<void>;
 }
 

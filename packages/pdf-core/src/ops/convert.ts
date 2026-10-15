@@ -109,11 +109,23 @@ const SAFE_LINK = /^(?:https?:|mailto:)/i;
 
 const HTML_TITLE = /<title[^>]*>([^<]*)<\/title>/i;
 
+/**
+ * A character reference's code point as text. The page's own markup decides the number, and
+ * `String.fromCodePoint` throws on one past U+10FFFF: a title of `&#x110000;` would stop the
+ * whole conversion. What is not a character (NUL, a lone surrogate, past U+10FFFF) is U+FFFD,
+ * as a browser reads it.
+ */
+function referencedCharacter(codePoint: number): string {
+  if (!Number.isInteger(codePoint) || codePoint <= 0 || codePoint > 0x10ffff) return '\ufffd';
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) return '\ufffd';
+  return String.fromCodePoint(codePoint);
+}
+
 /** The five XML entities and numeric references, for a `<title>` read as text. */
 function decodeEntities(value: string): string {
   return value
-    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_match, decimal: string) => String.fromCodePoint(Number(decimal)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) => referencedCharacter(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_match, decimal: string) => referencedCharacter(Number(decimal)))
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -192,6 +204,7 @@ export async function convertToPdf(
   const links: LinkAdd[] = [];
   let unsafeLinks = 0;
   let pageCount = 0;
+  let written: Uint8Array;
   steps.push('convert.layout', 'convert.write');
   try {
     for (const part of parts) {
@@ -221,35 +234,42 @@ export async function convertToPdf(
             done: offset + index,
           });
           const sourcePage = source.loadPage(index);
-          const device = writer.beginPage(sourcePage.getBounds());
-          sourcePage.run(device, mupdf.Matrix.identity);
-          writer.endPage();
-          for (const link of sourcePage.getLinks()) {
-            const [x0, y0, x1, y1] = link.getBounds();
-            const target = { pageIndex: offset + index, rect: [x0, y0, x1, y1] as const };
-            if (link.isExternal()) {
-              const uri = link.getURI();
-              if (SAFE_LINK.test(uri)) {
-                links.push({ target, destination: { kind: 'uri', uri }, border: [0, 0, 0] });
-              } else unsafeLinks += 1;
-              continue;
+          try {
+            const device = writer.beginPage(sourcePage.getBounds());
+            try {
+              sourcePage.run(device, mupdf.Matrix.identity);
+              writer.endPage();
+            } finally {
+              device.destroy();
             }
-            const destination = source.resolveLinkDestination(link);
-            const targetPage = source.resolveLink(link);
-            if (targetPage < 0 || targetPage >= count) continue;
-            links.push({
-              target,
-              destination: {
-                kind: 'page',
-                pageIndex: offset + targetPage,
-                ...(Number.isFinite(destination.x) && Number.isFinite(destination.y)
-                  ? { x: destination.x, y: destination.y }
-                  : {}),
-              },
-              border: [0, 0, 0],
-            });
+            for (const link of sourcePage.getLinks()) {
+              const [x0, y0, x1, y1] = link.getBounds();
+              const target = { pageIndex: offset + index, rect: [x0, y0, x1, y1] as const };
+              if (link.isExternal()) {
+                const uri = link.getURI();
+                if (SAFE_LINK.test(uri)) {
+                  links.push({ target, destination: { kind: 'uri', uri }, border: [0, 0, 0] });
+                } else unsafeLinks += 1;
+                continue;
+              }
+              const destination = source.resolveLinkDestination(link);
+              const targetPage = source.resolveLink(link);
+              if (targetPage < 0 || targetPage >= count) continue;
+              links.push({
+                target,
+                destination: {
+                  kind: 'page',
+                  pageIndex: offset + targetPage,
+                  ...(Number.isFinite(destination.x) && Number.isFinite(destination.y)
+                    ? { x: destination.x, y: destination.y }
+                    : {}),
+                },
+                border: [0, 0, 0],
+              });
+            }
+          } finally {
+            sourcePage.destroy();
           }
-          sourcePage.destroy();
         }
         const items = source.loadOutline();
         if (items !== null) {
@@ -281,9 +301,14 @@ export async function convertToPdf(
       }
     }
     writer.close();
+    written = buffer.asUint8Array().slice();
   } catch (error) {
     if (error instanceof ToolError) throw error;
     throw mapMupdfError(error, 'convertToPdf');
+  } finally {
+    // The writer writes into the buffer, so it goes first; a layout that failed released neither.
+    writer.destroy();
+    buffer.destroy();
   }
   if (pageCount === 0) {
     throw new ToolError('unsupported-format', {
@@ -296,7 +321,7 @@ export async function convertToPdf(
   const title = sourceTitle ?? stem(request.name);
   let bytes: Uint8Array;
   {
-    const { doc } = await openForWrite(buffer.asUint8Array().slice());
+    const { doc } = await openForWrite(written);
     try {
       doc.setMetaData('info:Title', title);
       bytes = saveRewrite(doc, 'convertToPdf');

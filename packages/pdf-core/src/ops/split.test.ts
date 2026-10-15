@@ -5,8 +5,23 @@
 
 import { PDFDocument } from 'mupdf';
 import { isToolError, type ToolError } from 'pdf-shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type * as Compose from './compose';
 import { planSplit, type SplitOptions, splitDocument } from './split';
+
+/** How many parts the engine was asked to produce — a part that is produced again counts again. */
+const productions = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock('./compose', async (importOriginal) => {
+  const actual = await importOriginal<typeof Compose>();
+  return {
+    ...actual,
+    composeDocument: (...args: Parameters<typeof Compose.composeDocument>) => {
+      productions.count += 1;
+      return actual.composeDocument(...args);
+    },
+  };
+});
 
 const run = { signal: new AbortController().signal };
 
@@ -15,6 +30,29 @@ function pages(count: number, noise = 0): Uint8Array {
   const doc = new PDFDocument();
   for (let index = 0; index < count; index += 1) {
     const content = noise > 0 ? `0 0 m ${'1 1 l '.repeat(noise)}S` : '';
+    doc.insertPage(index, doc.addPage([0, 0, 100 + index, 200], 0, {}, content));
+  }
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/** Page content of about `ops * 9` bytes that does not shrink under compression. */
+function heavyContent(ops: number, seed: number): string {
+  let state = seed;
+  const numbers = Array.from({ length: ops }, () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return `${state % 1000} ${(state >>> 12) % 1000} l`;
+  });
+  return `0 0 m ${numbers.join(' ')} S`;
+}
+
+/** `count` pages, page `n` `100 + n` wide, carrying `opsOf(n)` path operators (0 = an empty page). */
+function weighedPages(count: number, opsOf: (index: number) => number): Uint8Array {
+  const doc = new PDFDocument();
+  for (let index = 0; index < count; index += 1) {
+    const ops = opsOf(index);
+    const content = ops === 0 ? '' : heavyContent(ops, 5 + index);
     doc.insertPage(index, doc.addPage([0, 0, 100 + index, 200], 0, {}, content));
   }
   const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
@@ -62,6 +100,17 @@ describe('planSplit', () => {
     const plan = planSplit({ ...base, mode: 'ranges', ranges: '4-5, 1;2\n3' });
     expect(plan.parts).toEqual([[3, 4], [0], [1], [2]]);
     expect(plan.names).toHaveLength(4);
+  });
+
+  it('cuts at whitespace like at a comma, and keeps spaces around a dash inside the range', () => {
+    expect(planSplit({ ...base, mode: 'ranges', ranges: '1 3' }).parts).toEqual([[0], [2]]);
+    expect(planSplit({ ...base, mode: 'ranges', ranges: '1-2 5' }).parts).toEqual([[0, 1], [4]]);
+    expect(planSplit({ ...base, mode: 'ranges', ranges: '1 - 2  4 -' }).parts).toEqual([
+      [0, 1],
+      [3, 4],
+    ]);
+    // A line break always ends a part, even right after a dash.
+    expect(planSplit({ ...base, mode: 'ranges', ranges: '4 -\n1' }).parts).toEqual([[3, 4], [0]]);
   });
 
   it('plans every N pages with a short last part', () => {
@@ -176,7 +225,7 @@ describe('splitDocument', () => {
     expect(result.files.map((file) => widths(file.bytes))).toEqual([[100, 101, 102, 103], [104]]);
   });
 
-  it('in size mode keeps every part under the limit and re-produces an oversized estimate with one page less', async () => {
+  it('in size mode keeps every part under the limit and corrects an oversized estimate from its measured size', async () => {
     // Pages of very different weight: the first two are heavy (incompressible numbers), the
     // rest are empty, so the proportional estimate (two pages) is wrong for the first part
     // and has to be corrected down to one page.
@@ -232,7 +281,66 @@ describe('splitDocument', () => {
       run,
     );
     expect(result.files.map((file) => widths(file.bytes))).toEqual([[100], [101]]);
+    // Both parts break the limit and the result says so: a page cannot be cut.
+    expect(result.oversizedPages).toEqual([0, 1]);
   });
+
+  it('in size mode names only the pages that are over the limit on their own', async () => {
+    // Page 2 is heavy (about 36 KB), the rest are empty.
+    const bytes = weighedPages(5, (index) => (index === 2 ? 4000 : 0));
+    const lightPair =
+      (await splitDocument(bytes, { ...base, mode: 'everyN', chunkSize: 2 }, run)).files[0]?.bytes.length ??
+      0;
+    const maxBytes = lightPair + 2000;
+    const result = await splitDocument(
+      bytes,
+      { ...base, mode: 'size', maxBytes, totalBytes: bytes.length },
+      run,
+    );
+    expect(result.oversizedPages).toEqual([2]);
+    expect(result.plan.parts.flat()).toEqual([0, 1, 2, 3, 4]);
+    const heavyPart = result.plan.parts.findIndex((part) => part.includes(2));
+    expect(result.plan.parts[heavyPart]).toEqual([2]);
+    for (const [index, file] of result.files.entries()) {
+      if (index === heavyPart) expect(file.bytes.length).toBeGreaterThan(maxBytes);
+      else expect(file.bytes.length).toBeLessThanOrEqual(maxBytes);
+    }
+  });
+
+  it('in size mode leaves nothing to report when every part fits', async () => {
+    const bytes = pages(5);
+    const result = await splitDocument(
+      bytes,
+      { ...base, mode: 'size', maxBytes: bytes.length * 2, totalBytes: bytes.length },
+      run,
+    );
+    expect(result.plan.parts).toEqual([[0, 1, 2, 3, 4]]);
+    expect(result.oversizedPages).toEqual([]);
+  });
+
+  it('in size mode corrects an estimate that is far too large in a logarithmic number of productions', async () => {
+    const bytes = weighedPages(20, () => 200);
+    const options = { baseName: 'doc', pageCount: 20 } as const;
+    // One part of the first `count` pages — a single production each, so the measurement stays cheap.
+    const sizeOf = async (count: number) =>
+      (await splitDocument(bytes, { ...options, mode: 'ranges', ranges: `1-${count}` }, run)).files[0]?.bytes
+        .length ?? 0;
+    const [four, five] = [await sizeOf(4), await sizeOf(5)];
+    expect(five - four).toBeGreaterThan(500);
+    // Exactly four pages fit: the limit sits halfway between four pages and five.
+    const maxBytes = Math.floor((four + five) / 2);
+
+    productions.count = 0;
+    // Told that a page weighs a single byte, the first estimate is the whole document. Taking
+    // one page off per production would need 17 of them for the first part alone (21 in all).
+    const result = await splitDocument(bytes, { ...options, mode: 'size', maxBytes, totalBytes: 20 }, run);
+    expect(result.plan.parts.map((part) => part.length)).toEqual([4, 4, 4, 4, 4]);
+    expect(result.plan.parts.flat()).toEqual(Array.from({ length: 20 }, (_unused, page) => page));
+    expect(result.oversizedPages).toEqual([]);
+    // 1 estimate + 1 proportional correction + at most log2(19) bisections for the first part,
+    // then one production for each of the four parts after it.
+    expect(productions.count).toBeLessThanOrEqual(12);
+  }, 60_000);
 
   it('refuses invalid options before opening the document', async () => {
     expect(

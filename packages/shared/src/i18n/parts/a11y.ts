@@ -65,7 +65,8 @@ export const a11yPart = {
   'op.a11y.check.infoTitle': 'Info sözlüğünde başlık (/Title) yok.',
   'op.a11y.check.infoTitleOk': 'Info sözlüğünde başlık var.',
   'op.a11y.check.xmpMissing': 'XMP üst verisi (/Metadata) yok.',
-  'op.a11y.check.xmpTitle': 'XMP paketi var ama dc:title yok.',
+  'op.a11y.check.xmpMalformed': 'XMP paketi geçerli bir XML değil; dc:title okunamıyor.',
+  'op.a11y.check.xmpTitle': 'XMP paketi var ama dc:title yok ya da boş.',
   'op.a11y.check.xmpTitleOk': 'XMP paketinde dc:title var.',
   'op.a11y.check.imageAlt': '"{name}" görselinin alt metni yok ({pages}. sayfalar).',
   'op.a11y.check.imageAltOk': 'Çizilen {count} görselin tümünde alt metin var.',
@@ -100,7 +101,6 @@ export const a11yPart = {
   'op.a11y.notChecked.visual':
     'Renk karşıtlığı, yazı boyutu ve hedef boyutu gibi görsel ölçütler denetlenmedi.',
   'op.a11y.notChecked.raster': 'Taranmış sayfalardaki (görüntü içindeki) metin için OCR yapılmadı.',
-  'op.a11y.notChecked.xmpXml': 'XMP paketi XML olarak çözümlenmedi; dc:title düz metin olarak aranır.',
   'op.a11y.notChecked.conformance':
     'Bu denetim bir uygunluk değerlendirmesi değildir: PDF/UA veya WCAG uygunluğu iddia edilmez.',
   'panel.a11y': 'Erişilebilirlik',

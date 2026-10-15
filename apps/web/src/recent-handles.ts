@@ -8,7 +8,7 @@
  * byte is ever written here; the recent list itself stays metadata in `localStorage`
  * (`recent.ts`).
  *
- * Kept out of a sensitive session (a password-protected document): its tab saves nothing,
+ * Kept out of a sensitive session (a document opened with a password): its tab saves nothing,
  * and a handle that reopens it is something saved. Marking a document sensitive or purging
  * it forgets its handle; removing an entry or clearing the list forgets theirs at once.
  *

@@ -381,6 +381,7 @@ function checkBytes(bytes: Uint8Array, findings: Findings): void {
  * The object graph, every object: streams
  * ------------------------------------------------------------------ */
 
+/** Walk every object; `false` when the file has more than the walk's limit, so the rest was not seen. */
 function checkAllObjects(doc: PDFDocument, part: PdfAPart, findings: Findings): boolean {
   const count = doc.countObjects();
   const limit = Math.min(count, OBJECT_SCAN_LIMIT);
@@ -1187,14 +1188,31 @@ function checkEmbeddedFile(spec: PDFObject, part: PdfAPart, findings: Findings, 
     findings.add('embedded-files', { detail: `${label}: the embedded stream has no /Subtype` });
 }
 
-function checkEmbeddedFiles(doc: PDFDocument, part: PdfAPart, findings: Findings): void {
-  let files: Record<string, PDFObject> = {};
+/**
+ * Check every embedded file in the `/Names /EmbeddedFiles` tree. `false` when the tree cannot be
+ * read (it is not a dictionary, or walking it throws: a cycle or an absurd depth), because then
+ * "no embedded files" is not known and the rule cannot be called a pass.
+ */
+function checkEmbeddedFiles(
+  doc: PDFDocument,
+  catalog: PDFObject,
+  part: PdfAPart,
+  findings: Findings,
+): boolean {
+  const names = dictionaryAt(catalog, 'Names');
+  // No `/Names` or no `/EmbeddedFiles` is a file with none: `loadNameTree` would throw on the
+  // missing parent, which must not be mistaken for a tree it could not walk.
+  const tree = names === null ? null : resolved(names.get('EmbeddedFiles'));
+  if (tree === null) return true;
+  if (!tree.isDictionary()) return false;
+  let files: Record<string, PDFObject>;
   try {
     files = doc.loadNameTree('EmbeddedFiles');
   } catch {
-    files = {};
+    return false;
   }
   for (const [name, spec] of Object.entries(files)) checkEmbeddedFile(spec, part, findings, name);
+  return true;
 }
 
 function checkLayers(catalog: PDFObject, part: PdfAPart, findings: Findings): void {
@@ -1304,7 +1322,12 @@ async function run(
   if (trailer.get('ID').isNull()) findings.add('trailer', { detail: 'no /ID in the trailer' });
   if (doc.wasRepaired())
     findings.add('structure', { detail: 'the cross-reference table had to be repaired' });
-  if (!checkAllObjects(doc, part, findings)) incomplete.add('streams');
+  if (!checkAllObjects(doc, part, findings)) {
+    incomplete.add('streams');
+    // Part 1 forbids object and cross-reference streams, which only this walk looks for: the
+    // objects it never reached may hold some, so `structure` cannot be called a pass there.
+    if (part === 1) incomplete.add('structure');
+  }
 
   checkMetadata(trailer, loaded, part, findings);
   checkClaim(claim, part, findings);
@@ -1337,7 +1360,7 @@ async function run(
   checkForms(catalog, findings);
   checkLayers(catalog, part, findings);
   checkOutlineActions(catalog, findings);
-  checkEmbeddedFiles(doc, part, findings);
+  if (!checkEmbeddedFiles(doc, catalog, part, findings)) incomplete.add('embedded-files');
 
   const pageCount = doc.countPages();
   for (let index = 0; index < pageCount; index += 1) {

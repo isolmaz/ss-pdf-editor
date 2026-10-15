@@ -13,6 +13,8 @@
  * version field is checked so a future format cannot be misread as this one.
  */
 
+import { fromBase64, toBase64 } from './base64';
+
 export interface TrustRoot {
   readonly id: string;
   /** A label the user can recognise — the certificate's common name, normally. */
@@ -28,50 +30,6 @@ export interface TrustRootsFile {
 }
 
 export const EMPTY_TRUST_ROOTS: TrustRootsFile = { version: 1, roots: [] };
-
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-/**
- * base64 without `btoa`: this module is DOM-free and runs in Node under `pnpm unit`
- * exactly as it runs in the browser, so the one encoding both agree on is written here
- * rather than taken from whichever host is present.
- */
-export function toBase64(bytes: Uint8Array): string {
-  let out = '';
-  for (let index = 0; index < bytes.length; index += 3) {
-    // In range: the loop runs while `index < bytes.length`.
-    const first = bytes[index] as number;
-    const second = bytes[index + 1];
-    const third = bytes[index + 2];
-    out += ALPHABET[first >> 2];
-    out += ALPHABET[((first & 0x03) << 4) | ((second ?? 0) >> 4)];
-    out += second === undefined ? '=' : ALPHABET[((second & 0x0f) << 2) | ((third ?? 0) >> 6)];
-    out += third === undefined ? '=' : ALPHABET[third & 0x3f];
-  }
-  return out;
-}
-
-/**
- * Decode base64, ignoring everything outside the alphabet (line breaks, PEM indentation,
- * `=` padding), so every character that reaches the decoder has a value.
- */
-export function fromBase64(text: string): Uint8Array {
-  const clean = text.replace(/[^A-Za-z0-9+/]/g, '');
-  const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
-  let at = 0;
-  let buffer = 0;
-  let bits = 0;
-  for (const character of clean) {
-    buffer = (buffer << 6) | ALPHABET.indexOf(character);
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out[at] = (buffer >> bits) & 0xff;
-      at += 1;
-    }
-  }
-  return out.subarray(0, at);
-}
 
 /** A root from its DER and a label; the id is derived from the DER, so the same
  * certificate imported twice is the same entry rather than two. */

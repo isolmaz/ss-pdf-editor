@@ -10,7 +10,6 @@
  * there is one specifier for a tool's controls and its surface.
  */
 
-export { selectionBoxes, type TextSelection } from '../ops/AnnotationLayer';
 export { FieldCandidateLayer, type FieldCandidateLayerProps } from '../ops/FieldCandidateLayer';
 export {
   MarkInteractionLayer,
@@ -24,6 +23,7 @@ export {
   type StampPlacementLayerProps,
   type StampPlacementSource,
 } from '../ops/StampPlacementLayer';
+export { selectionBoxes, type TextSelection } from '../ops/selection-boxes';
 export { ReadingPane, type ReadingPaneProps } from '../reading/ReadingPane';
 export { Magnifier, type MagnifierProps } from './Magnifier';
 export { SnapshotMenu, type SnapshotMenuProps } from './SnapshotMenu';

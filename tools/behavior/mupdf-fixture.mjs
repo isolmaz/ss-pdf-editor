@@ -5,7 +5,7 @@
  * The fixtures are written with the engine the product writes with. The
  * module takes the MuPDF namespace as an argument instead of importing it, so the same
  * code runs in Node (`import * as mupdf from 'mupdf'`) and in the browser harnesses (the
- * pinned `/engines/mupdf/mupdf.js`).
+ * pinned `/engines/mupdf/v<digest>/mupdf.js`).
  *
  * What a fixture page can carry:
  *   - text in the standard-14 Helvetica (not embedded, WinAnsi, like a producer that

@@ -86,7 +86,10 @@ describe('applyAccessibility', () => {
   };
 
   it('journals the writer’s bytes on the working version, swaps the handle and counts the notes', async () => {
-    await actions().applyAccessibility(outcome);
+    const applying = actions().applyAccessibility(outcome);
+    expect(busy()).toBe(true);
+    expect(operationRunning()).toBe(true);
+    await applying;
 
     expect(mocks.applyProducedBytes).toHaveBeenCalledWith(
       { store: session, t, tab, handle },
@@ -95,9 +98,56 @@ describe('applyAccessibility', () => {
       { key: 'a11y.applied', params: { count: 2 } },
       'mupdf',
       ['tagged'],
+      { signal: expect.any(AbortSignal) },
     );
     expect(handleFor(tab.id)).toBe(produced);
     expect(notice()).toBe('a11y.applied {"count":2}');
+    expect(busy()).toBe(false);
+    expect(operationRunning()).toBe(false);
+  });
+
+  it('is refused while another operation holds the document, and writes nothing', async () => {
+    setBusy(true);
+    await actions().applyAccessibility(outcome);
+    expect(notice()).toBe('op.busy');
+    expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
+    expect(busy()).toBe(true);
+  });
+
+  it('never rejects: a failed journal step is a notice, and the document is released', async () => {
+    const failure = new ToolError('write-failed', { engine: 'mupdf' });
+    mocks.applyProducedBytes.mockRejectedValue(failure);
+
+    await expect(actions().applyAccessibility(outcome)).resolves.toBeUndefined();
+
+    expect(notice()).toBe(`${failure.messageKey} ${failure.hintKey}`);
+    expect(handleFor(tab.id)).not.toBe(produced);
+    expect(busy()).toBe(false);
+  });
+
+  it('reports a failure that is not a tool error as an internal one', async () => {
+    mocks.applyProducedBytes.mockRejectedValue(new Error('boom'));
+    const internal = new ToolError('internal', { engine: 'model' });
+
+    await actions().applyAccessibility(outcome);
+
+    expect(notice()).toBe(`${internal.messageKey} ${internal.hintKey}`);
+  });
+
+  it('is stopped by Cancel, and the stop is not reported as a failure', async () => {
+    mocks.applyProducedBytes.mockImplementation((...args: unknown[]) => {
+      const operation = args[6] as { signal: AbortSignal };
+      cancelOperation();
+      expect(operation.signal.aborted).toBe(true);
+      return Promise.reject(new ToolError('aborted', { engine: 'model' }));
+    });
+
+    await actions().applyAccessibility(outcome);
+
+    expect(notice()).toBeNull();
+    expect(handleFor(tab.id)).not.toBe(produced);
+    expect(busy()).toBe(false);
+    expect(operationRunning()).toBe(false);
   });
 
   it('does nothing without an active tab', async () => {

@@ -225,6 +225,15 @@ export interface DialogRunDeps {
 export function createDialogRuns(deps: DialogRunDeps) {
   const { t } = deps;
 
+  /**
+   * The notice a result with no file ends in. Such a run wrote nothing ("no changes", a
+   * validate-only form run): there are no bytes to apply, download or open, so the spec's
+   * own sentence is the whole outcome and the dialog is done — its report was already on
+   * screen, and leaving the modal up would offer an action that does nothing.
+   */
+  const emptyNotice = (result: OpRunResult): string =>
+    result.noticeKey === undefined ? t('op.result.nothing') : t(result.noticeKey, result.noticeParams ?? {});
+
   /** The result of the operation open in the tools panel. */
   async function dialogResult(result: OpRunResult): Promise<void> {
     const { dialogInput: input, dialogSpec: spec } = dialogsStore.get();
@@ -246,13 +255,18 @@ export function createDialogRuns(deps: DialogRunDeps) {
       dismissOperationDialog();
       return;
     }
+    const first = result.files[0];
+    if (first === undefined) {
+      showNotice(emptyNotice(result));
+      dismissOperationDialog();
+      return;
+    }
     if (isBusy() || operationRunning()) {
       refuseBusy(t);
       return;
     }
     const controller = beginOperation();
     setBusy(true);
-    const first = result.files[0];
     /**
      * The dialog is done the moment its result action has been taken, and it closes
      * here rather than waiting for a "Kapat" press. Two reasons: the outcome is
@@ -267,13 +281,12 @@ export function createDialogRuns(deps: DialogRunDeps) {
         downloadFiles(result.files);
         showNotice(
           result.noticeKey === undefined
-            ? t('op.result.downloaded', { name: first?.name ?? '' })
+            ? t('op.result.downloaded', { name: first.name })
             : t(result.noticeKey, result.noticeParams ?? {}),
         );
         dismissOperationDialog();
         return;
       }
-      if (first === undefined) return;
       if (kind === 'new-tab') {
         const warning = await deps.openProducedTab(first.name, first.bytes, controller.signal);
         showNotice(
@@ -335,13 +348,17 @@ export function createDialogRuns(deps: DialogRunDeps) {
     const spec = dialogsStore.get().startSpec;
     if (spec === null) return;
     const first = result.files[0];
-    if ((result.deliver ?? spec.resultKind) === 'download') {
-      downloadFiles(result.files);
-      showNotice(t('op.result.downloaded', { name: first?.name ?? '' }));
+    if (first === undefined) {
+      showNotice(emptyNotice(result));
       closeStartDialog();
       return;
     }
-    if (first === undefined) return;
+    if ((result.deliver ?? spec.resultKind) === 'download') {
+      downloadFiles(result.files);
+      showNotice(t('op.result.downloaded', { name: first.name }));
+      closeStartDialog();
+      return;
+    }
     if (isBusy() || operationRunning()) {
       refuseBusy(t);
       return;

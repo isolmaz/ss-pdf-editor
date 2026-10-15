@@ -8,7 +8,9 @@
  *  - **Form fields.** `pdfwrite` drops every widget, field value and all, so a filled form
  *    came back blank. The fields are flattened first (`flattenForm`), which paints each
  *    value into the page, and the leftover widgets (signature fields and push buttons the
- *    flattener refuses) are removed and counted.
+ *    flattener refuses, widgets no field lists) are removed and counted, those that held a
+ *    value separately. A form the flattener fails on stops the conversion with its error: the
+ *    engine would drop the widgets, and the values with them, without a word.
  *  - **Script and actions.** An `OpenAction` that ran JavaScript was copied into the new
  *    catalog under a stray `/A` key. Forbidden actions are removed from the catalog, pages,
  *    annotations and outline here, so nothing of them reaches the engine.
@@ -35,14 +37,22 @@ import { pageFonts } from '../engines/doc-fonts';
 import type { PdfAPartNumber, PdfaDocumentInfo } from '../engines/ghostscript-run';
 import { loadMupdf, mapMupdfError, openPdf, savePdf } from '../engines/mupdf';
 import { readName, readText, resolved } from '../engines/mupdf-write';
-import { flattenForm, readFormFields } from './forms';
+import { type FormFieldKind, flattenForm, readFormWidgets } from './forms';
 import { type OperationContext, throwIfAborted } from './types';
+
+/** The field kinds `flattenForm` can paint into the page; signatures and push buttons it refuses. */
+const FLATTENABLE: readonly FormFieldKind[] = ['text', 'checkbox', 'dropdown', 'radio', 'optionlist'];
 
 /** What the pass changed, as counts the report turns into sentences. */
 export interface PrepareCounters {
   readonly formFieldsFlattened: number;
-  /** Widgets left over after flattening (signature fields, push buttons) and removed. */
+  /**
+   * Widgets left over after flattening and removed: signature fields and push buttons, and any
+   * widget the flattener never saw (one no field lists, one whose field has no name).
+   */
   readonly widgetsRemoved: number;
+  /** Of those, the ones that held a value (text, choice, check box, radio): the value is gone. */
+  readonly filledWidgetsRemoved: number;
   readonly signaturesInvalidated: number;
   /** Script and action entries removed (JavaScript, launch, forms actions…). */
   readonly actionsRemoved: number;
@@ -270,6 +280,7 @@ function fileName(spec: PDFObject | null): string {
 interface Tally {
   actionsRemoved: number;
   widgetsRemoved: number;
+  filledWidgetsRemoved: number;
   printFlagged: number;
   attachmentsRemoved: string[];
   attachmentsKept: number;
@@ -278,6 +289,36 @@ interface Tally {
 
 function removedAnnotation(tally: Tally, subtype: string): void {
   tally.annotationsRemoved.set(subtype, (tally.annotationsRemoved.get(subtype) ?? 0) + 1);
+}
+
+/** A field attribute: the widget's own, else its nearest ancestor's (`/Parent` chain). */
+function inheritedEntry(widget: PDFObject, key: string): PDFObject | null {
+  let node: PDFObject | null = widget;
+  for (let depth = 0; node !== null && depth < 32; depth += 1) {
+    const value = resolved(node.get(key));
+    if (value !== null) return value;
+    node = resolved(node.get('Parent'));
+  }
+  return null;
+}
+
+/** The push-button bit of a button field's `/Ff`. */
+const PUSH_BUTTON = 1 << 16;
+
+/**
+ * Whether a widget shows something the user entered: a text, choice, check-box or radio field
+ * with a value. Signature fields (counted as signatures) and push buttons hold none.
+ */
+function holdsEnteredValue(widget: PDFObject): boolean {
+  const type = readName(inheritedEntry(widget, 'FT'));
+  if (type !== 'Tx' && type !== 'Ch' && type !== 'Btn') return false;
+  const flags = inheritedEntry(widget, 'Ff');
+  if (type === 'Btn' && flags?.isNumber() === true && (flags.asNumber() & PUSH_BUTTON) !== 0) return false;
+  const value = inheritedEntry(widget, 'V');
+  if (value === null) return false;
+  if (value.isName()) return value.asName() !== 'Off';
+  if (value.isArray()) return value.length > 0;
+  return (readText(value) ?? '') !== '';
 }
 
 function cleanCatalog(doc: PDFDocument, catalog: PDFObject, part: PdfAPartNumber, tally: Tally): void {
@@ -361,6 +402,9 @@ function cleanPages(doc: PDFDocument, part: PdfAPartNumber, tally: Tally): void 
         continue;
       }
       if (subtype === 'Widget') {
+        // What reaches here was not flattened: a signature or button, a widget no field lists,
+        // a field with no name. One that holds a value loses it, and the report says so.
+        if (holdsEnteredValue(annotation)) tally.filledWidgetsRemoved += 1;
         annotations.delete(at);
         tally.widgetsRemoved += 1;
         continue;
@@ -529,21 +573,26 @@ export async function prepareForPdfA(
   // Fields first: flattening paints each value into its page and rewrites the document.
   let working = bytes;
   let flattened = 0;
-  try {
-    const fields = await readFormFields(bytes, context.signal);
-    const names = fields
-      .filter((field) => ['text', 'checkbox', 'dropdown', 'radio', 'optionlist'].includes(field.kind))
-      .map((field) => field.name);
-    if (names.length > 0) {
-      const outcome = await flattenForm(bytes, names, context);
-      working = outcome.bytes;
-      flattened = names.length;
-    }
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw error;
-    // A form the flattener cannot read is not flattened; its widgets are removed below and
-    // the report says the fields were dropped, which is what the output will show.
-    flattened = 0;
+  // A form that cannot be read or flattened stops the conversion with the reader's or the
+  // flattener's own error. `pdfwrite` drops every widget, so carrying on would hand back the
+  // page without the values the user typed and say nothing about it. Only fields the flattener
+  // can draw are handed to it: one with no widget, or with a widget no page lists, paints
+  // nothing (the flattener refuses it), so there is nothing on a page to lose.
+  const fields = await readFormWidgets(bytes, context.signal);
+  const drawable = fields.filter(
+    (field) =>
+      FLATTENABLE.includes(field.kind) &&
+      field.widgets.length > 0 &&
+      field.widgets.every((widget) => widget.pageIndex !== null),
+  );
+  if (drawable.length > 0) {
+    const outcome = await flattenForm(
+      bytes,
+      drawable.map((field) => field.name),
+      context,
+    );
+    working = outcome.bytes;
+    flattened = drawable.length;
   }
   throwIfAborted(context.signal);
 
@@ -562,6 +611,7 @@ export async function prepareForPdfA(
     const tally: Tally = {
       actionsRemoved: 0,
       widgetsRemoved: 0,
+      filledWidgetsRemoved: 0,
       printFlagged: 0,
       attachmentsRemoved: [],
       attachmentsKept: 0,
@@ -584,6 +634,7 @@ export async function prepareForPdfA(
       counters: {
         formFieldsFlattened: flattened,
         widgetsRemoved: tally.widgetsRemoved,
+        filledWidgetsRemoved: tally.filledWidgetsRemoved,
         signaturesInvalidated: signatures,
         actionsRemoved: tally.actionsRemoved,
         attachmentsRemoved: tally.attachmentsRemoved,

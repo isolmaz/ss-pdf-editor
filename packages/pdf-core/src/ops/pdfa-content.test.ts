@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { nameOf, numberOf, type Operand, scanContent } from './pdfa-content';
+import { inlineImageEnd, nameOf, numberOf, type Operand, scanContent } from './pdfa-content';
 
 const ascii = (text: string): Uint8Array => Uint8Array.from(Buffer.from(text, 'latin1'));
 
@@ -136,6 +136,17 @@ describe('scanContent', () => {
   it('ends an inline image without whitespace after ID, and ignores EI that is glued to other bytes', () => {
     const found = scan(ascii('BI /W 1 ID(x) abEI EIx EI Q'));
     expect(found.map((entry) => entry.op)).toEqual(['BI', 'Q']);
+  });
+
+  it('ends an inline image at an EI followed by a delimiter or the end of the stream, as well as by white space', () => {
+    // The tagger delimits the same streams with this rule: the two readers must not disagree about
+    // where an image stops, or one of them reads the rest of the stream as image data.
+    expect(scan(ascii('BI /W 1 ID ab EI(x) Tj')).map((entry) => entry.op)).toEqual(['BI', 'Tj']);
+    expect(scan(ascii('BI /W 1 ID ab EI/G gs')).map((entry) => entry.op)).toEqual(['BI', 'gs']);
+    expect(scan(ascii('BI /W 1 ID ab EI[1] TJ')).map((entry) => entry.op)).toEqual(['BI', 'TJ']);
+    expect(scan(ascii('BI /W 1 ID ab EI')).map((entry) => entry.op)).toEqual(['BI']);
+    expect(inlineImageEnd(ascii('ab EI(x)'), 0)).toBe(5);
+    expect(inlineImageEnd(ascii('abEI EIx'), 0)).toBeNull();
   });
 
   it('survives an inline image that is cut off: at ID, inside its dictionary, or with a keyword where a value belongs', () => {

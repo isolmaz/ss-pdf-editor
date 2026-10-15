@@ -157,6 +157,43 @@ describe('xlsx cells: types, dates, merges and limits', () => {
     expect(system1904).toContain('<td>2027-03-16</td>');
   });
 
+  it('numbers the 1900 system as Excel does: 1–59 before the 1900-02-29 that never was, 61 on 1900-03-01', async () => {
+    const parts = { 'xl/styles.xml': styles('', '<xf/><xf numFmtId="14"/>') };
+    const serials = [1, 59, 60, 60.5, 61, 45000];
+    const rows = `<row r="1">${serials
+      .map((serial, index) => `<c r="${String.fromCharCode(65 + index)}1" s="1"><v>${serial}</v></c>`)
+      .join('')}</row>`;
+    // Excel shows 1 as 1900-01-01 and 60 as 1900-02-29, a day no calendar has; the fraction is the time.
+    expect(await cells(await book(sheetXml(rows), parts))).toBe(
+      '<h2>S</h2><table class="sheet"><tr><td>1900-01-01</td><td>1900-02-28</td><td>1900-02-29</td>' +
+        '<td>1900-02-29 12:00:00</td><td>1900-03-01</td><td>2023-03-15</td></tr></table>',
+    );
+    // The 1904 system has no such day and counts from 1904-01-01 as 0.
+    const row = '<row r="1"><c r="A1" s="1"><v>1</v></c><c r="B1" s="1"><v>60</v></c></row>';
+    const extra = '<workbookPr date1904="1"/>';
+    const system1904 = await cells(await book(sheetXml(row), parts, { extra }));
+    expect(system1904).toBe(
+      '<h2>S</h2><table class="sheet"><tr><td>1904-01-02</td><td>1904-03-01</td></tr></table>',
+    );
+  });
+
+  it.each([
+    ['1', true],
+    ['true', true],
+    ['on', true],
+    ['0', false],
+    ['false', false],
+    ['off', false],
+  ])('reads date1904="%s" as ST_OnOff does', async (value, is1904) => {
+    const parts = { 'xl/styles.xml': styles('', '<xf/><xf numFmtId="14"/>') };
+    const html = await cells(
+      await book(sheetXml('<row r="1"><c r="A1" s="1"><v>45000</v></c></row>'), parts, {
+        extra: `<workbookPr date1904="${value}"/>`,
+      }),
+    );
+    expect(html).toContain(is1904 ? '<td>2027-03-16</td>' : '<td>2023-03-15</td>');
+  });
+
   it('reads a stylesheet that lists no cell formats, a numFmt with no id and a cell format with none', async () => {
     const parts = {
       'xl/styles.xml': `<styleSheet xmlns="${NS_MAIN}"><numFmts><numFmt formatCode="yyyy"/></numFmts></styleSheet>`,
@@ -190,12 +227,59 @@ describe('xlsx cells: types, dates, merges and limits', () => {
     const sheet = sheetXml(
       `<row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c><c r="B1" t="inlineStr"><is><t>b</t></is></c></row>
        <row r="2"><c r="A2" t="inlineStr"><is><t>c</t></is></c><c r="B2" t="inlineStr"><is><t>d</t></is></c></row>
-       <row r="3"><c r="A3" t="inlineStr"><is><t>e</t></is></c></row>`,
-      '<mergeCells><mergeCell ref="A1:B2"/><mergeCell ref="A3"/><mergeCell ref="??:??"/><mergeCell/></mergeCells>',
+       <row r="3"><c r="A3" t="inlineStr"><is><t>e</t></is></c></row>
+       <row r="4"><c r="A4" t="inlineStr"><is><t>f</t></is></c></row>`,
+      '<mergeCells><mergeCell ref="A1:B2"/><mergeCell ref="A3"/><mergeCell ref="B3:B4"/><mergeCell ref="??:??"/><mergeCell/></mergeCells>',
     );
+    // A1:B2 spans both ways, B3:B4 down only, and A3 alone is no merge.
     expect(await cells(await book(sheet))).toBe(
-      '<h2>S</h2><table class="sheet"><tr><td rowspan="2" colspan="2">a</td></tr><tr></tr><tr><td>e</td><td>&#160;</td></tr></table>',
+      '<h2>S</h2><table class="sheet"><tr><td rowspan="2" colspan="2">a</td></tr><tr></tr>' +
+        '<tr><td>e</td><td rowspan="2">&#160;</td></tr><tr><td>f</td></tr></table>',
     );
+  });
+
+  it('cuts a merge written over the whole sheet to the table that is drawn, in no time', async () => {
+    // A1:XFD1048576 is 1.7·10¹⁰ cells; the sheet has two.
+    const sheet = sheetXml(
+      `<row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row>
+       <row r="2"><c r="B2" t="inlineStr"><is><t>b</t></is></c></row>`,
+      '<mergeCells><mergeCell ref="A1:XFD1048576"/></mergeCells>',
+    );
+    const started = performance.now();
+    expect(await cells(await book(sheet))).toBe(
+      '<h2>S</h2><table class="sheet"><tr><td rowspan="2" colspan="2">a</td></tr><tr></tr></table>',
+    );
+    expect(performance.now() - started).toBeLessThan(3000);
+  });
+
+  it('ignores a merge outside the table or written backwards, and keeps one that reaches past its edge', async () => {
+    const sheet = sheetXml(
+      `<row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c><c r="B1" t="inlineStr"><is><t>b</t></is></c></row>
+       <row r="2"><c r="A2" t="inlineStr"><is><t>c</t></is></c></row>`,
+      '<mergeCells><mergeCell ref="E5:F6"/><mergeCell ref="B2:A1"/><mergeCell ref="A0:B1"/><mergeCell ref="B1:Z1"/></mergeCells>',
+    );
+    // B1:Z1 is cut to B1: one cell, which merges with nothing.
+    expect(await cells(await book(sheet))).toBe(
+      '<h2>S</h2><table class="sheet"><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>&#160;</td></tr></table>',
+    );
+  });
+
+  it('leaves out the merges that ask for more cells than the table has, and reports the sheet as damaged', async () => {
+    const sheet = sheetXml(
+      `<row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row>
+       <row r="3"><c r="C3" t="inlineStr"><is><t>c</t></is></c></row>`,
+      '<mergeCells><mergeCell ref="A1:C3"/><mergeCell ref="A1:C3"/><mergeCell ref="B2:C3"/></mergeCells>',
+    );
+    const result = await xlsxToHtml(await book(sheet), 'm.xlsx');
+    // The first merge takes the table's nine cells; the two that overlap it have no cells left.
+    expect(result.parts[0]?.html).toBe(
+      '<h2>S</h2><table class="sheet"><tr><td rowspan="3" colspan="3">a</td></tr><tr></tr><tr></tr></table>',
+    );
+    expect(result.notes).toContainEqual({
+      kind: 'lost',
+      key: 'op.note.convert.xmlDamaged',
+      params: { parts: 'xl/worksheets/sheet1.xml' },
+    });
   });
 
   it('shows an empty sheet as a dash and counts the cells past the used-range limit', async () => {
@@ -337,6 +421,76 @@ describe('relationships and parts', () => {
     const absent = await xlsxToHtml(await book(sheetXml(''), { 'docProps/core.xml': core('') }), 't.xlsx');
     expect(absent.title).toBeNull();
     expect((await xlsxToHtml(await book(sheetXml('')), 't.xlsx')).title).toBeNull();
+  });
+});
+
+describe('ZIP expansion limits', () => {
+  const MIB = 1024 * 1024;
+  /** A few dozen KiB deflated, whatever `size` is. */
+  const spaces = (size: number): Uint8Array => new Uint8Array(size).fill(0x20);
+
+  /**
+   * The same package with the uncompressed size its central directory and local headers declare
+   * replaced by `size`: what a writer that lies about it produces. The deflate data is untouched.
+   */
+  function declaring(bytes: Uint8Array, size: number): Uint8Array {
+    const forged = bytes.slice();
+    const view = new DataView(forged.buffer);
+    for (let at = 0; at + 28 <= forged.length; at += 1) {
+      const signature = view.getUint32(at, true);
+      if (signature === 0x04034b50) view.setUint32(at + 22, size, true);
+      else if (signature === 0x02014b50) view.setUint32(at + 24, size, true);
+    }
+    return forged;
+  }
+
+  /** The Word fixture with more entries, none of which the document refers to. */
+  async function docxWith(entries: Readonly<Record<string, Uint8Array>>): Promise<Uint8Array> {
+    const zip = await JSZip.loadAsync(await docx());
+    for (const [name, content] of Object.entries(entries)) zip.file(name, content);
+    return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+  }
+
+  it('stops a part by the bytes it really inflates, not by the size its directory declares', async () => {
+    const bytes = declaring(await pack({ 'xl/workbook.xml': spaces(65 * MIB) }), 100);
+    await expect(xlsxToHtml(bytes, 'lie.xlsx')).rejects.toMatchObject({
+      code: 'file-too-large',
+      details: { engine: 'model', path: 'xl/workbook.xml' },
+    });
+  }, 60_000);
+
+  it('reports a part whose declared size is false but small as damaged, not as a raw error', async () => {
+    const bytes = declaring(await pack({ 'xl/workbook.xml': '<workbook>   </workbook>' }), 3);
+    await expect(xlsxToHtml(bytes, 'lie.xlsx')).rejects.toMatchObject({
+      code: 'corrupt-document',
+      details: { engine: 'model', path: 'xl/workbook.xml' },
+    });
+  });
+
+  it('refuses a Word file that holds a part past the limit before mammoth opens it', async () => {
+    const bytes = await docxWith({ 'word/media/payload.bin': spaces(65 * MIB) });
+    await expect(docxToHtml(bytes, 'bomb.docx')).rejects.toMatchObject({
+      code: 'file-too-large',
+      details: { engine: 'model', path: 'word/media/payload.bin' },
+    });
+  }, 60_000);
+
+  it('refuses a Word file whose parts together expand past the package limit, each under the part limit', async () => {
+    const filler = spaces(56 * MIB);
+    const bytes = await docxWith(
+      Object.fromEntries([1, 2, 3, 4, 5].map((index) => [`word/media/part${index}.bin`, filler])),
+    );
+    // 4 × 56 MiB is 224 MiB, under 256; the fifth crosses it.
+    await expect(docxToHtml(bytes, 'many.docx')).rejects.toMatchObject({
+      code: 'file-too-large',
+      details: { engine: 'model', path: 'word/media/part5.bin' },
+    });
+  }, 120_000);
+
+  it('still converts a Word file whose parts are all inside the limits', async () => {
+    const bytes = await docxWith({ 'word/media/small.bin': spaces(MIB) });
+    const { parts } = await docxToHtml(bytes, 'fine.docx');
+    expect(parts[0]?.html).toContain('<h1>Başlık Çalışması</h1>');
   });
 });
 
@@ -535,5 +689,98 @@ describe('pptx shapes, text and tables', () => {
       'ppt/_rels/presentation.xml.rels': relsXml([rel('rId1', 'slides/gone.xml')]),
     });
     await expect(pptxToHtml(missing, 'p.pptx')).rejects.toMatchObject({ code: 'unsupported-format' });
+  });
+
+  it('reads a picture that many slides show once, so its repeats do not count against the package limit', async () => {
+    const MIB = 1024 * 1024;
+    const size = 40 * MIB;
+    // 7 slides × 40 MiB is 280 MiB of reads, over the 256 MiB package limit, for a package of 40 MiB.
+    const names = ['s1', 's2', 's3', 's4', 's5', 's6', 's7'];
+    const pic = '<p:pic><p:blipFill><a:blip r:embed="rId1"/></p:blipFill></p:pic>';
+    const bytes = await deck(Object.fromEntries(names.map((name) => [name, slideXml(pic)])), {
+      files: {
+        ...Object.fromEntries(
+          names.map((name) => [
+            `ppt/slides/_rels/${name}.xml.rels`,
+            relsXml([rel('rId1', '../media/shared.png')]),
+          ]),
+        ),
+        'ppt/media/shared.png': new Uint8Array(size).fill(0x20),
+      },
+    });
+    const { parts } = await pptxToHtml(bytes, 'reuse.pptx');
+    expect(parts).toHaveLength(7);
+    const prefix = '<div class="slide"><p><img src="data:image/png;base64,';
+    const suffix = '"></p></div>';
+    // Lengths for all seven, the text for one: each slide holds the 53 MB data URI.
+    const expected = prefix.length + Math.ceil(size / 3) * 4 + suffix.length;
+    expect(parts.map((part) => part.html.length)).toEqual(names.map(() => expected));
+    expect(parts[0]?.html.startsWith(prefix)).toBe(true);
+    expect(parts[0]?.html.endsWith(suffix)).toBe(true);
+  }, 120_000);
+
+  it('does not read a picture named after an Object.prototype member as an image type', async () => {
+    const pic = '<p:pic><p:blipFill><a:blip r:embed="rId1"/></p:blipFill></p:pic>';
+    const bytes = await deck(
+      { s1: slideXml(pic) },
+      {
+        files: {
+          'ppt/slides/_rels/s1.xml.rels': relsXml([rel('rId1', '../media/p.constructor')]),
+          'ppt/media/p.constructor': Buffer.from(PNG_BASE64, 'base64'),
+        },
+      },
+    );
+    const result = await pptxToHtml(bytes, 'p.pptx');
+    expect(result.parts[0]?.html).toBe('<div class="slide"><p></p></div>');
+    expect(result.notes).toContainEqual({
+      kind: 'lost',
+      key: 'op.note.convert.imagesSkipped',
+      params: { count: 1 },
+    });
+  });
+
+  it('refuses a picture that expands past the size limit instead of inlining it as base64', async () => {
+    const pic = '<p:pic><p:blipFill><a:blip r:embed="rId1"/></p:blipFill></p:pic>';
+    const bytes = await deck(
+      { s1: slideXml(pic) },
+      {
+        files: {
+          'ppt/slides/_rels/s1.xml.rels': relsXml([rel('rId1', '../media/big.png')]),
+          'ppt/media/big.png': new Uint8Array(65 * 1024 * 1024).fill(0x20),
+        },
+      },
+    );
+    await expect(pptxToHtml(bytes, 'bomb.pptx')).rejects.toMatchObject({
+      code: 'file-too-large',
+      details: { engine: 'model', path: 'ppt/media/big.png' },
+    });
+  }, 60_000);
+
+  it('reads run, table-merge and slide flags in every ST_OnOff spelling: 1, 0, true, false, on, off', async () => {
+    const runs = `<a:p>${text('t', '<a:rPr b="true" i="on"/>')}${text('1', '<a:rPr b="1" i="1"/>')}${text('f', '<a:rPr b="false" i="off"/>')}${text('0', '<a:rPr b="0" i="0"/>')}${text('x', '<a:rPr b="yes"/>')}</a:p>`;
+    expect(await html(shape(runs))).toBe('<div class="slide"><p><i><b>t</b></i><i><b>1</b></i>f0x</p></div>');
+
+    const cell = (body: string, attributes: string) =>
+      `<a:tc${attributes}><a:txBody><a:p>${text(body)}</a:p></a:txBody></a:tc>`;
+    const table = `<a:tbl><a:tr>${cell('a', '')}${cell('h', ' hMerge="true"')}${cell('v', ' vMerge="on"')}${cell('1', ' hMerge="1"')}${cell('f', ' hMerge="false"')}${cell('o', ' vMerge="off"')}${cell('z', ' vMerge="0"')}</a:tr></a:tbl>`;
+    const frame = `<p:graphicFrame><p:xfrm><a:off x="0" y="0"/></p:xfrm><a:graphic><a:graphicData>${table}</a:graphicData></a:graphic></p:graphicFrame>`;
+    expect(await html(frame)).toBe(
+      '<div class="slide"><table><tr><td><p>a</p></td><td><p>f</p></td><td><p>o</p></td><td><p>z</p></td></tr></table></div>',
+    );
+
+    const slides = {
+      s1: slideXml(shape(`<a:p>${text('one')}</a:p>`), ' show="true"'),
+      s2: slideXml(shape(`<a:p>${text('two')}</a:p>`), ' show="false"'),
+      s3: slideXml(shape(`<a:p>${text('three')}</a:p>`), ' show="off"'),
+      s4: slideXml(shape(`<a:p>${text('four')}</a:p>`), ' show="0"'),
+      s5: slideXml(shape(`<a:p>${text('five')}</a:p>`), ' show="on"'),
+      s6: slideXml(shape(`<a:p>${text('six')}</a:p>`)),
+    };
+    const shown = await pptxToHtml(await deck(slides), 'p.pptx');
+    expect(shown.parts.map((part) => part.html)).toEqual([
+      '<div class="slide"><p>one</p></div>',
+      '<div class="slide"><p>five</p></div>',
+      '<div class="slide"><p>six</p></div>',
+    ]);
   });
 });

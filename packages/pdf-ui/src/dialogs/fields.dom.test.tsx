@@ -281,6 +281,41 @@ describe('FieldList values typed', () => {
     expect(screen.getByText(t('dialog.field.numberRange', { min: 1, max: 10 }))).toBeTruthy();
   });
 
+  it('a number with a unit carries it in its label, so the unit is on screen and in the accessible name', async () => {
+    const { onChange } = show([
+      {
+        kind: 'number',
+        id: 'w',
+        labelKey: 'form.dialog.width',
+        defaultValue: 200,
+        min: 8,
+        max: 2000,
+        unitKey: 'unit.pt',
+      },
+      {
+        kind: 'number',
+        id: 'm',
+        labelKey: 'boxes.dialog.margin',
+        defaultValue: 5,
+        min: 0,
+        max: 50,
+        unitKey: 'boxes.unit.mm',
+      },
+      { kind: 'number', id: 'n', labelKey: 'op.scope', defaultValue: 5, min: 1, max: 10 },
+    ]);
+    const width = screen.getByRole('spinbutton', { name: 'Width (pt)' }) as HTMLInputElement;
+    expect(width.value).toBe('200');
+    expect(screen.getByText('Width (pt)')).toBeTruthy();
+    expect(screen.getByRole('spinbutton', { name: 'Margin (mm)' })).toBeTruthy();
+    // A number with no unit keeps its plain name.
+    expect(screen.getByRole('spinbutton', { name: 'Page range' })).toBeTruthy();
+    expect(screen.queryByText('Width')).toBeNull();
+
+    await userEvent.clear(width);
+    await userEvent.type(width, '300');
+    expect(onChange).toHaveBeenLastCalledWith('w', 300);
+  });
+
   it('a number shows a value the opener preset, and a decimal can be typed digit by digit', async () => {
     show([{ kind: 'number', id: 'n', labelKey: 'op.scope', defaultValue: 5, min: 0, max: 10, step: 0.5 }], {
       initial: { n: 3 },

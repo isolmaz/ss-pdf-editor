@@ -195,3 +195,102 @@ describe('reflowBlock layout', () => {
     });
   });
 });
+
+/**
+ * Text written without spaces: a line may end between two ideographs, or between two
+ * Thai words, and must not end anywhere else. At 10 pt in the 50 pt box a line holds ten
+ * characters, so every expected line below is counted, not measured.
+ */
+describe('reflowBlock text written without spaces', () => {
+  const textsOf = (result: ReflowResult) => result.lines.map((line) => line.text);
+
+  it('breaks Japanese at the box width between characters, adding no space and no hyphen', () => {
+    const text = '日本語のテキストを折り返す長い文章です';
+    for (const hyphenate of [false, true]) {
+      const result = lay(text, { hyphenate });
+      expect(textsOf(result)).toEqual(['日本語のテキストを折', 'り返す長い文章です']);
+      expect(result.overflow).toBe(false);
+      expect(result.hyphenated).toEqual([]);
+      expect(result.lines.map((line) => line.width)).toEqual([50, 45]);
+      // The two lines are the text, character for character.
+      expect(textsOf(result).join('')).toBe(text);
+    }
+  });
+
+  it('breaks Chinese the same way, and keeps a closing mark off the start of a line', () => {
+    const plain = lay('这是一个很长的中文句子，需要在框内换行。');
+    expect(textsOf(plain)).toEqual(['这是一个很长的中文句', '子，需要在框内换行。']);
+    expect(plain.overflow).toBe(false);
+
+    // The full stop would be the first character of the second line: it takes the last
+    // character of the first line along instead.
+    expect(textsOf(lay('一二三四五六七八九十。'))).toEqual(['一二三四五六七八九', '十。']);
+    // An opening bracket never ends a line: it goes down with the character it opens.
+    expect(textsOf(lay('一二三四五六七八九「十」'))).toEqual(['一二三四五六七八九', '「十」']);
+    // The prolonged-sound mark and a small kana stay with the kana before them.
+    expect(textsOf(lay('あいうえおかきくけラーメン'))).toEqual(['あいうえおかきくけ', 'ラーメン']);
+  });
+
+  it('keeps a Latin word or number inside Japanese text whole', () => {
+    const result = lay('PDFを編集する', undefined, block({ width: 30 }));
+    expect(textsOf(result)).toEqual(['PDFを編集', 'する']);
+    expect(result.overflow).toBe(false);
+  });
+
+  it('breaks Thai only between words, adding nothing', () => {
+    const text = 'ฉันรักเธอมากและคิดถึงเธอเสมอ';
+    const result = lay(text, { hyphenate: true });
+    const lines = textsOf(result);
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.join('')).toBe(text);
+    expect(result.overflow).toBe(false);
+    expect(result.hyphenated).toEqual([]);
+    for (const line of lines) expect(measureLineWidth(line, 10, face())).toBeLessThanOrEqual(50);
+    // Every break falls where the runtime's own word segmentation puts a word boundary.
+    const boundaries = new Set(
+      [...new Intl.Segmenter('und', { granularity: 'word' }).segment(text)].map((part) => part.index),
+    );
+    let offset = 0;
+    for (const line of lines.slice(0, -1)) {
+      offset += line.length;
+      expect(boundaries.has(offset), `break after "${line}"`).toBe(true);
+    }
+  });
+
+  it('splits a word between lines and a space between words in one paragraph, justifying on the spaces', () => {
+    const result = lay('日本語 テスト 日本語のテキスト', { align: 'justify' }, block({ width: 58 }));
+    expect(textsOf(result)).toEqual(['日本語 テスト 日本語', 'のテキスト']);
+    const [first, last] = result.lines;
+    expect(first?.justified).toBe(true);
+    // The word that continues on the next line is whole as far as this line holds it;
+    // 3 pt of slack is shared by the two gaps.
+    expect(first?.words).toEqual([
+      { text: '日本語', x: 100 },
+      { text: 'テスト', x: 121.5 },
+      { text: '日本語', x: 143 },
+    ]);
+    expect(last?.words).toEqual([{ text: 'のテキスト', x: 100 }]);
+  });
+
+  it('keeps Korean, which is written with spaces, breaking at them only', () => {
+    expect(textsOf(lay('한국어 문장입니다 테스트'))).toEqual(['한국어 문장입니다', '테스트']);
+    // A Korean word wider than the box is placed whole, not cut between syllables.
+    const wide = lay('가나다라마바사아자차카', undefined, block({ width: 30 }));
+    expect(textsOf(wide)).toEqual(['가나다라마바사아자차카']);
+    expect(wide.overflow).toBe(true);
+  });
+
+  it('breaks a spaced language at its spaces only, whatever its punctuation', () => {
+    const result = lay("aaaa-bbbb don't stop", undefined, block({ width: 40 }));
+    // `aaaa-bbbb` is nine characters in an eight-character box: placed whole, not cut at its hyphen.
+    expect(textsOf(result)).toEqual(['aaaa-bbbb', "don't", 'stop']);
+    expect(result.overflow).toBe(true);
+  });
+
+  it('places a character wider than the box on a line of its own and reports the overflow', () => {
+    const result = lay('日本', { hyphenate: true }, block({ width: 3 }));
+    expect(textsOf(result)).toEqual(['日', '本']);
+    expect(result.overflow).toBe(true);
+    expect(result.hyphenated).toEqual([]);
+  });
+});

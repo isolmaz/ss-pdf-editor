@@ -39,10 +39,13 @@
  * invisible OCR layer over a scanned page's picture.
  */
 
+import { DOMParser } from '@xmldom/xmldom';
+import JSZip from 'jszip';
 import type { PDFDocument } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { loadMupdf, mapMupdfError, openPdf } from '../engines/mupdf';
 import { readText } from '../engines/mupdf-write';
+import { charDirection, hasRtlScript, readingOrder, resolveNeutrals } from './bidi';
 import { parseCsv } from './convert-text';
 import {
   contentTypesXml,
@@ -217,6 +220,8 @@ interface ReadPage {
   readonly figures: readonly { readonly box: Box; readonly png: Uint8Array }[];
   /** Characters of the document's own hidden text left out (Word only; `withoutHiddenText`). */
   readonly hidden: number;
+  /** Pictures the page paints (`ReadLayout.pictures`), which a sheet cannot carry. */
+  readonly pictures: number;
 }
 
 /** The box that holds all of `boxes`. */
@@ -280,14 +285,21 @@ function withoutHiddenText(layout: PageLayout): { readonly layout: PageLayout; r
   return { layout: { ...layout, blocks }, dropped };
 }
 
+/**
+ * Reads the pages one at a time and hands each to `keep` before it reads the next: a page's layout
+ * (an object for every character) and the pictures of its drawings are let go as soon as `keep`
+ * has taken what the export needs of the page, so a long document is never held whole in memory.
+ * MuPDF reads a page synchronously, so unlike the exact layout's reads of scanned pages
+ * (`ops/docx-layout.ts`, which OCR in parallel) there is nothing to read ahead of the page being kept.
+ */
 async function readPages(
   doc: PDFDocument,
   pages: readonly number[],
   images: boolean,
   context: OperationContext,
-): Promise<ReadPage[]> {
+  keep: (page: ReadPage) => void,
+): Promise<void> {
   const mupdf = await loadMupdf();
-  const out: ReadPage[] = [];
   for (const [done, index] of pages.entries()) {
     throwIfAborted(context.signal);
     context.onProgress?.({
@@ -308,14 +320,13 @@ async function readPages(
       // Only a Word document carries the drawings, as pictures.
       const figures = images ? drawn.map((box) => ({ box, png: renderRegion(mupdf, page, box) })) : [];
       const streams = findTextTables(layout, [...ruled, ...drawn]);
-      out.push({ index, layout, tables, streams, figures, hidden });
+      keep({ index, layout, tables, streams, figures, hidden, pictures: read.pictures });
     } finally {
       page.destroy();
     }
     // Give the event loop a turn so the progress bar and Cancel stay live.
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  return out;
 }
 
 /* ------------------------------------------------------------------ *
@@ -330,6 +341,8 @@ interface Run {
   readonly bold: boolean;
   readonly italic: boolean;
   readonly color: number;
+  /** Set in a right-to-left script (`w:rtl`), numbers and spaces among it included. */
+  readonly rtl: boolean;
 }
 
 interface Paragraph {
@@ -342,6 +355,8 @@ interface Paragraph {
   /** The size most of the paragraph's characters have. */
   readonly size: number;
   readonly bold: boolean;
+  /** Read right to left (`w:bidi`): more of its letters are of a right-to-left script than not. */
+  readonly rtl: boolean;
 }
 
 interface Picture {
@@ -369,14 +384,24 @@ function textOf(paragraph: Paragraph): string {
   return paragraph.runs.map((run) => run.text).join('');
 }
 
-/** The size, rounded to a half point, that most characters in a list have. */
-function commonSize(chars: readonly LayoutChar[]): number {
+/** How many visible characters of a list have each size, in half points. */
+function sizeCounts(chars: readonly LayoutChar[]): Map<number, number> {
   const counts = new Map<number, number>();
   for (const char of chars) {
     if (char.c.trim() === '') continue;
     const half = Math.round(char.size * 2);
     counts.set(half, (counts.get(half) ?? 0) + 1);
   }
+  return counts;
+}
+
+/** The size, rounded to a half point, that most characters in a list have. */
+function commonSize(chars: readonly LayoutChar[]): number {
+  return commonOf(sizeCounts(chars));
+}
+
+/** The size with the most characters (the first counted of equals), in points; `0` for none. */
+function commonOf(counts: ReadonlyMap<number, number>): number {
   let best = 0;
   let bestCount = -1;
   for (const [half, count] of counts) {
@@ -418,10 +443,24 @@ function byRow(a: readonly LayoutChar[], b: readonly LayoutChar[]): number {
   return first.middle - second.middle;
 }
 
+/** Whether more of the letters are of a right-to-left script than of any other. */
+function rightToLeft(chars: readonly LayoutChar[]): boolean {
+  let rtl = 0;
+  let ltr = 0;
+  for (const char of chars) {
+    const direction = charDirection(char.c);
+    if (direction === 'rtl') rtl += 1;
+    else if (direction === 'ltr') ltr += 1;
+  }
+  return rtl > ltr;
+}
+
 /**
  * Lines that stand on one row and follow each other along it are one line. MuPDF cuts a
  * line where the spacing opens, so the dots that lead from a label to its amount
- * (`. . . . .`) come as a line each, and each would be a paragraph of its own.
+ * (`. . . . .`) come as a line each, and each would be a paragraph of its own. Right-to-left
+ * text follows along the row to the left: the next line is joined when both hold right-to-left
+ * letters and it ends where the line so far begins.
  */
 function joinRows(lines: readonly LayoutChar[][]): LayoutChar[][] {
   const out: LayoutChar[][] = [];
@@ -431,23 +470,106 @@ function joinRows(lines: readonly LayoutChar[][]): LayoutChar[][] {
       const before = rowOf(last);
       const next = rowOf(chars);
       const tail = last[last.length - 1] as LayoutChar;
+      const sameRow = Math.abs(before.middle - next.middle) <= Math.min(before.reach, next.reach);
       const gap = next.box[0] - before.box[2];
-      if (
-        Math.abs(before.middle - next.middle) <= Math.min(before.reach, next.reach) &&
-        gap >= -1 &&
-        gap <= tail.size * 2
-      ) {
-        const spaced = tail.c === ' ' || chars[0]?.c === ' ' || gap < tail.size * 0.15;
+      const leftGap = before.box[0] - next.box[2];
+      const rightward = sameRow && gap >= -1 && gap <= tail.size * 2;
+      const leftward =
+        !rightward &&
+        sameRow &&
+        leftGap >= -1 &&
+        leftGap <= tail.size * 2 &&
+        last.some((char) => charDirection(char.c) === 'rtl') &&
+        chars.some((char) => charDirection(char.c) === 'rtl');
+      if (rightward || leftward) {
+        const along = rightward ? gap : leftGap;
+        const spaced = tail.c === ' ' || chars[0]?.c === ' ' || along < tail.size * 0.15;
         const space: LayoutChar = {
           ...tail,
           c: ' ',
-          box: [before.box[2], tail.box[1], next.box[0], tail.box[3]],
+          box: rightward
+            ? [before.box[2], tail.box[1], next.box[0], tail.box[3]]
+            : [next.box[2], tail.box[1], before.box[0], tail.box[3]],
         };
         out[out.length - 1] = [...last, ...(spaced ? [] : [space]), ...chars];
         continue;
       }
     }
     out.push([...chars]);
+  }
+  return out;
+}
+
+/** One run of a row's characters that stand together and run one way: what reading order moves whole. */
+interface Fragment {
+  readonly chars: LayoutChar[];
+  readonly direction: 'rtl' | 'ltr';
+  x0: number;
+  x1: number;
+}
+
+/**
+ * The characters of one row in the order they are read. MuPDF puts the letters of a run of
+ * Hebrew or Arabic in reading order, but the runs of a row stay where the producer showed them
+ * on the page, which is left to right across the row; in a right-to-left row the first word is
+ * the rightmost. The row is cut into fragments — runs of one direction, and wherever the next
+ * character lies back along a run's own way, a new run — and the fragments are put in the
+ * order of the bidirectional algorithm (`readingOrder`) from where they stand on the page, so
+ * the text is the same whichever order the PDF showed the runs in. Where two fragments are a
+ * gap apart with no space between them, a space is put in. A row without a right-to-left
+ * character is returned as it is.
+ */
+function inReadingOrder(row: LayoutChar[], rtlBase: boolean): LayoutChar[] {
+  if (!row.some((char) => hasRtlScript(char.c))) return row;
+  const resolved = resolveNeutrals(
+    row.map((char) => charDirection(char.c)),
+    rtlBase,
+  );
+  const centre = (char: LayoutChar) => (char.box[0] + char.box[2]) / 2;
+  const fragments: Fragment[] = [];
+  for (const [at, char] of row.entries()) {
+    const direction = resolved[at] as 'rtl' | 'ltr';
+    const last = fragments[fragments.length - 1];
+    const before = row[at - 1];
+    // Along a run of right-to-left text the next character lies to the left, along one of
+    // left-to-right text to the right; a jump the other way (a quarter of the size) starts a run.
+    const slack = char.size * 0.25;
+    const jumped =
+      before !== undefined &&
+      (direction === 'rtl' ? centre(char) > centre(before) + slack : centre(char) < centre(before) - slack);
+    if (last === undefined || last.direction !== direction || jumped) {
+      fragments.push({ chars: [char], direction, x0: char.box[0], x1: char.box[2] });
+    } else {
+      // The gap between two characters of a run is a space MuPDF has already put in.
+      last.chars.push(char);
+      last.x0 = Math.min(last.x0, char.box[0]);
+      last.x1 = Math.max(last.x1, char.box[2]);
+    }
+  }
+  const onPage = [...fragments].sort((a, b) => a.x0 + a.x1 - (b.x0 + b.x1));
+  const read = readingOrder(
+    onPage.map((fragment) => fragment.direction),
+    rtlBase,
+  ).map((at) => onPage[at] as Fragment);
+  const out: LayoutChar[] = [];
+  for (const [at, fragment] of read.entries()) {
+    const previous = read[at - 1];
+    if (previous !== undefined) {
+      const tail = previous.chars[previous.chars.length - 1] as LayoutChar;
+      const head = fragment.chars[0] as LayoutChar;
+      const gap = Math.max(fragment.x0 - previous.x1, previous.x0 - fragment.x1);
+      if (gap >= tail.size * 0.15 && tail.c.trim() !== '' && head.c.trim() !== '') {
+        const right = fragment.x0 >= previous.x1;
+        out.push({
+          ...tail,
+          c: ' ',
+          box: right
+            ? [previous.x1, tail.box[1], fragment.x0, tail.box[3]]
+            : [fragment.x1, tail.box[1], previous.x0, tail.box[3]],
+        });
+      }
+    }
+    out.push(...fragment.chars);
   }
   return out;
 }
@@ -460,10 +582,16 @@ const HYPHENS = new Set(['-', '\u00AD', '\u2010']);
  * next line is wider than the line pitch so far, or at a bullet.
  */
 function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
-  const kept = joinRows(lines.filter((chars) => chars.some((char) => char.c.trim() !== '')));
-  if (kept.length === 0) return [];
+  const rows = joinRows(lines.filter((chars) => chars.some((char) => char.c.trim() !== '')));
+  if (rows.length === 0) return [];
+  // Each row in the order it is read; the block's direction decides a row that holds both
+  // (a Latin name in a Hebrew sentence), a row that is mostly right-to-left decides itself.
+  const hasRtl = rows.some((row) => row.some((char) => hasRtlScript(char.c)));
+  const blockRtl = hasRtl && rightToLeft(rows.flat());
+  const kept = hasRtl ? rows.map((row) => inReadingOrder(row, blockRtl || rightToLeft(row))) : rows;
   const boxes = kept.map(lineBox);
   const right = Math.max(...boxes.map((box) => box[2]));
+  const left = Math.min(...boxes.map((box) => box[0]));
   const groups: number[][] = [];
   for (let index = 0; index < kept.length; index += 1) {
     const box = boxes[index] as Box;
@@ -486,7 +614,10 @@ function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
       .map((char) => char.c)
       .join('')
       .trimStart();
-    const shortLine = previous[2] < right - Math.max(size * 3, (right - previous[0]) * 0.12);
+    // A line ends short at the right edge, or at the left one in right-to-left text, which starts at the right.
+    const shortLine = blockRtl
+      ? previous[0] > left + Math.max(size * 3, (previous[2] - left) * 0.12)
+      : previous[2] < right - Math.max(size * 3, (right - previous[0]) * 0.12);
     const wideGap = gap > Math.max(height * 0.6, pitch - height + size * 0.5);
     const bullet = /^[•▪◦‣●○■□–—*·]/.test(leading) || /^\d{1,2}[.)]\s/.test(leading);
     // A different size starts a new paragraph too: a heading run into its body text.
@@ -500,17 +631,21 @@ function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
     const runs: Run[] = [];
     let text = '';
     let style: Omit<Run, 'text'> | null = null;
+    const paragraphRtl = hasRtl && rightToLeft(group.flatMap((index) => kept[index] as LayoutChar[]));
     const flush = () => {
       if (style !== null && text !== '') runs.push({ ...style, text });
       text = '';
     };
     const push = (char: LayoutChar, c: string) => {
+      // A letter says which way it runs; a digit, a space or a sign runs the way the run it is in does.
+      const direction = hasRtl ? charDirection(c) : null;
       const next = {
         font: wordFontName(char.font),
         half: Math.max(2, Math.round(char.size * 2)),
         bold: char.bold,
         italic: char.italic,
         color: char.color,
+        rtl: direction === null ? (style?.rtl ?? paragraphRtl) : direction === 'rtl',
       };
       // A space takes the style of the run it sits in, so runs are not split around it.
       const same =
@@ -520,7 +655,8 @@ function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
             style.half === next.half &&
             style.bold === next.bold &&
             style.italic === next.italic &&
-            style.color === next.color));
+            style.color === next.color &&
+            style.rtl === next.rtl));
       if (!same) {
         flush();
         style = next;
@@ -577,6 +713,7 @@ function blockParagraphs(lines: readonly LayoutChar[][]): Paragraph[] {
       pitch: lineBoxes.length > 1 ? (last[1] - first[1]) / (lineBoxes.length - 1) : 0,
       size: commonSize(chars),
       bold: visible.length > 0 && visible.every((char) => char.bold),
+      rtl: paragraphRtl,
     } satisfies Paragraph;
   });
 }
@@ -830,6 +967,7 @@ function runXml(run: Run): string {
   if (run.color !== 0)
     props.push(`<w:color w:val="${run.color.toString(16).padStart(6, '0').toUpperCase()}"/>`);
   props.push(`<w:sz w:val="${run.half}"/><w:szCs w:val="${run.half}"/>`);
+  if (run.rtl) props.push('<w:rtl/>');
   const parts = run.text.split('\t').map((piece) => `<w:t xml:space="preserve">${xml(piece)}</w:t>`);
   return `<w:r><w:rPr>${props.join('')}</w:rPr>${parts.join('<w:tab/>')}</w:r>`;
 }
@@ -846,18 +984,31 @@ function paragraphXml(
   extra: string,
   context: DocxContext,
 ): string {
+  // The properties go in the order of the schema (CT_PPrBase): pStyle, pageBreakBefore, bidi,
+  // spacing, ind, jc; the section's properties, `sectPr`, come after them all.
   const props: string[] = [];
   const level = headingLevel(paragraph, context);
   if (level !== null) props.push(`<w:pStyle w:val="Heading${level}"/>`);
   if (extra.includes('pageBreakBefore')) props.push('<w:pageBreakBefore/>');
+  if (paragraph.rtl) props.push('<w:bidi/>');
   const pitch =
     paragraph.pitch > 0 ? `w:line="${Math.round(paragraph.pitch * TWIPS)}" w:lineRule="atLeast"` : '';
   props.push(`<w:spacing w:before="${Math.round(before * TWIPS)}" w:after="0" ${pitch}/>`.replace(' /', '/'));
 
   const width = column.right - column.left;
   const centre = (column.left + column.right) / 2;
-  const [x0, , x1] = paragraph.box;
-  const lines = paragraph.lines;
+  // A right-to-left paragraph is measured from its own start, the right edge: its box mirrored
+  // across the column reads as left-to-right text, and so do its alignment and indents. `w:bidi`
+  // has Word read them the same way (left is the start of the line, right is its end), so the
+  // values written are those of the mirror, and the paragraph stands where the PDF has it.
+  const mirror = (box: Box): Box => [
+    column.left + column.right - box[2],
+    box[1],
+    column.left + column.right - box[0],
+    box[3],
+  ];
+  const [x0, , x1] = paragraph.rtl ? mirror(paragraph.box) : paragraph.box;
+  const lines = paragraph.rtl ? paragraph.lines.map(mirror) : paragraph.lines;
   const centred = lines.every(
     (line) => Math.abs((line[0] + line[2]) / 2 - centre) <= Math.max(4, width * 0.03),
   );
@@ -870,7 +1021,6 @@ function paragraphXml(
     // Every line but the last ends at one edge: justified, in whichever column it stands.
     align = 'both';
   }
-  if (align !== 'left') props.push(`<w:jc w:val="${align}"/>`);
   if (align === 'left' || align === 'both') {
     const first = lines[0] as Box;
     const rest = lines.length > 1 ? Math.min(...lines.slice(1).map((line) => line[0])) : first[0];
@@ -885,6 +1035,7 @@ function paragraphXml(
     else if (firstLine <= -2) indent.push(`w:hanging="${Math.round(-firstLine * TWIPS)}"`);
     if (indent.length > 0) props.push(`<w:ind ${indent.join(' ')}/>`);
   }
+  if (align !== 'left') props.push(`<w:jc w:val="${align}"/>`);
   if (extra.includes('<w:sectPr')) props.push(extra.slice(extra.indexOf('<w:sectPr')));
   // Counted per paragraph: a style change inside a word splits runs, not words.
   context.writtenWords += words(xmlSafe(textOf(paragraph)));
@@ -1097,15 +1248,47 @@ function textColumns(items: readonly Item[], page: Column): (box: Box) => Column
   };
 }
 
+/** What the Word export keeps of a page once it is read: `readPages` lets the page's layout go. */
+interface WordPage {
+  readonly width: number;
+  readonly height: number;
+  /** The page as paragraphs, pictures and tables in reading order. */
+  readonly items: readonly Item[];
+  /** Characters of the document's own hidden text left out. */
+  readonly hidden: number;
+  /** Pictures the document does not carry (`lostPictures`). */
+  readonly lost: number;
+  /** How many characters have each size (half points) and each font family, for the document's body size and font. */
+  readonly sizes: ReadonlyMap<number, number>;
+  readonly fonts: ReadonlyMap<string, number>;
+}
+
+/** The page's characters, in the order MuPDF read them. */
+function charsOf(layout: PageLayout): LayoutChar[] {
+  return layout.blocks.flatMap((block) =>
+    block.kind === 'text' ? block.lines.flatMap((line) => line.chars) : [],
+  );
+}
+
+/** What the Word export takes from a page; the page itself can then be let go. */
+function wordPage(page: ReadPage): WordPage {
+  const chars = charsOf(page.layout);
+  const fonts = new Map<string, number>();
+  for (const char of chars) fonts.set(char.font, (fonts.get(char.font) ?? 0) + 1);
+  return {
+    width: page.layout.width,
+    height: page.layout.height,
+    items: pageItems(page),
+    hidden: page.hidden,
+    lost: lostPictures(page),
+    sizes: sizeCounts(chars),
+    fonts,
+  };
+}
+
 /** One page's body XML, its last paragraph carrying the page's section properties. */
-function docxPage(
-  page: ReadPage,
-  items: readonly Item[],
-  first: boolean,
-  last: boolean,
-  context: DocxContext,
-): string {
-  const { width, height } = page.layout;
+function docxPage(page: WordPage, first: boolean, last: boolean, context: DocxContext): string {
+  const { width, height, items } = page;
   // A picture behind the text is not in the flow: it sets neither the margins nor the columns.
   const flow = items.filter((item) => item.kind !== 'picture' || !item.behind);
   const boxes = flow.map((item) => item.box);
@@ -1275,23 +1458,22 @@ function headingSizes(paragraphs: readonly Paragraph[], bodySize: number): Map<n
 }
 
 async function writeDocx(
-  pages: readonly ReadPage[],
+  pages: readonly WordPage[],
   title: string,
   language: string,
   context: OperationContext,
 ): Promise<{ bytes: Uint8Array; tables: number; streams: number; pictures: number; written: number }> {
-  const laid = pages.map((page) => ({ page, items: pageItems(page) }));
-  const items = laid.map((entry) => entry.items);
+  const items = pages.map((page) => page.items);
   const paragraphs = items.flat().flatMap((item) => (item.kind === 'paragraph' ? [item] : []));
-  const allChars = pages.flatMap((page) =>
-    page.layout.blocks.flatMap((block) =>
-      block.kind === 'text' ? block.lines.flatMap((line) => line.chars) : [],
-    ),
-  );
-  const bodySize = commonSize(allChars) || 11;
-  // The body font is the one most characters are set in.
+  // The body size and font are the ones most characters of the document are set in; the pages
+  // counted them as they were read, in the order the characters came.
+  const sizeCount = new Map<number, number>();
   const fontCounts = new Map<string, number>();
-  for (const char of allChars) fontCounts.set(char.font, (fontCounts.get(char.font) ?? 0) + 1);
+  for (const page of pages) {
+    for (const [half, count] of page.sizes) sizeCount.set(half, (sizeCount.get(half) ?? 0) + count);
+    for (const [font, count] of page.fonts) fontCounts.set(font, (fontCounts.get(font) ?? 0) + count);
+  }
+  const bodySize = commonOf(sizeCount) || 11;
   const bodyFont = wordFontName([...fontCounts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Arial');
   const docx: DocxContext = {
     bodySize,
@@ -1302,8 +1484,8 @@ async function writeDocx(
   };
 
   context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
-  const body = laid
-    .map((entry, index) => docxPage(entry.page, entry.items, index === 0, index === laid.length - 1, docx))
+  const body = pages
+    .map((page, index) => docxPage(page, index === 0, index === pages.length - 1, docx))
     .join('');
   const document = wordDocumentXml(body);
   const documentRels = documentRelsXml(docx.media.map((image) => image.name));
@@ -1407,42 +1589,46 @@ function rowsSheet(page: ReadPage, name: string): Sheet | null {
   return { name, rows: grid, merges: [], widths };
 }
 
-/** Sheets for the pages: their ruled tables, or the text rows of a page without one. */
-function sheetsOf(
-  pages: readonly ReadPage[],
+/** What the spreadsheet formats gather from the pages, a page at a time (`addSheets`). */
+interface Gathered {
+  readonly sheets: Sheet[];
+  /** Pages (1-based) that had no ruled table and became one sheet of text rows. */
+  readonly unruled: number[];
+  tables: number;
+  streams: number;
+  textOutside: boolean;
+  /** Pictures on the pages: a sheet holds cells only, so none is carried. */
+  pictures: number;
+}
+
+/** Adds the page's sheets to `found`: its ruled tables, or the text rows of a page without one. */
+function addSheets(
+  found: Gathered,
+  page: ReadPage,
   names: NonNullable<OfficeExportOptions['sheetName']>,
-): { sheets: Sheet[]; tables: number; streams: number; unruled: number[]; textOutside: boolean } {
-  const sheets: Sheet[] = [];
-  const unruled: number[] = [];
-  let tables = 0;
-  let streams = 0;
-  let textOutside = false;
-  for (const page of pages) {
-    if (page.tables.length > 0) {
-      const owners = ownersOf(page);
-      textOutside ||= page.layout.blocks.some(
-        (block) =>
-          block.kind === 'text' &&
-          block.lines.some((line) => line.chars.some((char) => char.c.trim() !== '' && !owners.has(char))),
-      );
-      // The page's tables top to bottom, those without rules among them.
-      const all = [...page.tables, ...page.streams].sort(
-        (a, b) => a.box[1] - b.box[1] || a.box[0] - b.box[0],
-      );
-      for (const table of all) {
-        if (table.ruled) tables += 1;
-        else streams += 1;
-        sheets.push(tableSheet(table, names.table(tables + streams)));
-      }
-      continue;
+): void {
+  found.pictures += page.pictures;
+  if (page.tables.length > 0) {
+    const owners = ownersOf(page);
+    found.textOutside ||= page.layout.blocks.some(
+      (block) =>
+        block.kind === 'text' &&
+        block.lines.some((line) => line.chars.some((char) => char.c.trim() !== '' && !owners.has(char))),
+    );
+    // The page's tables top to bottom, those without rules among them.
+    const all = [...page.tables, ...page.streams].sort((a, b) => a.box[1] - b.box[1] || a.box[0] - b.box[0]);
+    for (const table of all) {
+      if (table.ruled) found.tables += 1;
+      else found.streams += 1;
+      found.sheets.push(tableSheet(table, names.table(found.tables + found.streams)));
     }
-    const sheet = rowsSheet(page, names.page(page.index + 1));
-    if (sheet !== null) {
-      sheets.push(sheet);
-      unruled.push(page.index + 1);
-    }
+    return;
   }
-  return { sheets, tables, streams, unruled, textOutside };
+  const sheet = rowsSheet(page, names.page(page.index + 1));
+  if (sheet !== null) {
+    found.sheets.push(sheet);
+    found.unruled.push(page.index + 1);
+  }
 }
 
 /**
@@ -1623,6 +1809,119 @@ async function writeXlsx(
     files[`xl/worksheets/sheet${index + 1}.xml`] = content;
   });
   return { bytes: await zipped(files), numbers };
+}
+
+/** The elements called `name` at any depth of an XML node, in document order (xmldom's lists are not iterable). */
+function elementsOf(parent: Document | Element, name: string): Element[] {
+  const list = parent.getElementsByTagName(name);
+  const out: Element[] = [];
+  for (let index = 0; index < list.length; index += 1) out.push(list[index] as Element);
+  return out;
+}
+
+/** The cells a sheet was written with, in the order they were written: where, and what the cell holds. */
+function writtenCells(sheet: Sheet): { ref: string; number: number | null; text: string }[] {
+  const out: { ref: string; number: number | null; text: string }[] = [];
+  for (const [rowIndex, row] of sheet.rows.entries()) {
+    for (const [columnIndex, text] of row.entries()) {
+      if (text === '') continue;
+      out.push({
+        ref: `${columnName(columnIndex)}${rowIndex + 1}`,
+        number: cellNumber(text),
+        // The characters XML 1.0 cannot carry were dropped when it was written.
+        text: xmlSafe(text),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Reads the workbook back with an XML parser, the way a spreadsheet program has to: every part
+ * must be well-formed, the workbook must list the sheets that were written under their names,
+ * and each sheet must hold the cells that were written, at their references — a number as a
+ * number, a text as the same text — and the merged ranges. What fails here is what Excel
+ * answers with "we found a problem with some content": a broken escape, a lost or shifted cell.
+ */
+async function verifyXlsx(bytes: Uint8Array, sheets: readonly Sheet[]): Promise<void> {
+  const fail = (message: string, cause?: unknown): never => {
+    throw new ToolError('verification-failed', {
+      engine: 'model',
+      engineMessage: `xlsx read-back ${message}`,
+      ...(cause === undefined ? {} : { cause }),
+    });
+  };
+  const parse = (text: string, part: string): Document => {
+    let failure: string | null = null;
+    const parser = new DOMParser({
+      // xmldom 0.8 reads `errorHandler`. It repairs a mismatched tag and reports it as a warning, so
+      // anything it reports is a broken part: the writer's own XML gives it nothing to say.
+      errorHandler: (_level: string, message: string) => {
+        failure ??= message;
+      },
+    } as never);
+    const document = parser.parseFromString(text, 'application/xml') as unknown as Document | undefined;
+    if (failure !== null || document === undefined || document.documentElement === null) {
+      return fail(`could not read ${part}: ${failure ?? 'empty XML'}`);
+    }
+    return document;
+  };
+
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(bytes);
+  } catch (error) {
+    return fail(`could not open the package: ${String(error)}`, error);
+  }
+  const parts = new Map<string, Document>();
+  // The files of the package; the folder entries JSZip makes for their paths hold no part.
+  for (const entry of Object.values(zip.files).filter((file) => !file.dir)) {
+    parts.set(entry.name, parse(await entry.async('string'), entry.name));
+  }
+  const part = (name: string): Document => parts.get(name) ?? fail(`found no ${name}`);
+
+  const workbook = part('xl/workbook.xml');
+  const names = sheetNames(sheets);
+  const listed = elementsOf(workbook, 'sheet').map((sheet) => sheet.getAttribute('name'));
+  if (listed.length !== names.length || listed.some((name, at) => name !== names[at])) {
+    fail(`found the sheets [${listed.join(', ')}], [${names.join(', ')}] were written`);
+  }
+  for (const [at, sheet] of sheets.entries()) {
+    const number = at + 1;
+    const document = part(`xl/worksheets/sheet${number}.xml`);
+    const written = writtenCells(sheet);
+    const cells = elementsOf(document, 'c');
+    if (cells.length !== written.length) {
+      fail(`found ${cells.length} cells in sheet ${number}, ${written.length} were written`);
+    }
+    for (const [index, cell] of cells.entries()) {
+      const want = written[index] as (typeof written)[number];
+      const ref = cell.getAttribute('r');
+      if (ref !== want.ref) fail(`found cell ${ref} in sheet ${number} where ${want.ref} was written`);
+      if (want.number !== null) {
+        const value = elementsOf(cell, 'v')[0]?.textContent ?? '';
+        if (cell.hasAttribute('t') || value === '' || Number(value) !== want.number) {
+          fail(`found ${value || 'no number'} in ${ref} of sheet ${number}, ${want.number} was written`);
+        }
+      } else {
+        const text = elementsOf(cell, 't')
+          .map((piece) => piece.textContent as string)
+          .join('');
+        if (cell.getAttribute('t') !== 'inlineStr' || text !== want.text) {
+          fail(`found other text in ${ref} of sheet ${number} than was written`);
+        }
+      }
+    }
+    const merged = elementsOf(document, 'mergeCell').map((merge) => merge.getAttribute('ref'));
+    const wanted = sheet.merges.map(
+      ([r0, c0, r1, c1]) => `${columnName(c0)}${r0 + 1}:${columnName(c1)}${r1 + 1}`,
+    );
+    if (merged.length !== wanted.length || merged.some((range, index) => range !== wanted[index])) {
+      fail(
+        `found the merged ranges [${merged.join(', ')}] in sheet ${number}, [${wanted.join(', ')}] were written`,
+      );
+    }
+  }
 }
 
 /**
@@ -1812,7 +2111,23 @@ export async function exportOffice(
   const notes: OperationNote[] = [];
   const asImages = options.format === 'docx' && options.docxLayout === 'page-images';
   const asLayout = options.format === 'docx' && options.docxLayout === 'layout';
-  let pages: ReadPage[] = [];
+  const word = options.format === 'docx';
+  const names = options.sheetName ?? {
+    table: (n: number) => `Table ${n}`,
+    page: (n: number) => `Page ${n}`,
+  };
+  // What the pages leave behind, a page at a time: the pages themselves are not kept.
+  const wordPages: WordPage[] = [];
+  const gathered: Gathered = {
+    sheets: [],
+    unruled: [],
+    tables: 0,
+    streams: 0,
+    textOutside: false,
+    pictures: 0,
+  };
+  const textless: number[] = [];
+  let unreadable = 0;
   let images: PageImage[] = [];
   let layout: LayoutDocx | null = null;
   let title: string;
@@ -1825,7 +2140,15 @@ export async function exportOffice(
     if (asImages) images = await renderPageImages(doc, options.pages, context);
     else if (asLayout) {
       layout = await writeLayoutDocx(doc, options.pages, title, language, context, options.ocr ?? null);
-    } else pages = await readPages(doc, options.pages, options.format === 'docx', context);
+    } else {
+      await readPages(doc, options.pages, word, context, (page) => {
+        const chars = charsOf(page.layout);
+        if (chars.every((char) => char.c.trim() === '')) textless.push(page.index + 1);
+        unreadable += chars.filter((char) => char.c === '\uFFFD').length;
+        if (word) wordPages.push(wordPage(page));
+        else addSheets(gathered, page, names);
+      });
+    }
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw mapMupdfError(error, 'export-office');
@@ -1836,43 +2159,18 @@ export async function exportOffice(
 
   if (asImages) return writePageImages(images, stem, title, context);
   if (layout !== null) return writeLayout(layout, stem);
-  const textless = pages
-    .filter((page) =>
-      page.layout.blocks.every(
-        (block) =>
-          block.kind !== 'text' ||
-          block.lines.every((line) => line.chars.every((char) => char.c.trim() === '')),
-      ),
-    )
-    .map((page) => page.index + 1);
-  const unreadable = pages.reduce(
-    (sum, page) =>
-      sum +
-      page.layout.blocks.reduce(
-        (blockSum, block) =>
-          blockSum +
-          (block.kind === 'text'
-            ? block.lines.reduce(
-                (lineSum, line) => lineSum + line.chars.filter((char) => char.c === '\uFFFD').length,
-                0,
-              )
-            : 0),
-        0,
-      ),
-    0,
-  );
-
+  const pageCount = options.pages.length;
   let file: OutputFile;
-  if (options.format === 'docx') {
+  if (word) {
     steps.push('office.tables', 'office.write');
-    const written = await writeDocx(pages, title, language, context);
+    const written = await writeDocx(wordPages, title, language, context);
     throwIfAborted(context.signal);
     steps.push('verify');
     await verifyDocx(written.bytes, written.written);
     file = { name: `${stem}.docx`, bytes: written.bytes, mime: MIME.docx };
-    notes.push(note('changed', 'op.note.exportOffice.done', { format: 'DOCX', pages: pages.length }));
+    notes.push(note('changed', 'op.note.exportOffice.done', { format: 'DOCX', pages: pageCount }));
     notes.push(note('lost', 'op.note.exportOffice.docxApproximate'));
-    const hidden = pages.reduce((sum, page) => sum + page.hidden, 0);
+    const hidden = wordPages.reduce((sum, page) => sum + page.hidden, 0);
     if (hidden > 0) notes.push(note('lost', 'op.note.exportOffice.hiddenText', { count: hidden }));
     if (written.tables > 0)
       notes.push(note('preserved', 'op.note.exportOffice.tables', { count: written.tables }));
@@ -1881,15 +2179,11 @@ export async function exportOffice(
     }
     if (written.pictures > 0)
       notes.push(note('preserved', 'op.note.exportOffice.pictures', { count: written.pictures }));
-    const lost = pages.reduce((sum, page) => sum + lostPictures(page), 0);
+    const lost = wordPages.reduce((sum, page) => sum + page.lost, 0);
     if (lost > 0) notes.push(note('lost', 'op.note.exportOffice.picturesLost', { count: lost }));
   } else {
     steps.push('office.tables');
-    const names = options.sheetName ?? {
-      table: (n: number) => `Table ${n}`,
-      page: (n: number) => `Page ${n}`,
-    };
-    const { sheets, tables, streams, unruled, textOutside } = sheetsOf(pages, names);
+    const { sheets, tables, streams, unruled, textOutside, pictures } = gathered;
     if (sheets.length === 0) {
       throw new ToolError('no-text', {
         engine: 'model',
@@ -1900,8 +2194,11 @@ export async function exportOffice(
     context.onProgress?.({ phase: 'write', labelKey: 'op.progress.exportOffice.write' });
     if (options.format === 'xlsx') {
       const written = await writeXlsx(sheets, title);
+      throwIfAborted(context.signal);
+      steps.push('verify');
+      await verifyXlsx(written.bytes, sheets);
       file = { name: `${stem}.xlsx`, bytes: written.bytes, mime: MIME.xlsx };
-      notes.push(note('changed', 'op.note.exportOffice.done', { format: 'XLSX', pages: pages.length }));
+      notes.push(note('changed', 'op.note.exportOffice.done', { format: 'XLSX', pages: pageCount }));
       notes.push(note('changed', 'op.note.exportOffice.sheets', { count: sheets.length }));
       if (written.numbers > 0)
         notes.push(note('changed', 'op.note.exportOffice.numbers', { count: written.numbers }));
@@ -1909,7 +2206,7 @@ export async function exportOffice(
       steps.push('verify');
       const written = writeCsv(sheets, options.csvDelimiter ?? ',');
       file = { name: `${stem}.csv`, bytes: written.bytes, mime: MIME.csv };
-      notes.push(note('changed', 'op.note.exportOffice.done', { format: 'CSV', pages: pages.length }));
+      notes.push(note('changed', 'op.note.exportOffice.done', { format: 'CSV', pages: pageCount }));
       notes.push(
         note('changed', 'op.note.exportOffice.csvRows', { rows: written.rows, tables: sheets.length }),
       );
@@ -1919,6 +2216,8 @@ export async function exportOffice(
     if (tables > 0) notes.push(note('preserved', 'op.note.exportOffice.tables', { count: tables }));
     if (streams > 0) notes.push(note('warning', 'op.note.exportOffice.streamTables', { count: streams }));
     if (textOutside) notes.push(note('lost', 'op.note.exportOffice.outsideText'));
+    // A sheet holds cells only: every picture of the pages is left out, as the Word file leaves out one it cannot place.
+    if (pictures > 0) notes.push(note('lost', 'op.note.exportOffice.sheetPicturesLost', { count: pictures }));
     if (unruled.length > 0) {
       notes.push(note('warning', 'op.note.exportOffice.unruled', { pages: unruled.join(', ') }));
     }

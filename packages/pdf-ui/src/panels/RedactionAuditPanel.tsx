@@ -13,7 +13,7 @@
  *    notes): a row that says the erased text may still be in the file cannot sit
  *    below rows that say something reassuring.
  *  - **No colour alone.** Each group has its own heading word — "İçerik", "Uyarı",
- *    "Bilgi" — so the tone is a second channel, never the only one (`DESIGN.md`).
+ *    "Bilgi" — so the tone is a second channel, never the only one.
  *  - **The summary is a live region, and it exists before it has anything to say.**
  *    A polite region created together with its first sentence is not announced, so
  *    the element is always in the tree and only its text arrives with the report.

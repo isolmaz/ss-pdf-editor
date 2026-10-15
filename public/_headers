@@ -36,9 +36,24 @@
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
 
+# Vite names every file under /editor/assets/ after a digest of its content, so a URL's
+# bytes never change: a year, immutable, no revalidation round trip per load. `/editor/*`
+# above sets Cache-Control too and Cloudflare joins same-name headers from every matching
+# rule, so this rule detaches that one first — which also drops the `no-transform` that `/*`
+# sets, hence it is repeated here. COOP/COEP still come from `/editor/*`.
+/editor/assets/*
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable, no-transform
+
+# Every engine URL carries the version of its pins (`/engines/<engine>/v<digest>/<file>`,
+# packages/pdf-core/src/assets.ts), so a rebuilt engine is a new URL and immutable is true.
 /engines/*
   Cache-Control: public, max-age=31536000, immutable
   Cross-Origin-Embedder-Policy: require-corp
+
+# Fonts keep their path when a pinned font changes: not immutable, the browser revalidates.
+/fonts/*
+  Cache-Control: public, max-age=0, must-revalidate
 
 /sw.js
   Cache-Control: public, max-age=0, must-revalidate

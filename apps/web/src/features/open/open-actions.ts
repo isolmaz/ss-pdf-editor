@@ -34,7 +34,8 @@ import {
   showNotice,
 } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
-import { draftStorage } from '../persistence/persistence-store';
+import { restoreDraft } from '../persistence/draft-restore';
+import { draftStorage, sourceStored } from '../persistence/persistence-store';
 import {
   askPassword,
   beginOpening,
@@ -145,16 +146,6 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
           ...(fileVerdict.reason === 'pages' ? { path: file.name } : {}),
         });
       }
-      // Read before the tab exists: it only needs the engine handle, and a rejection here
-      // is an open failure with nothing registered — the handle is released like the
-      // limit-blocked one above, and the original error is the one reported.
-      let encrypted: boolean;
-      try {
-        encrypted = (await handle.raw.getPermissions()) !== null;
-      } catch (error) {
-        await handle.destroy().catch(() => undefined);
-        throw error;
-      }
       const tab = session.openDocument({
         name: file.name,
         bytes,
@@ -175,13 +166,18 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
       });
       hideStartScreen();
       let storageWarning: string | null = null;
-      if (encrypted) session.setSensitive(tab.id, true);
+      // A sensitive session is a document opened with its open password — the one the user had to
+      // type. A file that only an owner password restricts opens without one, so it has no secret
+      // to protect and gets a draft like any other.
+      if (password !== undefined) session.setSensitive(tab.id, true);
       else {
         // The tab is registered: keeping a recovery copy is not part of opening. A write
         // that fails (storage full, OPFS unavailable) costs the copy, never the
         // document, and is reported as exactly that — not as an open failure below.
         try {
-          await draftStorage().putSource(sourceKeyFor(tab.id, sha256), bytes);
+          const sourceKey = sourceKeyFor(tab.id, sha256);
+          await draftStorage().putSource(sourceKey, bytes);
+          sourceStored(tab.id, sourceKey);
           // A reference to the file, never its bytes; a sensitive session keeps none.
           if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
         } catch (error) {
@@ -268,7 +264,9 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
     hideStartScreen();
     let warning: string | null = null;
     try {
-      await draftStorage().putSource(sourceKeyFor(tab.id, sha256), bytes);
+      const sourceKey = sourceKeyFor(tab.id, sha256);
+      await draftStorage().putSource(sourceKey, bytes);
+      sourceStored(tab.id, sourceKey);
     } catch (error) {
       warning = storedCopyWarning(error, t);
     }
@@ -468,21 +466,22 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
       const drafts = await draftStorage().readDrafts();
       const matchedDraft = drafts.find((d) => d.id === item.id);
       if (matchedDraft) {
-        const bytes = await draftStorage().getSource(matchedDraft.sourceKey);
-        if (bytes) {
-          const [handle, sha256] = await openAndFingerprint(openWithPdfjs(bytes), sha256Hex(bytes));
-          const tab = session.openDocument({
-            id: matchedDraft.id,
-            name: matchedDraft.name,
-            bytes,
-            sha256,
-            pageCount: matchedDraft.pageCount,
-          });
-          adoptHandle(tab.id, handle);
-          session.setActive(tab.id);
-          hideStartScreen();
+        // The path startup recovery takes: the draft's history and snapshots come back with the
+        // tab, and its page count is the *source's* (`sourcePageCount`), not the working
+        // version's — the two differ as soon as a page was added or removed.
+        const outcome = await restoreDraft({ store: session, openAndFingerprint }, matchedDraft, {
+          activate: true,
+        });
+        if (outcome.kind === 'elsewhere') {
+          // Its document is open in another window, whose tab owns the draft: a second copy here
+          // would write the same manifest. Say where it is rather than open the picker.
+          showNotice(t('draft.openElsewhere', { name: item.name }));
           return;
         }
+        // Restored — or opened here while the draft was read, which puts the same tab in front.
+        session.setActive(matchedDraft.id);
+        hideStartScreen();
+        return;
       }
     } catch (error) {
       // The draft could not be read back: say so, then offer the picker so the

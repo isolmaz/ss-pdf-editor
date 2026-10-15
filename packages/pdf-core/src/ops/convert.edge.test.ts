@@ -142,6 +142,23 @@ describe('titles', () => {
     expect(out.title).toBe('Ünlü & İstanbul İ <x> "q" \'s\'');
   });
 
+  it('reads a character reference that names no character as U+FFFD instead of failing the conversion', async () => {
+    const out = await convertToPdf(
+      request({
+        name: 'a.html',
+        bytes: encode(
+          page(
+            'Body',
+            '<title>a&#x110000;b&#1114112;c&#xD800;d&#55296;e&#0;f&#99999999999999999999;g&#x41;&#x1F600;</title>',
+          ),
+        ),
+      }),
+      run,
+    );
+    // Past U+10FFFF, a surrogate, NUL and an absurd number are U+FFFD; the valid ones are read.
+    expect(out.title).toBe('a\uFFFDb\uFFFDc\uFFFDd\uFFFDe\uFFFDf\uFFFDgA😀');
+  });
+
   it('falls back to the file name for an HTML page with no title or an empty one', async () => {
     for (const head of ['', '<title></title>', '<title>   </title>']) {
       const out = await convertToPdf(request({ name: 'sayfa.htm', bytes: encode(page('Body', head)) }), run);

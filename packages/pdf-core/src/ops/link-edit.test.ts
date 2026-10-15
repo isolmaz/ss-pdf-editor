@@ -464,6 +464,50 @@ describe('applyLinkEdit on odd documents', () => {
     ]);
   });
 
+  it('measures a link from the visible part of a page whose /CropBox sticks out of its /MediaBox', async () => {
+    const mupdf = await import('mupdf');
+    const doc = mupdf.PDFDocument.openDocument((await fixture()).slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    // MediaBox [0 0 200 300]: what a reader shows is [0 0 110 220], so its upper-left corner is
+    // user (0, 220) — not the CropBox's own (-50, 220).
+    doc.findPage(2).put('CropBox', [-50, -40, 110, 220]);
+    doc.findPage(2).put('Rotate', 0);
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    const out = await applyLinkEdit(
+      bytes,
+      { add: [{ target: { pageIndex: 2, rect: [0, 0, 30, 20] }, destination: web }] },
+      run,
+    );
+    expect(await annotationsOn(out.bytes, 2)).toEqual([
+      { subtype: 'Link', rect: [0, 200, 30, 220], url: 'https://example.com/' },
+    ]);
+  });
+
+  it('takes a /MediaBox with a hole in it for no MediaBox (Letter), not the other numbers closed up', async () => {
+    const mupdf = await import('mupdf');
+    const doc = mupdf.PDFDocument.openDocument((await fixture()).slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    const page = doc.findPage(2);
+    // `[0 0 null 200 300]` closed up would be the valid-looking 200×300 box; read by position its
+    // third corner is no number.
+    const broken = doc.newArray();
+    for (const value of [0, 0, null, 200, 300]) broken.push(value === null ? doc.newNull() : value);
+    page.put('MediaBox', broken);
+    page.put('Rotate', 0);
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    const out = await applyLinkEdit(
+      bytes,
+      { add: [{ target: { pageIndex: 2, rect: [10, 10, 50, 30] }, destination: web }] },
+      run,
+    );
+    // Letter is 612×792, as for a page with no MediaBox at all.
+    expect(await annotationsOn(out.bytes, 2)).toEqual([
+      { subtype: 'Link', rect: [10, 762, 50, 782], url: 'https://example.com/' },
+    ]);
+  });
+
   it('clamps a destination page into the document and says so, and skips a target page it lacks', async () => {
     const out = await applyLinkEdit(
       await fixture(),
@@ -512,6 +556,99 @@ describe('applyLinkEdit removal', () => {
     const out = await applyLinkEdit(input, { remove: [{ pageIndex: 5, annotationIndexes: [0] }] }, run);
     expect(out.bytes).toBe(input);
     expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.link.nothing');
+  });
+
+  /** Two pages whose `/Annots` list one and the same link object; page 1 lists it twice. */
+  async function sharedLink(): Promise<Uint8Array> {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    for (let index = 0; index < 3; index += 1) doc.insertPage(-1, doc.addPage([0, 0, 200, 300], 0, {}, ''));
+    const shared = doc.addObject({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [20, 20, 60, 40],
+      A: { S: 'URI', URI: doc.newString('https://example.com/shared') },
+      P: doc.findPage(0),
+    });
+    for (const [pageIndex, times] of [
+      [0, 1],
+      [1, 2],
+      [2, 1],
+    ] as const) {
+      const annots = doc.newArray();
+      for (let count = 0; count < times; count += 1) annots.push(shared);
+      doc.findPage(pageIndex).put('Annots', annots);
+    }
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    return bytes;
+  }
+
+  /** What each entry of a page's `/Annots` resolves to in the produced file: its subtype, or `null` for a freed object. */
+  async function entriesOn(bytes: Uint8Array, pageIndex: number): Promise<(string | null)[]> {
+    const mupdf = await import('mupdf');
+    const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      const annots = doc.findPage(pageIndex).get('Annots');
+      if (annots.isNull()) return [];
+      const array = annots.resolve();
+      const entries: (string | null)[] = [];
+      for (let at = 0; at < array.length; at += 1) {
+        const dict = array.get(at).resolve();
+        entries.push(dict.isDictionary() ? dict.get('Subtype').asName() : null);
+      }
+      return entries;
+    } finally {
+      doc.destroy();
+    }
+  }
+
+  it('takes a link another page still lists out of one page only, leaving no dangling reference behind', async () => {
+    const out = await applyLinkEdit(
+      await sharedLink(),
+      { remove: [{ pageIndex: 0, annotationIndexes: [0] }] },
+      run,
+    );
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.link.removed')?.params).toEqual({
+      count: 1,
+    });
+    // Page 0 (index 0) lost its only entry, and with it the array; the pages sharing the object keep theirs.
+    expect(await entriesOn(out.bytes, 0)).toEqual([]);
+    expect(await entriesOn(out.bytes, 1)).toEqual(['Link', 'Link']);
+    expect(await entriesOn(out.bytes, 2)).toEqual(['Link']);
+    expect(await annotationsOn(out.bytes, 2)).toEqual([
+      { subtype: 'Link', rect: [20, 20, 60, 40], url: 'https://example.com/shared' },
+    ]);
+    // One object, still in the file.
+    expect((await objects(out.bytes)).links).toBe(1);
+  });
+
+  it('removes one of two entries for the same link on a page without freeing the one that stays', async () => {
+    const out = await applyLinkEdit(
+      await sharedLink(),
+      { remove: [{ pageIndex: 1, annotationIndexes: [0] }] },
+      run,
+    );
+    expect(await entriesOn(out.bytes, 1)).toEqual(['Link']);
+    expect(await entriesOn(out.bytes, 0)).toEqual(['Link']);
+    expect((await objects(out.bytes)).links).toBe(1);
+  });
+
+  it('frees the link object once every page that listed it has dropped it', async () => {
+    const out = await applyLinkEdit(
+      await sharedLink(),
+      {
+        remove: [
+          { pageIndex: 0, annotationIndexes: [0] },
+          { pageIndex: 1, annotationIndexes: [0, 1] },
+          { pageIndex: 2, annotationIndexes: [0] },
+        ],
+      },
+      run,
+    );
+    for (const pageIndex of [0, 1, 2]) expect(await entriesOn(out.bytes, pageIndex)).toEqual([]);
+    expect((await objects(out.bytes)).links).toBe(0);
   });
 
   it('removes a link by a drag on a page turned a quarter or three, in display space', async () => {

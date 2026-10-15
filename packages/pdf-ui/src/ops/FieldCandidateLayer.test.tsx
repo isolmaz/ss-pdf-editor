@@ -76,6 +76,24 @@ describe('FieldCandidateLayer', () => {
     expect(dashed.className).toContain('rounded-full');
   });
 
+  it('measures a page once, however many candidates sit on it', () => {
+    const rects = vi.spyOn(viewer, 'pageRect');
+    const geometries = vi.spyOn(viewer, 'pageGeometry');
+    try {
+      show([
+        candidate({ id: 'a', name: 'A' }),
+        candidate({ id: 'b', name: 'B' }),
+        candidate({ id: 'c', name: 'C' }),
+      ]);
+      expect(screen.getAllByRole('button')).toHaveLength(6);
+      expect(rects).toHaveBeenCalledTimes(1);
+      expect(geometries).toHaveBeenCalledTimes(1);
+    } finally {
+      rects.mockRestore();
+      geometries.mockRestore();
+    }
+  });
+
   it('marks the selected frame as pressed and no other', () => {
     show([candidate({ id: 'a', name: 'Name' }), candidate({ id: 'b', name: 'City' })], 'b');
     expect(screen.getByRole('button', { name: 'Name — Text, page 1' }).getAttribute('aria-pressed')).toBe(

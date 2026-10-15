@@ -1,7 +1,6 @@
 /** Prepare form: find the fields of a flat PDF and create them (`pdf-core/ops/form-detect.ts`). */
 
 export const formDetectPart = {
-  'formDetect.title': 'Form alanlarını algıla',
   'cmd.formDetect.label': 'Form alanlarını algıla…',
   'home.tool.formDetect':
     'Düz bir formdaki çizgileri, kutuları ve onay karelerini bulup gerçek form alanına çevirin.',
@@ -19,7 +18,6 @@ export const formDetectPart = {
   'formDetect.panel.cancel': 'Vazgeç',
   'formDetect.panel.again': 'Yeniden algıla',
   'formDetect.panel.list': 'Bulunan alanlar',
-  'formDetect.panel.removedCount': '{count} alan kaldırıldı.',
   'formDetect.panel.restore': 'Kaldırılanları geri getir',
   'formDetect.panel.nothingLeft': 'Eklenecek alan kalmadı.',
   'formDetect.remove': '{name} alanını kaldır',
@@ -36,7 +34,6 @@ export const formDetectPart = {
   'formDetect.already': '{count} yer zaten form alanı olduğu için atlandı.',
   'formDetect.truncated': 'Çok fazla aday var; ilk {count} tanesi listelendi.',
   'formDetect.done': '{count} form alanı eklendi.',
-  'formDetect.stale': 'Belge değişti; alanları yeniden algılayın.',
   'formDetect.source.line': 'çizgi',
   'formDetect.source.blank': 'noktalı/alt çizgili boşluk',
   'formDetect.source.box': 'kutu',

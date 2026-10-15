@@ -4,12 +4,29 @@
  * Print flag, a missing `/ToUnicode`), read back from the produced bytes.
  */
 
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import type { PDFPage } from 'mupdf';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadMupdf, openPdf } from '../engines/mupdf';
 import { blankForm, formPdf, handPdf, widgetBody } from './forms.fixtures';
 import { prepareForPdfA, toUnicodeCMap } from './pdfa-prepare';
 
 const run = { signal: new AbortController().signal };
+
+// A field that holds a value under an empty appearance is drawn again before it is flattened,
+// and that is drawn with the Noto Sans the app serves: the asset fetch is the only stub.
+beforeEach(() => {
+  const require = createRequire(import.meta.url);
+  const file = require.resolve('@expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf', {
+    paths: [process.cwd()],
+  });
+  const font = new Uint8Array(readFileSync(file));
+  vi.stubGlobal('fetch', async () => new Response(font));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 async function fixture(options: { readonly save?: string } = {}): Promise<Uint8Array> {
   const mupdf = await import('mupdf');
@@ -213,6 +230,7 @@ describe('prepareForPdfA on a file with everything PDF/A forbids', () => {
     }).toEqual({
       formFieldsFlattened: 0,
       widgetsRemoved: 1,
+      filledWidgetsRemoved: 0,
       // The signed field and its kid, which inherits the type and has a value of its own.
       signaturesInvalidated: 2,
       // OpenAction, catalog /AA, two scripts, page /AA, a link's /A and /AA, two outline actions.
@@ -335,7 +353,7 @@ describe('prepareForPdfA on a file with everything PDF/A forbids', () => {
     expect(blank.info).toMatchObject({ title: null, creationDate: null });
   });
 
-  it('flattens the fields it can, and drops the widgets of a form it cannot flatten', async () => {
+  it('flattens the fields it can, and skips a field with no widget: it paints nothing to lose', async () => {
     const form = (field: string, annots: string) =>
       formPdf({
         fields: '[10 0 R]',
@@ -348,9 +366,94 @@ describe('prepareForPdfA on a file with everything PDF/A forbids', () => {
       run,
     );
     expect(flattened.counters).toMatchObject({ formFieldsFlattened: 1, widgetsRemoved: 0 });
+    // The field's value sat under an empty appearance: it is on the page now, not lost with the widget.
+    const reread = openPdf(await loadMupdf(), flattened.bytes);
+    try {
+      const page = reread.loadPage(0) as PDFPage;
+      expect(page.toStructuredText('preserve-whitespace').asText()).toContain('x');
+    } finally {
+      reread.destroy();
+    }
     // A text field with no widget cannot be flattened: the flattener refuses and nothing is flattened.
     const broken = await prepareForPdfA(form('<</FT/Tx/T(t)>>', '[]'), 1, run);
-    expect(broken.counters.formFieldsFlattened).toBe(0);
+    expect(broken.counters).toMatchObject({ formFieldsFlattened: 0, widgetsRemoved: 0 });
+  });
+
+  it('flattens the filled fields of a form that also has a field with no widget and one whose widget no page lists', async () => {
+    const bytes = formPdf({
+      fields: '[10 0 R 11 0 R 12 0 R]',
+      annots: '[10 0 R]',
+      extra: {
+        10: widgetBody('10 10 50 30', '/FT/Tx/T(filled)/V(typed value)/AP<</N 60 0 R>>'),
+        // No widget at all.
+        11: '<</FT/Tx/T(orphan)>>',
+        // A widget with no /P that no page's /Annots holds: the flattener cannot place it.
+        12: '<</Type/Annot/Subtype/Widget/Rect[10 40 50 60]/F 4/FT/Tx/T(unplaced)/V(x)>>',
+        60: blankForm(10, 10),
+      },
+    });
+    const prepared = await prepareForPdfA(bytes, 1, run);
+    expect(prepared.counters).toMatchObject({
+      formFieldsFlattened: 1,
+      widgetsRemoved: 0,
+      filledWidgetsRemoved: 0,
+    });
+    const mupdf = await loadMupdf();
+    const doc = openPdf(mupdf, prepared.bytes);
+    try {
+      // The filled field's widget was drawn into the page and removed from /Annots.
+      expect(doc.findPage(0).get('Annots').isNull() || doc.findPage(0).get('Annots').length === 0).toBe(true);
+      expect(doc.getTrailer().get('Root').get('AcroForm').isNull()).toBe(true);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('stops with the flattener’s error when a filled field cannot be flattened, instead of dropping its widget', async () => {
+    // The checked box's on-state appearance has an empty box: the flattener refuses it. Before,
+    // the error was swallowed and the page's widget, with its state, was removed and called a
+    // button. (A text field under an empty appearance is no longer such a case: the flattener
+    // draws its value again, see the field whose value sat under an empty appearance above.)
+    const bytes = formPdf({
+      fields: '[10 0 R]',
+      annots: '[10 0 R]',
+      extra: {
+        10: widgetBody('10 10 50 30', '/FT/Btn/T(t)/V/Yes/AS/Yes/AP<</N<</Yes 60 0 R>>>>'),
+        60: blankForm(0, 0),
+      },
+    });
+    await expect(prepareForPdfA(bytes, 1, run)).rejects.toMatchObject({
+      name: 'ToolError',
+      code: 'corrupt-document',
+      details: { engine: 'mupdf', engineMessage: 'Invalid widget appearance bounds' },
+    });
+  });
+
+  it('counts the filled widgets it removes, text fields included, apart from buttons and signatures', async () => {
+    // Widgets no /AcroForm lists are never flattened: the pass removes them. Two hold a value,
+    // an unfilled check box, a push button and a signature field do not.
+    const bytes = formPdf({
+      fields: '[]',
+      annots: '[10 0 R 11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R]',
+      extra: {
+        10: widgetBody('10 10 50 30', '/FT/Tx/T(a)/V(typed value)'),
+        11: widgetBody('10 40 50 60', '/FT/Ch/T(b)/V[(x)(y)]'),
+        12: widgetBody('10 70 50 90', '/FT/Btn/T(c)/V/Off'),
+        13: widgetBody('10 100 50 120', '/FT/Btn/Ff 65536/T(d)/V(Send)'),
+        14: widgetBody('10 130 50 150', '/FT/Sig/T(e)'),
+        // No value, an empty text, an empty selection, and a value that is not text.
+        15: widgetBody('10 160 50 180', '/FT/Tx/T(f)'),
+        16: widgetBody('10 190 50 210', '/FT/Tx/T(g)/V()'),
+        17: widgetBody('10 220 50 240', '/FT/Ch/T(h)/V[]'),
+        18: widgetBody('10 250 50 270', '/FT/Tx/T(i)/V 5'),
+      },
+    });
+    const prepared = await prepareForPdfA(bytes, 1, run);
+    expect(prepared.counters).toMatchObject({
+      formFieldsFlattened: 0,
+      widgetsRemoved: 9,
+      filledWidgetsRemoved: 2,
+    });
   });
 
   it('stops when the signal aborts: before the work, while flattening or after it', async () => {

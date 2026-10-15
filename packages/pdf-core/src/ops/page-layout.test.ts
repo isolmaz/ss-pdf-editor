@@ -12,11 +12,13 @@ import { formPdf, widgetBody } from './forms.fixtures';
 import { fixturePage, gridOperators, reportPage, TABLE_XS, TABLE_YS } from './layout-fixtures';
 import {
   BOLD_NAME,
+  type Box,
   findFigures,
   findTables,
   findTextTables,
   fontFamily,
   lineSegments,
+  type Mark,
   type PageLayout,
   readAppearances,
   readPageLayout,
@@ -1095,5 +1097,100 @@ describe('readAppearances', () => {
     const appearances = readAppearances(mupdf, doc.loadPage(0));
     expect(appearances.layout.blocks).toEqual([]);
     expect(appearances.unseen).toBe(0);
+  });
+});
+
+describe('figures from drawn marks, on layouts built in the test', () => {
+  const page = (marks: readonly Mark[], width = 1000, height = 1000): PageLayout => ({
+    width,
+    height,
+    blocks: [],
+    rulings: [],
+    marks,
+  });
+  const touches = (a: Box, b: Box, gap: number): boolean =>
+    a[0] <= b[2] + gap && b[0] <= a[2] + gap && a[1] <= b[3] + gap && b[1] <= a[3] + gap;
+  const union = (a: Box, b: Box): Box => [
+    Math.min(a[0], b[0]),
+    Math.min(a[1], b[1]),
+    Math.max(a[2], b[2]),
+    Math.max(a[3], b[3]),
+  ];
+
+  /**
+   * The figures the way they were first found: every region against every mark, and regions that
+   * meet merged, pass after pass until nothing changes (the cost of a pass is regions × marks).
+   */
+  function figuresByPasses(layout: PageLayout): Box[] {
+    let regions: Box[] = layout.marks.filter((mark) => mark.seed).map((mark) => mark.box);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const next: Box[] = [];
+      for (const region of regions) {
+        let box = region;
+        for (const mark of layout.marks) if (touches(box, mark.box, 1)) box = union(box, mark.box);
+        if (box.some((value, index) => value !== region[index])) changed = true;
+        const into = next.findIndex((other) => touches(other, box, 4));
+        if (into === -1) next.push(box);
+        else {
+          next[into] = union(next[into] as Box, box);
+          changed = true;
+        }
+      }
+      regions = next;
+    }
+    return regions.filter(
+      (box) =>
+        box[2] - box[0] >= 24 &&
+        box[3] - box[1] >= 24 &&
+        (box[2] - box[0]) * (box[3] - box[1]) <= layout.width * layout.height * 0.6,
+    );
+  }
+  const byPosition = (a: Box, b: Box): number => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3];
+
+  it('finds the same figures as growing every region against every mark, on 300 scattered pages', () => {
+    // A small deterministic generator (mulberry32), so a failure names the same page every time.
+    let state = 0x2f6e2b1;
+    const random = (): number => {
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    let merged = 0;
+    for (let trial = 0; trial < 300; trial += 1) {
+      const marks: Mark[] = Array.from({ length: 5 + Math.floor(random() * 40) }, () => {
+        const x = random() * 700;
+        const y = random() * 700;
+        return {
+          box: [x, y, x + 3 + random() * 70, y + 3 + random() * 70] as const,
+          seed: random() < 0.4,
+        };
+      });
+      const layout = page(marks);
+      const found = findFigures(layout, []).sort(byPosition);
+      expect(found).toEqual(figuresByPasses(layout).sort(byPosition));
+      if (found.length > 0 && marks.filter((mark) => mark.seed).length > found.length) merged += 1;
+    }
+    // The pages are dense enough that regions did merge: the comparison is not between empty lists.
+    expect(merged).toBeGreaterThan(100);
+  });
+
+  it('settles a drawing larger than the index window, and the small one far from it', () => {
+    // A 900 × 900 drawing, a mark that touches its corner, and a 60 × 60 one far away, on a poster-sized page.
+    const layout = page(
+      [
+        { box: [100, 100, 1000, 1000], seed: true },
+        { box: [995, 995, 1010, 1010], seed: false },
+        { box: [1500, 2000, 1560, 2060], seed: true },
+      ],
+      2000,
+      3000,
+    );
+    expect(findFigures(layout, []).sort(byPosition)).toEqual([
+      [100, 100, 1010, 1010],
+      [1500, 2000, 1560, 2060],
+    ]);
   });
 });

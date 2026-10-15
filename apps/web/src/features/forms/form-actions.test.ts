@@ -10,7 +10,14 @@ import type { FieldCandidate, FormDetection } from 'pdf-core/ops/form-detect';
 import { SessionStore, type SessionTab } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearNotice, coreStore, initialCoreState, setBusy } from '../core/core-store';
+import {
+  cancelOperation,
+  clearNotice,
+  coreStore,
+  initialCoreState,
+  operationRunning,
+  setBusy,
+} from '../core/core-store';
 import { adoptHandle, dropHandle, handleFor } from '../core/handles';
 import type { WriteFileAnnotation } from '../marks/host';
 import {
@@ -27,6 +34,7 @@ import {
   detectFinished,
   detectStarted,
   type FormDetect,
+  formInventoryKey,
   formInventoryRead,
   formsStore,
   initialFormsState,
@@ -236,7 +244,7 @@ describe('saveXfaForm', () => {
 
 describe('fillField', () => {
   function inventory(fields: readonly FormFieldInfo[]) {
-    formInventoryRead({ tabId: tab.id, version: tab.working.id, fields });
+    formInventoryRead({ tabId: tab.id, key: formInventoryKey(tab), fields });
   }
 
   it('writes one value through the fill operation and makes the produced bytes the working version', async () => {
@@ -244,10 +252,13 @@ describe('fillField', () => {
     pdfCore.fillFormFields.mockResolvedValue(outcome());
     const filling = fillField('Name', 'Grace', host);
     expect(coreStore.get().busy).toBe(true);
+    expect(operationRunning()).toBe(true);
     await filling;
-    expect(pdfCore.fillFormFields).toHaveBeenCalledWith(base, [{ name: 'Name', value: 'Grace' }], {
-      signal: expect.any(AbortSignal),
-    });
+    // The registered controller's signal reaches every step, so Cancel stops whichever is running.
+    const signal = pdfCore.materializeBase.mock.calls[0]?.[1].signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(pdfCore.materializeBase).toHaveBeenCalledWith({ store, t, tab, handle }, { signal });
+    expect(pdfCore.fillFormFields).toHaveBeenCalledWith(base, [{ name: 'Name', value: 'Grace' }], { signal });
     expect(pdfCore.applyProducedBytes).toHaveBeenCalledWith(
       { store, t, tab, handle },
       expect.any(Uint8Array),
@@ -255,12 +266,38 @@ describe('fillField', () => {
       { key: 'form.note.filled', params: { count: 1 } },
       'mupdf',
       ['form.fill'],
+      { signal },
     );
     expect(handleFor(tab.id)).toBe(produced);
     expect(coreStore.get()).toMatchObject({
       notice: t('op.result.applied', { label: t('panel.forms') }),
       busy: false,
     });
+    expect(operationRunning()).toBe(false);
+  });
+
+  it('is stopped by Cancel: nothing is journaled and the stop is not reported as a failure', async () => {
+    let signal: AbortSignal | undefined;
+    pdfCore.fillFormFields.mockImplementation(
+      (_bytes: Uint8Array, _values: unknown, operation: { signal: AbortSignal }) => {
+        signal = operation.signal;
+        const { promise, reject } = Promise.withResolvers<never>();
+        operation.signal.addEventListener('abort', () =>
+          reject(new ToolError('aborted', { engine: 'model' })),
+        );
+        return promise;
+      },
+    );
+
+    const filling = fillField('Name', 'Grace', host);
+    await vi.waitFor(() => expect(pdfCore.fillFormFields).toHaveBeenCalled());
+    cancelOperation();
+    await filling;
+
+    expect(signal?.aborted).toBe(true);
+    expect(pdfCore.applyProducedBytes).not.toHaveBeenCalled();
+    expect(coreStore.get()).toMatchObject({ notice: null, busy: false });
+    expect(operationRunning()).toBe(false);
   });
 
   it('writes a field the inventory does not list, and one with no inventory at all', async () => {

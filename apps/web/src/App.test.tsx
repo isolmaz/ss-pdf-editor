@@ -7,7 +7,7 @@
  * window, and the select tool handing the pointer back from the engine's native editors.
  */
 
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { SessionStore } from 'pdf-model';
 import { createTranslator, type Translator } from 'pdf-shared';
 import type { ViewerApi } from 'pdf-ui/viewer';
@@ -72,7 +72,10 @@ vi.mock('./features/export/ExportSurfaces', () => ({
 }));
 vi.mock('./features/facts/SignatureWarningPrompt', () => ({ SignatureWarningPrompt: () => null }));
 vi.mock('./features/forms/FormsSurface', () => ({ XfaFormDialogHost: () => null }));
-vi.mock('./features/save/SaveSurfaces', () => ({ CloseDocumentHost: () => null }));
+vi.mock('./features/save/SaveSurfaces', () => ({
+  CloseDocumentHost: () => null,
+  SaveConflictHost: () => null,
+}));
 vi.mock('./features/stamps/StampSurface', () => ({
   ImagePickerInput: () => null,
   SignatureDialogHost: () => null,
@@ -169,6 +172,50 @@ describe('a drop on the window', () => {
 
     await waitFor(() => expect(open.openFilesFromSurface).toHaveBeenCalledTimes(1));
     expect(open.openFilesFromSurface).toHaveBeenCalledWith([file], [null]);
+  });
+});
+
+describe('closing the window', () => {
+  /** The browser is about to close or reload the window: whether anything asked it to stop. */
+  function asksBeforeClosing(): boolean {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  /** A document is opened in the shell's session; its id. */
+  function openDocument(): string {
+    let id = '';
+    act(() => {
+      id = store.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1]), sha256: 'a', pageCount: 1 }).id;
+    });
+    return id;
+  }
+
+  /** The document has unsaved changes and its session keeps no draft of them. */
+  function changeSensitively(id: string): void {
+    act(() => {
+      store.setSensitive(id, true);
+      store.setDirty(id, true);
+    });
+  }
+
+  it('asks while unsaved changes no draft protects are open, and not when nothing changed', () => {
+    render(<App store={store} />);
+    expect(asksBeforeClosing()).toBe(false);
+
+    const id = openDocument();
+    expect(asksBeforeClosing()).toBe(false);
+    changeSensitively(id);
+    expect(asksBeforeClosing()).toBe(true);
+  });
+
+  it('stops asking when the shell goes away', () => {
+    const { unmount } = render(<App store={store} />);
+    changeSensitively(openDocument());
+    expect(asksBeforeClosing()).toBe(true);
+    unmount();
+    expect(asksBeforeClosing()).toBe(false);
   });
 });
 

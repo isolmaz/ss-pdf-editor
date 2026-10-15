@@ -1,9 +1,9 @@
 /**
  * Offline capability packages and their readiness.
  *
- * The service worker caches static assets; this module decides what a *capability* needs
- * before it may be called ready, and it is the only place that answers “can I open this
- * document offline”.
+ * The service worker caches static assets and computes readiness (`public/sw.js`); this module
+ * names the *capabilities* a document needs, asks the worker for its answer and asks it to
+ * fill the cache. It is the only place the shell asks “can I open this document offline”.
  *
  * ## Why a manifest instead of a substring search
  *
@@ -14,21 +14,30 @@
  * the exact paths the engine adapters fetch, so a missing `tur.traineddata.gz` or a missing
  * core WASM makes the capability `missing`, with the absent paths named.
  *
- * ## Why the manifest is versioned
+ * ## Why engine URLs and the manifest are versioned
  *
- * `/engines/**` and `/fonts/**` are served as immutable for a year and the worker is
- * cache-first there, so a release that changes an engine build but keeps the path would be
- * served the **old** bytes under the new shell — the exact mixing this module exists to
- * prevent. The manifest therefore carries an identity: a digest over the pinned
- * `path + sha256` list plus the release stamp. A cache entry written under a different
- * identity is not evidence for this build, and the readiness answer says so instead of
- * counting it.
+ * `/engines/**` is served as immutable for a year and the worker is cache-first there, so an
+ * engine build that changed under an unchanged URL would be served the **old** bytes — by
+ * the browser's own HTTP cache, and by the worker's `fetch` that fills its cache — under the
+ * new shell: the exact mixing this module exists to prevent. An engine's URL therefore names
+ * its pinned version, `/engines/<engine>/<version>/<file>` (`pdf-core`'s `assets.ts`), and the
+ * manifest lists those URLs. A cached entry of another version is a different URL, which the
+ * worker's containment test reports as missing instead of counting it.
+ *
+ * `/fonts/**` and the shell are not versioned in their URL and are not immutable
+ * (`public/_headers` makes the browser revalidate them); what keeps the worker's copies of
+ * them current is the manifest's identity, the release version `tools/assemble-dist.mjs`
+ * stamps into the cache name, the manifest and `sw.js` alike: the package version, a digest
+ * of every pinned byte, and a digest of the editor build itself (`tools/release-version.mjs`).
+ * It changes with a pin *and* with a code-only deploy, so each release has a cache of its own.
+ * The worker compares that identity with its own (`matchesBuild`) and answers that nothing is
+ * ready while they differ: a cache written for another release is not evidence for this one.
  *
  * `offline-packages.json` is the **single** list of paths: `tools/assemble-dist.mjs` reads
- * the same file to write `dist/offline-manifest.json` and to stamp the copied `sw.js`, so
- * the app, the worker and the build cannot drift apart. The build derives the version from
- * `tools/asset-pins.json` — the table `verify-assets` enforces — so changing a pinned asset
- * changes the cache name, the manifest and the worker together.
+ * the same file to write `dist/offline-manifest.json`. The page (`OFFLINE_CAPABILITIES`) and
+ * the build each add an engine's version from `packages/pdf-core/src/engine-versions.json`,
+ * which `verify-assets` holds against `tools/asset-pins.json`, so the app, the worker and the
+ * build cannot drift apart.
  *
  * ## Why the editor's own code is a capability
  *
@@ -41,120 +50,33 @@
  * name, as it does every other capability.
  */
 
+import { servedEnginePath } from 'pdf-core/assets';
 import packages from './offline-packages.json';
 
 /** The capabilities a user can prepare for offline use. */
 export type OfflineCapability = 'core' | 'app' | 'pdfjs' | 'mupdf' | 'tesseract' | 'fonts';
 
-export interface OfflineManifest {
-  /** The release identity: the same for every asset of one build, different across builds. */
-  readonly version: string;
-  /** Exact same-origin paths a capability needs, in fetch order. */
-  readonly capabilities: Readonly<Record<OfflineCapability, readonly string[]>>;
-}
-
 /**
- * The capability path lists as they are shipped, before a version is attached. `app` is empty
- * here: the build lists the editor's own chunks in the manifest it deploys.
+ * The capability path lists as they are shipped, with every engine file at its served,
+ * versioned URL — the URLs the adapters request and the build's manifest lists. `app` is
+ * empty here: the build lists the editor's own chunks in the manifest it deploys, and
+ * `tools/assemble-dist.mjs` refuses an `app` list in `offline-packages.json`, so there is
+ * nothing to map.
  */
-export const OFFLINE_CAPABILITIES: Readonly<Record<OfflineCapability, readonly string[]>> =
-  packages.capabilities;
-
-const CAPABILITIES: readonly OfflineCapability[] = ['core', 'app', 'pdfjs', 'mupdf', 'tesseract', 'fonts'];
+export const OFFLINE_CAPABILITIES: Readonly<Record<OfflineCapability, readonly string[]>> = {
+  core: packages.capabilities.core.map((path) => servedEnginePath(path)),
+  app: [],
+  pdfjs: packages.capabilities.pdfjs.map((path) => servedEnginePath(path)),
+  mupdf: packages.capabilities.mupdf.map((path) => servedEnginePath(path)),
+  tesseract: packages.capabilities.tesseract.map((path) => servedEnginePath(path)),
+  fonts: packages.capabilities.fonts.map((path) => servedEnginePath(path)),
+};
 
 /** A capability is ready only when every path it needs is present in the cache. */
 export interface CapabilityReadiness {
   readonly ready: boolean;
   /** The required paths that are not cached; empty exactly when `ready` is true. */
   readonly missing: readonly string[];
-}
-
-export interface OfflineReadiness {
-  /** The identity the answer was computed against. */
-  readonly version: string;
-  /** `false` when the cache belongs to another release: nothing may be called ready. */
-  readonly matchesBuild: boolean;
-  readonly capabilities: Readonly<Record<OfflineCapability, CapabilityReadiness>>;
-  /** `true` only when every capability of this build is complete. */
-  readonly fullyReady: boolean;
-}
-
-/**
- * The identity of one build's asset set.
- *
- * `pins` is the repository's own pin table, so the identity changes exactly when a pinned
- * asset changes — which is when the immutable-cached copy would be wrong. `stamp` is the
- * release's own version string, so two builds that happen to pin identical bytes still do
- * not share a cache identity.
- */
-export function manifestVersion(
-  pins: readonly { readonly path: string; readonly sha256: string }[],
-  stamp: string,
-): string {
-  let hash = 0x811c9dc5;
-  const feed = (text: string): void => {
-    for (let index = 0; index < text.length; index += 1) {
-      hash ^= text.charCodeAt(index);
-      hash = Math.imul(hash, 0x01000193) >>> 0;
-    }
-  };
-  feed(stamp);
-  // Sorted, so the identity is a fact about the asset *set*, not about the pin file order.
-  for (const pin of [...pins].sort((left, right) => (left.path < right.path ? -1 : 1))) {
-    feed(pin.path);
-    feed(pin.sha256);
-  }
-  return `${stamp}-${hash.toString(16).padStart(8, '0')}`;
-}
-
-/** Every path any capability needs, de-duplicated — what a preparation pass fetches. */
-export function allOfflinePaths(manifest: OfflineManifest): readonly string[] {
-  const paths = new Set<string>();
-  for (const capability of CAPABILITIES) {
-    for (const path of manifest.capabilities[capability]) paths.add(path);
-  }
-  return [...paths];
-}
-
-/**
- * Whether a capability is complete, given the paths the cache actually holds.
- *
- * `cachedPaths` is a set of pathnames, and the comparison is exact: a trailing-slash
- * directory request and the file inside it are different entries, and a path the engine
- * asks for with a query string is not the same entry as the bare path.
- */
-export function capabilityReadiness(
-  manifest: OfflineManifest,
-  capability: OfflineCapability,
-  cachedPaths: ReadonlySet<string>,
-): CapabilityReadiness {
-  const missing = manifest.capabilities[capability].filter((path) => !cachedPaths.has(path));
-  return { ready: missing.length === 0, missing };
-}
-
-/** The whole answer, including whether the cache belongs to this build at all. */
-export function offlineReadiness(
-  manifest: OfflineManifest,
-  cachedPaths: ReadonlySet<string>,
-  cachedVersion: string | null,
-): OfflineReadiness {
-  const matchesBuild = cachedVersion === manifest.version;
-  const capabilities = Object.fromEntries(
-    CAPABILITIES.map((capability) => [
-      capability,
-      // A cache written by another release is not evidence for this one: an old engine
-      // under a new shell is the failure this identity exists to catch.
-      matchesBuild
-        ? capabilityReadiness(manifest, capability, cachedPaths)
-        : { ready: false, missing: manifest.capabilities[capability] },
-    ]),
-  ) as Record<OfflineCapability, CapabilityReadiness>;
-  return {
-    version: manifest.version,
-    matchesBuild,
-    capabilities,
-    fullyReady: CAPABILITIES.every((capability) => capabilities[capability].ready),
-  };
 }
 
 /**
@@ -179,7 +101,13 @@ export function requiredCapabilities(input: { readonly ocr: boolean }): readonly
  * checked field by field: it arrives from another context, so it is input, not a value.
  */
 export interface WorkerReadiness {
+  /** The release the manifest names. */
   readonly version: string | null;
+  /**
+   * Whether the worker answering is the release that manifest names. A worker of an older
+   * release, still serving while an update waits, reports `false` and every capability not
+   * ready: its cache was filled for a build the manifest no longer describes.
+   */
   readonly matchesBuild: boolean;
   readonly capabilities: Readonly<Record<string, CapabilityReadiness>>;
 }

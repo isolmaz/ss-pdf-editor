@@ -134,6 +134,53 @@ describe('runPdfaConversion', () => {
     expect(result.exitCode).toBe(1);
   });
 
+  it('stops when the profile copy exits non-zero, returned or thrown, and never starts the conversion', async () => {
+    for (const [label, copy, expected] of [
+      ['returned', (): number => 4, 'exit status 4'],
+      [
+        'thrown',
+        (): number => {
+          throw { status: 5 };
+        },
+        'exit status 5',
+      ],
+    ] as const) {
+      let calls = 0;
+      const files: string[] = [];
+      const factory = async (io: GhostscriptFactoryOptions): Promise<GhostscriptModule> => ({
+        callMain: () => {
+          calls += 1;
+          io.printErr('could not open the profile');
+          return copy();
+        },
+        FS: {
+          writeFile: (path) => {
+            files.push(path);
+          },
+          readFile: () => new Uint8Array(0),
+          unlink: () => undefined,
+        },
+      });
+      await expect(runPdfaConversion(factory, request), label).rejects.toThrow(
+        `Ghostscript could not copy its sRGB profile (${expected}: could not open the profile)`,
+      );
+      expect(calls).toBe(1);
+      // Neither the definition nor the document was written for a conversion that cannot happen.
+      expect(files).toEqual(['/tmp/profile-copy.ps']);
+    }
+  });
+
+  it('rethrows a profile copy failure that carries no numeric status, as it is', async () => {
+    const trap = new Error('wasm trap');
+    const factory = async (): Promise<GhostscriptModule> => ({
+      callMain: () => {
+        throw trap;
+      },
+      FS: { writeFile: () => undefined, readFile: () => new Uint8Array(0), unlink: () => undefined },
+    });
+    await expect(runPdfaConversion(factory, request)).rejects.toBe(trap);
+  });
+
   it('rethrows a failure that carries no numeric status', async () => {
     for (const thrown of [new Error('wasm trap'), { status: 'x' }, 'text', null]) {
       const gs = module({

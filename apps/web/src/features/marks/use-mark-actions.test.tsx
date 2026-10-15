@@ -39,7 +39,13 @@ describe('useWriterActions', () => {
         outputBytes: 1,
       },
     };
-    await result.current.applyWriterOutcome(world.tab, world.handle, outcome, 'panel.layers');
+    await result.current.applyWriterOutcome(
+      world.tab,
+      world.handle,
+      outcome,
+      'panel.layers',
+      new AbortController().signal,
+    );
     expect(coreStore.get().notice).toBe(t('panel.layers'));
   });
 

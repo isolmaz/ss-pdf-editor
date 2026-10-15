@@ -376,7 +376,7 @@
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Dönüştürme & Oluşturma</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
               <li>· Word (DOCX), Excel (XLSX), PowerPoint (PPTX), HTML, metin/Markdown, CSV/TSV, EPUB ve FB2 dosyalarını tarayıcıda PDF’e dönüştürme</li>
-              <li>· PDF’i düzenlenebilir Word, Excel veya CSV dosyasına dönüştürme; Word için üç düzen seçilebilir: tam düzen (varsayılan) sayfayı göründüğü gibi korur; metin, PDF’teki harf konumlarına yerleştirilmiş düzenlenebilir kutulardadır, PDF’in yazı tipleri lisansı izin verdiği ölçüde belgeye gömülür, şekiller, resimler, renkler ve bağlantılar yerindedir (iki yana yaslı paragraflar, her sözcük yerinde kalsın diye sola yaslı yazılır); uzun metin düzenlemek için akan metin; ya da her sayfanın birebir tek resim olduğu hâli (22 inçten büyük sayfalar orantılı küçültülür). Tam düzende taranmış bir sayfa seçtiğiniz dillerde (varsayılan Türkçe ve İngilizce) OCR ile okunur ve resimlerinin üzerinde düzenlenebilir metne dönüşür; OCR’ın emin olmadığı sözcükler Word yorumuyla işaretlenir; Word ve CSV dosyası sunulmadan önce geri okunarak doğrulanır, Excel dosyası geri okunmaz; rapor neyin taşınmadığını söyler (Word çıktısında bırakılan resimlerin sayısı dahil)</li>
+              <li>· PDF’i düzenlenebilir Word, Excel veya CSV dosyasına dönüştürme; Word için üç düzen seçilebilir: tam düzen (varsayılan) sayfayı göründüğü gibi korur; metin, PDF’teki harf konumlarına yerleştirilmiş düzenlenebilir kutulardadır, PDF’in yazı tipleri lisansı izin verdiği ölçüde belgeye gömülür, şekiller, resimler, renkler ve bağlantılar yerindedir (iki yana yaslı paragraflar, her sözcük yerinde kalsın diye sola yaslı yazılır); uzun metin düzenlemek için akan metin; ya da her sayfanın birebir tek resim olduğu hâli (22 inçten büyük sayfalar orantılı küçültülür). Tam düzende taranmış bir sayfa seçtiğiniz dillerde (varsayılan Türkçe ve İngilizce) OCR ile okunur ve resimlerinin üzerinde düzenlenebilir metne dönüşür; OCR’ın emin olmadığı sözcükler Word yorumuyla işaretlenir; Word, Excel ve CSV dosyası sunulmadan önce geri okunarak doğrulanır; rapor neyin taşınmadığını söyler (Word çıktısında bırakılan resimlerin sayısı dahil)</li>
               <li>· Sayfaları PNG, JPEG veya WebP görseli olarak dışa aktarma; görsellerden PDF oluşturma</li>
               <li>· Dönüştürme içeriği korur, birebir görünümü değil; eski DOC, XLS, PPT, OpenDocument ve RTF dönüştürülmez</li>
             </ul>
@@ -465,9 +465,9 @@
             <h3 class="mt-4 text-base font-semibold text-kumo-strong leading-[1.4]">Şifreleme & Parola</h3>
             <ul class="mt-2 space-y-1.5 text-xs leading-relaxed text-kumo-subtle">
               <li>· AES-256 parola şifreleme ve izin ayarları; çıktı yeniden açılıp doğrulanır; dijital imza şifrelemeden sonra geçerli kalmaz</li>
-              <li>· Parola korumalı dosya açılırken parola istenir ve belge salt okunur açılır; parola yalnızca bellekte tutulur</li>
+              <li>· Açmak için parola gereken dosyada parola istenir ve belge salt okunur açılır; parola yalnızca bellekte tutulur</li>
               <li>· Parolasını bildiğiniz belgenin korumasını kaldırma; “Kilidi açılmış kopya oluştur” düzenlenebilir bir kopyayı yeni sekmede açar</li>
-              <li>· Parola korumalı belgeler cihazda taslak, kaynak kopya veya dosya başvurusu bırakmaz (hassas oturum)</li>
+              <li>· Parolayla açılan belgeler cihazda taslak, kaynak kopya veya dosya başvurusu bırakmaz (hassas oturum)</li>
             </ul>
           </div>
 
@@ -738,7 +738,7 @@
               </svg>
               <div class="text-sm">
                 <strong class="font-semibold text-kumo-strong">Taslaklar Yalnızca Bu Tarayıcıda:</strong>
-                <span class="text-kumo-subtle"> Kaydedilmemiş çalışma kaybolmasın diye bu tarayıcıda taslak olarak tutulur; şifreli belgeler ve hassas oturumlar hiçbir taslak bırakmaz. Ne saklandığını <a class="text-kumo-strong underline" href="/gizlilik">Gizlilik</a> sayfası anlatır.</span>
+                <span class="text-kumo-subtle"> Kaydedilmemiş çalışma kaybolmasın diye bu tarayıcıda taslak olarak tutulur; parolayla açılan belgeler ve hassas oturumlar hiçbir taslak bırakmaz. Ne saklandığını <a class="text-kumo-strong underline" href="/gizlilik">Gizlilik</a> sayfası anlatır.</span>
               </div>
             </div>
             <div class="flex items-start gap-3">
@@ -893,7 +893,7 @@
               Standart tüm PDF belgeleri desteklenir. Bilgisayarda 2.000 sayfaya ve 300 MB'a kadar belgeler açılır;
               1.500 sayfanın üstünde düzenleyici sizi uyarır. Telefon ve tablette de aynı üst sınır geçerlidir, ancak
               300 sayfa veya 64 MB'ın üstündeki belgeler yalnızca görüntülenir. Toplu işlem bir seferde en fazla 256
-              dosya alır.
+              dosya ve toplam 1 GiB alır.
             </div>
           </details>
 
@@ -959,7 +959,7 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              Evet. İşaretlenen metin siyah bir kutuyla örtülmez; PDF içeriğinden, işaretli alanın altındaki form alanı, yorum ve bağlantıyla birlikte silinir, dosya yeniden yazılır ve çıktı glif glif yeniden denetlenir. Denetim raporu kalan terimleri, önceki revizyonları ve artık yapıyı listeler. Temizleme (sanitize) ise sayfada görünmeyenleri (betikler, ekler, meta veri, gizli katmanlar) kaldırır ve sonucu yeniden okuyarak doğrular; dijital imza bu işlemden sonra geçerli kalmaz. Sınır: denetim ham baytları tarar, sıkıştırılmış akışların içini göremez ve bunu raporda söyler.
+              Evet. İşaretlenen metin siyah bir kutuyla örtülmez; PDF içeriğinden, işaretli alanın altındaki form alanı, yorum ve bağlantıyla birlikte silinir, dosya yeniden yazılır ve çıktı glif glif yeniden denetlenir. Denetim raporu kalan terimleri, önceki revizyonları ve artık yapıyı listeler. Temizleme (sanitize) ise sayfada görünmeyenleri (betikler, ekler, meta veri, gizli katmanlar) kaldırır ve sonucu yeniden okuyarak doğrular; dijital imza bu işlemden sonra geçerli kalmaz. Sınır: denetim ham baytları ve dosyadaki metin dizgilerini (onaltılık ve UTF-16 dahil) tarar, sıkıştırılmış akışların içini göremez ve bunu raporda söyler.
             </div>
           </details>
 
@@ -1047,7 +1047,7 @@
               </svg>
             </summary>
             <div class="accordion-content px-5 pb-5 text-sm leading-relaxed text-kumo-subtle">
-              Kaydetmediğiniz değişiklikler taslak olarak yalnızca bu tarayıcının özel dosya alanında (OPFS) tutulur ve düzenleyiciyi yeniden açtığınızda geri gelir; belgenin sekmesini düzenleyicide kendiniz kapatırsanız taslağı da silinir. Tarayıcının depolama alanı belgenin kurtarma kopyasını kabul etmezse (örneğin alan dolduysa) belge yine açılır ve bildirim bunu nedeniyle birlikte söyler; bir taslak kaydı başarılı olana kadar kaydedilmemiş değişiklikler sekme kapatılırsa veya tarayıcı çökerse korunmaz. Parola korumalı belgeler ve hassas oturumlar taslak bırakmaz. Taslağı silmek güvenli silme değildir, diskteki baytların üzerine yazılmaz. Ne saklandığının tam listesi için <a class="text-kumo-strong underline" href="/gizlilik">Gizlilik</a> sayfasına bakın.
+              Kaydetmediğiniz değişiklikler taslak olarak yalnızca bu tarayıcının özel dosya alanında (OPFS) tutulur ve düzenleyiciyi yeniden açtığınızda geri gelir; belgenin sekmesini düzenleyicide kendiniz kapatırsanız taslağı da silinir. Tarayıcının depolama alanı belgenin kurtarma kopyasını kabul etmezse (örneğin alan dolduysa) belge yine açılır ve bildirim bunu nedeniyle birlikte söyler; bir taslak kaydı başarılı olana kadar kaydedilmemiş değişiklikler sekme kapatılırsa veya tarayıcı çökerse korunmaz. Parolayla açılan belgeler ve hassas oturumlar taslak bırakmaz. Taslağı silmek güvenli silme değildir, diskteki baytların üzerine yazılmaz. Ne saklandığının tam listesi için <a class="text-kumo-strong underline" href="/gizlilik">Gizlilik</a> sayfasına bakın.
             </div>
           </details>
         </div>

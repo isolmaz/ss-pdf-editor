@@ -33,6 +33,27 @@ describe('parsePageRanges', () => {
     expect(parsePageRanges('-2', 5).pages).toEqual([0, 1]);
   });
 
+  it('reads whitespace as a separator, while spaces around a dash stay inside the range', () => {
+    expect(parsePageRanges('1 3', 10).pages).toEqual([0, 2]);
+    expect(parsePageRanges('1-3 5', 10).pages).toEqual([0, 1, 2, 4]);
+    expect(parsePageRanges('1 - 3  5\t8 -', 10).pages).toEqual([0, 1, 2, 4, 7, 8, 9]);
+    expect(parsePageRanges('7 2\n4', 10).pages).toEqual([1, 3, 6]);
+    expect(parsePageRanges('2 , 4 ; 6', 10).pages).toEqual([1, 3, 5]);
+  });
+
+  it('keeps the order written when asked to, and still refuses duplicates', () => {
+    expect(parsePageRanges('5, 1', 10).pages).toEqual([0, 4]);
+    expect(parsePageRanges('5, 1', 10, { ordered: true }).pages).toEqual([4, 0]);
+    expect(parsePageRanges('4-5 1 3', 10, { ordered: true }).pages).toEqual([3, 4, 0, 2]);
+    expect(parsePageRanges('2-3, 1', 10, { ordered: true }).pages).toEqual([1, 2, 0]);
+    expect(() => parsePageRanges('5, 1, 5', 10, { ordered: true })).toThrowError(
+      expect.objectContaining({ code: 'range-invalid' }),
+    );
+    expect(() => parsePageRanges('5-3', 10, { ordered: true })).toThrowError(
+      expect.objectContaining({ code: 'range-invalid' }),
+    );
+  });
+
   /** The `engineMessage` of the refusal: says *which* rule fired, not just that something threw. */
   const refusal = (input: string, pageCount = 5): string => {
     try {
@@ -47,6 +68,18 @@ describe('parsePageRanges', () => {
   it('rejects a repeated page instead of producing the same part twice', () => {
     expect(refusal('1,1')).toBe('duplicate page');
     expect(refusal('1-3, 2-4')).toBe('duplicate page');
+  });
+
+  it('keeps a newline a hard separator, even next to a dash', () => {
+    // Merged across the line break `4 -\n1` would be the descending range 4-1.
+    expect(parsePageRanges('4 -\n1', 5).pages).toEqual([0, 3, 4]);
+    expect(refusal('1 -\n3')).toBe('duplicate page');
+  });
+
+  it('keeps refusing duplicates and junk between whitespace-separated pages', () => {
+    expect(refusal('1 1')).toBe('duplicate page');
+    expect(refusal('1 x')).toBe('unparsable segment');
+    expect(refusal('2 9')).toBe('page 9 out of document bounds (5)');
   });
 
   it('rejects a descending range rather than silently swapping or dropping its ends', () => {

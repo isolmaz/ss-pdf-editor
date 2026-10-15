@@ -9,19 +9,26 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { ToolError } from 'pdf-shared';
-import type { TextEditInsertLine } from 'pdf-text-engine';
+import { buildTextPage, type TextEditInsertLine } from 'pdf-text-engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadMupdf } from '../engines/mupdf';
+import { readPageText } from '../text-source';
 import { applyTextEdit } from './text-edit';
+import type { OperationOutcome } from './types';
 
 const run = { signal: new AbortController().signal };
 
-function notoRegular(): Uint8Array<ArrayBuffer> {
+/** A TrueType file of an installed `@expo-google-fonts` package, by its path inside `@expo-google-fonts/`. */
+function expoFont(path: string): Uint8Array<ArrayBuffer> {
   const require = createRequire(import.meta.url);
-  const file = require.resolve('@expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf', {
-    paths: [process.cwd()],
-  });
+  const file = require.resolve(`@expo-google-fonts/${path}`, { paths: [process.cwd()] });
   return new Uint8Array(readFileSync(file));
 }
+
+const notoRegular = () => expoFont('noto-sans/400Regular/NotoSans_400Regular.ttf');
+
+/** Latin, Latin Extended and Devanagari: no Cyrillic and no Greek, which Noto Sans has. */
+const poppinsRegular = () => expoFont('poppins/400Regular/Poppins_400Regular.ttf');
 
 /** A 400×300 page: `Eski satir` at baseline y=100 from the top, `Kalan` below it. */
 async function page(): Promise<Uint8Array> {
@@ -529,6 +536,110 @@ describe('applyTextEdit faces', () => {
   });
 });
 
+/**
+ * The last face there is — Noto Sans — has no glyph for every character (no emoji, no
+ * CJK). Drawn anyway, such a character is glyph 0: a box, or text no reader extracts,
+ * which only the verification stage noticed, as a generic failure that names nothing.
+ */
+describe('applyTextEdit glyph coverage', () => {
+  const notes = (out: OperationOutcome, key: string) =>
+    out.report.notes.filter((entry) => entry.key === key).map((entry) => entry.params);
+
+  beforeEach(() => {
+    vi.stubGlobal('location', { origin: 'http://localhost' });
+    vi.stubGlobal('fetch', async (input: URL | string) =>
+      String(input).includes('my-face') ? new Response(poppinsRegular()) : new Response(notoRegular()),
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('refuses a character Noto Sans has no glyph for, naming it, and writes nothing', async () => {
+    const failure = await failureOf(insertOnly([line('Yeni 😀 Şule', 60, 'helvetica')]));
+    expect(failure).toBeInstanceOf(ToolError);
+    expect(failure).toMatchObject({
+      code: 'glyph-missing',
+      details: {
+        engine: 'mupdf',
+        engineMessage: 'Noto Sans has no glyph for 😀 (U+1F600)',
+        params: { chars: '😀' },
+      },
+    });
+  });
+
+  it('names each missing character once, in text order, and none that Noto Sans has', async () => {
+    const failure = await failureOf(insertOnly([line('日本語 Şule ığ 日 😀', 60, 'comic-sans')]));
+    expect(failure).toMatchObject({
+      code: 'glyph-missing',
+      details: {
+        engineMessage: 'Noto Sans has no glyph for 日 (U+65E5), 本 (U+672C), 語 (U+8A9E), 😀 (U+1F600)',
+        params: { chars: '日 本 語 😀' },
+      },
+    });
+  });
+
+  it('names at most twelve characters and counts the rest', async () => {
+    const failure = await failureOf(insertOnly([line('一二三四五六七八九十百千万億', 60, 'helvetica')]));
+    expect(failure).toMatchObject({
+      code: 'glyph-missing',
+      details: { params: { chars: '一 二 三 四 五 六 七 八 九 十 百 千 …' } },
+    });
+    expect((failure as ToolError).details.engineMessage).toMatch(/ \(U\+5343\) and 2 more$/);
+  });
+
+  it.each([
+    ['a line set in a document font that cannot spell it', line('Hi 😀', 60, 'doc:Helvetica')],
+    [
+      'a line placed word by word',
+      {
+        ...line('iki 😀', 60, 'helvetica'),
+        words: [
+          { text: 'iki', x: 40 },
+          { text: '😀', x: 120 },
+        ],
+      },
+    ],
+  ])('refuses the missing character of %s', async (_name, insert) => {
+    const failure = await failureOf(insertOnly([insert]), documentFontPage());
+    expect(failure).toMatchObject({ code: 'glyph-missing', details: { params: { chars: '😀' } } });
+  });
+
+  it('gives a line a requested font file has no glyph for to Noto Sans, and says so', async () => {
+    const out = await applyTextEdit(
+      await page(),
+      insertOnly([line('Merhaba', 60, 'my-face'), line('Привет', 80, 'my-face')], {
+        fonts: { 'my-face': '/fonts/my-face.ttf' },
+      }),
+      run,
+    );
+    expect(notes(out, 'op.note.textEdit.fontSubstituted')).toEqual([
+      { requested: 'my-face', font: 'Noto Sans' },
+    ]);
+    expect(notes(out, 'op.note.textEdit.fontEmbedded')).toEqual([{ font: 'my-face, Noto Sans' }]);
+    expect(notes(out, 'op.note.textEdit.rendered')).toEqual([{ font: 'my-face, Noto Sans' }]);
+    const lines = await read(out.bytes);
+    const fontOf = (text: string) => lines.find((entry) => entry.text === text)?.font.name;
+    expect(fontOf('Merhaba')).not.toMatch(/Noto/);
+    expect(fontOf('Привет')).toMatch(/Noto/);
+  });
+
+  it('neither reports nor keeps a requested font file that drew nothing', async () => {
+    const out = await applyTextEdit(
+      await page(),
+      insertOnly([line('Привет', 60, 'my-face')], { fonts: { 'my-face': '/fonts/my-face.ttf' } }),
+      run,
+    );
+    expect(notes(out, 'op.note.textEdit.fontSubstituted')).toEqual([
+      { requested: 'my-face', font: 'Noto Sans' },
+    ]);
+    expect(notes(out, 'op.note.textEdit.fontEmbedded')).toEqual([{ font: 'Noto Sans' }]);
+    expect(notes(out, 'op.note.textEdit.rendered')).toEqual([{ font: 'Noto Sans' }]);
+    const fontNames = (await read(out.bytes)).map((entry) => entry.font.name);
+    expect(fontNames.every((name) => /Noto/.test(name) || /Helvetica/.test(name))).toBe(true);
+  });
+});
+
 describe('applyTextEdit font downloads', () => {
   const fonts = { 'my-face': '/fonts/my-face.ttf' };
   const request = () => insertOnly([line('Yeni', 60, 'my-face')], { fonts });
@@ -656,20 +767,32 @@ describe('applyTextEdit cancellation and progress', () => {
     expect(failure).toMatchObject({ code: 'aborted', details: { engine: 'mupdf' } });
   });
 
-  it.each(['textEdit.write', 'textEdit.verify'])(
-    'is cancelled as an AbortError when the signal is aborted during the %s phase',
-    async (phase) => {
-      const controller = new AbortController();
-      await expect(
-        applyTextEdit(await page(), both(), {
-          signal: controller.signal,
-          onProgress: (event) => {
-            if (event.phase === phase) controller.abort();
-          },
-        }),
-      ).rejects.toMatchObject({ name: 'AbortError' });
-    },
-  );
+  it('is cancelled as an AbortError when the signal is aborted during the write phase', async () => {
+    const controller = new AbortController();
+    await expect(
+      applyTextEdit(await page(), both(), {
+        signal: controller.signal,
+        onProgress: (event) => {
+          if (event.phase === 'textEdit.write') controller.abort();
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('maps a cancellation during the verify phase to the aborted ToolError, not an internal one', async () => {
+    const controller = new AbortController();
+    const failure = await applyTextEdit(await page(), both(), {
+      signal: controller.signal,
+      onProgress: (event) => {
+        if (event.phase === 'textEdit.verify') controller.abort();
+      },
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ToolError);
+    expect(failure).toMatchObject({
+      code: 'aborted',
+      details: { engine: 'pdfjs', engineMessage: 'operation aborted' },
+    });
+  });
 
   it('is cancelled before any work when the signal is already aborted', async () => {
     const controller = new AbortController();
@@ -1021,5 +1144,79 @@ describe('applyTextEdit remaining placement and report paths', () => {
       run,
     );
     expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.textEdit.nothingErased');
+  });
+});
+
+/**
+ * A 612×792 `/MediaBox` cropped to `[100 200 400 600]` — a 300×400 page whose box starts away
+ * from the origin. `Eski satir` is drawn at user-space (140, 500) and `Kalan` at (140, 400),
+ * so MuPDF's displayed space (origin at the box's top-left corner) has them at baselines 100
+ * and 200 and x = 40.
+ */
+async function croppedPage(): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const font = doc.addObject({
+    Type: 'Font',
+    Subtype: 'Type1',
+    BaseFont: 'Helvetica',
+    Encoding: 'WinAnsiEncoding',
+  });
+  const content = 'BT /F 14 Tf 140 500 Td (Eski satir) Tj ET BT /F 14 Tf 140 400 Td (Kalan) Tj ET';
+  doc.insertPage(0, doc.addPage([0, 0, 612, 792], 0, { Font: { F: font } }, content));
+  doc.findPage(0).put('CropBox', [100, 200, 400, 600]);
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+describe('applyTextEdit on a page box that does not start at the origin', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', async () => new Response(notoRegular()));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('replaces a line read through the text model where it stood and leaves the line below it', async () => {
+    const input = await croppedPage();
+    // The real reader's output is the request's source, as in the app: a reader and a writer
+    // that disagree about `y` on a cropped page erase the wrong place and draw the new line
+    // `box.y` lower.
+    const model = buildTextPage(await readPageText(input, 0, run));
+    const block = model.blocks.find((entry) => entry.text.includes('Eski'));
+    expect(block).toBeDefined();
+    const [x0, y0, x1, y1] = block?.rect ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
+    const baseline = block?.lines[0]?.baseline ?? Number.NaN;
+    // 600 (the box's top edge) − 500 (the line's user-space baseline).
+    expect(baseline).toBeCloseTo(100, 0);
+
+    const out = await applyTextEdit(
+      input,
+      {
+        erase: [{ pageIndex: 0, rects: [[x0 - 1, y0 - 1, x1 + 1, y1 + 1]] }],
+        insert: [{ pageIndex: 0, lines: [{ ...line('Yeni satir', baseline, 'helvetica'), x: x0 }] }],
+        fonts: {},
+      },
+      run,
+    );
+    expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.textEdit.verifiedErased');
+
+    const before = await read(input);
+    const after = await read(out.bytes);
+    const texts = after.map((entry) => entry.text);
+    expect(texts).not.toContain('Eski satir');
+    expect(texts).toEqual(expect.arrayContaining(['Yeni satir', 'Kalan']));
+    const old = before.find((entry) => entry.text === 'Eski satir');
+    const yeni = after.find((entry) => entry.text === 'Yeni satir');
+    expect(old?.y).toBeCloseTo(100, 0);
+    // MuPDF reads the new line back on the old line's baseline (±1 pt) and at its x.
+    expect(Math.abs((yeni?.y ?? Number.NaN) - (old?.y ?? Number.NaN))).toBeLessThanOrEqual(1);
+    expect(Math.abs((yeni?.x ?? Number.NaN) - (old?.x ?? Number.NaN))).toBeLessThanOrEqual(2);
+    // The line below was not the one erased, and did not move.
+    const kalanBefore = before.find((entry) => entry.text === 'Kalan');
+    const kalanAfter = after.find((entry) => entry.text === 'Kalan');
+    expect(kalanAfter?.y).toBeCloseTo(200, 0);
+    expect(Math.abs((kalanAfter?.y ?? Number.NaN) - (kalanBefore?.y ?? Number.NaN))).toBeLessThanOrEqual(1);
   });
 });

@@ -46,6 +46,6 @@ export const ocrPart = {
   'ocr.textPresent.skip': 'Metinli sayfaları atla',
   'ocr.textPresent.overwrite': 'Yeniden oku (katman ekler)',
   'ocr.skipped': '{count} sayfa zaten metin içeriyordu; değiştirilmedi.',
-  'ocr.running': 'Sayfa {done}/{total} tanınıyor',
+  'ocr.running': 'Sayfa {page}/{total} tanınıyor',
   'ocr.done': '{count} sayfaya metin katmanı eklendi.',
 } as const;

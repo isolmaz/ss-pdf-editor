@@ -4,8 +4,16 @@
  * A certificate alone is not a signing identity: the user's file is a container holding the
  * certificate, its chain and the **private key**, protected by a password. The key never
  * leaves this function's caller — it is imported into WebCrypto as a non-extractable
- * handle where the browser can help it, and the container's bytes are dropped immediately
- * after parsing.
+ * handle that can only sign.
+ *
+ * What is wiped, and what is not: the working copies this function makes of the secrets —
+ * the password's UTF-8 bytes (and the `ArrayBuffer` handed to `pkijs`) and the plain PKCS#8
+ * of the key — are overwritten with zeros when the import ends, on success and on failure.
+ * The `password` argument is a JavaScript string, which cannot be wiped, and the container's
+ * own bytes belong to the caller (they are encrypted, and are only read here).
+ *
+ * The signing certificate is the one whose public key the private key signs for, not the
+ * first certificate in the container: a bundle exported with its CA first is common.
  *
  * Everything happens locally: `pkijs` parses the ASN.1 and WebCrypto does the arithmetic,
  * with no network, no keychain and no OS integration. That is the whole reason this build
@@ -14,7 +22,15 @@
 
 import type { OctetString } from 'asn1js';
 import { fromBER, ObjectIdentifier } from 'asn1js';
-import type { AttributeTypeAndValue, AuthenticatedSafe, CertBag, PrivateKeyInfo, SafeBag } from 'pkijs';
+import type {
+  // Aliased: the DOM's own `AlgorithmIdentifier` is the WebCrypto one.
+  AlgorithmIdentifier as Asn1AlgorithmIdentifier,
+  AttributeTypeAndValue,
+  AuthenticatedSafe,
+  CertBag,
+  PrivateKeyInfo,
+  SafeBag,
+} from 'pkijs';
 import { Certificate, ContentInfo, EncryptedData, PFX, SafeContents, setEngine } from 'pkijs';
 import type { SignatureDigest } from './signature-cms';
 
@@ -81,6 +97,56 @@ function bagDer(bag: SafeBag): Uint8Array {
   return new Uint8Array(certValue.valueBlock.valueHexView);
 }
 
+const OID_RSA_ENCRYPTION = '1.2.840.113549.1.1.1';
+const OID_EC_PUBLIC_KEY = '1.2.840.10045.2.1';
+/** The named curves WebCrypto can sign with, by OID. */
+const CURVES: Readonly<Record<string, string>> = {
+  '1.2.840.10045.3.1.7': 'P-256',
+  '1.3.132.0.34': 'P-384',
+  '1.3.132.0.35': 'P-521',
+};
+
+/**
+ * The key family an algorithm identifier names, spelled as WebCrypto does: `RSA`, or the
+ * curve (`P-256`…). `null` for a key or curve this build cannot sign with.
+ */
+function familyOf(algorithm: Asn1AlgorithmIdentifier): string | null {
+  if (algorithm.algorithmId === OID_RSA_ENCRYPTION) return 'RSA';
+  const parameters = algorithm.algorithmParams;
+  if (algorithm.algorithmId !== OID_EC_PUBLIC_KEY || !(parameters instanceof ObjectIdentifier)) return null;
+  return CURVES[parameters.valueBlock.toString()] ?? null;
+}
+
+/** Bytes the key signs once to find its certificate; what they say is of no consequence. */
+const KEY_CHECK = new TextEncoder().encode('ss-pdf-editor: which certificate is this key for');
+
+/**
+ * The index of the certificate the private key belongs to, or `-1` when it belongs to none.
+ *
+ * The key signs one fixed message and every certificate of the key's own family is asked
+ * whether its public key verifies that signature — the same proof the signature on the
+ * produced PDF gives. It works for any key WebCrypto can import and exports no private
+ * material (a PKCS#8 may leave out its public half, so that cannot always be read off).
+ */
+async function certificateOfKey(
+  privateKey: CryptoKey,
+  family: string,
+  importAlgorithm: RsaHashedImportParams | EcKeyImportParams,
+  certificates: readonly Uint8Array[],
+): Promise<number> {
+  const algorithm: AlgorithmIdentifier | EcdsaParams =
+    family === 'RSA' ? { name: 'RSASSA-PKCS1-v1_5' } : { name: 'ECDSA', hash: 'SHA-256' };
+  const signature = await crypto.subtle.sign(algorithm, privateKey, KEY_CHECK);
+  for (const [index, der] of certificates.entries()) {
+    const info = Certificate.fromBER(der.slice()).subjectPublicKeyInfo;
+    if (familyOf(info.algorithm) !== family) continue;
+    const spki = info.toSchema().toBER(false);
+    const publicKey = await crypto.subtle.importKey('spki', spki, importAlgorithm, false, ['verify']);
+    if (await crypto.subtle.verify(algorithm, publicKey, signature, KEY_CHECK)) return index;
+  }
+  return -1;
+}
+
 /**
  * Parse a PKCS#12 container and import its key into WebCrypto.
  *
@@ -110,74 +176,72 @@ export async function importPkcs12(
     passwordBytes.byteOffset,
     passwordBytes.byteOffset + passwordBytes.byteLength,
   ) as ArrayBuffer;
+  // The key's plain PKCS#8, once it has been written out for WebCrypto to import.
+  let plainKey: ArrayBuffer | null = null;
 
-  // The MAC is what proves the password: a container whose MAC does not verify is either the
-  // wrong password or a damaged file, and neither may be signed with.
-  await pfx.parseInternalValues({ password: passwordBuffer, checkIntegrity: true });
+  try {
+    // The MAC is what proves the password: a container whose MAC does not verify is either the
+    // wrong password or a damaged file, and neither may be signed with.
+    await pfx.parseInternalValues({ password: passwordBuffer, checkIntegrity: true });
 
-  let certificateDer: Uint8Array | null = null;
-  let rawKey: PrivateKeyInfo | null = null;
-  const chain: Uint8Array[] = [];
+    const certificates: Uint8Array[] = [];
+    let rawKey: PrivateKeyInfo | null = null;
 
-  // `parseInternalValues` above resolved, so pkijs has set both (it throws otherwise).
-  const authenticated = pfx.parsedValue as { authenticatedSafe: AuthenticatedSafe };
-  for (const content of authenticated.authenticatedSafe.safeContents) {
-    for (const bag of await bagsOf(content, passwordBuffer)) {
-      if (bag.bagId === BAG_CERT) {
-        if (certificateDer === null) certificateDer = bagDer(bag);
-        else chain.push(bagDer(bag));
-        continue;
+    // `parseInternalValues` above resolved, so pkijs has set both (it throws otherwise).
+    const authenticated = pfx.parsedValue as { authenticatedSafe: AuthenticatedSafe };
+    for (const content of authenticated.authenticatedSafe.safeContents) {
+      for (const bag of await bagsOf(content, passwordBuffer)) {
+        if (bag.bagId === BAG_CERT) {
+          certificates.push(bagDer(bag));
+          continue;
+        }
+        if (bag.bagId !== BAG_PKCS8_SHROUDED_KEY) continue;
+        /**
+         * pkijs keeps the PBES2 decrypt helper `protected` — reachable at runtime, invisible to
+         * TypeScript. Calling it through a structural type reuses the library's own, tested
+         * PBES2 (KDF + cipher handling) instead of a second implementation living here; the
+         * signature on the produced PDF is what proves the decryption was right.
+         */
+        const shrouded = bag.bagValue as unknown as {
+          parseInternalValues(parameters: { password: ArrayBuffer }): Promise<void>;
+          /** Set by `parseInternalValues` when it resolves. */
+          parsedValue: PrivateKeyInfo;
+        };
+        await shrouded.parseInternalValues({ password: passwordBuffer });
+        rawKey = shrouded.parsedValue;
       }
-      if (bag.bagId !== BAG_PKCS8_SHROUDED_KEY) continue;
-      /**
-       * pkijs keeps the PBES2 decrypt helper `protected` — reachable at runtime, invisible to
-       * TypeScript. Calling it through a structural type reuses the library's own, tested
-       * PBES2 (KDF + cipher handling) instead of a second implementation living here; the
-       * signature on the produced PDF is what proves the decryption was right.
-       */
-      const shrouded = bag.bagValue as unknown as {
-        parseInternalValues(parameters: { password: ArrayBuffer }): Promise<void>;
-        /** Set by `parseInternalValues` when it resolves. */
-        parsedValue: PrivateKeyInfo;
-      };
-      await shrouded.parseInternalValues({ password: passwordBuffer });
-      rawKey = shrouded.parsedValue;
     }
+
+    if (certificates.length === 0) throw new Error('the container carries no certificate');
+    if (rawKey === null) throw new Error('the container carries no private key');
+
+    // Key family and curve come from the key itself; the certificate that goes with it is
+    // found afterwards. WebCrypto binds RSA's digest at import, so it must match the digest
+    // selected for the CMS.
+    const family = familyOf(rawKey.privateKeyAlgorithm);
+    if (family === null) throw new Error('unsupported signing key algorithm or named curve');
+    // WebCrypto's own algorithm object; the key above decided which one.
+    const importAlgorithm: RsaHashedImportParams | EcKeyImportParams =
+      family === 'RSA' ? { name: 'RSASSA-PKCS1-v1_5', hash: digest } : { name: 'ECDSA', namedCurve: family };
+    plainKey = rawKey.toSchema().toBER(false);
+    const privateKey = await crypto.subtle.importKey('pkcs8', plainKey, importAlgorithm, false, ['sign']);
+
+    const signerAt = await certificateOfKey(privateKey, family, importAlgorithm, certificates);
+    const certificateDer = certificates[signerAt];
+    if (certificateDer === undefined) {
+      throw new Error('the container carries no certificate for its private key');
+    }
+    return {
+      certificate: certificateDer,
+      chain: certificates.filter((_, index) => index !== signerAt),
+      privateKey,
+      commonName: commonNameOf(Certificate.fromBER(certificateDer.slice())),
+    };
+  } finally {
+    passwordBytes.fill(0);
+    new Uint8Array(passwordBuffer).fill(0);
+    if (plainKey !== null) new Uint8Array(plainKey).fill(0);
   }
-
-  if (certificateDer === null) throw new Error('the container carries no certificate');
-  if (rawKey === null) throw new Error('the container carries no private key');
-
-  const certificate = Certificate.fromBER(certificateDer.slice());
-  const algorithmId = certificate.subjectPublicKeyInfo.algorithm.algorithmId;
-  const isRsa = algorithmId === '1.2.840.113549.1.1.1';
-  // Key family and curve come from the certificate. WebCrypto binds RSA's
-  // digest at import, so it must match the digest selected for the CMS.
-  const curves: Readonly<Record<string, string>> = {
-    '1.2.840.10045.3.1.7': 'P-256',
-    '1.3.132.0.34': 'P-384',
-    '1.3.132.0.35': 'P-521',
-  };
-  const curveParameters = certificate.subjectPublicKeyInfo.algorithm.algorithmParams;
-  const namedCurve =
-    curveParameters instanceof ObjectIdentifier ? curves[curveParameters.valueBlock.toString()] : undefined;
-  if (!isRsa && (algorithmId !== '1.2.840.10045.2.1' || namedCurve === undefined)) {
-    throw new Error('unsupported signing key algorithm or named curve');
-  }
-  const importAlgorithm: RsaHashedImportParams | EcKeyImportParams = isRsa
-    ? { name: 'RSASSA-PKCS1-v1_5', hash: digest }
-    : { name: 'ECDSA', namedCurve: namedCurve as string };
-
-  const privateKey = await crypto.subtle.importKey(
-    'pkcs8',
-    rawKey.toSchema().toBER(false),
-    // WebCrypto's own algorithm object; the certificate above decided which one.
-    importAlgorithm,
-    false,
-    ['sign'],
-  );
-
-  return { certificate: certificateDer, chain, privateKey, commonName: commonNameOf(certificate) };
 }
 
 /** The issuer and serial of a certificate, for a UI that has to name an identity. */

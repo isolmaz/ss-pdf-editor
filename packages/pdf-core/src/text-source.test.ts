@@ -13,7 +13,9 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { ToolError } from 'pdf-shared';
+import { buildTextPage } from 'pdf-text-engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ASTRAL_CHARACTERS, ASTRAL_LINE, astralPage } from './astral-fixtures';
 import { loadMupdf } from './engines/mupdf';
 import {
   loadFontMetrics,
@@ -203,6 +205,35 @@ describe('readPageText', () => {
     },
   );
 
+  it('reads a character above U+FFFF whole, not cut to its low 16 bits', async () => {
+    const page = await readPageText(await astralPage(), 0, run);
+    const lines = page.blocks.flatMap((block) => block.lines);
+    expect(lines).toHaveLength(1);
+    // U+1F600 (emoji), U+1D400 (mathematical bold A), U+10000 (Linear B) and U+1D800 (SignWriting):
+    // the stock binding returned U+F600, U+D400, U+0000 and a lone high surrogate for them.
+    expect(lines[0]?.chars.map((char) => char.ch)).toEqual([
+      'H',
+      'i',
+      ' ',
+      String.fromCodePoint(0x1f600),
+      String.fromCodePoint(0x1d400),
+      String.fromCodePoint(0x10000),
+      String.fromCodePoint(0x1d800),
+      ' ',
+      'o',
+      'k',
+    ]);
+    expect(ASTRAL_CHARACTERS.map((character) => character.length)).toEqual([2, 2, 2, 2]);
+  });
+
+  it('gives the text model the whole characters, so an edit starts from what the page shows', async () => {
+    const model = buildTextPage(await readPageText(await astralPage(), 0, run));
+    expect(model.blocks).toHaveLength(1);
+    expect(model.blocks[0]?.text).toBe(ASTRAL_LINE);
+    const glyphs = model.blocks[0]?.lines.flatMap((line) => line.words.flatMap((word) => word.glyphs));
+    expect(glyphs?.map((glyph) => glyph.ch)).toEqual(['H', 'i', ...ASTRAL_CHARACTERS, 'o', 'k']);
+  });
+
   it('reports no blocks and no colours for a page without text', async () => {
     const page = await readPageText(await pages('0 0 10 10 re f'), 0, run);
     expect(page.blocks).toEqual([]);
@@ -228,6 +259,62 @@ describe('readPageText', () => {
     await expect(
       readPageText(await pages('BT /F 12 Tf 10 100 Td (x) Tj ET'), 0, { signal: controller.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+/**
+ * A 612×792 `/MediaBox` cropped to `[100 200 400 600]` — a 300×400 page whose box starts
+ * away from the origin — turned by `/Rotate`, with `Hi` drawn at user-space (140, 500) in
+ * 12 pt Helvetica. Whatever the rotation, that glyph is 40 pt right of the box's left edge
+ * and 100 pt below its top edge (600 − 500).
+ */
+async function croppedPage(rotate: 0 | 90 | 180 | 270): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const helvetica = doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin');
+  doc.insertPage(
+    -1,
+    doc.addPage([0, 0, 612, 792], rotate, { Font: { F: helvetica } }, 'BT /F 12 Tf 140 500 Td (Hi) Tj ET'),
+  );
+  doc.findPage(0).put('CropBox', [100, 200, 400, 600]);
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+describe('readPageText: a page box that does not start at the origin', () => {
+  it.each([0, 90, 180, 270] as const)(
+    'reports x in user space and y as the distance below the box top at /Rotate %i',
+    async (rotate) => {
+      const page = await readPageText(await croppedPage(rotate), 0, run);
+      expect([page.width, page.height, page.rotation]).toEqual([300, 400, rotate]);
+      const block = page.blocks[0];
+      const line = block?.lines[0];
+      expect(line?.chars[0]?.ch).toBe('H');
+      // x stays the user-space 140; y is 200 + 400 − 500 = 100 below the top edge — the
+      // `box.y` of the old reader would have made it 300.
+      const origin = line?.chars[0]?.origin ?? [Number.NaN, Number.NaN];
+      expect(origin[0]).toBeCloseTo(140, 3);
+      expect(origin[1]).toBeCloseTo(100, 3);
+      expect(line?.baseline).toBeCloseTo(100, 3);
+      // The block's box starts at the glyph's left edge and straddles the baseline: ascent
+      // above it, descent below.
+      const quad = block?.quad ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
+      expect(quad[0]).toBeGreaterThan(139);
+      expect(quad[0]).toBeLessThan(141);
+      expect(quad[1]).toBeGreaterThan(80);
+      expect(quad[1]).toBeLessThan(100);
+      expect(quad[3]).toBeGreaterThan(100);
+      expect(quad[3]).toBeLessThan(110);
+    },
+  );
+
+  it('gives readDocumentText the same geometry as readPageText', async () => {
+    const bytes = await croppedPage(0);
+    const [read] = await readDocumentText(bytes, [0], run);
+    expect([read?.width, read?.height]).toEqual([300, 400]);
+    expect(read?.blocks[0]?.lines[0]?.baseline).toBeCloseTo(100, 3);
+    expect(read?.blocks[0]?.lines[0]?.chars[0]?.origin[0]).toBeCloseTo(140, 3);
   });
 });
 

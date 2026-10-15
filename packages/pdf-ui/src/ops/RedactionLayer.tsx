@@ -72,7 +72,8 @@ export function RedactionLayer({ t, viewer, onMark, onDone }: RedactionLayerProp
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    if (drag === null) return;
+    // Another pointer (a second finger, a pen beside the mouse) is not this drag's.
+    if (drag === null || drag.pointerId !== event.pointerId) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     drag.currentX = event.clientX;
     drag.currentY = event.clientY;
@@ -84,15 +85,34 @@ export function RedactionLayer({ t, viewer, onMark, onDone }: RedactionLayerProp
     });
   }, []);
 
+  /**
+   * Ends the drag the event's own pointer began — the preview goes, the capture is given
+   * back — and returns it. `null` when the event belongs to no drag of ours: another
+   * pointer's end must neither finish nor cancel the gesture in progress.
+   */
+  const endDrag = useCallback((event: React.PointerEvent<HTMLDivElement>): DragState | null => {
+    const drag = dragRef.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return null;
+    dragRef.current = null;
+    setPreview(null);
+    if (event.currentTarget.hasPointerCapture(drag.pointerId)) {
+      event.currentTarget.releasePointerCapture(drag.pointerId);
+    }
+    return drag;
+  }, []);
+
+  /** The browser took the gesture over (a scroll, a system gesture): what was drawn is not a mark. */
+  const cancel = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      endDrag(event);
+    },
+    [endDrag],
+  );
+
   const finish = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      const drag = dragRef.current;
-      dragRef.current = null;
-      setPreview(null);
+      const drag = endDrag(event);
       if (drag === null) return;
-      if (event.currentTarget.hasPointerCapture(drag.pointerId)) {
-        event.currentTarget.releasePointerCapture(drag.pointerId);
-      }
       const width = Math.abs(drag.currentX - drag.startX);
       const height = Math.abs(drag.currentY - drag.startY);
       if (width < MIN_MARK_SIZE || height < MIN_MARK_SIZE) return;
@@ -117,7 +137,7 @@ export function RedactionLayer({ t, viewer, onMark, onDone }: RedactionLayerProp
       onMark(mark);
       onDone?.();
     },
-    [onDone, onMark, viewer],
+    [endDrag, onDone, onMark, viewer],
   );
 
   return (
@@ -125,15 +145,24 @@ export function RedactionLayer({ t, viewer, onMark, onDone }: RedactionLayerProp
       // The layer covers the laid-out pages but only intercepts the pointer while the
       // tool is armed — the parent renders it conditionally, so reaching here always
       // means "drawing". The viewer's overlay host is inert (`pointer-events: none` is
-      // inherited), so the layer takes the pointer back explicitly.
-      className="pointer-events-auto absolute inset-0 z-20 cursor-crosshair"
-      role="application"
-      aria-label={t('redact.mode.box')}
+      // inherited), so the layer takes the pointer back explicitly. `touch-none`: a
+      // finger dragging over it draws; without it the browser scrolls the document and
+      // cancels the pointer a few pixels in.
+      //
+      // No role: this is a drawing surface for a pointer, not a widget with a keyboard
+      // model of its own, and `application` promises one (it asks assistive tech to hand
+      // over every key) on a box that cannot even take focus. The tool's name is announced
+      // by the status below, as `AnnotationLayer` does for its own tools.
+      className="pointer-events-auto absolute inset-0 z-20 cursor-crosshair touch-none"
+      data-redaction-layer=""
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={finish}
-      onPointerCancel={finish}
+      onPointerCancel={cancel}
     >
+      <p className="sr-only" aria-live="polite">
+        {t('redact.mode.box')}
+      </p>
       {preview === null ? null : (
         <span
           aria-hidden="true"

@@ -102,6 +102,8 @@ export const en: Record<MessageKey, string> = {
   'panel.goToPage': 'Go to page {page}',
   'draft.restored': '{count} draft(s) restored; the document and its change journal are ready.',
   'draft.corrupt': '{count} draft file(s) corrupted and could not be read.',
+  'draft.openElsewhere':
+    '“{name}” is open in another window of the editor. Switch to that window to keep working on it.',
   'draft.engineValues': '{count} form/annotation edit(s) restored; save before closing or they are lost.',
   'draft.engineValuesDropped':
     '{count} edit(s) could not be carried in the draft; keep the document open to save them.',
@@ -140,7 +142,7 @@ export const en: Record<MessageKey, string> = {
   'vault.sweepNoChannel':
     'This browser exposes no cross-window channel, so the orphan sweep was not run: it cannot see documents open in another window.',
   'vault.peerSilent':
-    'Another window of the editor did not say which documents it holds, so nothing was deleted. Try again once that window responds, or close it.',
+    'The editor could not confirm which documents its other windows hold, so nothing was deleted. Try again once every other window of the editor responds, or close them.',
   'batch.folder.watch': 'Watch Folder',
   'batch.folder.watching': 'Watching folder',
   'batch.folder.stop': 'Stop Watching',
@@ -221,13 +223,18 @@ export const en: Record<MessageKey, string> = {
   'error.verification-failed.message': 'Saving could not be verified; the original file is kept.',
   'error.verification-failed.hint': 'The document stays dirty; use Export to create a new file.',
   'error.conflict.message': 'The file changed after you opened it.',
-  'error.conflict.hint': 'Overwrite, save as a new file, or cancel.',
+  'error.conflict.hint':
+    'Choose Overwrite to replace the file with your version, Save as to write a new file, or Cancel.',
   'error.asset-missing.message': 'A required engine package is not downloaded.',
   'error.asset-missing.hint': 'Download it from the offline readiness screen.',
   'error.asset-hash-mismatch.message': 'An engine package failed verification.',
   'error.asset-hash-mismatch.hint': 'Download the package again.',
   'error.asset-offline.message': 'This part of the editor is not on this device yet.',
   'error.asset-offline.hint': 'Connect to the internet and reload the page.',
+  'error.asset-stale.message':
+    'This part of the editor could not be loaded; the app has probably been updated since this page was opened.',
+  'error.asset-stale.hint':
+    'Reload the page to get the new version; if it keeps failing, check your connection.',
   'error.font-missing.message': 'A required font is missing.',
   'error.font-missing.hint': 'Download the font pack or choose another font.',
   'error.ocr-language-missing.message': 'The selected OCR language is not installed.',
@@ -284,13 +291,14 @@ export const en: Record<MessageKey, string> = {
   'tools.snapshotDownload': 'Download PNG',
   'tools.snapshotSaved': 'Snapshot saved: {name}',
   'tools.magnifier': 'Magnifier',
-  'tools.present': 'Presentation mode',
-  'tools.presentExit': 'Exit presentation',
   'close.title': 'Close "{name}"?',
   'close.body': 'You have unsaved changes. Do you want to save before closing?',
   'close.exportHint': 'This document has no file handle. Export to download a copy, or close without saving.',
   'close.discard': 'Close without saving',
   'close.save': 'Save and close',
+  'conflict.body':
+    'Overwrite replaces the file with your version, and whatever changed in it since is lost. Save as writes your version to a new file and leaves this one alone.',
+  'conflict.overwrite': 'Overwrite',
   'inspection.loading': 'Inspecting document…',
   'inspection.failed': 'Document details could not be read. Saving and exporting are stopped; try again.',
   'inspection.retry': 'Retry inspection',
@@ -377,4 +385,6 @@ export const en: Record<MessageKey, string> = {
 
   'update.available': 'A new update is available. Refresh to apply changes.',
   'update.refresh': 'Refresh',
+  'update.saveFirst':
+    'A new version is ready, but this tab holds unsaved work, so it was not reloaded. Save it, then reload.',
 };

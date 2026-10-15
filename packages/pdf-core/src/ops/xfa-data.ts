@@ -26,6 +26,7 @@
  */
 
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
+import { ToolError } from 'pdf-shared';
 
 /** The AcroForm field kinds the binding understands (`FormFieldKind` of `forms.ts`). */
 export type XfaFieldKind = 'text' | 'checkbox' | 'dropdown' | 'radio' | 'optionlist' | 'signature' | 'other';
@@ -91,9 +92,43 @@ export interface SyncPlan {
 // ---------------------------------------------------------------------------
 
 /**
+ * Guards against a hostile or malformed packet turning a read into a stack overflow or an
+ * out-of-memory: every walk below (`textOf`, `buildTemplate`, `dataEntries`, the serializer)
+ * recurses once per level, so a document is refused before any of them runs. Real forms nest
+ * a few dozen levels and hold tens of thousands of nodes.
+ */
+const MAX_XML_DEPTH = 256;
+const MAX_XML_NODES = 500_000;
+
+/** Throws a `ToolError` when the document nests or grows past the limits; iterative, so it cannot overflow itself. */
+function assertWithinLimits(document: Document): void {
+  const stack: { node: Node; depth: number }[] = [{ node: document.documentElement, depth: 1 }];
+  let count = 0;
+  for (let entry = stack.pop(); entry !== undefined; entry = stack.pop()) {
+    count += 1;
+    if (entry.depth > MAX_XML_DEPTH) {
+      throw new ToolError('unsupported', {
+        engine: 'model',
+        engineMessage: `the XML is nested deeper than ${MAX_XML_DEPTH} levels`,
+      });
+    }
+    if (count > MAX_XML_NODES) {
+      throw new ToolError('unsupported', {
+        engine: 'model',
+        engineMessage: `the XML holds more than ${MAX_XML_NODES} nodes`,
+      });
+    }
+    for (let child = entry.node.firstChild; child !== null; child = child.nextSibling) {
+      stack.push({ node: child, depth: entry.depth + 1 });
+    }
+  }
+}
+
+/**
  * `null` when the text is not well-formed XML. A packet read from a document is parsed
  * leniently (a producer's quirk must not stop the sync); `strict` is for a file the user
  * hands in, where a mismatched tag means the file is not what it claims to be.
+ * A well-formed document past the depth or node limit throws a `ToolError` (`unsupported`).
  */
 export function parseXml(text: string, strict = false): Document | null {
   let failed = false;
@@ -103,12 +138,15 @@ export function parseXml(text: string, strict = false): Document | null {
       if (level === 'fatalError' || level === 'error' || (strict && level === 'warning')) failed = true;
     },
   } as never);
+  let document: Document;
   try {
-    const document = parser.parseFromString(text, 'application/xml') as unknown as Document;
-    return failed || document.documentElement === null ? null : document;
+    document = parser.parseFromString(text, 'application/xml') as unknown as Document;
   } catch {
     return null;
   }
+  if (failed || document.documentElement === null) return null;
+  assertWithinLimits(document);
+  return document;
 }
 
 export function serializeNode(node: Node): string {
@@ -673,7 +711,13 @@ export function exportDataXml(datasetsXml: string): string | null {
   if (data === null) return null;
   const kids = childElements(data);
   if (kids.length === 0) return null;
-  const body = kids.map(serializeNode).join('\n');
+  // An XML file has one root. Several data roots (`<a/><b/>`) are not a document, and the
+  // import would refuse them: they stay under their own `xfa:data`, which the import reads
+  // as the data holder.
+  const body =
+    kids.length === 1
+      ? serializeNode(kids[0] as Element)
+      : `<xfa:data xmlns:xfa="${data.namespaceURI}">${kids.map(serializeNode).join('')}</xfa:data>`;
   return `<?xml version="1.0" encoding="UTF-8"?>\n${body}\n`;
 }
 

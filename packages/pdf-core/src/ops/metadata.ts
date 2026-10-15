@@ -665,12 +665,22 @@ function readInfoValues(doc: PDFDocument): DocumentMetadata {
   };
 }
 
-/** `D:YYYYMMDDHHmmSSZ` → ISO, for the round trip through a `Date`; `null` for any other text. */
+/**
+ * `D:YYYYMMDDHHmmSS` plus an optional zone (`Z`, `+02'00'`, `-05'30'`, `+0200`, `+02`) → ISO 8601
+ * with the same zone, so the instant survives the round trip through a `Date` and XMP keeps the
+ * offset the document was written with. A date without a zone reads as UTC; `null` for any
+ * other text.
+ */
 function isoFromPdfDate(value: string): string | null {
-  const match = /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?/.exec(value.trim());
+  const match =
+    /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?(?:([Zz])|([+-])(\d{2})(?:'?(\d{2})'?)?)?/.exec(
+      value.trim(),
+    );
   if (match === null) return null;
   const [, year, month = '01', day = '01', hour = '00', minute = '00', second = '00'] = match;
-  return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`;
+  const sign = match[8];
+  const zone = sign === undefined ? 'Z' : `${sign}${match[9]}:${match[10] ?? '00'}`;
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${zone}`;
 }
 
 /**
@@ -690,7 +700,7 @@ function parseDateOrThrow(value: string, field: string): Date {
   return date;
 }
 
-/** XMP dates are ISO 8601 in UTC; a PDF date string is converted, other text is passed through. */
+/** XMP dates are ISO 8601, with the zone the PDF date carried; other text is passed through. */
 function toXmpDate(value: string): string {
   return isoFromPdfDate(value) ?? value;
 }

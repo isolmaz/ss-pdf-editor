@@ -402,6 +402,59 @@ describe('applyPageBoxes: the media box and the boxes derived from it', () => {
       count: 3,
     });
   });
+
+  /** Two pages that own no CropBox and inherit `crop` from the root `/Pages` node. */
+  const inheriting = (crop: readonly number[]) =>
+    pagesWith(2, (doc, page, index) => {
+      page.delete('CropBox');
+      if (index === 0)
+        doc
+          .getTrailer()
+          .get('Root')
+          .get('Pages')
+          .put('CropBox', [...crop]);
+    });
+
+  it('overrides an inherited CropBox that no longer overlaps the moved MediaBox, on that page only', async () => {
+    const out = await applyPageBoxes(
+      await inheriting([150, 0, 400, 100]),
+      { mode: 'set', pages: [0], box: 'media', rect: [0, 0, 100, 100] },
+      run,
+    );
+    // Deleting the page's own (absent) entry would have left the inherited box outside the page.
+    expect((await facts(out.bytes, 0)).crop).toEqual([0, 0, 100, 100]);
+    const [first, second] = await readPageBoxes(out.bytes, [0, 1]);
+    expect(first?.crop).toEqual([0, 0, 100, 100]);
+    // The sibling page keeps the box it inherits. The visible box is the CropBox clipped to the
+    // page's MediaBox (200 pt wide here), so the 400 pt right edge reads as 200 (#101).
+    expect(second?.crop).toEqual([150, 0, 200, 100]);
+    expect(out.report.notes.find((entry) => entry.key === 'boxes.note.clamped')?.params).toEqual({
+      count: 1,
+    });
+  });
+
+  it('clamps an inherited CropBox that partly overlaps the moved MediaBox and writes it on the page', async () => {
+    const out = await applyPageBoxes(
+      await inheriting([50, 10, 400, 90]),
+      { mode: 'set', pages: [0], box: 'media', rect: [0, 0, 100, 100] },
+      run,
+    );
+    expect((await facts(out.bytes, 0)).crop).toEqual([50, 10, 100, 90]);
+    expect(out.report.notes.find((entry) => entry.key === 'boxes.note.clamped')?.params).toEqual({
+      count: 1,
+    });
+  });
+
+  it('counts nothing when the inherited CropBox already lies inside the moved MediaBox', async () => {
+    const out = await applyPageBoxes(
+      await inheriting([10, 10, 90, 90]),
+      { mode: 'set', pages: [0], box: 'media', rect: [0, 0, 100, 100] },
+      run,
+    );
+    expect(noteKeys(out)).not.toContain('boxes.note.clamped');
+    expect((await facts(out.bytes, 0)).crop).toBeNull();
+    expect((await readPageBoxes(out.bytes, [0]))[0]?.crop).toEqual([10, 10, 90, 90]);
+  });
 });
 
 describe('applyPageBoxes: resizing with each fit', () => {

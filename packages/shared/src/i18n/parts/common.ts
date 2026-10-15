@@ -40,6 +40,7 @@ export const commonPart = {
   'op.result.download': 'İndir',
   'op.result.applied': 'Belgeye uygulandı: {label} (Ctrl+Z ile geri alın)',
   'op.result.noChangePages': 'Değişiklik yapılmadı: işlemin uygulanacağı sayfa bulunamadı.',
+  'op.result.nothing': 'Değişiklik yapılmadı: işlem yazılacak bir dosya üretmedi.',
   'op.result.opened': 'Yeni sekmede açıldı: {name}',
   'op.result.downloaded': 'İndirildi: {name}',
   'op.result.confirmDestructive': 'Bu işlem geri alınamaz biçimde içerik silebilir. Devam edilsin mi?',

@@ -71,6 +71,8 @@ export const propsPart = {
   'props.sig.trustReason.pathLength': 'Üst sertifikanın pathLenConstraint sınırı aşılıyor.',
   'props.sig.trustReason.nameConstraint':
     'Alt sertifikanın adları izin verilen alt ağacın dışında ya da dışlanan alt ağacın içinde.',
+  'props.sig.trustReason.searchLimit':
+    'Bu dosyadaki sertifikalar hepsini denemeye yetmeyecek kadar çok olası zincir sunuyor; arama sınırında durdu, bu yüzden hiçbir zincir doğrulanmadı ya da elenmedi.',
   'props.sig.revocation.indeterminate': 'Belirlenemedi',
   'props.sig.revocation.note':
     'İptal kanıtı yalnızca bu cihazda zaten bulunan listelerden okunur: aşağıda içe aktardığınız CRL’ler ile PDF içine gömülü CRL ve OCSP yanıtları. Hiçbir şey ağdan çekilmez; bir yayımcı için liste yoksa sonuç "belirlenemedi" olur.',
@@ -85,6 +87,10 @@ export const propsPart = {
   'props.sig.roots.added': '{count} güven kökü eklendi.',
   'props.sig.roots.none': 'Seçilen dosyalarda okunabilir bir sertifika yok.',
   'props.sig.roots.addedRefused': '{count} güven kökü eklendi; {refused} dosya sertifika olarak okunamadı.',
+  'props.sig.storeFailed':
+    'Güven kökleri ve iptal listelerindeki değişiklik bu cihazda saklanamadı; bu yüzden hiçbir şey değişmedi. {reason}',
+  'props.sig.storeUnreadable':
+    'Saklanan güven kökleri ve iptal listeleri bu cihazdan okunamadı; yeniden aktarılana kadar sertifika güveni "denetlenmedi" olarak gösterilir.',
   'props.sig.certValidUntil': 'Sertifika geçerlilik sonu: {date}',
   'props.sig.certExpired': 'Sertifikanın süresi {date} tarihinde dolmuş.',
   'props.sig.certNotYet': 'Sertifika {date} tarihine kadar geçerli değil.',

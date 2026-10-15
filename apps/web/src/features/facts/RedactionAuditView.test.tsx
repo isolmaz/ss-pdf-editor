@@ -6,10 +6,11 @@
 
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { RedactionAudit } from 'pdf-core';
 import { SessionStore } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { coreStore, initialCoreState } from '../core/core-store';
+import { cancelOperation, coreStore, initialCoreState, isBusy, operationRunning } from '../core/core-store';
 import { adoptHandle, dropHandle } from '../core/handles';
 import { writeOverlay } from '../core/overlays';
 import { RedactionAuditView } from './RedactionAuditView';
@@ -31,14 +32,14 @@ const t = createTranslator('en');
 const bytes = new Uint8Array([1, 2, 3]);
 const handle = { name: 'handle' } as never;
 
-const clean = {
+const clean: RedactionAudit = {
   findings: [],
   objectCount: 1,
   revisionCount: 1,
   incrementalChains: 0,
   bytes: 3,
 };
-const residual = {
+const residual: RedactionAudit = {
   ...clean,
   findings: [
     { kind: 'residual-text', severity: 'content', key: 'audit.residual', params: { count: 2 } },
@@ -84,10 +85,21 @@ describe('runRedactionAudit', () => {
 
     await runRedactionAudit({ store, t, erasedTerms: (id) => (id === tab.id ? ['alpha', 'beta'] : []) });
 
-    expect(ops.materializeBase).toHaveBeenCalledWith({ store, t, tab: store.active, handle });
+    expect(ops.materializeBase).toHaveBeenCalledWith(
+      { store, t, tab: store.active, handle },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(ops.redactionNeedles).toHaveBeenCalledWith(bytes, [mark], { signal: expect.any(AbortSignal) });
-    expect(ops.auditRedactedDocument).toHaveBeenCalledWith(bytes, ['alpha', 'beta', 'gamma']);
-    expect(redactionAuditStore.get()).toEqual({ report: clean, loading: false });
+    expect(ops.auditRedactedDocument).toHaveBeenCalledWith(
+      bytes,
+      ['alpha', 'beta', 'gamma'],
+      expect.any(AbortSignal),
+    );
+    // The report is bound to the version it was read from.
+    expect(redactionAuditStore.get()).toEqual({
+      report: { workingId: store.active?.working.id, audit: clean },
+      loading: false,
+    });
     expect(coreStore.get().notice).toBe(
       'The redaction audit ran against 3 term(s); the result is in the panel.',
     );
@@ -115,6 +127,38 @@ describe('runRedactionAudit', () => {
     expect(coreStore.get().notice).toBe(`${t(failure.messageKey)} ${t(failure.hintKey)}`);
   });
 
+  it('holds the document while it runs, so a second press is refused and Cancel stops it', async () => {
+    const { store } = openSession();
+    let signal: AbortSignal | undefined;
+    ops.auditRedactedDocument.mockImplementation(
+      (_bytes: Uint8Array, _needles: readonly string[], aborted: AbortSignal) => {
+        signal = aborted;
+        const { promise, reject } = Promise.withResolvers<never>();
+        aborted.addEventListener('abort', () => reject(new ToolError('aborted', { engine: 'model' })));
+        return promise;
+      },
+    );
+
+    const running = runRedactionAudit({ store, t, erasedTerms: () => [] });
+    await vi.waitFor(() => expect(ops.auditRedactedDocument).toHaveBeenCalled());
+    expect(isBusy()).toBe(true);
+    expect(operationRunning()).toBe(true);
+
+    await runRedactionAudit({ store, t, erasedTerms: () => [] });
+    expect(coreStore.get().notice).toBe(t('op.busy'));
+    expect(ops.auditRedactedDocument).toHaveBeenCalledTimes(1);
+
+    cancelOperation();
+    await running;
+
+    expect(signal?.aborted).toBe(true);
+    expect(redactionAuditStore.get()).toEqual({ report: null, loading: false });
+    expect(isBusy()).toBe(false);
+    expect(operationRunning()).toBe(false);
+    // A Cancel the user pressed is not reported as a failure.
+    expect(coreStore.get().notice).toBe(t('op.busy'));
+  });
+
   it('reports a failure that is not a tool error as an internal one', async () => {
     const { store } = openSession();
     ops.auditRedactedDocument.mockRejectedValue(new Error('worker gone'));
@@ -131,19 +175,38 @@ describe('RedactionAuditView', () => {
     const user = userEvent.setup();
     const { store, tab } = openSession();
     ops.auditRedactedDocument.mockResolvedValue(residual);
-    render(<RedactionAuditView store={store} t={t} erasedTerms={() => ['secret']} />);
+    render(
+      <RedactionAuditView store={store} t={t} erasedTerms={() => ['secret']} workingId={tab.working.id} />,
+    );
 
     await user.click(await screen.findByRole('button', { name: t('audit.rerun') }));
 
-    await vi.waitFor(() => expect(redactionAuditStore.get().report).toBe(residual));
-    expect(ops.auditRedactedDocument).toHaveBeenCalledWith(bytes, ['secret']);
+    await vi.waitFor(() => expect(redactionAuditStore.get().report?.audit).toBe(residual));
+    expect(ops.auditRedactedDocument).toHaveBeenCalledWith(bytes, ['secret'], expect.any(AbortSignal));
     expect(await screen.findByRole('region', { name: t('audit.findings') })).toBeTruthy();
     dropHandle(tab.id);
   });
 
+  it('shows no report that was read from another version of the document or from another tab', async () => {
+    const { store, tab } = openSession();
+    const other = store.openDocument({ name: 'b.pdf', bytes, sha256: 'b', pageCount: 1 });
+    redactionAuditStore.set({ report: { workingId: tab.working.id, audit: residual }, loading: false });
+    const view = (workingId: string) => (
+      <RedactionAuditView store={store} t={t} erasedTerms={() => []} workingId={workingId} />
+    );
+
+    const { rerender } = render(view(tab.working.id));
+    expect(await screen.findByRole('region', { name: t('audit.findings') })).toBeTruthy();
+
+    // The same panel now describes another tab (or a later version): the report is not its own.
+    rerender(view(other.working.id));
+    await screen.findByRole('button', { name: t('audit.rerun') });
+    expect(screen.queryByRole('region', { name: t('audit.findings') })).toBeNull();
+  });
+
   it('shows the running state while the audit runs', async () => {
-    const { store } = openSession();
-    render(<RedactionAuditView store={store} t={t} erasedTerms={() => []} />);
+    const { store, tab } = openSession();
+    render(<RedactionAuditView store={store} t={t} erasedTerms={() => []} workingId={tab.working.id} />);
     await screen.findByRole('button', { name: t('audit.rerun') });
 
     act(() => redactionAuditStore.set({ loading: true }));

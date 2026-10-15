@@ -140,12 +140,15 @@ export function failureNotices(error: unknown, fallback: MessageKey): readonly N
  * The same sentence is used by the autosave when it fails, so it is one wording everywhere.
  */
 export function storedCopyWarning(error: unknown, t: Translator): string {
-  const reason: MessageKey = isToolError(error)
-    ? error.messageKey
-    : error instanceof Error && error.name === 'QuotaExceededError'
-      ? 'error.quota-exceeded.message'
-      : 'draft.storageRefused';
-  return t('draft.sourceNotStored', { reason: t(reason) });
+  return t('draft.sourceNotStored', { reason: t(storageReasonKey(error)) });
+}
+
+/** The dictionary key naming why the browser's storage refused a write (see `storedCopyWarning`). */
+export function storageReasonKey(error: unknown): MessageKey {
+  if (isToolError(error)) return error.messageKey;
+  return error instanceof Error && error.name === 'QuotaExceededError'
+    ? 'error.quota-exceeded.message'
+    : 'draft.storageRefused';
 }
 
 /**

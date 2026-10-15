@@ -10,11 +10,15 @@ import { readFormFields } from 'pdf-core';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OpRunContext, OpRunResult } from '../dialogs/types';
-import { mupdfForTests } from '../pdf-fixtures';
+import { mupdfForTests, textPdf } from '../pdf-fixtures';
 import { createFieldDialog, formDataDialog, formFieldsDialog } from './forms';
 
-/** A page with the text fields `ad` (max length 5), `a`, `b` (numbers) and `toplam`, and a checkbox. */
-async function formFixture(pages = 1): Promise<Uint8Array> {
+/**
+ * A page with the text fields `ad` (max length 5), `a`, `b` (numbers) and `toplam`, a checkbox
+ * and a list box. `extras` adds what a real form often holds on top: an empty required text
+ * field `zorunlu`, a push button `dugme` and a signature field `imza`.
+ */
+async function formFixture(pages = 1, extras = false): Promise<Uint8Array> {
   const mupdf = await mupdfForTests();
   const doc = new mupdf.PDFDocument();
   for (let index = 0; index < pages; index += 1) doc.insertPage(-1, doc.addPage([0, 0, 400, 600], 0, {}, ''));
@@ -57,11 +61,51 @@ async function formFixture(pages = 1): Promise<Uint8Array> {
     },
     [20, 400, 100, 440],
   );
-  page.put('Annots', [ad, a, b, toplam, onay, liste]);
+  const all = [ad, a, b, toplam, onay, liste];
+  if (extras) {
+    all.push(
+      text('zorunlu', [120, 540, 200, 560], { Ff: 2 }),
+      widget(
+        { FT: 'Btn', Ff: 65536, T: doc.newString('dugme'), AP: { N: box(60, 20) } },
+        [220, 540, 280, 560],
+      ),
+      widget({ FT: 'Sig', T: doc.newString('imza'), AP: { N: box(80, 30) } }, [20, 340, 100, 370]),
+    );
+  }
+  page.put('Annots', all);
   doc
     .getTrailer()
     .get('Root')
-    .put('AcroForm', { Fields: [ad, a, b, toplam, onay, liste], DR: { Font: { Helv: helv } }, DA: da });
+    .put('AcroForm', { Fields: all, DR: { Font: { Helv: helv } }, DA: da });
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/** A form whose only field is a push button: nothing in it can be flattened. */
+async function buttonOnlyFixture(): Promise<Uint8Array> {
+  const mupdf = await mupdfForTests();
+  const doc = mupdf.PDFDocument.openDocument(
+    await textPdf([['page text']], [400, 600]),
+    'application/pdf',
+  ) as InstanceType<typeof mupdf.PDFDocument>;
+  const page = doc.findPage(0);
+  const button = doc.addObject({
+    Type: 'Annot',
+    Subtype: 'Widget',
+    Rect: [20, 540, 80, 560],
+    P: page,
+    F: 4,
+    FT: 'Btn',
+    Ff: 65536,
+    T: doc.newString('dugme'),
+    AP: { N: doc.addStream('', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 60, 20] }) },
+  });
+  page.put('Annots', [button]);
+  doc
+    .getTrailer()
+    .get('Root')
+    .put('AcroForm', { Fields: [button] });
   const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
   doc.destroy();
   return bytes;
@@ -90,6 +134,18 @@ async function widgetsOf(bytes: Uint8Array): Promise<Record<string, WidgetState>
       }
     }
     return states;
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** The text a reader draws on page 1, widgets included. */
+async function pageTextOf(bytes: Uint8Array): Promise<string> {
+  const mupdf = await mupdfForTests();
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+  try {
+    const page = doc.loadPage(0) as InstanceType<Awaited<ReturnType<typeof mupdfForTests>>['PDFPage']>;
+    return page.toDisplayList(true).toStructuredText('preserve-whitespace').asText();
   } finally {
     doc.destroy();
   }
@@ -191,17 +247,81 @@ describe('formFieldsDialog', () => {
     expect(error.details.engineMessage).toBe('calculation line 2 has no "target = expression" form');
   });
 
-  it('refuses unknown fields and values the field cannot take before touching the document', async () => {
-    const error = await failureOf(
-      formFieldsDialog.run(
-        { fills: 'ad=far too long\nmissing=1\na=3', calculations: '', lock: false, validateOnly: true },
-        contextFor(await formFixture()),
-      ),
+  it('validate only reports the rule violations of the fills and writes nothing', async () => {
+    const bytes = await formFixture();
+    const result = await formFieldsDialog.run(
+      {
+        fills: 'ad=far too long\nmissing=1\na=3',
+        calculations: 'toplam = a + b',
+        lock: true,
+        validateOnly: true,
+      },
+      contextFor(bytes),
     );
-    expect(error.code).toBe('range-invalid');
-    expect(error.details.engineMessage).toBe(
-      'form validation refused: ad, missing (inventory: ad [text], a [text], b [text], toplam [text], onay [checkbox], liste [optionlist])',
+    expect(result.files).toEqual([]);
+    expect(result.report.outputBytes).toBe(bytes.length);
+    expect(result.report.incremental).toBe(true);
+    expect(result.noticeKey).toBe('form.note.invalid');
+    expect(result.noticeParams).toEqual({ count: 2 });
+    expect(result.report.notes).toEqual([
+      { kind: 'preserved', key: 'form.note.inventory', params: { count: 6 } },
+      {
+        kind: 'warning',
+        key: 'form.note.violation',
+        params: { name: 'ad', reason: 'Entered text exceeds field maximum length.' },
+      },
+      {
+        kind: 'warning',
+        key: 'form.note.violation',
+        params: { name: 'missing', reason: 'The document has no field with this name.' },
+      },
+    ]);
+  });
+
+  it('validate only accepts fills that comply, still writing nothing', async () => {
+    const bytes = await formFixture();
+    const result = await formFieldsDialog.run(
+      {
+        fills: 'ad=Ada\nonay=true\nliste=Bir',
+        calculations: 'toplam = a * b',
+        lock: true,
+        validateOnly: true,
+      },
+      contextFor(bytes),
     );
+    expect(result.files).toEqual([]);
+    expect(result.report.outputBytes).toBe(bytes.length);
+    expect(result.noticeKey).toBe('form.note.inventory');
+    expect(result.report.notes.map((entry) => entry.key)).toEqual(['form.note.inventory', 'form.note.valid']);
+  });
+
+  it('validate only reports an empty required field and a calculation target that is missing', async () => {
+    const bytes = await formFixture(1, true);
+    const empty = await formFieldsDialog.run(
+      { fills: 'ad=Ada', calculations: 'nowhere = a + b', lock: false, validateOnly: true },
+      contextFor(bytes),
+    );
+    expect(empty.files).toEqual([]);
+    expect(empty.report.notes.slice(1)).toEqual([
+      {
+        kind: 'warning',
+        key: 'form.note.violation',
+        params: { name: 'nowhere', reason: 'The document has no field with this name.' },
+      },
+      {
+        kind: 'warning',
+        key: 'form.note.violation',
+        params: { name: 'zorunlu', reason: 'This field is required.' },
+      },
+    ]);
+    const supplied = await formFieldsDialog.run(
+      { fills: 'zorunlu=dolu', calculations: '', lock: false, validateOnly: true },
+      contextFor(bytes),
+    );
+    expect(supplied.report.notes.map((entry) => entry.key)).toEqual([
+      'form.note.inventory',
+      'form.note.valid',
+    ]);
   });
 
   it('writes fills (text, checkbox), then calculations over them, then locks the filled fields', async () => {
@@ -211,7 +331,7 @@ describe('formFieldsDialog', () => {
         fills: 'ad=Ada\nonay=true\na=10,5\nb=4',
         calculations: 'toplam = a * b',
         lock: true,
-        validateOnly: true,
+        validateOnly: false,
       },
       contextFor(bytes),
     );
@@ -436,5 +556,65 @@ describe('formDataDialog', () => {
     );
     expect(Object.keys(await widgetsOf(result.files[0]?.bytes ?? new Uint8Array()))).toEqual([]);
     expect(result.report.steps.length).toBeGreaterThan(1);
+  });
+
+  it('after an import, flattens what it can and keeps the push button and signature field', async () => {
+    const bytes = await formFixture(1, true);
+    const exported = await formDataDialog.run({ mode: 'export', format: 'json' }, contextFor(bytes));
+    const data = JSON.parse(new TextDecoder().decode(exported.files[0]?.bytes)) as {
+      fields: { name: string; value: unknown }[];
+    };
+    data.fields = data.fields.filter((entry) => entry.name !== 'ad');
+    data.fields.push({ name: 'ad', value: 'Ada' });
+    const result = await formDataDialog.run(
+      {
+        mode: 'import',
+        format: 'json',
+        flatten: true,
+        file: [fixedFile('data.json', new TextEncoder().encode(JSON.stringify(data)))],
+      },
+      contextFor(bytes),
+    );
+    const out = result.files[0]?.bytes ?? new Uint8Array();
+    expect(Object.keys(await widgetsOf(out)).sort()).toEqual(['dugme', 'imza']);
+    expect(await pageTextOf(out)).toContain('Ada');
+    expect(result.noticeKey).toBe('form.note.imported');
+    expect(result.report.notes).toContainEqual({
+      kind: 'warning',
+      key: 'form.note.flattenSkipped',
+      params: { count: 2, names: 'dugme, imza' },
+    });
+    expect(result.report.notes.some((entry) => entry.key === 'form.note.flattened')).toBe(true);
+  });
+
+  it('keeps a form with nothing flattenable as it is and says which fields stayed', async () => {
+    const bytes = await buttonOnlyFixture();
+    // A file with no value at all is refused on import (`input-missing`); one value for a field the
+    // form does not have still reaches the flatten step, which is what these cases are about.
+    const data = new TextEncoder().encode(JSON.stringify({ fields: [{ name: 'ghost', value: 'x' }] }));
+    const result = await formDataDialog.run(
+      { mode: 'import', format: 'json', flatten: true, file: [fixedFile('data.json', data)] },
+      contextFor(bytes),
+    );
+    expect(Object.keys(await widgetsOf(result.files[0]?.bytes ?? new Uint8Array()))).toEqual(['dugme']);
+    expect(result.report.notes).toContainEqual({
+      kind: 'warning',
+      key: 'form.note.flattenSkipped',
+      params: { count: 1, names: 'dugme' },
+    });
+    expect(result.report.notes.some((entry) => entry.key === 'form.note.flattened')).toBe(false);
+  });
+
+  it('still refuses to flatten a document that has no form fields', async () => {
+    // A file with no value at all is refused on import (`input-missing`); one value for a field the
+    // form does not have still reaches the flatten step, which is what these cases are about.
+    const data = new TextEncoder().encode(JSON.stringify({ fields: [{ name: 'ghost', value: 'x' }] }));
+    const error = await failureOf(
+      formDataDialog.run(
+        { mode: 'import', format: 'json', flatten: true, file: [fixedFile('data.json', data)] },
+        contextFor(await textPdf([['page text']], [400, 600])),
+      ),
+    );
+    expect(error.code).toBe('selection-empty');
   });
 });

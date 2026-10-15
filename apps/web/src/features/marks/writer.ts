@@ -13,17 +13,19 @@ import type { OperationOutcome } from 'pdf-core';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { LayerWriteRequest } from 'pdf-core/ops/layer-write';
 import type { SessionTab } from 'pdf-model';
-import { type MessageKey, ToolError } from 'pdf-shared';
+import type { MessageKey } from 'pdf-shared';
 import { applyLayerWrite } from '../../lazy-ops';
 import { applyProducedBytes, materializeBase } from '../../operations';
-import { isBusy, refuseBusy, setBusy, showNotice } from '../core/core-store';
+import { showNotice } from '../core/core-store';
 import { documentContext } from '../core/document';
+import { runGatedOperation } from '../core/gated-operation';
 import { handleFor, swapHandle } from '../core/handles';
 import type { WriterHost } from './host';
 
 /**
  * A writer ran on the working document: journal it, swap the handle, and say what the
- * report said.
+ * report said. `signal` is the running operation's: a Cancel pressed before the bytes land
+ * keeps them out of the session.
  */
 export async function applyWriterOutcome(
   host: WriterHost,
@@ -31,6 +33,7 @@ export async function applyWriterOutcome(
   handle: PdfDocumentHandle,
   outcome: OperationOutcome,
   labelKey: MessageKey,
+  signal: AbortSignal,
 ): Promise<void> {
   const { t } = host;
   if (outcome.report.incremental) {
@@ -45,6 +48,7 @@ export async function applyWriterOutcome(
     { key: labelKey },
     outcome.report.engine,
     outcome.report.steps,
+    { signal },
   );
   swapHandle(t, tab.id, next);
   const spoken = outcome.report.notes
@@ -68,21 +72,9 @@ export async function writeLayers(host: WriterHost, request: LayerWriteRequest):
   if (tab === null || handle === null) return;
   // Read at call time, like every other control that replaces the handle: a panel
   // rendered one commit earlier holds that commit's closure.
-  if (isBusy()) {
-    refuseBusy(host.t);
-    return;
-  }
-  setBusy(true);
-  try {
-    const bytes = await materializeBase(documentContext(host.session, host.t, tab, handle), {
-      signal: new AbortController().signal,
-    });
-    const outcome = await applyLayerWrite(bytes, request, { signal: new AbortController().signal });
-    await applyWriterOutcome(host, tab, handle, outcome, 'panel.layers');
-  } catch (error) {
-    const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-    showNotice(`${host.t(toolError.messageKey)} ${host.t(toolError.hintKey)}`);
-  } finally {
-    setBusy(false);
-  }
+  await runGatedOperation(host.t, async (signal) => {
+    const bytes = await materializeBase(documentContext(host.session, host.t, tab, handle), { signal });
+    const outcome = await applyLayerWrite(bytes, request, { signal });
+    await applyWriterOutcome(host, tab, handle, outcome, 'panel.layers', signal);
+  });
 }

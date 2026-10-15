@@ -9,11 +9,22 @@
 import type { Locator, Page } from 'playwright/test';
 import { notice } from './app-helpers';
 import { expect, test } from './test';
-import { labelledPdf, readProducedEntry, readProducedPageTexts, readProducedPdf } from './tool-fixture';
-import { exportBytes, openPdf } from './ui-helpers';
 import {
+  labelledPdf,
+  readProducedEntry,
+  readProducedPageTexts,
+  readProducedPdf,
+  toolFixturePdf,
+} from './tool-fixture';
+import { exportBytes, openPdf, rail } from './ui-helpers';
+import { clickAt, framed } from './ui-layers-helpers';
+import {
+  heldSheetDropped,
+  holdPrintRaster,
   type PrintedSheet,
   printedJobs,
+  printRasterHeld,
+  releasePrintRaster,
   revokedUrls,
   spyOnPrint,
   trackRevocations,
@@ -191,15 +202,24 @@ test('Cancel while the pages are being prepared stops the job: nothing is printe
   page,
 }) => {
   await spyOnPrint(page);
-  await openPdf(page, 'many.pdf', labelledPdf('Many', 60));
+  // The job is held at its first rasterised sheet: half-prepared on purpose, not by a race.
+  await holdPrintRaster(page);
+  await openPdf(page, 'one.pdf', labelledPdf('One', 1));
   const panel = await openPrint(page);
   await printButton(page).click();
-  await expect(panel.getByRole('status')).toContainText(/^Preparing pages: \d+\/60$/);
+  await expect(panel.getByRole('status')).toContainText(/^Preparing pages: \d+\/1$/);
+  await expect.poll(() => printRasterHeld(page)).toBe(true);
   // Neither the button nor Escape can start or end a half-prepared job twice.
   await expect(printButton(page)).toBeDisabled();
   await panel.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(dialog(page)).toBeHidden();
-  await page.waitForTimeout(1500);
+  await expect(page.locator('.pdf-print-root')).toHaveCount(0);
+
+  // The held sheet now comes back to a job that is gone. A job cancelled while its image was being
+  // made revokes that image's URL and returns, before it would append the sheet or print: the
+  // revocation is the signal that it has seen the cancellation.
+  await releasePrintRaster(page);
+  await expect.poll(() => heldSheetDropped(page)).toBe(true);
   expect(await printedJobs(page)).toEqual([]);
   await expect(page.locator('.pdf-print-root')).toHaveCount(0);
 });
@@ -325,7 +345,7 @@ test('a page that cannot be drawn stops the job with its number, leaves no sheet
   const panel = await openPrint(page);
   await page.evaluate(() => Reflect.set(window, 'failSecondSheet', true));
   await printButton(page).click();
-  await expect(panel.getByRole('alert')).toHaveText('Could not read the range: 2');
+  await expect(panel.getByRole('alert')).toHaveText('Page 2 could not be prepared for printing.');
   expect(await printedJobs(page)).toEqual([]);
   await expect(page.locator('.pdf-print-root')).toHaveCount(0);
   await expect(printButton(page)).toBeEnabled();
@@ -334,4 +354,41 @@ test('a page that cannot be drawn stops the job with its number, leaves no sheet
   await printButton(page).click();
   const sheets = await onlyJob(page);
   expect(sheets.map(shapeOf)).toEqual(['portrait', 'landscape', 'square']);
+});
+
+test('Generate Printable PDF carries a mark that has not been saved, and leaves the source as it was', async ({
+  page,
+}) => {
+  await openPdf(page, 'marks.pdf', toolFixturePdf());
+  await framed(page);
+
+  await rail(page, 'Add Text').click();
+  await page.getByLabel('Color', { exact: true }).first().fill('#ff0000');
+  await page.getByLabel('Size', { exact: true }).fill('24');
+  await clickAt(page, 100, 300);
+  await page.keyboard.type('Styled words');
+  await page.keyboard.press('Control+Enter');
+
+  const panel = await openPrint(page);
+  await panel.getByRole('button', { name: 'Generate Printable PDF' }).click();
+  await expect(notice(page, 'Print file ready: print.pdf')).toBeVisible({ timeout: 60_000 });
+  // The sheet is page content now (a form XObject carries no annotations), so pdf.js reads the
+  // mark's words as the page's own text; a file that only carries the mark as an annotation has none.
+  const [printedText = ''] = await readProducedPageTexts(await exportBytes(page, 'printed.pdf'));
+  expect(printedText).toContain('Styled words');
+
+  // The source is untouched: it still holds the mark as an unsaved one, written once on export.
+  // The document name in the header opens the list of open tabs.
+  await page
+    .getByRole('button', { name: /^print\.pdf/ })
+    .first()
+    .click();
+  await page
+    .getByRole('button', { name: /^marks\.pdf/ })
+    .first()
+    .click();
+  const saved = await exportBytes(page, 'after.pdf');
+  expect((await readProducedPageTexts(saved))[0]).not.toContain('Styled words');
+  const source = await readProducedPdf(saved);
+  expect(source.annotations.filter((annotation) => annotation.contents === 'Styled words')).toHaveLength(1);
 });

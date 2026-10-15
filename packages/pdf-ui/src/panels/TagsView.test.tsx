@@ -1272,6 +1272,23 @@ describe('TagsView: applying', () => {
     expect(await screen.findByText(t(failure.messageKey))).toBeTruthy();
   });
 
+  it('stops the write on the engine when the view closes while it is running', async () => {
+    engine.editStructure.mockReturnValueOnce(new Promise(() => {}));
+    const view = await mountTagged(MAIN);
+    await view.user.click(row('p1'));
+    await view.user.selectOptions(typeSelect(), 'H2');
+    await view.user.click(button('Apply to document'));
+    await waitFor(() => expect(engine.editStructure).toHaveBeenCalledOnce());
+    const [, , { signal }] = engine.editStructure.mock.calls[0] as [
+      unknown,
+      unknown,
+      { signal: AbortSignal },
+    ];
+    expect(signal.aborted).toBe(false);
+    view.unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
   it('publishes nothing for a view that closed before the write answered', async () => {
     const written = Promise.withResolvers<typeof outcome>();
     const failed = Promise.withResolvers<typeof outcome>();
@@ -1308,7 +1325,8 @@ describe('TagsView: opening an element on request', () => {
     const model = { ...modelOf(deep()), nodeCount: 400 };
     readingOrderStore.focusElement('target', 1);
     const { onGoToPage } = await mountTagged(model);
-    expect(selectedKeys()).toEqual(['target']);
+    // The request is taken by an effect that may not have run when the tree first shows.
+    await waitFor(() => expect(selectedKeys()).toEqual(['target']));
     expect(rowKeys()).toEqual(['doc', 'sect', 'div', 'target']);
     expect((screen.getByRole('combobox', { name: 'Show' }) as HTMLSelectElement).value).toBe('all');
     expect(onGoToPage).toHaveBeenCalledExactlyOnceWith(1);
@@ -1318,13 +1336,15 @@ describe('TagsView: opening an element on request', () => {
   it('does not move the viewer for an element with no page, and selects a key the tree does not have without opening anything', async () => {
     readingOrderStore.focusElement('target', null);
     const first = await mountTagged(modelOf(deep()));
-    expect(selectedKeys()).toEqual(['target']);
+    // The request is taken by an effect that may not have run when the tree first shows: the
+    // selection left by this view is what the next one must not be mistaken for.
+    await waitFor(() => expect(selectedKeys()).toEqual(['target']));
     expect(first.onGoToPage).not.toHaveBeenCalled();
     first.unmount();
 
     readingOrderStore.focusElement('absent', 0);
     const second = await mountTagged({ ...modelOf(deep()), nodeCount: 400 });
-    expect(selectedKeys()).toEqual(['absent']);
+    await waitFor(() => expect(selectedKeys()).toEqual(['absent']));
     // Nothing was found to open, so the folded branch stays folded.
     expect(rowKeys()).toEqual(['doc', 'sect', 'div']);
     expect(second.onGoToPage).toHaveBeenCalledExactlyOnceWith(0);
@@ -1383,6 +1403,14 @@ async function mountUntagged(
   };
   const view = render(<TagsView {...props} />);
   await screen.findByText('This file has no tags.');
+  // The boxes are published by an effect of the editor, which runs after the commit that put the
+  // text on screen: a test that read the store at once raced it (measured: about one mount in a
+  // hundred under load). The published plan is the signal that the editor is at rest.
+  await waitFor(() =>
+    expect(readingOrderStore.snapshot().pages.map((entry) => entry.pageIndex)).toEqual(
+      pages.map((entry) => entry.pageIndex),
+    ),
+  );
   return { ...view, props, onWritten, onNotice, user: userEvent.setup() };
 }
 
@@ -1703,6 +1731,17 @@ describe('TagsView: tagging an untagged file', () => {
     await user.click(screen.getByRole('button', { name: 'Tag document' }));
     const failure = new ToolError('internal', { engine: 'ui' });
     expect(await screen.findByText(t(failure.messageKey))).toBeTruthy();
+  });
+
+  it('stops the tagging on the engine when the view closes while it is running', async () => {
+    engine.tagDocument.mockReturnValueOnce(new Promise(() => {}));
+    const view = await mountUntagged();
+    await view.user.click(screen.getByRole('button', { name: 'Tag document' }));
+    await waitFor(() => expect(engine.tagDocument).toHaveBeenCalledOnce());
+    const [, { signal }] = engine.tagDocument.mock.calls[0] as [unknown, { signal: AbortSignal }];
+    expect(signal.aborted).toBe(false);
+    view.unmount();
+    expect(signal.aborted).toBe(true);
   });
 
   it('publishes nothing for a view that closed before the answer', async () => {

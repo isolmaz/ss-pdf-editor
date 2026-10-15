@@ -12,7 +12,6 @@ export const pagesPart = {
   'pages.rotate.done': '{count} page(s) rotated.',
   'pages.delete': 'Delete pages',
   'pages.delete.done': '{count} page(s) deleted.',
-  'pages.delete.lastPage': 'Cannot delete all pages of a document.',
   'pages.duplicate': 'Duplicate pages',
   'pages.duplicate.done': '{count} page(s) duplicated.',
   'pages.extract.title': 'Extract Pages',
@@ -36,4 +35,6 @@ export const pagesPart = {
   'split.partNames': 'Filename prefix',
   'split.partNamesHint': 'Defaults to document name; number and extension are added automatically.',
   'split.done': '{count} part(s) generated.',
+  'split.note.oversized':
+    '{count} page(s) are larger than the size limit on their own; a page cannot be cut, so each stays in its own file above the limit (page(s): {pages}).',
 } as const;

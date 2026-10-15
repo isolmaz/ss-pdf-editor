@@ -9,6 +9,7 @@
 
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
+import { loadMupdf } from '../engines/mupdf';
 import { docxToHtml, xlsxToHtml } from './convert-ooxml';
 import { parseCsv } from './convert-text';
 import { cellNumber, exportOffice, wordFontName } from './export-office';
@@ -309,6 +310,157 @@ describe('exportOffice → DOCX paragraphs', () => {
         `${'I'.repeat(30)} ${'i'.repeat(30)}`,
       ],
     ]);
+  });
+
+  it('writes the indents of a justified paragraph before its alignment, in the schema order of w:pPr', async () => {
+    const bytes = await officeDocument([
+      {
+        content: [
+          // The anchor sets the text column: 50 → 350.
+          courier(50, 470, 'W'.repeat(50)),
+          // Three lines, the first 12 pt in: the first two end at the right edge (justified), the
+          // lines after the first start 30 pt in (a left indent of 600 twips, a first line of 240).
+          courier(92, 370, 'J'.repeat(43)),
+          courier(80, 358, 'K'.repeat(45)),
+          courier(80, 346, 'tail'),
+        ].join('\n'),
+      },
+    ]);
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const [, justified] = await paragraphProps(file.bytes);
+    expect(justified?.[1]).toBe(`${'J'.repeat(43)} ${'K'.repeat(45)} tail`);
+    // Spacing, then the indents, then the alignment: CT_PPrBase puts `ind` before `jc`.
+    expect((justified?.[0] ?? '').replace(/<w:spacing [^>]*\/>/, '')).toBe(
+      '<w:ind w:left="600" w:firstLine="240"/><w:jc w:val="both"/>',
+    );
+  });
+
+  /**
+   * A page of Courier (6 pt a letter at 10 pt) whose codes `A`–`H` are the Hebrew letters א–ח
+   * through `/ToUnicode`, as `/F1`; a word is drawn with its glyphs as they stand on the page, so
+   * the first letter, the rightmost, is the last code: `BA` is אב.
+   */
+  async function hebrewPage(content: string): Promise<Uint8Array> {
+    const mupdf = await loadMupdf();
+    const doc = new mupdf.PDFDocument();
+    const letters = [...'ABCDEFGH']
+      .map((code, index) => {
+        const unicode = (0x05d0 + index).toString(16).padStart(4, '0');
+        return `<${code.charCodeAt(0).toString(16)}> <${unicode}>`;
+      })
+      .join(' ');
+    const map = [
+      '/CIDInit /ProcSet findresource begin 12 dict begin begincmap',
+      '/CMapName /Adobe-Identity-UCS def /CMapType 2 def',
+      '1 begincodespacerange <00> <FF> endcodespacerange',
+      `8 beginbfchar ${letters} endbfchar`,
+      'endcmap end end',
+    ].join('\n');
+    const font = doc.addObject({
+      Type: 'Font',
+      Subtype: 'Type1',
+      BaseFont: 'Courier',
+      Encoding: 'WinAnsiEncoding',
+      ToUnicode: doc.addStream(map, {}),
+    });
+    doc.insertPage(0, doc.addPage([0, 0, 400, 500], 0, { Font: { F1: font } }, content));
+    const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+    doc.destroy();
+    return bytes;
+  }
+  const hebrew = (x: number, glyphs: string, y = 470): string =>
+    `BT /F1 10 Tf ${x} ${y} Td (${glyphs}) Tj ET`;
+
+  it('writes a right-to-left line in reading order as a bidi paragraph, its Hebrew runs marked right-to-left', async () => {
+    // On the page, left to right: זח xyz גד. A Hebrew reader meets גד first, then xyz, then זח.
+    const bytes = await hebrewPage([hebrew(150, 'HG'), hebrew(170, 'xyz'), hebrew(196, 'DC')].join('\n'));
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const blocks = bodyBlocks(await documentXml(file.bytes)).filter((block) => block.startsWith('<w:p>'));
+    expect(blocks).toHaveLength(1);
+    const { props, text, runs } = paragraphOf(blocks[0] ?? '');
+    expect(text).toBe('\u05D2\u05D3 xyz \u05D6\u05D7');
+    // `bidi` comes first, before the spacing, as the schema orders them; the indent is measured from
+    // the right edge, the start of the line: the paragraph ends 58.7 pt (1173 twips) short of the margin.
+    expect(props).toMatch(/^<w:bidi\/><w:spacing [^>]*\/><w:ind w:left="\d+"\/>$/);
+    expect(Math.abs(Number(/<w:ind w:left="(\d+)"/.exec(props)?.[1]) - 1173)).toBeLessThanOrEqual(10);
+    expect(runs.map((entry) => entry.includes('<w:rtl/>'))).toEqual([true, false, true]);
+  });
+
+  it('leaves a left-to-right sentence with a Hebrew word in it as it is, marking only the Hebrew run', async () => {
+    // Three paragraphs, 40 pt apart: Latin then a Hebrew word with a gap (`xyz זח`); the same with a space the
+    // PDF draws; two Hebrew words after a Latin one, which a left-to-right line shows right to left.
+    const bytes = await hebrewPage(
+      [
+        hebrew(100, 'xyz'),
+        hebrew(130, 'HG'),
+        hebrew(100, 'xyz ', 430),
+        hebrew(124, 'HG', 430),
+        hebrew(100, 'xyzuvw', 390),
+        hebrew(150, 'DC', 390),
+        hebrew(170, 'BA', 390),
+      ].join('\n'),
+    );
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const blocks = bodyBlocks(await documentXml(file.bytes)).filter((block) => block.startsWith('<w:p>'));
+    const found = blocks.map((block) => paragraphOf(block));
+    expect(found.map((entry) => entry.text)).toEqual([
+      'xyz \u05D6\u05D7',
+      'xyz \u05D6\u05D7',
+      'xyzuvw \u05D0\u05D1 \u05D2\u05D3',
+    ]);
+    // A paragraph read left to right has no `bidi`; only its Hebrew runs are right-to-left.
+    for (const entry of found) {
+      expect(entry.props).not.toContain('<w:bidi/>');
+      expect(entry.runs.map((run) => run.includes('<w:rtl/>'))).toEqual([false, true]);
+    }
+  });
+
+  it('puts a space between words of one direction that the PDF drew apart inside a right-to-left line', async () => {
+    // On the page: זח a b גד, the two Latin letters 14 pt apart with no space drawn between them.
+    const bytes = await hebrewPage(
+      [hebrew(150, 'HG'), hebrew(170, 'a'), hebrew(190, 'b'), hebrew(220, 'DC')].join('\n'),
+    );
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    expect(await paragraphs(file.bytes)).toEqual(['\u05D2\u05D3 a b \u05D6\u05D7']);
+  });
+
+  it('reads right-to-left paragraphs of several lines from their right edge: lines that fill the width join, a short first line ends the paragraph', async () => {
+    // A row is one string as it stands on the page, left to right, its right end at 342: the five
+    // words אב גד הו זח אב read from the right are `BA HG FE DC BA`; the short ones are one word.
+    const five = 'BA HG FE DC BA';
+    const bytes = await hebrewPage(
+      [
+        // Two lines of five words, one under the other: one paragraph.
+        hebrew(258, five, 470),
+        hebrew(258, five, 458),
+        // A short line and a line of five words under it: two paragraphs.
+        hebrew(330, 'BA', 350),
+        hebrew(258, five, 338),
+      ].join('\n'),
+    );
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    const found = bodyBlocks(await documentXml(file.bytes))
+      .filter((block) => block.startsWith('<w:p>'))
+      .map((block) => paragraphOf(block));
+    expect(found.map((entry) => entry.text)).toEqual([
+      '\u05D0\u05D1 \u05D2\u05D3 \u05D4\u05D5 \u05D6\u05D7 \u05D0\u05D1 \u05D0\u05D1 \u05D2\u05D3 \u05D4\u05D5 \u05D6\u05D7 \u05D0\u05D1',
+      '\u05D0\u05D1',
+      '\u05D0\u05D1 \u05D2\u05D3 \u05D4\u05D5 \u05D6\u05D7 \u05D0\u05D1',
+    ]);
+    for (const entry of found) expect(entry.props).toContain('<w:bidi/>');
+  });
+
+  it('reads a Latin line that stands in one block with a Hebrew line as it is, and the Hebrew line in its order', async () => {
+    const bytes = await hebrewPage([hebrew(100, 'plain', 250), hebrew(100, 'HG', 238)].join('\n'));
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    expect((await paragraphs(file.bytes)).join(' ')).toBe('plain \u05D6\u05D7');
+  });
+
+  it('joins right-to-left words that the PDF showed one at a time from the right into one paragraph', async () => {
+    // אב גד הו, each word its own piece, the first (rightmost) shown first.
+    const bytes = await hebrewPage([hebrew(190, 'BA'), hebrew(172, 'DC'), hebrew(154, 'FE')].join('\n'));
+    const { file } = await exportOffice(bytes, docxOptions, run);
+    expect(await paragraphs(file.bytes)).toEqual(['\u05D0\u05D1 \u05D2\u05D3 \u05D4\u05D5']);
   });
 
   it('joins a word broken by a hyphen, whatever style the hyphen is set in', async () => {
@@ -1957,7 +2109,8 @@ describe('exportOffice → XLSX', () => {
     );
     expect(file.name).toBe('a.xlsx');
     expect(file.mime).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    expect(steps).toEqual(['office.read', 'office.tables', 'office.write']);
+    // The workbook is read back before it is offered (the report says it was).
+    expect(steps).toEqual(['office.read', 'office.tables', 'office.write', 'verify']);
     const sheets = await sheetsOfXlsx(file.bytes);
     expect(sheets.map(([name]) => name)).toEqual(['Table 1', 'Table 2']);
     const [first, second] = sheets.map(([, xml]) => xml);
@@ -1993,6 +2146,36 @@ describe('exportOffice → XLSX', () => {
     const zip = await JSZip.loadAsync(file.bytes);
     expect(await zip.file('docProps/core.xml')?.async('string')).toContain('<dc:title>Raporlar</dc:title>');
   });
+
+  it.each(['xlsx', 'csv'] as const)(
+    'says in the %s report how many pictures were left out, since a sheet holds cells only',
+    async (format) => {
+      const table = [
+        gridOperators([50, 110, 170], [450, 430, 410]),
+        courier(58, 436, 'a'),
+        courier(118, 436, 'x'),
+        courier(58, 416, 'y'),
+        courier(118, 416, 'z'),
+      ];
+      const images = { Im1: { width: 4, height: 4, rgb: [255, 0, 0] } } as const;
+      const withPictures = await officeDocument([
+        {
+          images,
+          content: [...table, picture('Im1', 250, 300, 40, 40), picture('Im1', 250, 200, 40, 40)].join('\n'),
+        },
+      ]);
+      const { notes } = await exportOffice(withPictures, { pages: [0], baseName: 'a.pdf', format }, run);
+      const lost = notes.filter((entry) => entry.key === 'op.note.exportOffice.sheetPicturesLost');
+      expect(lost.map((entry) => [entry.kind, entry.params])).toEqual([['lost', { count: 2 }]]);
+      // A page without a picture has no such note.
+      const plain = await exportOffice(
+        await officeDocument([{ content: table.join('\n') }]),
+        { pages: [0], baseName: 'a.pdf', format },
+        run,
+      );
+      expect(plain.notes.map((entry) => entry.key)).not.toContain('op.note.exportOffice.sheetPicturesLost');
+    },
+  );
 
   it('names sheets as Excel allows: 31 characters, none of []:*?/\\, each once, whatever the case', async () => {
     /** A 2 × 2 table of one cell each, its top left corner at `(x, top)`. */

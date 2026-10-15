@@ -23,6 +23,7 @@ export { ExportDialog, type ExportDialogProps, type ExportOptions } from './Expo
 export { OperationForm, type OperationFormProps } from './OperationForm';
 export { PasswordDialog, type PasswordDialogProps } from './PasswordDialog';
 export { OperationReportPanel, type OperationReportPanelProps } from './ReportPanel';
+export { SaveConflictDialog } from './SaveConflictDialog';
 export { SettingsDialog, type SettingsDialogProps } from './SettingsDialog';
 export {
   ShortcutsDialog,

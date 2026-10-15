@@ -4,7 +4,7 @@
  */
 
 import { readAnnotations } from 'pdf-core/ops/annotations';
-import type { JsonValue, SessionStore } from 'pdf-model';
+import { type JsonValue, type SessionStore, workingBytesKey } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import type { ViewerApi } from 'pdf-ui/viewer';
 import { engineValuesNotices, failureNotices, noticeLine } from '../../notices';
@@ -46,7 +46,7 @@ export function viewerReady(host: ViewerHost, api: ViewerApi | null): void {
   // comment panel can show the document's own notes beside the new marks.
   const controller = new AbortController();
   const tab = session.active;
-  const bytesKey = tab === null ? null : (tab.working.produced?.id ?? 'source');
+  const bytesKey = tab === null ? null : workingBytesKey(tab);
   void readAnnotations(api.document, { signal: controller.signal })
     .then((found) => {
       // Keyed to the bytes the read describes: a read that lands after a byte
@@ -120,7 +120,7 @@ export async function checkpointEngineValues(session: SessionStore): Promise<boo
     latest === undefined ||
     session.active?.id !== tab.id ||
     handleFor(tab.id) !== api.document ||
-    latest.working.produced?.id !== tab.working.produced?.id
+    workingBytesKey(latest) !== workingBytesKey(tab)
   )
     return false;
   const overlays = pendingOverlays(latest);

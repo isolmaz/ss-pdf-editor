@@ -18,6 +18,7 @@ import { FieldCandidateHost, FormsPanel, XfaBanner, XfaFormDialogHost } from './
 import {
   detectFinished,
   detectStarted,
+  formInventoryKey,
   formInventoryRead,
   formsStore,
   initialFormsState,
@@ -103,7 +104,7 @@ function field(name: string, over: Partial<FormFieldInfo> = {}): FormFieldInfo {
 
 function readInventory(extra: { fields?: readonly FormFieldInfo[]; xfa?: { kind: string } | null } = {}) {
   act(() =>
-    formInventoryRead({ tabId: tab.id, version: tab.working.id, ...extra } as Parameters<
+    formInventoryRead({ tabId: tab.id, key: formInventoryKey(tab), ...extra } as Parameters<
       typeof formInventoryRead
     >[0]),
   );
@@ -391,7 +392,7 @@ describe('FormsPanel', () => {
 
   it('shows why the inventory could not be read and reads it again on retry', async () => {
     const error = new ToolError('internal', { engine: 'model' });
-    act(() => formInventoryRead({ tabId: tab.id, version: tab.working.id, error }));
+    act(() => formInventoryRead({ tabId: tab.id, key: formInventoryKey(tab), error }));
     const user = userEvent.setup();
     panel();
     const alert = await screen.findByRole('alert');

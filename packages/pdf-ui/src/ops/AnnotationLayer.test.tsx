@@ -17,7 +17,6 @@ import {
   type AnnotationLayerProps,
   type AnnotationTool,
   markVisual,
-  selectionBoxes,
 } from './AnnotationLayer';
 import { clientOf, type FakePage, fakeViewer } from './layer-viewer.fixtures';
 import { markPageFrameOf } from './mark-interaction';
@@ -485,59 +484,6 @@ describe('what the layer draws for held marks', () => {
   });
 });
 
-describe('what a selection measures', () => {
-  it('has nothing to measure without a selection, a collapsed one or one with no ranges', () => {
-    const viewer = fakeViewer();
-    vi.spyOn(window, 'getSelection').mockReturnValueOnce(null);
-    expect(selectionBoxes(viewer)).toEqual([]);
-    vi.spyOn(window, 'getSelection').mockReturnValueOnce({ isCollapsed: true, rangeCount: 1 } as Selection);
-    expect(selectionBoxes(viewer)).toEqual([]);
-    vi.spyOn(window, 'getSelection').mockReturnValueOnce({ isCollapsed: false, rangeCount: 0 } as Selection);
-    expect(selectionBoxes(viewer)).toEqual([]);
-  });
-
-  it('skips empty rects and rects off the pages or across a page break', () => {
-    selectText([
-      { left: 120, top: 100, right: 120, bottom: 120 },
-      { left: 120, top: 100, right: 160, bottom: 100 },
-      { left: 5, top: 5, right: 20, bottom: 20 },
-      { left: 120, top: 440, right: 160, bottom: 520 },
-    ]);
-    expect(selectionBoxes(fakeViewer())).toEqual([]);
-  });
-
-  it('merges the spans of one line, keeps lines apart and splits per page', () => {
-    vi.spyOn(window, 'getSelection').mockReturnValue({
-      isCollapsed: false,
-      rangeCount: 2,
-      getRangeAt: (index: number) => ({
-        getClientRects: () =>
-          (index === 0
-            ? [rectOf(300, 300, 400, 320), rectOf(100, 100, 200, 120), rectOf(200, 102, 300, 122)]
-            : [rectOf(100, 100, 200, 120, 1), rectOf(100, 130, 150, 150)]
-          ).map((rect) => ({ ...rect, width: rect.right - rect.left, height: rect.bottom - rect.top })),
-      }),
-      removeAllRanges: vi.fn(),
-    } as unknown as Selection);
-    expect(selectionBoxes(fakeViewer())).toEqual([
-      {
-        pageIndex: 0,
-        boxes: [
-          [100, 100, 300, 122],
-          [100, 130, 150, 150],
-          [300, 300, 400, 320],
-        ],
-      },
-      { pageIndex: 1, boxes: [[100, 100, 200, 120]] },
-    ]);
-  });
-
-  it('orders boxes that start on the same height from left to right', () => {
-    selectText([rectOf(300, 100, 400, 120), rectOf(100, 100, 200, 120)]);
-    expect(selectionBoxes(fakeViewer())).toEqual([{ pageIndex: 0, boxes: [[100, 100, 400, 120]] }]);
-  });
-});
-
 describe('text marks', () => {
   it('marks the words already selected the moment the tool is armed', () => {
     const removeAllRanges = selectText([rectOf(100, 100, 300, 120), rectOf(100, 100, 200, 120, 1)]);
@@ -604,6 +550,105 @@ describe('text marks', () => {
     selectText([rectOf(100, 100, 300, 120)]);
     await release(at(100, 100));
     expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it.each<[AnnotationTool]>([['underline'], ['highlight']])(
+    'does not commit a selection made earlier on a right click on the page (%s)',
+    async (tool) => {
+      const { onCreate } = show({ tool });
+      selectText([rectOf(100, 100, 300, 120)]);
+      await user().pointer([
+        { keys: '[MouseRight>]', target: page, coords: at(100, 100) },
+        { keys: '[/MouseRight]', target: page, coords: at(300, 120) },
+      ]);
+      expect(onCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not commit the release of a press that began off the page, and marks the next real selection', async () => {
+    const { onCreate } = show({ tool: 'strikeout' });
+    const chrome = document.createElement('div');
+    document.body.append(chrome);
+    under = chrome;
+    await press(at(100, 100), chrome);
+    selectText([rectOf(100, 100, 300, 120)]);
+    under = page;
+    await release(at(300, 120), page);
+    expect(onCreate).not.toHaveBeenCalled();
+
+    await press(at(100, 100));
+    await release(at(300, 120));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    expect(onCreate.mock.calls[0]?.[0]).toMatchObject({ kind: 'strikeout', quads: [[100, 100, 300, 120]] });
+  });
+
+  it('marks a selection that ends off the page when its own press began on one', async () => {
+    const { onCreate } = show({ tool: 'underline' });
+    await press(at(100, 100));
+    selectText([rectOf(100, 100, 300, 120)]);
+    const chrome = document.createElement('div');
+    document.body.append(chrome);
+    under = chrome;
+    await release(at(900, 900), chrome);
+    expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not commit when the browser cancels the press, nor for the release that would follow', async () => {
+    const { onCreate } = show({ tool: 'underline' });
+    await press(at(100, 100));
+    selectText([rectOf(100, 100, 300, 120)]);
+    fireEvent.pointerCancel(page, { pointerId: 1 });
+    await release(at(300, 120));
+    expect(onCreate).not.toHaveBeenCalled();
+    // A stranger's cancel does not drop a press that is still going.
+    await press(at(100, 100));
+    fireEvent.pointerCancel(page, { pointerId: 9 });
+    await release(at(300, 120));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits only on the press's own pointer, and only as the primary button", async () => {
+    const { onCreate } = show({ tool: 'underline' });
+    await press(at(100, 100));
+    selectText([rectOf(100, 100, 300, 120)]);
+    fireEvent.pointerUp(page, { ...at(300, 120), button: 0, pointerId: 9 });
+    expect(onCreate).not.toHaveBeenCalled();
+    fireEvent.pointerUp(page, { ...at(300, 120), button: 2, pointerId: 1 });
+    expect(onCreate).not.toHaveBeenCalled();
+    // The press ended with that release: the next release has no press of its own.
+    await release(at(300, 120));
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it('forgets a press when the window loses focus', async () => {
+    const { onCreate } = show({ tool: 'underline' });
+    await press(at(100, 100));
+    fireEvent.blur(window);
+    selectText([rectOf(100, 100, 300, 120)]);
+    await release(at(300, 120));
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('a finger that drags', () => {
+  it.each<[AnnotationTool]>([['ink'], ['shapes'], ['link'], ['highlight']])(
+    'tells the viewer to leave the touch drag to the %s tool',
+    (tool) => {
+      const { content } = show({ tool });
+      expect(content.querySelectorAll('[data-touch-draw]')).toHaveLength(1);
+    },
+  );
+
+  it.each<[AnnotationTool | null]>([
+    ['underline'],
+    ['strikeout'],
+    ['squiggly'],
+    ['note'],
+    ['freetext'],
+    [null],
+  ])('keeps touch scrolling while the tool is %s: it is a tap or the browser’s own selection', (tool) => {
+    const { content } = show({ tool });
+    expect(content.querySelector('[data-touch-draw]')).toBeNull();
   });
 });
 

@@ -40,7 +40,9 @@ export function formatLabel(format: ConvertFormat): string {
 export function convertFormatOf(name: string): ConvertFormat | null {
   const dot = name.lastIndexOf('.');
   if (dot < 0) return null;
-  return EXTENSIONS[name.slice(dot + 1).toLowerCase()] ?? null;
+  const extension = name.slice(dot + 1).toLowerCase();
+  // Own keys only: `x.constructor` and `x.__proto__` would otherwise read Object.prototype's.
+  return Object.hasOwn(EXTENSIONS, extension) ? (EXTENSIONS[extension] as ConvertFormat) : null;
 }
 
 /** The same list as the File System Access picker wants it: a media type → its extensions. */

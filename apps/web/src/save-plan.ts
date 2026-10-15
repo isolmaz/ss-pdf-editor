@@ -3,8 +3,7 @@
  * Byte operations already ran when journaled: never route their history through
  * a second writer chain. The redo tail is not part of the output.
  */
-import type { AnnotationMark } from 'pdf-core';
-import { type ChangeSummary, NO_CHANGES, type SessionTab } from 'pdf-model';
+import type { SessionTab } from 'pdf-model';
 
 export interface SaveStepDescription {
   readonly id: string;
@@ -14,15 +13,12 @@ export interface SaveStepDescription {
 
 export interface SaveExecutionInput {
   readonly tab: SessionTab;
-  readonly engineDirty: boolean;
-  readonly annotations: readonly AnnotationMark[];
   readonly baseBytes: Uint8Array;
   readonly encryptedOutput: boolean;
   readonly executedSteps: readonly SaveStepDescription[];
 }
 
 export interface SaveExecutionPlan {
-  readonly changeSet: ChangeSummary;
   readonly plan: { readonly incremental: boolean; readonly encrypted: boolean };
   /** Historical operations already present in the bytes, excluding undone work. */
   readonly appliedSteps: readonly SaveStepDescription[];
@@ -61,26 +57,6 @@ export function appliedVersionBytes(
     if (typeof payload.after === 'string') ids.add(payload.after);
   }
   return snapshots.filter((snapshot) => ids.has(snapshot.id)).map((snapshot) => snapshot.bytes);
-}
-
-export function changeSetFor(input: SaveExecutionInput): ChangeSummary {
-  const steps = appliedStepsFor(input.tab)
-    .map((step) => step.id)
-    .join(' ');
-  return {
-    ...NO_CHANGES,
-    annotations: input.engineDirty || input.annotations.length > 0,
-    forms: input.engineDirty,
-    pageOrder: /extractPages|compose|rotate/i.test(steps),
-    overlays: /stamp|bates|watermark|impose|images|ocr/i.test(steps),
-    boxes: /page-boxes|boxes/i.test(steps),
-    layers: /layers|ocg/i.test(steps),
-    widgets: /form|widget/i.test(steps),
-    metadata: /metadata/i.test(steps),
-    redaction: /applyRedactions/i.test(steps),
-    encryption: /encrypt=|decrypt/i.test(steps),
-    signature: /signature|pades|ByteRange|CMS/i.test(steps),
-  };
 }
 
 /**
@@ -162,7 +138,6 @@ export function planSaveExecution(input: SaveExecutionInput): SaveExecutionPlan 
   // guess from engine names or a rebuilt identity page list.
   const incremental = extendsBytes(input.baseBytes, input.tab.source.master);
   return {
-    changeSet: changeSetFor(input),
     plan: { incremental, encrypted: input.encryptedOutput },
     appliedSteps: appliedStepsFor(input.tab),
     steps: input.executedSteps,

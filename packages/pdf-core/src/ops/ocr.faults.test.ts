@@ -29,6 +29,12 @@ interface Script {
   destroyFails: boolean;
   cancelled: number;
   renders: Array<{ width: number; height: number }>;
+  /** What the run did with pdf.js pages and the recognizer, in order: `page:N`, `recognize`, `cleanup:N`. */
+  events: string[];
+  /** The worker claims the run made, and how often each was released. */
+  claims: Array<{ requests: unknown; released: number }>;
+  /** Calls of the drop-every-pool reset, which an operation must never make. */
+  poolResets: number;
 }
 const script: Script = {
   results: [],
@@ -39,6 +45,9 @@ const script: Script = {
   destroyFails: false,
   cancelled: 0,
   renders: [],
+  events: [],
+  claims: [],
+  poolResets: 0,
 };
 
 vi.mock('../engines/tesseract', async (importOriginal) => {
@@ -49,7 +58,23 @@ vi.mock('../engines/tesseract', async (importOriginal) => {
       script.probes.push([language, quality]);
       return typeof script.available === 'function' ? script.available(language, quality) : script.available;
     },
+    claimOcrWorkers: (requests: Parameters<typeof actual.claimOcrWorkers>[0]) => {
+      const claim = actual.claimOcrWorkers(requests);
+      const record = { requests, released: 0 };
+      script.claims.push(record);
+      return {
+        release: async () => {
+          record.released += 1;
+          await claim.release();
+        },
+      };
+    },
+    terminateOcrWorkers: async () => {
+      script.poolResets += 1;
+      await actual.terminateOcrWorkers();
+    },
     recognizePage: async (input: RecognizeInput) => {
+      script.events.push('recognize');
       script.inputs.push(input);
       input.onProgress?.(0.5);
       script.during?.(input);
@@ -73,9 +98,16 @@ vi.mock('../engines/pdfjs-handle', async (importOriginal) => {
             return typeof value === 'function' ? value.bind(target) : value;
           }
           return async (number: number) => {
+            script.events.push(`page:${number}`);
             const page = await target.getPage(number);
             return new Proxy(page, {
               get(pageTarget, pageProperty) {
+                if (pageProperty === 'cleanup') {
+                  return (...args: Parameters<typeof pageTarget.cleanup>) => {
+                    script.events.push(`cleanup:${pageTarget.pageNumber}`);
+                    return pageTarget.cleanup(...args);
+                  };
+                }
                 if (pageProperty === 'render') {
                   return (parameters: { viewport: { width: number; height: number } }) => {
                     script.renders.push({
@@ -191,6 +223,9 @@ beforeEach(() => {
   script.destroyFails = false;
   script.cancelled = 0;
   script.renders = [];
+  script.events = [];
+  script.claims = [];
+  script.poolResets = 0;
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -243,6 +278,16 @@ describe('ocrDocument options', () => {
     });
   });
 
+  it('refuses a page index that is not a whole number before asking whether a pack exists', async () => {
+    for (const pages of [[Number.NaN], [1, Number.NaN], [1.5], [Number.POSITIVE_INFINITY], [-0.5]]) {
+      const failure = await failureOf(ocrDocument(document(), options({ pages }), run));
+      expect(failure.code).toBe('range-invalid');
+      expect(failure.details.engineMessage).toMatch(/is not a whole number$/);
+    }
+    expect(script.probes).toEqual([]);
+    expect(script.inputs).toEqual([]);
+  });
+
   it('refuses a page outside the document, naming it', async () => {
     const failure = await failureOf(ocrDocument(document(), options({ pages: [1, 3] }), run));
     expect(failure.code).toBe('range-invalid');
@@ -291,6 +336,62 @@ describe('ocrDocument run', () => {
     expect(progress.some((entry) => entry.labelKey === 'op.progress.ocr.save' && entry.done === 1)).toBe(
       true,
     );
+  });
+
+  it('cleans each pdf.js page up as soon as it has been read, so memory does not grow with the page count', async () => {
+    script.results = [
+      { words: [word('Bir', 36, 72, 100, 100)], confidence: 90 },
+      { words: [word('İki', 36, 72, 100, 100)], confidence: 90 },
+    ];
+    await ocrDocument(document(), options({ pages: [1, 2] }), run);
+    // Page 2 is released before page 3 is even fetched: at most one page's caches are alive at a time.
+    expect(script.events).toEqual(['page:2', 'recognize', 'cleanup:2', 'page:3', 'recognize', 'cleanup:3']);
+  });
+
+  it('cleans the page up when its render or its recognition fails or is cancelled', async () => {
+    script.render = 'fail';
+    await failureOf(ocrDocument(document(), options({ pages: [1] }), run));
+    expect(script.events).toEqual(['page:2', 'cleanup:2']);
+
+    script.events = [];
+    script.render = 'ok';
+    script.results = [];
+    await expect(ocrDocument(document(), options({ pages: [2] }), run)).rejects.toThrow(
+      'no scripted recognition left',
+    );
+    expect(script.events).toEqual(['page:3', 'recognize', 'cleanup:3']);
+
+    script.events = [];
+    const controller = new AbortController();
+    script.results = [{ words: [word('Geç', 36, 72, 100, 100)], confidence: 90 }];
+    script.during = () => controller.abort();
+    await expect(
+      ocrDocument(document(), options({ pages: [1] }), { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(script.events).toEqual(['page:2', 'recognize', 'cleanup:2']);
+  });
+
+  it('holds the worker pool of its languages for the run and lets go of its own claim, never of every pool', async () => {
+    script.results = [{ words: [word('Çarşı', 36, 72, 120, 100)], confidence: 90 }];
+    await ocrDocument(document(), options({ pages: [1], languages: ['tur', 'eng'] }), run);
+    expect(script.claims).toEqual([
+      { requests: [{ languages: ['tur', 'eng'], quality: 'fast' }], released: 1 },
+    ]);
+
+    // A run that fails lets go as well, and so does one the reader cancelled.
+    script.render = 'fail';
+    await failureOf(ocrDocument(document(), options({ pages: [1] }), run));
+    expect(script.claims.map((claim) => claim.released)).toEqual([1, 1]);
+    script.render = 'ok';
+    const controller = new AbortController();
+    script.results = [{ words: [word('Geç', 36, 72, 100, 100)], confidence: 90 }];
+    script.during = () => controller.abort();
+    await expect(
+      ocrDocument(document(), options({ pages: [1] }), { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(script.claims.map((claim) => claim.released)).toEqual([1, 1, 1]);
+    // Another operation's workers are not this run's to terminate.
+    expect(script.poolResets).toBe(0);
   });
 
   it('skips pages that already carry text, and says so', async () => {

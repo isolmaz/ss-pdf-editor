@@ -131,4 +131,11 @@ export const shellPart = {
   'shell.save.hint': 'Değişiklikleri açtığınız dosyanın üzerine kaydeder.',
   'shell.saveAs.hint': 'Konum seçip kaydeder; sonraki kayıtlar aynı dosyaya yapılır.',
   'shell.export.hint': 'Belgenin bir kopyasını indirir; açık dosya değişmez.',
+
+  /* The recovery screen (`recovery.tsx`) and the viewer's engine failure: what a crashed or
+     half-loaded shell says, and the one thing that gets out of it. */
+  'recovery.title': 'Düzenleyici durdu',
+  'recovery.drafts':
+    'Açık belgeleriniz bu cihazda taslak olarak saklanır ve sayfa yenilenince geri gelir; hassas oturumdaki (örneğin parolayla açılan) bir belge saklanmaz, yeniden açmanız gerekir.',
+  'recovery.reload': 'Yeniden yükle',
 } as const;

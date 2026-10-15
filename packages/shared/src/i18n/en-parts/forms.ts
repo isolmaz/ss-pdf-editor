@@ -30,6 +30,7 @@ export const formsPart = {
   'form.note.flagged': 'Lock / required status updated for {count} field(s).',
   'form.note.flattened': '{count} form field(s) flattened into page content.',
   'form.note.flattenFieldsGone': 'Flattening removes interactive fields: values become static page content.',
+  'form.note.flattenHidden': '{count} hidden widget(s) were not drawn into the page; they were removed.',
   'form.note.calculated': '{count} calculation field(s) updated.',
   'form.dialog.fields.title': 'Fill form fields',
   'form.dialog.fields.intro': 'Field list read from document; enter assignments as "name=value" lines.',
@@ -80,4 +81,9 @@ export const formsPart = {
   'form.reason.required': 'This field is required.',
   'form.reason.maxLength': 'Entered text exceeds field maximum length.',
   'form.reason.notAnOption': 'Selected value is not among allowed options.',
+  'form.reason.unknownField': 'The document has no field with this name.',
+  'form.note.violation': '{name}: {reason}',
+  'form.note.invalid': '{count} value(s) or field(s) break the rules; details are in the report.',
+  'form.note.flattenSkipped':
+    '{count} field(s) could not be flattened (push button or signature field) and stay in the document: {names}',
 } as const;

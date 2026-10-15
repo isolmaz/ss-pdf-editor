@@ -349,6 +349,15 @@ const FOCUS_HOLDERS =
   'input, textarea, select, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]';
 
 /**
+ * Is a key's target a control that takes typed keys itself — a property input, a form
+ * field, an editor? A tool with keys of its own on `window` (Backspace, Enter, Escape)
+ * must leave these: the key is the field's, and taking it makes a working control dead.
+ */
+export function holdsKeyboard(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(FOCUS_HOLDERS) !== null;
+}
+
+/**
  * A press a tool **consumed** is a press the browser never got, and the focus
  * change is one of the things it did not get: a property input stays focused through
  * a canvas gesture, so the next Ctrl+Z is *that input's* undo and never the

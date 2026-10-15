@@ -6,25 +6,72 @@
  * CDN, never at runtime from a third party. The paths below are absolute on
  * purpose: the editor is served from `/editor/` while the engines live at the
  * site root, exactly as the deployed layout has it.
+ *
+ * ## Versioned URLs
+ *
+ * `/engines/*` is served `immutable` for a year (`public/_headers`), so an engine's URL has
+ * to change whenever its bytes do — otherwise a browser (or the service worker's own
+ * `fetch`) keeps handing the new shell the old engine. Every engine therefore lives in a
+ * **version directory**: `/engines/<engine>/<version>/<file>`. `<version>` is `v` and 12 hex
+ * digits of a digest of the engine's pinned files (`engineVersions` in
+ * `tools/fetch-engines.mjs`), recorded in `engine-versions.json`, which `pnpm verify:assets`
+ * holds against the pins. It is a directory and not a `?v=` query because the engines
+ * resolve their neighbours themselves: `mupdf.js` imports `./mupdf-wasm.js`, which fetches
+ * `mupdf-wasm.wasm`, and pdf.js and tesseract.js append file names to the directory URLs
+ * they are given. A query would reach the first file only.
+ *
+ * The build (`tools/assemble-dist.mjs`) puts each engine's files in that directory, and the
+ * dev server (`tools/vite/hosting.mjs`) maps it back to `public/engines/<engine>/`. The
+ * offline manifest lists the same URLs (`servedEnginePath`).
  */
+
+import engineVersions from './engine-versions.json';
 
 export const ENGINE_BASE_URL = '/engines';
 
+/** The engines served from `/engines/<id>/<version>/`. */
+export type EngineId = keyof typeof engineVersions.versions;
+
+/** The URL of `file` — a path inside the engine, or a directory ending in `/` — of a pinned engine. */
+export function engineUrl(engine: EngineId, file: string): string {
+  return `${ENGINE_BASE_URL}/${engine}/${engineVersions.versions[engine]}/${file}`;
+}
+
+const LOGICAL_ENGINE_PATH = /^\/engines\/([^/]+)\/(.+)$/;
+
+/**
+ * The served URL of a path written as `/engines/<engine>/<file>`, which is how
+ * `apps/web/src/offline-packages.json` names engine files. Any other path is returned as it
+ * is. An engine the pins do not serve is a defect in the list and throws.
+ */
+export function servedEnginePath(path: string): string {
+  const match = LOGICAL_ENGINE_PATH.exec(path);
+  if (match === null) return path;
+  const [, engine = '', file = ''] = match;
+  if (!Object.hasOwn(engineVersions.versions, engine)) {
+    throw new Error(`${path}: "${engine}" is not an engine the pins serve`);
+  }
+  return engineUrl(engine as EngineId, file);
+}
+
 export const PDFJS_ASSETS = {
-  worker: `${ENGINE_BASE_URL}/pdfjs/pdf.worker.mjs`,
+  worker: engineUrl('pdfjs', 'pdf.worker.mjs'),
   /** Adobe CMaps — without these, CJK documents render incorrectly. */
-  cmaps: `${ENGINE_BASE_URL}/pdfjs/cmaps/`,
+  cmaps: engineUrl('pdfjs', 'cmaps/'),
   /** Standard-14 font data — without it, glyphs are substituted. */
-  standardFonts: `${ENGINE_BASE_URL}/pdfjs/standard_fonts/`,
+  standardFonts: engineUrl('pdfjs', 'standard_fonts/'),
   /** openjpeg/qcms WASM used for JPEG2000 and ICC colour handling. */
-  wasm: `${ENGINE_BASE_URL}/pdfjs/wasm/`,
+  wasm: engineUrl('pdfjs', 'wasm/'),
   /** The annotation layer's note icons (`annotation-<name>.svg`), for a note without `/AP`. */
-  images: `${ENGINE_BASE_URL}/pdfjs/images/`,
+  images: engineUrl('pdfjs', 'images/'),
 } as const;
 
+/**
+ * The MuPDF loader. Its wasm (`mupdf-wasm.wasm`) and glue (`mupdf-wasm.js`) are never named
+ * here: they resolve next to this file, so the version directory carries over to them.
+ */
 export const MUPDF_ASSETS = {
-  wasm: `${ENGINE_BASE_URL}/mupdf/mupdf-wasm.wasm`,
-  js: `${ENGINE_BASE_URL}/mupdf/mupdf.js`,
+  js: engineUrl('mupdf', 'mupdf.js'),
 } as const;
 
 /**
@@ -33,8 +80,8 @@ export const MUPDF_ASSETS = {
  * bundled; the 15.5 MB `wasm` is fetched beside it.
  */
 export const GHOSTSCRIPT_ASSETS = {
-  js: `${ENGINE_BASE_URL}/ghostscript/gs.js`,
-  wasm: `${ENGINE_BASE_URL}/ghostscript/gs.wasm`,
+  js: engineUrl('ghostscript', 'gs.js'),
+  wasm: engineUrl('ghostscript', 'gs.wasm'),
 } as const;
 
 /**
@@ -53,25 +100,30 @@ export const TESSERACT_ASSETS = {
    * build (measured; the unminified build is clean). Served from our own origin
    * under `script-src 'self'`, byte-identical to the pinned artefact.
    */
-  module: `${ENGINE_BASE_URL}/tesseract/tesseract.esm.min.js`,
-  worker: `${ENGINE_BASE_URL}/tesseract/worker.min.js`,
+  module: engineUrl('tesseract', 'tesseract.esm.min.js'),
+  worker: engineUrl('tesseract', 'worker.min.js'),
   /**
    * SIMD + LSTM core, passed as a **file** and not as a directory: the worker picks
    * the variant itself when handed a directory
    * (`src/worker-script/browser/getCore.js:21`), and the build choice must not
    * happen at runtime — the pinned build is the one the OCR gate was measured on.
+   * The core carries its wasm inline (a base64 data URL in the `.wasm.js` file), so the
+   * pinned `.wasm` beside it is never requested and has no URL here.
    */
-  core: `${ENGINE_BASE_URL}/tesseract/tesseract-core-simd-lstm.wasm.js`,
-  coreWasm: `${ENGINE_BASE_URL}/tesseract/tesseract-core-simd-lstm.wasm`,
+  core: engineUrl('tesseract', 'tesseract-core-simd-lstm.wasm.js'),
   /** `tessdata_fast` — the default; `best` is the quality gate's comparison. */
-  fastLangPath: `${ENGINE_BASE_URL}/tesseract/lang/fast`,
-  bestLangPath: `${ENGINE_BASE_URL}/tesseract/lang/best`,
+  fastLangPath: engineUrl('tesseract', 'lang/fast'),
+  bestLangPath: engineUrl('tesseract', 'lang/best'),
 } as const;
 
 /**
  * Document fonts. The standard 14 cannot spell Turkish (WinAnsi has no `ş ğ ı İ`),
  * so every text a capability draws into a document — stamps, page numbers,
  * watermarks, the OCR layer — is embedded from here.
+ *
+ * These URLs carry no version and `public/_headers` does not mark them immutable: a pinned
+ * font can change under the same path, so the browser revalidates it, and the worker's
+ * cache name (which includes every pinned font's digest) is what keeps its copy current.
  */
 export const NOTO_ASSETS = {
   regular: '/fonts/noto/NotoSans-Regular.ttf',

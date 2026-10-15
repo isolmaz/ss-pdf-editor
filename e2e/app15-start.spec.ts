@@ -34,6 +34,21 @@ test('started offline, the shell fetches its idle chunks when the network comes 
       configurable: true,
       get: () => Reflect.get(window, '__online') === true,
     });
+    // The warm-up that finds the network down holds back by waiting for the `online` event:
+    // that registration is the proof it has run, so the absence of chunk requests below is
+    // measured after its idle callback fired rather than after a guessed delay.
+    const listen = window.addEventListener.bind(window);
+    Object.defineProperty(window, 'addEventListener', {
+      configurable: true,
+      value: (
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions,
+      ) => {
+        if (type === 'online') Reflect.set(window, '__onlineWaits', 1);
+        listen(type, listener, options);
+      },
+    });
   });
   const chunks: string[] = [];
   page.on('request', (request) => {
@@ -41,8 +56,10 @@ test('started offline, the shell fetches its idle chunks when the network comes 
   });
   await page.goto('/editor/');
   await expect(page.getByRole('tab', { name: 'Start', exact: true })).toBeVisible();
-  // Past the idle callback's own timeout: the warm-up has had its chance and held back.
-  await page.waitForTimeout(4_000);
+  // The idle callback's own timeout is 3 s: the warm-up has had its chance and held back.
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, '__onlineWaits')), { timeout: 15_000 })
+    .toBe(1);
   expect(chunks).toEqual([]);
 
   await page.evaluate(() => {

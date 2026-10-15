@@ -11,13 +11,23 @@
  * ## Versioning
  *
  * `CACHE_NAME` is stamped at build time by `tools/assemble-dist.mjs`, which reads the same
- * `apps/web/src/offline-packages.json` this worker serves readiness for. Two consequences,
- * and both are the point:
+ * `apps/web/src/offline-packages.json` this worker serves readiness for. The stamp is the
+ * release version (`tools/release-version.mjs`): the package version, a digest of every pinned
+ * byte and a digest of the editor build itself (`dist/editor/index.html`, every hashed file
+ * of the build, the manifest). A deploy that changes only code therefore changes this file
+ * too, which is what makes the browser install a new worker and the page offer the update.
+ * Three consequences, and all are the point:
  *
  *  - **A new release never reads the previous release's cache.** The name changes, so the
  *    entries are absent and every request goes to the network; the old cache is deleted on
- *    activation. An immutable-cached engine can therefore never be served under a shell
- *    that expects a different build of it.
+ *    activation.
+ *  - **An engine can never be served under a shell that expects another build of it.**
+ *    `/engines/**` is cached by the browser as immutable for a year, so an engine's URL names
+ *    its pinned version (`/engines/<engine>/v<digest>/<file>`, `pdf-core`'s `assets.ts`): the
+ *    `fetch` that fills this cache cannot be answered with an older build's bytes, and the
+ *    readiness check below, a containment test over the manifest's URLs, reports a cached
+ *    entry of another version as missing. The worker also answers `matchesBuild: false` (and
+ *    nothing ready) when the manifest names another release than the one it was stamped with.
  *  - **A previous version stays usable until the new one activates.** `install` fills the
  *    new cache without touching the old one, so an interrupted preparation (a closed tab, a
  *    dropped connection) leaves the working version exactly as it was.
@@ -85,9 +95,9 @@ function pathsOf(manifest, names) {
 }
 
 /**
- * Drops the editor chunks this build no longer ships. The cache name carries the release of
- * the pinned assets, not of the app, so an app deploy keeps the same cache and its hashed
- * chunks would otherwise pile up beside their replacements. What stays is exactly what the
+ * Drops the editor chunks this build no longer ships. The cache name carries the whole release
+ * (a code-only deploy changes it), so a release starts from an empty cache; this removes what a
+ * run-time load of an unlisted chunk left in it. What stays is exactly what the
  * manifest names — the `app` chunks and the interface catalogues. A manifest that lists no
  * `app` chunk (a build that did not write them) prunes nothing rather than everything.
  */
@@ -200,9 +210,27 @@ function withIsolationHeaders(response, isNavigate = false) {
   });
 }
 
+const OFFLINE_MISSING_TEXT = {
+  tr: 'Çevrimdışı: Bu paket henüz hazırlanmadı.',
+  en: 'Offline: this package has not been prepared yet.',
+};
+
+/**
+ * The language of the offline answer: the first of the browser's languages the interface has,
+ * else Turkish, the interface's default. A worker has no `localStorage`, so the language the
+ * user chose in the editor is not known here; the browser's own list is the nearest thing.
+ */
+function offlineLanguage() {
+  for (const tag of self.navigator.languages) {
+    const primary = String(tag).split('-')[0].toLowerCase();
+    if (primary === 'tr' || primary === 'en') return primary;
+  }
+  return 'tr';
+}
+
 /** The one offline answer: an explicit, un-cacheable failure rather than a hang. */
 function offlineMissing() {
-  return new Response('Çevrimdışı: Bu paket henüz hazırlanmadı.', {
+  return new Response(OFFLINE_MISSING_TEXT[offlineLanguage()], {
     status: 503,
     statusText: 'Service Unavailable (Offline Missing)',
     headers: {
@@ -222,6 +250,22 @@ function remember(request, response) {
     .catch(() => undefined);
 }
 
+/**
+ * The search parameter `loadMupdf` adds to import a module again after a failed attempt
+ * (`engines/mupdf.ts`: the browser remembers a failed import under its URL). It names the
+ * same file, so an engine is stored and looked up without it: otherwise the retry would
+ * never match the cached copy and would fail again offline.
+ */
+const RETRY_PARAM = 'retry';
+
+/** What an `/engines/` response is cached under: the request's URL minus the retry parameter. */
+function engineKey(request) {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith('/engines/') || !url.searchParams.has(RETRY_PARAM)) return request;
+  url.searchParams.delete(RETRY_PARAM);
+  return url.href;
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (!isCacheable(request)) return;
@@ -229,6 +273,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   const isNavigate =
     request.mode === 'navigate' || url.pathname === '/editor/' || url.pathname === '/editor/index.html';
+  const key = engineKey(request);
 
   // User performed a force refresh (Ctrl+F5 / Ctrl+Shift+R): bypass cache completely.
   if (request.cache === 'reload') {
@@ -237,11 +282,11 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           // The network response is returned whether or not the cache commit succeeds: a
           // failed write must not turn a successful load into an error.
-          if (response.ok) event.waitUntil(remember(request, response.clone()));
+          if (response.ok) event.waitUntil(remember(key, response.clone()));
           return withIsolationHeaders(response, isNavigate);
         })
         .catch(async () => {
-          const cached = await caches.match(request);
+          const cached = await caches.match(key);
           // Offline: the cached answer, else the offline page.
           return cached ? withIsolationHeaders(cached, isNavigate) : offlineMissing();
         }),
@@ -252,14 +297,15 @@ self.addEventListener('fetch', (event) => {
   const isImmutable = url.pathname.startsWith('/engines/') || url.pathname.startsWith('/fonts/');
 
   if (isImmutable) {
-    // Cache-first for pinned engines and fonts: their content is fixed by the pins, and
-    // the cache *name* is what carries the release, so a hit is always this build's bytes.
+    // Cache-first for pinned engines and fonts: an engine's URL names its pinned version and
+    // the cache *name* carries the release, so a hit is always this build's bytes. A module
+    // retry (`?retry=N`) is looked up, and stored, under the URL without the parameter.
     event.respondWith(
-      caches.match(request).then((cached) => {
+      caches.match(key).then((cached) => {
         if (cached) return withIsolationHeaders(cached);
         return fetch(request)
           .then((response) => {
-            if (response.ok) event.waitUntil(remember(request, response.clone()));
+            if (response.ok) event.waitUntil(remember(key, response.clone()));
             return response;
           })
           .catch(() => offlineMissing());
@@ -269,11 +315,19 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Network-first for the editor shell and bundle assets, fallback to cache when offline.
+  // "Offline" is not only a network error: a 404 or 503 for a file this build's cache holds
+  // (a hashed chunk the origin no longer serves after a deploy, an origin that is down) must
+  // not beat the copy, or a page that is still running would lose a lazy chunk it already
+  // fetched once and show a white screen where the cached one would have loaded.
   event.respondWith(
     fetch(request)
-      .then((response) => {
-        if (response.ok) event.waitUntil(remember(request, response.clone()));
-        return response;
+      .then(async (response) => {
+        if (response.ok) {
+          event.waitUntil(remember(request, response.clone()));
+          return response;
+        }
+        const cached = await caches.match(request);
+        return cached ? withIsolationHeaders(cached, isNavigate) : response;
       })
       .catch(async () => {
         const cached = await caches.match(request);
@@ -311,6 +365,15 @@ self.addEventListener('message', (event) => {
         const manifest = await readManifest();
         if (manifest === null) {
           event.ports[0]?.postMessage({ type: 'PREPARE_FAILED', error: 'offline manifest unavailable' });
+          return;
+        }
+        // An older worker still serving while an update waits must not fill its cache from the
+        // new release's list: the cache would hold files of a build it is not.
+        if (manifest.version !== CACHE_VERSION) {
+          event.ports[0]?.postMessage({
+            type: 'PREPARE_FAILED',
+            error: 'offline manifest belongs to another release',
+          });
           return;
         }
         // Only the build's own list: the page names capabilities, never URLs, so an
@@ -362,18 +425,20 @@ self.addEventListener('message', (event) => {
           return;
         }
         const held = await cachedPaths();
+        // Whether this worker is the release the manifest describes. During an update the old
+        // worker still serves while the network already answers with the new manifest: its cache
+        // was filled for a build that list no longer names, so it vouches for nothing.
+        const matchesBuild = manifest.version === CACHE_VERSION;
         const capabilities = {};
         for (const [name, list] of Object.entries(manifest.capabilities)) {
           const required = Array.isArray(list) ? list.filter((path) => typeof path === 'string') : [];
-          const missing = required.filter((path) => !held.has(path));
-          capabilities[name] = { ready: missing.length === 0, missing };
+          const missing = matchesBuild ? required.filter((path) => !held.has(path)) : required;
+          capabilities[name] = { ready: matchesBuild && missing.length === 0, missing };
         }
         event.ports[0]?.postMessage({
           type: 'READINESS_STATUS',
           version: manifest.version,
-          // The cache name carries the release, so a worker that is answering at all is
-          // answering for its own build; the field exists so a caller can assert it.
-          matchesBuild: CACHE_VERSION === '__CACHE_VERSION__' || CACHE_NAME.endsWith(CACHE_VERSION),
+          matchesBuild,
           capabilities,
         });
       })().catch(() => {

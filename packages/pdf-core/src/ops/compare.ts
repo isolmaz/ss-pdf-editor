@@ -204,9 +204,9 @@ export interface CompareTextOptions {
 /**
  * One document's per-page text, from the export operation and nothing else.
  *
- * The export writes one separator per page (`----- N -----`), which is how the page
- * boundaries are recovered; the separators are matched **in order** from a moving
- * cursor, so every separator the export wrote is found.
+ * The export hands back each page's text as its own array element, so page boundaries
+ * are structural. The `----- N -----` separators in the exported file are never
+ * searched for: a page's text may itself contain a line that looks like one.
  */
 async function pageTexts(
   bytes: Uint8Array,
@@ -228,23 +228,7 @@ async function pageTexts(
     { pages: exportPages, format: 'text', baseName: 'compare' },
     context,
   );
-  // The plain-text export starts with a BOM (Windows Notepad) and ends with a newline.
-  const body = new TextDecoder()
-    .decode(exported.file.bytes)
-    .replace(/^\uFEFF/, '')
-    .replace(/\n$/, '');
-  const texts: string[] = [];
-  let cursor = 0;
-  for (let index = 1; index < pageCount; index += 1) {
-    const marker = `\n\n----- ${index + 1} -----\n\n`;
-    // Always found: the export wrote separator N after page N-1's text, and a look-alike
-    // line inside an earlier page can only be matched before it, never instead of it.
-    const at = body.indexOf(marker, cursor);
-    texts.push(body.slice(cursor, at));
-    cursor = at + marker.length;
-  }
-  texts.push(body.slice(cursor));
-  return { pageCount, texts };
+  return { pageCount, texts: exported.pageTexts };
 }
 
 /** Lines of one exported page; blank lines carry paragraph breaks, not content. */
@@ -853,8 +837,10 @@ export async function compareVisual(
             leftRaster.grey.width !== rightRaster.grey.width ||
             leftRaster.grey.height !== rightRaster.grey.height;
           const diff = diffGrey(leftRaster.grey, rightRaster.grey, TILE_SIZE);
+          // Only the shared top-left region is compared, so a page of another size can
+          // never be called identical, however well that region matches.
           const status: ComparePageStatus =
-            diff.differencePercent <= IDENTICAL_PERCENT ? 'identical' : 'changed';
+            !mismatch && diff.differencePercent <= IDENTICAL_PERCENT ? 'identical' : 'changed';
           if (status === 'identical') identicalPages += 1;
           else changedPages += 1;
           compared += 1;

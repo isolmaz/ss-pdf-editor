@@ -145,13 +145,17 @@ async function verify(bytes: Uint8Array, pages: readonly XfaRasterPage[]): Promi
         }
         const sample = expected.words.find((word) => /\p{L}{3,}/u.test(word.text));
         if (sample !== undefined) {
-          const text = page.toStructuredText('preserve-whitespace').asText();
-          if (!text.includes(sample.text)) {
-            throw new ToolError('verification-failed', {
-              engine: 'mupdf',
-              pageIndex: index,
-              engineMessage: `the text layer does not hold "${sample.text}"`,
-            });
+          const structured = page.toStructuredText('preserve-whitespace');
+          try {
+            if (!structured.asText().includes(sample.text)) {
+              throw new ToolError('verification-failed', {
+                engine: 'mupdf',
+                pageIndex: index,
+                engineMessage: `the text layer does not hold "${sample.text}"`,
+              });
+            }
+          } finally {
+            structured.destroy();
           }
         }
       } finally {

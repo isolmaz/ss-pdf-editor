@@ -52,8 +52,9 @@ export function loadEditor(): Promise<EditorSurfaces> {
 
 /**
  * Ask for the editor chunk because a document is opening or open. A chunk the browser cannot
- * fetch (offline, cache evicted) is the same "this part of the editor is not on this device"
- * sentence every other lazy surface gives, shown as the notice, not an unhandled rejection.
+ * fetch is the same sentence every other lazy surface gives, shown as the notice, not an
+ * unhandled rejection: "this part of the editor is not on this device" offline (cache evicted),
+ * "the app was updated, reload" online (`toToolError`).
  */
 export function requestEditor(t: Translator): void {
   loadEditor().catch((error: unknown) => {

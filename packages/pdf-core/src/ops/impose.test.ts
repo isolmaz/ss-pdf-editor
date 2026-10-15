@@ -739,3 +739,155 @@ describe('a poster of a page the file turns half round', () => {
     expect((label?.bbox.y ?? 0) + (label?.bbox.h ?? 0) / 2).toBeGreaterThan((tile?.height ?? 0) / 2);
   });
 });
+
+describe('buildPrintDocument carries what the source page shows', () => {
+  /** One page with a yellow highlight over its first word and a text note, both written as annotations. */
+  async function annotated(): Promise<Uint8Array> {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    const font = doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica' });
+    doc.insertPage(
+      0,
+      doc.addPage([0, 0, 400, 560], 0, { Font: { F: font } }, 'BT /F 24 Tf 40 500 Td (P1) Tj ET'),
+    );
+    const page = doc.loadPage(0);
+    // MuPDF's annotation API takes the page as it is displayed: y grows downwards.
+    const highlight = page.createAnnotation('Highlight');
+    highlight.setQuadPoints([[40, 40, 100, 40, 40, 70, 100, 70]]);
+    highlight.setColor([1, 1, 0]);
+    highlight.update();
+    const note = page.createAnnotation('Text');
+    note.setRect([300, 100, 320, 120]);
+    note.setContents('a note');
+    note.update();
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    return bytes;
+  }
+
+  /** How many pixels of the sheet's page 1 satisfy `match`, drawn without annotations (only content counts). */
+  async function pixelsOf(
+    bytes: Uint8Array,
+    match: (red: number, green: number, blue: number) => boolean,
+  ): Promise<number> {
+    const mupdf = await import('mupdf');
+    const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+    try {
+      const pixmap = doc
+        .loadPage(0)
+        .toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, false);
+      const pixels = pixmap.getPixels();
+      let count = 0;
+      for (let at = 0; at + 2 < pixels.length; at += 3) {
+        if (match(pixels[at] ?? 0, pixels[at + 1] ?? 0, pixels[at + 2] ?? 0)) count += 1;
+      }
+      return count;
+    } finally {
+      doc.destroy();
+    }
+  }
+
+  const yellow = (red: number, green: number, blue: number) => red > 200 && green > 200 && blue < 100;
+  const options = print({ pages: [0] });
+
+  it('draws a highlight and a note into the sheet, where the form XObject would have left them behind', async () => {
+    const source = await annotated();
+    const out = await buildPrintDocument(source, options, run);
+    // Annotations are not painted (`toPixmap(..., false)`): the yellow is page content.
+    expect(await pixelsOf(out.bytes, yellow)).toBeGreaterThan(1000);
+    expect(await pixelsOf(source, yellow)).toBe(0);
+    expect(out.report.steps).toEqual(['load', 'annotations.bake', 'sheets', 'save']);
+    // The report says what happened to each: drawn in, and only links and bookmarks left behind.
+    const kinds = Object.fromEntries(out.report.notes.map((entry) => [entry.key, entry.kind]));
+    expect(kinds['print.note.annotations']).toBe('preserved');
+    expect(kinds['print.note.lost']).toBe('lost');
+  });
+
+  it('leaves a page without annotations as it was', async () => {
+    const out = await buildPrintDocument(await source(1), options, run);
+    expect(await pixelsOf(out.bytes, yellow)).toBe(0);
+    expect((await sheets(out.bytes)).map(labels)).toEqual([['P1']]);
+  });
+});
+
+describe('buildPrintDocument carries a form field’s value', () => {
+  /**
+   * One page with two text fields: `drawn`, whose appearance stream shows its value the way a
+   * producer (or pdf.js's `saveDocument`) writes it, and `bare`, which has a value and no
+   * appearance at all, so only `NeedAppearances` makes a reader draw it.
+   */
+  async function filledForm(): Promise<Uint8Array> {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 400, 560], 0, {}, ''));
+    const page = doc.findPage(0);
+    const helv = doc.addObject({
+      Type: 'Font',
+      Subtype: 'Type1',
+      BaseFont: 'Helvetica',
+      Encoding: 'WinAnsiEncoding',
+    });
+    const da = doc.newString('/Helv 12 Tf 0 g');
+    const appearance = doc.addStream('BT /Helv 12 Tf 0 g 2 6 Td (Grace Hopper) Tj ET', {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, 0, 200, 24],
+      Resources: { Font: { Helv: helv } },
+    });
+    const widget = (name: string, value: string, rect: number[], extra: Record<string, unknown>) =>
+      doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Widget',
+        FT: 'Tx',
+        T: doc.newString(name),
+        V: doc.newString(value),
+        DA: da,
+        Rect: rect,
+        P: page,
+        F: 4,
+        ...extra,
+      });
+    const drawn = widget('drawn', 'Grace Hopper', [20, 500, 220, 524], { AP: { N: appearance } });
+    const bare = widget('bare', 'Ada Lovelace', [20, 450, 220, 474], {});
+    page.put('Annots', [drawn, bare]);
+    doc
+      .getTrailer()
+      .get('Root')
+      .put('AcroForm', {
+        Fields: [drawn, bare],
+        DR: { Font: { Helv: helv } },
+        DA: da,
+        NeedAppearances: true,
+      });
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    return bytes;
+  }
+
+  /** The page's words as MuPDF extracts them from its display list *without* annotations or widgets. */
+  async function contentText(bytes: Uint8Array): Promise<string> {
+    const mupdf = await import('mupdf');
+    const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+    try {
+      return doc.loadPage(0).toDisplayList(false).toStructuredText('preserve-whitespace').asText();
+    } finally {
+      doc.destroy();
+    }
+  }
+
+  it('puts the value of a filled field into the sheet’s own content, where the source page has none', async () => {
+    const form = await filledForm();
+    expect(await contentText(form)).not.toContain('Grace Hopper');
+
+    const out = await buildPrintDocument(form, print({ pages: [0] }), run);
+    // The sheet holds the page as a form XObject: the value is printed text, not a widget.
+    expect(await contentText(out.bytes)).toContain('Grace Hopper');
+    const [sheet] = await sheets(out.bytes);
+    expect(sheet?.words.map((word) => word.text).join(' ')).toContain('Grace Hopper');
+  });
+
+  it('draws a field that has a value and no appearance stream', async () => {
+    const out = await buildPrintDocument(await filledForm(), print({ pages: [0] }), run);
+    expect(await contentText(out.bytes)).toContain('Ada Lovelace');
+  });
+});

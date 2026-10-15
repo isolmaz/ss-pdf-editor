@@ -10,7 +10,9 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { PdfUaReport, UaGroup, UaInstance, UaRule } from 'pdf-core/ops/pdfua';
+import type { OperationContext } from 'pdf-core/ops/types';
 import { createTranslator, ToolError } from 'pdf-shared';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PdfUaView, type PdfUaViewProps } from './PdfUaView';
 
@@ -152,6 +154,37 @@ describe('PdfUaView: the check', () => {
     second.unmount();
     await act(async () => reject(new Error('late')));
     expect(onNotice).not.toHaveBeenCalled();
+  });
+
+  it('stops the check on the engine when the view closes while it is running', async () => {
+    engine.checkPdfUa.mockReturnValue(new Promise(() => {}));
+    const view = show();
+    await waitFor(() => expect(engine.checkPdfUa).toHaveBeenCalledOnce());
+    const [, { signal }] = engine.checkPdfUa.mock.calls[0] as [unknown, OperationContext];
+    expect(signal.aborted).toBe(false);
+    view.unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it('shows the check that ran last when React mounts the view twice, and no failure of the first', async () => {
+    // The check honours its signal as the real one does: the run the first mount started is
+    // cut short by the second mount and must not be reported as a failure.
+    engine.checkPdfUa.mockImplementation(
+      (_bytes: Uint8Array, { signal }: OperationContext) =>
+        new Promise<PdfUaReport>((resolve, reject) => {
+          if (signal.aborted) reject(new DOMException('Aborted', 'AbortError'));
+          else resolve(reportOf([rule('title', 'document')]));
+        }),
+    );
+    const onNotice = vi.fn();
+    render(
+      <StrictMode>
+        <PdfUaView t={t} read={async () => BYTES} language="en" canEdit onNotice={onNotice} />
+      </StrictMode>,
+    );
+    await screen.findByText(/How the file is|The file (does not )?declare/);
+    expect(onNotice).not.toHaveBeenCalled();
+    expect(screen.queryByText(t('error.aborted.message'))).toBeNull();
   });
 });
 
@@ -325,6 +358,21 @@ describe('PdfUaView: failing instances', () => {
         .getAllByRole('listitem')
         .map((li) => li.textContent?.includes('4')),
     ).toEqual([true, false]);
+  });
+});
+
+describe('PdfUaView: a fix that is running', () => {
+  it('is stopped on the engine when the view closes', async () => {
+    engine.fixPdfUa.mockReturnValue(new Promise(() => {}));
+    const view = await shown(
+      reportOf([rule('display-title', 'document', { state: 'fail', fix: 'display-title', count: 1 })]),
+    );
+    await view.user.click(screen.getByRole('button', { name: 'Show the title in the window bar' }));
+    await waitFor(() => expect(engine.fixPdfUa).toHaveBeenCalledOnce());
+    const [, , { signal }] = engine.fixPdfUa.mock.calls[0] as [unknown, unknown, OperationContext];
+    expect(signal.aborted).toBe(false);
+    view.unmount();
+    expect(signal.aborted).toBe(true);
   });
 });
 

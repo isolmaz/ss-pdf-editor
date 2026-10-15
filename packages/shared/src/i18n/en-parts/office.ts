@@ -60,6 +60,8 @@ export const officePart = {
   'op.note.exportOffice.pictures': '{count} pictures were exported.',
   'op.note.exportOffice.picturesLost':
     '{count} pictures were not exported: their image data could not be read, or they sit inside a table, whose cells hold text only.',
+  'op.note.exportOffice.sheetPicturesLost':
+    '{count} pictures were not exported: Excel and CSV files hold cell values only.',
   'op.note.exportOffice.sheets': 'The workbook has {count} sheets.',
   'op.note.exportOffice.numbers':
     '{count} cells were written as numbers. Values that read two ways (1.234: a thousand, or one point two three four?) were left as text.',

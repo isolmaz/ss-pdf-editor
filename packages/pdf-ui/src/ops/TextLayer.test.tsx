@@ -12,10 +12,18 @@ import { fileURLToPath } from 'node:url';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { loadMupdf } from 'pdf-core/engines/mupdf';
+import { loadTextFonts, readPageText } from 'pdf-core/text-source';
 import { createTranslator } from 'pdf-shared';
+import { buildTextPage } from 'pdf-text-engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
 import { displayedBox, TextLayer, type TextLayerProps } from './TextLayer';
+
+// The real reader, wrapped so a test can see the signal each read was started with.
+vi.mock('pdf-core/text-source', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('pdf-core/text-source')>();
+  return { ...actual, readPageText: vi.fn(actual.readPageText) };
+});
 
 const publicDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../public');
 const fontFile = (path: string) => new Uint8Array(readFileSync(resolve(publicDir, `.${path}`)));
@@ -125,15 +133,47 @@ describe('a read that is overtaken', () => {
   });
 
   it('does not paint the late result of the read it replaced over the new read’s failure', async () => {
+    vi.mocked(readPageText).mockClear();
     const release = gatedFonts();
     const good = await textPage();
     const { view, props } = show(good);
+    // The page itself is read — every checkpoint of the reader is behind it — and only the held
+    // fonts keep the read in flight. Replacing the bytes any earlier would abort the reader at
+    // its own checkpoint and the read would never come back with a result at all: the result
+    // that arrives late is the one this test is about, and this is the only way to have one.
+    await vi.mocked(readPageText).mock.results[0]?.value;
     view.rerender(<TextLayer {...props} bytes={new TextEncoder().encode('not a pdf')} />);
     await waitFor(() => expect(failure()).not.toBeNull());
+    const [stale] = vi.mocked(readPageText).mock.calls;
+    expect(stale?.[2].signal.aborted).toBe(true);
     release(200);
-    await new Promise((settle) => setTimeout(settle, 300));
+    // The fonts are loaded once they answer; a turn after that is when the stale read, which
+    // was waiting for them, has had its say.
+    await loadTextFonts();
+    const turn = Promise.withResolvers<void>();
+    setTimeout(turn.resolve, 0);
+    await turn.promise;
     expect(failure()).not.toBeNull();
     expect(blocks()).toHaveLength(0);
+  });
+});
+
+describe('the page read of a layer', () => {
+  const signals = () => vi.mocked(readPageText).mock.calls.map(([, , context]) => context.signal);
+
+  it('is aborted when the layer moves to other bytes, and again when it is left', async () => {
+    vi.mocked(readPageText).mockClear();
+    const first = await textPage('First');
+    const { view, props } = show(first);
+    await waitFor(() => expect(blocks().length).toBeGreaterThan(0));
+    expect(signals().map((signal) => signal.aborted)).toEqual([false]);
+
+    view.rerender(<TextLayer {...props} bytes={await textPage('Second')} />);
+    await waitFor(() => expect(blockWith('Second')).toBeTruthy());
+    expect(signals().map((signal) => signal.aborted)).toEqual([true, false]);
+
+    view.unmount();
+    expect(signals().map((signal) => signal.aborted)).toEqual([true, true]);
   });
 });
 
@@ -285,19 +325,89 @@ describe('TextLayer', () => {
 });
 
 describe('displayedBox', () => {
+  // The box starts away from the origin on both axes. The model's x is user-space (so the
+  // box's x comes off it) and its y already counts down from the box's top edge (so the box's
+  // y is not subtracted again — `pdf-core/src/text-source.ts`, "Space").
   const box = { x: 10, y: 20, width: 200, height: 100 };
   const rect = [30, 40, 70, 60] as const;
 
   it.each([
-    [0, [20, 20, 60, 40]],
-    [90, [60, 20, 80, 60]],
-    [180, [140, 60, 180, 80]],
-    [270, [20, 140, 40, 180]],
+    [0, [20, 40, 60, 60]],
+    [90, [40, 20, 60, 60]],
+    [180, [140, 40, 180, 60]],
+    [270, [40, 140, 60, 180]],
   ] as const)('turns a block by %i° against the unrotated page box', (rotation, expected) => {
     expect(displayedBox(rect, box, rotation)).toEqual(expected);
   });
 
   it('reads a turn that is not a quarter as no turn', () => {
-    expect(displayedBox(rect, box, 45)).toEqual([20, 20, 60, 40]);
+    expect(displayedBox(rect, box, 45)).toEqual([20, 40, 60, 60]);
   });
+});
+
+/** The box `[100 200 400 600]` cropped out of a 612×792 page, turned, with `Hello` at user-space (140, 500). */
+async function croppedPage(rotate: 0 | 90 | 180 | 270): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const helvetica = doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin');
+  doc.insertPage(
+    -1,
+    doc.addPage([0, 0, 612, 792], rotate, { Font: { F: helvetica } }, 'BT /F 12 Tf 140 500 Td (Hello) Tj ET'),
+  );
+  doc.findPage(0).put('CropBox', [100, 200, 400, 600]);
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/** MuPDF's own bounds of the page's glyphs in the displayed page — the place the overlay has to land. */
+async function displayedGlyphBounds(bytes: Uint8Array): Promise<[number, number, number, number]> {
+  const mupdf = await loadMupdf();
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+  const bounds: [number, number, number, number] = [
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ];
+  try {
+    const page = doc.loadPage(0);
+    const text = page.toStructuredText('preserve-whitespace');
+    try {
+      text.walk({
+        onChar(_ch, _origin, _font, _size, quad) {
+          for (let index = 0; index < 8; index += 2) {
+            bounds[0] = Math.min(bounds[0], quad[index] as number);
+            bounds[1] = Math.min(bounds[1], quad[index + 1] as number);
+            bounds[2] = Math.max(bounds[2], quad[index] as number);
+            bounds[3] = Math.max(bounds[3], quad[index + 1] as number);
+          }
+        },
+      });
+    } finally {
+      text.destroy();
+      page.destroy();
+    }
+  } finally {
+    doc.destroy();
+  }
+  return bounds;
+}
+
+describe('displayedBox on what the reader reads from a cropped page', () => {
+  it.each([0, 90, 180, 270] as const)(
+    'lands on the glyphs MuPDF displays at /Rotate %i',
+    async (rotation) => {
+      const bytes = await croppedPage(rotation);
+      const page = await readPageText(bytes, 0, { signal: new AbortController().signal });
+      const block = buildTextPage(page).blocks[0];
+      const shown = displayedBox(
+        block?.rect ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN],
+        { x: 100, y: 200, width: 300, height: 400 },
+        rotation,
+      );
+      const oracle = await displayedGlyphBounds(bytes);
+      for (const [index, value] of oracle.entries()) expect(shown[index]).toBeCloseTo(value, 1);
+    },
+  );
 });

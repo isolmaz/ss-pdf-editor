@@ -64,7 +64,7 @@ import {
 import type { MessageKey, Translator } from 'pdf-shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
-import { type PageFrames, readPagesAt } from './mark-interaction';
+import { holdsKeyboard, type PageFrames, readPagesAt } from './mark-interaction';
 
 // ---------------------------------------------------------------------------
 // the dictionary
@@ -87,6 +87,7 @@ const MEASURE_KEYS = {
   gridGap: 'tools.measure.gridGap',
   snapGrid: 'tools.measure.snapGrid',
   snapPoints: 'tools.measure.snapPoints',
+  selfIntersecting: 'tools.measure.selfIntersecting',
   readout: 'panel.toolSettings',
   color: 'ann.tool.color',
   opacity: 'ann.tool.opacity',
@@ -125,6 +126,11 @@ export interface MeasureReading {
   /** The direction of the first segment, in degrees. */
   readonly angle: string;
   readonly points: number;
+  /**
+   * Why there is no value to act on, when there is not one: an area polygon whose edges
+   * cross has no area, and the strip says so instead of reading `—`.
+   */
+  readonly warning?: string;
 }
 
 export interface MeasureLayerProps {
@@ -235,6 +241,8 @@ function pageFrame(viewer: ViewerApi, pageIndex: number): PageFrame | null {
   const geometry: MeasurePageGeometry = {
     rotation: view.rotation,
     box: { x: view.x, y: view.y, width: view.width, height: view.height },
+    // The page's `/UserUnit`, so the live readout converts exactly as the writer will.
+    userUnit: view.userUnit,
   };
   const container = viewer.containerRect();
   const displayed = displaySize(geometry);
@@ -290,6 +298,11 @@ export function MeasureLayer({
     readonly points: readonly MeasurePoint[];
   } | null>(null);
   const [cursor, setCursor] = useState<MeasurePoint | null>(null);
+  /**
+   * Set when the user tried to finish an area whose edges cross, so the warning stays up
+   * until the chain changes — a pointer move alone does not clear it.
+   */
+  const [refused, setRefused] = useState(false);
   /** The last reading published, so a pointer move does not republish the same string. */
   const readingRef = useRef<string | null>(null);
 
@@ -297,6 +310,7 @@ export function MeasureLayer({
     if (mode !== null) return;
     setChain(null);
     setCursor(null);
+    setRefused(false);
   }, [mode]);
 
   // What a gesture reads, at the time of the gesture.
@@ -347,27 +361,47 @@ export function MeasureLayer({
   }, [chain, cursor, frames, mode]);
 
   useEffect(() => {
-    const text = preview === null ? null : formatMeasurement(preview.measurement, scale);
-    if (text === readingRef.current) return;
-    readingRef.current = text;
+    // The interface's own locale, so the numbers read in the language the strip is in; the
+    // page's `/UserUnit`, so the secondary length converts as the measurement itself does.
+    const locale = t.locale;
+    const crossed = preview?.measurement.selfIntersecting === true || refused;
+    const text =
+      preview === null
+        ? null
+        : formatMeasurement(preview.measurement, scale, { locale, userUnit: preview.measurement.userUnit });
+    const signature = crossed ? `!${text}` : text;
+    if (signature === readingRef.current) return;
+    readingRef.current = signature;
     onReading?.(
       preview === null
         ? null
         : {
             primary: text as string,
             secondary:
-              preview.measurement.mode === 'area' ? formatLength(preview.measurement.perimeter, scale) : null,
-            angle: formatAngle(preview.measurement.bearing),
+              preview.measurement.mode === 'area'
+                ? formatLength(preview.measurement.perimeter, scale, {
+                    locale,
+                    userUnit: preview.measurement.userUnit,
+                  })
+                : null,
+            angle: formatAngle(preview.measurement.bearing, { locale }),
             points: preview.points.length,
+            ...(crossed ? { warning: label(t, MEASURE_KEYS.selfIntersecting) } : {}),
           },
     );
-  }, [onReading, preview, scale]);
+  }, [onReading, preview, refused, scale, t]);
 
   useEffect(() => () => onReading?.(null), [onReading]);
 
   const finish = useCallback(() => {
     if (chain === null || mode === null) return;
     if (chain.points.length < MIN_CHAIN_POINTS) return;
+    // An area whose edges cross has no area to write: the polygon stays open for the user
+    // to fix (Backspace removes the last point) and the strip says why nothing happened.
+    if (mode === 'area' && chainCrosses(frameOf(chain.pageIndex), chain.points)) {
+      setRefused(true);
+      return;
+    }
     onCreate({
       id: crypto.randomUUID(),
       pageIndex: chain.pageIndex,
@@ -383,19 +417,25 @@ export function MeasureLayer({
     });
     setChain(null);
     setCursor(null);
-  }, [author, chain, color, mode, onCreate, opacity, scale, thickness]);
+  }, [author, chain, color, frameOf, mode, onCreate, opacity, scale, thickness]);
 
   // Escape, Enter and Backspace are the tool's own keys: a click chain needs its
   // own keyboard path (the shell's shortcut layer only knows single-shot tools).
+  // They are the tool's only while the keyboard is not in a field: the strip's own
+  // Scale and Author inputs sit on the same page, and a Backspace taken from them
+  // would leave a typo that cannot be deleted (Enter would write the chain, Escape
+  // end the tool, from inside a text box).
   useEffect(() => {
     if (mode === null) return undefined;
     const onKey = (event: KeyboardEvent) => {
+      if (holdsKeyboard(event.target)) return;
       if (event.key === 'Escape') {
         // First Escape clears the chain, a second one ends the tool: two different
         // intentions, two different keys pressed, never one action that guesses.
         if (chain === null) onStop?.();
         else setChain(null);
         setCursor(null);
+        setRefused(false);
         return;
       }
       if (event.key === 'Enter') {
@@ -404,6 +444,7 @@ export function MeasureLayer({
       }
       if (event.key === 'Backspace' && chain !== null) {
         event.preventDefault();
+        setRefused(false);
         setChain((previous) =>
           previous === null || previous.points.length <= 1
             ? null
@@ -427,6 +468,7 @@ export function MeasureLayer({
       // distance that spans a page break can never be written as one annotation.
       if (chain !== null && chain.pageIndex !== point.pageIndex) return;
       const snapped = resolve(frame, { x: point.x, y: point.y });
+      setRefused(false);
       setChain((previous) =>
         previous === null
           ? { pageIndex: point.pageIndex, points: [snapped] }
@@ -467,12 +509,14 @@ export function MeasureLayer({
       ) : null}
 
       {/* The gesture half. Mounted only while a tool is armed: an inert overlay that
-          swallows nothing is one listener fewer on every pointer move. */}
+          swallows nothing is one listener fewer on every pointer move. `touch-none`:
+          a finger that moves over it must place the cursor, not make the browser scroll
+          the document and cancel the pointer. */}
       {armed ? (
         <div
           role="application"
           aria-label={label(t, MEASURE_KEYS.tool)}
-          className="absolute inset-0 cursor-crosshair"
+          className="absolute inset-0 cursor-crosshair touch-none"
           style={{ pointerEvents: 'auto' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -503,6 +547,7 @@ function MarkShape({
     // does not change what this mark says.
     measureMarkQuiet(frame.geometry, mark),
     mark.scale,
+    { locale: t.locale },
   );
   return (
     <button
@@ -546,6 +591,20 @@ function MarkShape({
       </span>
     </button>
   );
+}
+
+/**
+ * Whether the clicked polygon's edges cross. A chain the geometry cannot measure at all
+ * (too many points, a non-finite coordinate) is not *this* refusal — the writer reports
+ * those — so it answers `false` rather than throwing out of an event handler.
+ */
+function chainCrosses(frame: PageFrame | null, points: readonly MeasurePoint[]): boolean {
+  if (frame === null) return false;
+  try {
+    return measureMark(frame.geometry, points, 'area').selfIntersecting;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -858,7 +917,8 @@ export function MeasureSettings({
       >
         {reading === null
           ? label(t, MEASURE_KEYS.scaleHint)
-          : `${reading.primary}${reading.secondary === null ? '' : ` · ${reading.secondary}`} · ${reading.angle}`}
+          : (reading.warning ??
+            `${reading.primary}${reading.secondary === null ? '' : ` · ${reading.secondary}`} · ${reading.angle}`)}
       </output>
 
       <button

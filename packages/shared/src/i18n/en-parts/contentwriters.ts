@@ -52,6 +52,12 @@ export const contentWritersPart = {
   'op.progress.sign.verify': 'Verifying generated signature',
   'op.note.sign.fieldCreated': 'New signature field created: {name}',
   'op.note.sign.fieldFilled': 'Filled empty signature field in document: {name}',
+  'op.note.sign.fieldPlaceKept':
+    'The empty signature field ({name}) was used at the position and size its form gives it; the stamp position you chose was not applied.',
+  'op.note.sign.earlierKept':
+    '{count} earlier signature(s) in the document stay valid: the new signature was appended to the file as a new revision, and the bytes the earlier signatures cover are unchanged.',
+  'op.note.sign.earlierLost':
+    'The document carries {count} earlier signature(s). The file could not be extended with a new revision (it needed repair), so it was rewritten and the earlier signatures no longer validate.',
   'op.note.sign.signed': 'PAdES B-B signature applied ({digest}, {bytes} byte CMS).',
   'op.note.sign.byteRange':
     'Signed byte range: {start}–{end} and {tail} byte tail; intervening bytes are the signature itself.',
@@ -65,7 +71,7 @@ export const contentWritersPart = {
   'sign.field.passwordHint': 'Password used solely to unlock private key; never stored.',
   'sign.field.name': 'Signature field name (optional)',
   'sign.field.nameHint':
-    'If left blank, fills existing empty signature field; otherwise creates a new field with this name.',
+    'If left blank, fills the first empty signature field in the document where it sits, or creates a new field if there is none. If you give a name, only an empty field with that name is filled; if there is none, a new field is created with this name.',
   'sign.field.digest': 'Digest algorithm',
   'sign.field.digestHint': 'SHA-256 is standard for B-B; longer digests produce larger CMS containers.',
   'sign.digest.sha256': 'SHA-256',

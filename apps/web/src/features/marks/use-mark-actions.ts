@@ -19,6 +19,7 @@ export interface WriterActions {
     handle: PdfDocumentHandle,
     outcome: OperationOutcome,
     labelKey: MessageKey,
+    signal: AbortSignal,
   ) => Promise<void>;
   readonly writeLayers: (request: LayerWriteRequest) => Promise<void>;
 }
@@ -29,8 +30,8 @@ export function useWriterActions(host: WriterHost): WriterActions {
   return useMemo(() => {
     const bound: WriterHost = { session, t };
     return {
-      applyWriterOutcome: (tab, handle, outcome, labelKey) =>
-        applyWriterOutcome(bound, tab, handle, outcome, labelKey),
+      applyWriterOutcome: (tab, handle, outcome, labelKey, signal) =>
+        applyWriterOutcome(bound, tab, handle, outcome, labelKey, signal),
       writeLayers: (request) => writeLayers(bound, request),
     };
   }, [session, t]);

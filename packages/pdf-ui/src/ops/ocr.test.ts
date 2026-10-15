@@ -6,6 +6,7 @@
  * Skia canvas pdf.js itself uses in Node (`skia-canvas.fixtures`).
  */
 
+import { TESSERACT_ASSETS } from 'pdf-core/assets';
 import { terminateOcrWorkers } from 'pdf-core/engines/tesseract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -21,7 +22,8 @@ import { ocrDialog } from './ocr';
 
 const state = vi.hoisted(() => ({ created: [] as string[][], recognized: 0 }));
 
-vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
+// Not hoisted: the module's URL carries the engine's pinned version, so it is the asset's own.
+vi.doMock(TESSERACT_ASSETS.module, () => ({
   default: undefined,
   createWorker: async (languages: string[]) => {
     state.created.push(languages);
@@ -56,14 +58,16 @@ vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
 }));
 
 describe('ocrDocument dialog', () => {
-  // The language pack's availability probe is a HEAD request; everything else is the font origin.
+  // The language pack's availability probe is a request for the pack itself; everything else is the font origin.
   beforeEach(() => {
     state.created.length = 0;
     state.recognized = 0;
     useFontOrigin();
     const answerFont = fetch;
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) =>
-      init?.method === 'HEAD' ? new Response(null, { status: 200 }) : answerFont(input, init),
+      String(input).includes('/engines/tesseract/lang/')
+        ? new Response(null, { status: 200 })
+        : answerFont(input, init),
     );
     vi.stubGlobal('OffscreenCanvas', SkiaOffscreen);
     vi.stubGlobal('Path2D', skia.Path2D);

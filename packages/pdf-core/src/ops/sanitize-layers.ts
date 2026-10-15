@@ -43,7 +43,9 @@
  * "internal comments" is itself information — and the properties go with the last group.
  *
  * **Not handled, said plainly:** content inside tiling patterns, Type 3 glyph procedures and
- * annotation appearance streams is not searched; a group that is hidden only for *printing* or
+ * annotation appearance streams is not searched for hidden content (a name an appearance stream
+ * draws with is still counted as used, so the pruning never takes it out from under the
+ * annotation); a group that is hidden only for *printing* or
  * *export* (`/Usage`) is judged by the view state alone.
  */
 
@@ -576,6 +578,55 @@ function sweepAnnotations(context: Context, page: PDFObject): void {
   }
 }
 
+/** The appearance entries of an annotation: `/AP /N`, `/R` and `/D`, each a stream or the values of a state map. */
+function appearanceStreams(annotation: PDFObject): PDFObject[] {
+  const streams: PDFObject[] = [];
+  const appearance = dictionaryUnder(annotation, 'AP');
+  if (appearance === null) return streams;
+  for (const key of ['N', 'R', 'D']) {
+    const entry = appearance.get(key);
+    if (entry.isStream()) {
+      streams.push(entry);
+      continue;
+    }
+    const states = deref(entry);
+    if (states?.isDictionary() !== true) continue;
+    // A state that is no stream is read as nothing by `readStreamBytes`.
+    for (const state of keysOf(states)) streams.push(states.get(state));
+  }
+  return streams;
+}
+
+/**
+ * What the annotations of a page still draw. An appearance stream without `/Resources` of its
+ * own uses the page's, and one whose `/Resources` is the very dictionary the page uses shares
+ * it: either way a name it draws with must survive the pruning, or the picture an annotation
+ * shows would be cut out from under it. Appearance streams are not searched for hidden content
+ * (see the header); they only count as users.
+ */
+function noteAppearanceUse(context: Context, page: PDFObject): void {
+  const annotations = arrayUnder(page, 'Annots');
+  if (annotations === null) return;
+  const { key: pageKey, resources: pageResources } = pageResourceKey(page);
+  for (const entry of entriesOf(annotations)) {
+    const annotation = deref(entry);
+    if (annotation === null || !annotation.isDictionary()) continue;
+    for (const stream of appearanceStreams(annotation)) {
+      const own = stream.get('Resources');
+      // A dictionary of the stream's own, written in place, is shared with no page.
+      if (!own.isNull() && !own.isIndirect()) continue;
+      const bytes = readStreamBytes(stream);
+      if (bytes === null) continue;
+      const instructions = readContentInstructions(bytes);
+      if (instructions === null) continue;
+      const group = own.isNull()
+        ? groupFor(context, pageKey, pageResources)
+        : groupFor(context, `r${own.asIndirect()}`, deref(own));
+      for (const instruction of instructions) noteUse(group, instruction);
+    }
+  }
+}
+
 /** Drop the resource names nothing draws with any more. */
 function pruneResources(groups: ReadonlyMap<string, ResourceGroup>): void {
   for (const group of groups.values()) {
@@ -700,6 +751,7 @@ export function sweepHiddenLayers(doc: PDFDocument, mutate: boolean, signal?: Ab
     if (signal !== undefined) throwIfAborted(signal);
     const page = doc.findPage(pageIndex);
     sweepAnnotations(context, page);
+    noteAppearanceUse(context, page);
     const bytes = pageContent(page);
     if (bytes === null) continue;
     if (bytes === undefined) {

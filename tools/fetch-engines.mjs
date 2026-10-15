@@ -6,6 +6,14 @@
  *
  *   node tools/fetch-engines.mjs            verify the files on disk against the pins (default)
  *   node tools/fetch-engines.mjs --update   copy the engine builds and rewrite the pins
+ *   node tools/fetch-engines.mjs --versions rewrite the engines' URL versions from the committed pins
+ *
+ * The browser build serves every engine from a version directory, `/engines/<id>/<version>/…`,
+ * because `/engines/*` is cached as immutable: an engine whose bytes change must change URL.
+ * `engineVersions()` derives each version from the engine's pins and `--update` / `--versions`
+ * record them in `packages/pdf-core/src/engine-versions.json`, the one file the app's asset
+ * URLs, the offline manifest and the dist layout all read; `verifyAssets()` fails when that
+ * file no longer matches the pins.
  *
  * Packages are resolved from the pnpm store (`node_modules/.pnpm/<dir>/node_modules/<pkg>`);
  * version and licence are always read from the package's own `package.json`, never hardcoded.
@@ -36,6 +44,8 @@ const STORE_DIR = join(ROOT, 'node_modules', '.pnpm');
 export const PUBLIC_DIR = join(ROOT, 'public');
 export const PINS_PATH = join(TOOLS_DIR, 'asset-pins.json');
 export const PINS_GENERATED_BY = 'tools/fetch-engines.mjs';
+/** The URL versions of the served engines, derived from the pins (see `engineVersions`). */
+export const ENGINE_VERSIONS_PATH = join(ROOT, 'packages', 'pdf-core', 'src', 'engine-versions.json');
 
 const MIB = 1024 * 1024;
 const HASH_CHUNK = 1024 * 1024;
@@ -136,6 +146,14 @@ const ENGINES = [
     id: 'mupdf',
     package: 'mupdf',
     target: 'engines/mupdf',
+    // `dist/mupdf.js` is the build `pnpm install` makes with `patches/mupdf@1.28.1.patch`
+    // (root `package.json` > `pnpm.patchedDependencies`): the walker read every character with
+    // `String.fromCharCode`, which keeps 16 bits of a code point, so an emoji or a mathematical
+    // letter came back as another character. The patched package sits in the store as
+    // `mupdf@1.28.1_patch_hash=<hash>`, which `resolvePackage` finds by its prefix, so the file the
+    // browser loads and the file the unit suite imports are the same bytes, and the pin below is
+    // theirs. After a change to the patch, `pnpm install` and `pnpm fetch:engines --update` renew
+    // it. The patch file stays in the repository: MuPDF is AGPL-3.0-or-later and this is our change.
     entries: [
       { from: 'dist/mupdf.js', to: 'mupdf.js' },
       { from: 'dist/mupdf-wasm.wasm', to: 'mupdf-wasm.wasm' },
@@ -161,7 +179,7 @@ const ENGINES = [
     id: 'space-grotesk',
     package: '@fontsource/space-grotesk',
     target: 'fonts/space-grotesk',
-    // UI typeface (`P6`, `DESIGN.md`): OFL-1.1, self-hosted so the app keeps its
+    // UI typeface: OFL-1.1, self-hosted so the app keeps its
     // offline promise, and never committed — the pins below are the reference.
     // Turkish coverage comes from the `latin-ext` subset: Ğ/ğ U+011E/011F,
     // İ/ı U+0130/0131, Ş/ş U+015E/015F all fall inside U+0100-02BA.
@@ -188,7 +206,7 @@ const ENGINES = [
     id: 'dm-sans',
     package: '@fontsource/dm-sans',
     target: 'fonts/dm-sans',
-    // Body typeface (DESIGN.md): OFL-1.1, self-hosted, offline-first.
+    // Body typeface: OFL-1.1, self-hosted, offline-first.
     // Turkish coverage via latin-ext.
     entries: [
       { from: 'files/dm-sans-latin-400-normal.woff2', to: 'dm-sans-latin-400-normal.woff2' },
@@ -508,13 +526,45 @@ function copyEngine(engine, packages) {
   return { files, skipped, problems };
 }
 
+/**
+ * The URL version of every engine the browser build serves from `/engines/<id>/`: `v` and the first
+ * 12 hex digits of a SHA-256 over the engine's pinned files — each file's path inside the engine and
+ * its pinned SHA-256, in path order. It changes when any pinned byte of the engine does and at no
+ * other time, which is what an immutable URL needs. An engine whose pins are not all under
+ * `engines/<id>/` (the font families live under `fonts/`) is not served from there and has none.
+ *
+ * Returned as a plain object, sorted by id, so it serialises the same way every time.
+ *
+ * @param {{ engines: Record<string, { files?: { path: string; sha256: string }[] }> }} pins
+ * @returns {Record<string, string>}
+ */
+export function engineVersions(pins) {
+  /** @type {Record<string, string>} */
+  const versions = {};
+  for (const id of Object.keys(pins.engines).sort()) {
+    const files = pins.engines[id].files ?? [];
+    const prefix = `engines/${id}/`;
+    if (files.length === 0 || !files.every((file) => file.path.startsWith(prefix))) continue;
+    const digest = createHash('sha256');
+    for (const file of [...files].sort((a, b) => (a.path < b.path ? -1 : 1))) {
+      digest.update(`${file.path.slice(prefix.length)}\0${file.sha256}\n`);
+    }
+    versions[id] = `v${digest.digest('hex').slice(0, 12)}`;
+  }
+  return versions;
+}
+
+/** The text of `engine-versions.json` for these pins. */
+export function renderEngineVersions(pins) {
+  return `${JSON.stringify({ generatedBy: PINS_GENERATED_BY, versions: engineVersions(pins) }, null, 2)}\n`;
+}
+
 function writePins(engines) {
   const ordered = {};
   for (const id of Object.keys(engines).sort()) ordered[id] = engines[id];
-  writeFileSync(
-    PINS_PATH,
-    `${JSON.stringify({ generatedBy: PINS_GENERATED_BY, engines: ordered }, null, 2)}\n`,
-  );
+  const pins = { generatedBy: PINS_GENERATED_BY, engines: ordered };
+  writeFileSync(PINS_PATH, `${JSON.stringify(pins, null, 2)}\n`);
+  writeFileSync(ENGINE_VERSIONS_PATH, renderEngineVersions(pins));
 }
 
 export function loadPins(pinsPath = PINS_PATH) {
@@ -528,8 +578,20 @@ export function loadPins(pinsPath = PINS_PATH) {
   return pins;
 }
 
-/** Recompute size + sha256 of every pinned file. Returns rows plus every difference found. */
-export function verifyAssets({ pinsPath = PINS_PATH, publicDir = PUBLIC_DIR } = {}) {
+/**
+ * Recompute size + sha256 of every pinned file. Returns rows plus every difference found.
+ *
+ * The check runs both ways. A pinned file that is missing or different is a problem, and so is a
+ * file under `public/engines/**` that no pin names: `assemble-dist` copies that directory whole, so
+ * a stray file there would be deployed without anything having vouched for it (a local
+ * `worker:deploy` runs no other gate). `versionsPath` is the file that records the engines' URL
+ * versions (`engineVersions`); it must say what the pins say. `null` skips that comparison.
+ */
+export function verifyAssets({
+  pinsPath = PINS_PATH,
+  publicDir = PUBLIC_DIR,
+  versionsPath = ENGINE_VERSIONS_PATH,
+} = {}) {
   const pins = loadPins(pinsPath);
   const rows = [];
   const problems = [];
@@ -566,6 +628,47 @@ export function verifyAssets({ pinsPath = PINS_PATH, publicDir = PUBLIC_DIR } = 
       problems: engineProblems,
     });
   }
+
+  const addProblem = (engine, path, kind, detail) => {
+    const problem = { engine, path, kind, detail };
+    problems.push(problem);
+    rows.find((row) => row.id === engine)?.problems.push(problem);
+  };
+
+  const pinned = new Set();
+  for (const engine of Object.values(pins.engines)) {
+    for (const pin of engine.files ?? []) pinned.add(pin.path);
+  }
+  const enginesDir = join(publicDir, 'engines');
+  if (existsSync(enginesDir)) {
+    for (const abs of walkFiles(enginesDir).sort()) {
+      const path = relative(publicDir, abs).split(sep).join('/');
+      if (pinned.has(path)) continue;
+      const owner = path.split('/')[1] ?? '?';
+      addProblem(owner, path, 'unpinned', 'file is under public/engines but no pin names it');
+    }
+  }
+
+  if (versionsPath !== null) {
+    const expected = engineVersions(pins);
+    const shown = relative(ROOT, versionsPath).split(sep).join('/');
+    let recorded = {};
+    try {
+      recorded = JSON.parse(readFileSync(versionsPath, 'utf8')).versions ?? {};
+    } catch {
+      // absent or unreadable: every engine is reported below as recording nothing
+    }
+    const stale = (id, detail) =>
+      addProblem(id, shown, 'version', `${detail} — run: node tools/fetch-engines.mjs --versions`);
+    for (const [id, version] of Object.entries(expected)) {
+      if (recorded[id] === version) continue;
+      stale(id, `records ${recorded[id] ?? 'nothing'}, the pins say ${version}`);
+    }
+    for (const id of Object.keys(recorded)) {
+      if (!(id in expected)) stale(id, 'records an engine the pins do not serve');
+    }
+  }
+
   return {
     rows,
     problems,
@@ -706,8 +809,14 @@ function update({ write = true } = {}) {
   }
   writePins(engines);
   console.log(
-    `\nfetch-engines --update: ${totalFiles} file(s) pinned — ${totalMib.toFixed(2)} MiB — wrote ${relative(ROOT, PINS_PATH)}`,
+    `\nfetch-engines --update: ${totalFiles} file(s) pinned — ${totalMib.toFixed(2)} MiB — wrote ${relative(ROOT, PINS_PATH)} and ${relative(ROOT, ENGINE_VERSIONS_PATH)}`,
   );
+}
+
+/** Rewrite the engines' URL versions from the committed pins, without touching the engine files. */
+function writeVersions() {
+  writeFileSync(ENGINE_VERSIONS_PATH, renderEngineVersions(loadPins()));
+  console.log(`fetch-engines --versions: wrote ${relative(ROOT, ENGINE_VERSIONS_PATH)}`);
 }
 
 function verify() {
@@ -719,7 +828,10 @@ function verify() {
 const USAGE = `usage: node tools/fetch-engines.mjs [--update|--sync]
 
   (default)   verify public/engines/** against tools/asset-pins.json
-  --update    copy the pinned engine builds and rewrite tools/asset-pins.json
+  --update    copy the pinned engine builds and rewrite tools/asset-pins.json and the
+              engines' URL versions (packages/pdf-core/src/engine-versions.json)
+  --versions  rewrite only the URL versions, from the committed pins — what to run after
+              the pins were edited without a copy
   --sync      copy the engine builds from node_modules, then verify them against the
               committed pins (nothing is rewritten) — this is what a fresh CI checkout runs`;
 
@@ -730,7 +842,7 @@ function main() {
     return;
   }
   const unknown = args.filter(
-    (arg) => arg !== '--update' && arg !== '-u' && arg !== '--sync' && arg !== '-s',
+    (arg) => arg !== '--update' && arg !== '-u' && arg !== '--sync' && arg !== '-s' && arg !== '--versions',
   );
   if (unknown.length > 0) {
     console.error(`fetch-engines: unknown argument(s): ${unknown.join(', ')}\n\n${USAGE}`);
@@ -739,7 +851,8 @@ function main() {
   }
   const sync = args.includes('--sync') || args.includes('-s');
   const write = args.includes('--update') || args.includes('-u');
-  if (sync) update({ write: false });
+  if (args.includes('--versions')) writeVersions();
+  else if (sync) update({ write: false });
   else if (write) update();
   else verify();
 }

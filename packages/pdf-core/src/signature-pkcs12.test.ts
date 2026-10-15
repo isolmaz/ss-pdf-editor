@@ -8,7 +8,7 @@
  * identity.
  */
 
-import { BmpString, Integer, OctetString, Utf8String } from 'asn1js';
+import { BmpString, Integer, ObjectIdentifier, OctetString, Utf8String } from 'asn1js';
 import type { ContentEncryptionAlgorithm } from 'pkijs';
 import {
   AttributeTypeAndValue,
@@ -23,7 +23,9 @@ import {
   SafeContents,
   setEngine,
 } from 'pkijs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { signPdf } from './ops/sign';
+import { verifySignatures } from './ops/signature-status';
 import { describeCertificate, importPkcs12 } from './signature-pkcs12';
 import { type CurveName, generateKey, issueCertificate, type KeySpec } from './signature-trust.fixtures';
 
@@ -74,6 +76,8 @@ async function container(
     readonly layout?: Layout;
     readonly password?: string;
     readonly certificateDer?: Uint8Array;
+    /** Every certificate bag, in this order, instead of the identity's own followed by `chain`. */
+    readonly certificates?: readonly Uint8Array[];
     /** Leave this half out; a stray bag takes its place so the container stays well-formed. */
     readonly omit?: 'certificate' | 'key';
     /** Add a data content whose bytes are not ASN.1. */
@@ -103,7 +107,9 @@ async function container(
   const certificates: SafeBag[] =
     options.omit === 'certificate'
       ? [stray]
-      : [options.certificateDer ?? identity.der, ...(options.chain ?? [])].map(certificateBag);
+      : (options.certificates ?? [options.certificateDer ?? identity.der, ...(options.chain ?? [])]).map(
+          certificateBag,
+        );
   const keys = [
     ...(options.omit === 'key' ? [stray] : [new SafeBag({ bagId: BAG_KEY, bagValue: keyBag })]),
     ...(options.extraBags ?? []),
@@ -282,20 +288,126 @@ describe('importPkcs12', () => {
     );
   });
 
-  it('refuses a certificate whose key algorithm or curve is not supported', async () => {
+  it('refuses a private key whose algorithm or curve is not supported', async () => {
     const identity = await identityFor({ kind: 'EC', curve: 'P-256' });
-    const ed25519 = rewritten(identity.der, (certificate) => {
-      certificate.subjectPublicKeyInfo.algorithm.algorithmId = '1.3.101.112';
+    /** The same identity with the algorithm identifier of its key changed by `change`. */
+    const withKeyAlgorithm = (change: (info: PrivateKeyInfo) => void): Identity => {
+      const info = PrivateKeyInfo.fromBER(identity.pkcs8.slice());
+      change(info);
+      return { ...identity, pkcs8: new Uint8Array(info.toSchema().toBER(false)) };
+    };
+    const ed25519 = withKeyAlgorithm((info) => {
+      info.privateKeyAlgorithm.algorithmId = '1.3.101.112';
     });
-    await expect(
-      importPkcs12(await container(identity, { certificateDer: ed25519 }), PASSWORD),
-    ).rejects.toThrow('unsupported signing key algorithm or named curve');
-    const secp256k1 = rewritten(identity.der, (certificate) => {
-      certificate.subjectPublicKeyInfo.algorithm.algorithmParams = new Integer({ value: 1 });
+    await expect(importPkcs12(await container(ed25519), PASSWORD)).rejects.toThrow(
+      'unsupported signing key algorithm or named curve',
+    );
+    const unknownCurve = withKeyAlgorithm((info) => {
+      info.privateKeyAlgorithm.algorithmParams = new Integer({ value: 1 });
     });
+    await expect(importPkcs12(await container(unknownCurve), PASSWORD)).rejects.toThrow(
+      'unsupported signing key algorithm or named curve',
+    );
+  });
+
+  it('passes over certificates whose public key it cannot read when it looks for the key’s own', async () => {
+    const leaf = await identityFor({ kind: 'EC', curve: 'P-256' });
+    const other = await identityFor({ kind: 'EC', curve: 'P-256' }, 'Başka CA');
+    // secp256k1: a named curve, but not one WebCrypto signs with.
+    const foreign = rewritten(other.der, (certificate) => {
+      certificate.subjectPublicKeyInfo.algorithm.algorithmParams = new ObjectIdentifier({
+        value: '1.3.132.0.10',
+      });
+    });
+    const imported = await importPkcs12(
+      await container(leaf, { certificates: [foreign, leaf.der] }),
+      PASSWORD,
+    );
+    expect(Array.from(imported.certificate)).toEqual(Array.from(leaf.der));
+    expect(imported.chain.map((der) => Array.from(der))).toEqual([Array.from(foreign)]);
+  });
+
+  it('takes the certificate the private key belongs to when the container lists CAs first', async () => {
+    const leaf = await identityFor({ kind: 'EC', curve: 'P-256' });
+    const rsaCa = await identityFor({ kind: 'RSA' }, 'RSA Kök CA');
+    const ecCa = await identityFor({ kind: 'EC', curve: 'P-256' }, 'EC Ara CA');
+    const imported = await importPkcs12(
+      await container(leaf, { certificates: [rsaCa.der, ecCa.der, leaf.der] }),
+      PASSWORD,
+    );
+    expect(Array.from(imported.certificate)).toEqual(Array.from(leaf.der));
+    expect(imported.chain.map((der) => Array.from(der))).toEqual([
+      Array.from(rsaCa.der),
+      Array.from(ecCa.der),
+    ]);
+    expect(imported.commonName).toBe('İmza Deneme');
+    expect(await signsFor(imported.privateKey, leaf.keyPair.publicKey)).toBe(true);
+  });
+
+  it('signs a PDF whose signature verifies when the container lists a CA before the leaf', async () => {
+    const leaf = await identityFor({ kind: 'EC', curve: 'P-256' });
+    const ca = await identityFor({ kind: 'EC', curve: 'P-256' }, 'Kök CA');
+    const imported = await importPkcs12(
+      await container(leaf, { certificates: [ca.der, leaf.der] }),
+      PASSWORD,
+    );
+    const mupdf = await import('mupdf');
+    const document = new mupdf.PDFDocument();
+    document.insertPage(0, document.addPage([0, 0, 300, 400], 0, {}, ''));
+    const blank = new Uint8Array(document.saveToBuffer('').asUint8Array());
+    document.destroy();
+
+    const signed = await signPdf(blank, { identity: imported }, { signal: new AbortController().signal });
+    const [verdict, ...others] = await verifySignatures(signed.bytes);
+    expect(others).toEqual([]);
+    expect(verdict).toMatchObject({ integrity: 'valid', signer: 'İmza Deneme' });
+  });
+
+  it('refuses a container whose private key belongs to none of its certificates', async () => {
+    const identity = await identityFor({ kind: 'EC', curve: 'P-256' });
+    const stranger = await identityFor({ kind: 'EC', curve: 'P-256' }, 'Başkası');
     await expect(
-      importPkcs12(await container(identity, { certificateDer: secp256k1 }), PASSWORD),
-    ).rejects.toThrow('unsupported signing key algorithm or named curve');
+      importPkcs12(await container(identity, { certificates: [stranger.der] }), PASSWORD),
+    ).rejects.toThrow('the container carries no certificate for its private key');
+  });
+
+  it('overwrites the password bytes and the plain key with zeros, whatever the outcome', async () => {
+    const identity = await identityFor({ kind: 'EC', curve: 'P-256' });
+    const bytes = await container(identity);
+    for (const password of [PASSWORD, 'yanlis']) {
+      const encode = vi.spyOn(TextEncoder.prototype, 'encode');
+      const parse = vi.spyOn(PFX.prototype, 'parseInternalValues');
+      const importKey = vi.spyOn(crypto.subtle, 'importKey');
+      let imported = true;
+      try {
+        await importPkcs12(bytes, password);
+      } catch {
+        imported = false;
+      }
+      const encodedAt = encode.mock.calls.findIndex(([value]) => value === password);
+      const encoded = encode.mock.results[encodedAt]?.value as Uint8Array;
+      const handed = parse.mock.calls[0]?.[0].password as ArrayBuffer;
+      const plainKey = importKey.mock.calls.find(([format]) => format === 'pkcs8')?.[1] as
+        | ArrayBuffer
+        | undefined;
+      encode.mockRestore();
+      parse.mockRestore();
+      importKey.mockRestore();
+
+      expect(imported).toBe(password === PASSWORD);
+      const length = new TextEncoder().encode(password).length;
+      const zeros = new Array<number>(length).fill(0);
+      // The password's UTF-8 bytes, and the buffer pkijs was handed, hold nothing any more.
+      expect(Array.from(encoded)).toEqual(zeros);
+      expect(Array.from(new Uint8Array(handed))).toEqual(zeros);
+      // The key's plain PKCS#8 exists only once the password was right, and is wiped too.
+      if (imported) {
+        expect(plainKey?.byteLength ?? 0).toBeGreaterThan(0);
+        expect(new Uint8Array(plainKey as ArrayBuffer).every((byte) => byte === 0)).toBe(true);
+      } else {
+        expect(plainKey).toBeUndefined();
+      }
+    }
   });
 
   it('ignores a data content that holds no ASN.1', async () => {

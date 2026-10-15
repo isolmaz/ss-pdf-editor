@@ -224,8 +224,6 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'tools.form-fields',
   'tools.form-detect',
   'tools.link',
-  'tools.numbering',
-  'tools.watermark',
   // PDF to Word and Excel is the conversion every reader advertises on its first screen.
   'tools.export-office',
   // Help: the palette and the shortcut list are how the rest is discovered.

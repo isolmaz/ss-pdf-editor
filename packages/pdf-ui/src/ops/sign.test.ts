@@ -89,7 +89,7 @@ describe('signDialog', () => {
     expect(result.files[0]?.name).toBe('sozlesme.pdf');
     expect(result.files[0]?.mime).toBe('application/pdf');
     expect(result.noticeKey).toBe('sign.done');
-    expect(result.noticeParams).toEqual({ signer: 'İmza Deneme', expires: '2027-01-01T00:00:00.000Z' });
+    expect(result.noticeParams).toEqual({ signer: 'İmza Deneme' });
     expect(progress[0]).toEqual({ phase: 'sign', labelKey: 'op.progress.sign.prepare', done: 0, total: 1 });
 
     const [signed, ...rest] = await signaturesOf(bytesOf(result));
@@ -200,7 +200,7 @@ describe('signDialog', () => {
       { file: [await p12File({ subject: null })], password: PASSWORD, visible: true },
       await runContext(await base()),
     );
-    expect(result.noticeParams).toEqual({ signer: '', expires: '2027-01-01T00:00:00.000Z' });
+    expect(result.noticeParams).toEqual({ signer: '' });
     const [signed] = await signaturesOf(bytesOf(result));
     expect(signed?.name).toBeNull();
   });

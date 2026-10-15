@@ -554,6 +554,16 @@ describe('writeShapeAnnotations on shapes it cannot draw', () => {
     expect(error.details.pageIndex).toBe(0);
   });
 
+  it('refuses a shape named after something every object has, instead of writing a function as /Subtype', async () => {
+    for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      const error = await toolErrorOf(
+        writeShapeAnnotations(await blank(), [mark({ ...shape, shape: name as 'square' })], run),
+      );
+      expect(error.code, name).toBe('unsupported-format');
+      expect(error.details.pageIndex, name).toBe(0);
+    }
+  });
+
   it('draws a shape with no kind as a square', async () => {
     const out = await writeShapeAnnotations(
       await blank(),

@@ -6,7 +6,9 @@
  */
 
 import { createRequire } from 'node:module';
+import { TESSERACT_ASSETS } from 'pdf-core/assets';
 import { loadMupdf } from 'pdf-core/engines/mupdf';
+import { claimOcrWorkers, recognizePage } from 'pdf-core/engines/tesseract';
 import { fixturePage } from 'pdf-core/ops/layout-fixtures';
 import { createTranslator } from 'pdf-shared';
 import { describe, expect, it, vi } from 'vitest';
@@ -26,7 +28,8 @@ const state = vi.hoisted(() => ({
   confidence: 95,
 }));
 
-vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
+// Not hoisted: the module's URL carries the engine's pinned version, so it is the asset's own.
+vi.doMock(TESSERACT_ASSETS.module, () => ({
   default: undefined,
   createWorker: async (languages: string[]) => {
     state.created.push(languages);
@@ -212,10 +215,44 @@ describe('export-office dialog with a scanned page', () => {
     ).rejects.toThrow('the report could not be shown');
     expect(state.terminated).toBe(before + 1);
   });
+
+  it('leaves the worker another operation is reading with alone when the export finishes, and takes back what was its own', async () => {
+    const { exportOfficeDialog } = await import('./office');
+    const before = { created: state.created.length, terminated: state.terminated };
+    // Another operation (an OCR run) holds the Turkish pool and has a worker in it.
+    const other = claimOcrWorkers([{ languages: ['tur'], quality: 'best' }]);
+    await recognizePage({
+      image: new Blob(['page'], { type: 'image/png' }),
+      scale: 1,
+      languages: ['tur'],
+      quality: 'best',
+      signal: new AbortController().signal,
+    });
+    await exportOfficeDialog.run(
+      { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages: ['tur'] },
+      {
+        signal: new AbortController().signal,
+        onProgress: () => {},
+        bytes: await scan(),
+        pageCount: 1,
+        name: 'tarama.pdf',
+        currentPage: 0,
+        selectedPages: [],
+        t: createTranslator('tr'),
+      },
+    );
+    // The export read on the worker the other operation had started, and its end did not terminate it.
+    expect(state.created.slice(before.created)).toEqual([['tur']]);
+    expect(state.terminated - before.terminated).toBe(0);
+    // The pool closes with its last holder.
+    await other.release();
+    expect(state.terminated - before.terminated).toBe(1);
+  });
+
   it('reads the pages of a scan side by side on as many workers as the machine has cores to spare, and releases them all', async () => {
     const { exportOfficeDialog } = await import('./office');
     const before = { created: state.created.length, terminated: state.terminated };
-    vi.stubGlobal('navigator', { hardwareConcurrency: 4 });
+    vi.stubGlobal('navigator', { hardwareConcurrency: 4, deviceMemory: 8 });
     try {
       await exportOfficeDialog.run(
         { scope: 'all', format: 'docx', layout: 'layout', ocrLanguages: ['tur'] },
@@ -240,8 +277,10 @@ describe('export-office dialog with a scanned page', () => {
   });
 
   it.each([
-    { navigator: { hardwareConcurrency: 8 }, pageWorkers: 3 },
+    { navigator: { hardwareConcurrency: 8, deviceMemory: 8 }, pageWorkers: 3 },
     { navigator: { hardwareConcurrency: 8, deviceMemory: 2 }, pageWorkers: 1 },
+    // Firefox, Safari and iOS do not report their memory: that is taken for little, not for plenty.
+    { navigator: { hardwareConcurrency: 8 }, pageWorkers: 1 },
   ])(
     'never has more live workers than the page readers it allowed and one for the capitals read again with English alone ($pageWorkers)',
     async ({ navigator, pageWorkers }) => {

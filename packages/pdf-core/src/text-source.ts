@@ -22,6 +22,22 @@
  * after `/Rotate`, `y` down), so every value crosses one explicit conversion; the
  * forward table it inverts, and that table in words, are on `toUserX`/`toUserY`.
  *
+ * The two axes are not alike, and that is the one contract every reader and writer of
+ * this model shares (it is the viewer's own: `PdfViewerPane.pointToPage`):
+ *
+ *   - `x` is the **user-space x** — `box.x` is included, so a glyph at user x = 140 on a
+ *     page whose box starts at x = 100 reads `140`;
+ *   - `y` is the **distance below the box's top edge**: `y = box.y + box.height − userY`,
+ *     `0` at the top edge and `box.height` at the bottom edge. `box.y` is *not* added —
+ *     it is already inside the user-space y the top edge is measured from.
+ *
+ * For a page whose box starts at the origin the two descriptions agree, which is why a
+ * reader that added `box.y` again went unnoticed until a page was cropped. The writer
+ * (`engines/mupdf.ts > topLeftToUserPoint`), the verifier (`ops/text-edit.ts`), the
+ * tagger's show-operator match (`ops/accessibility.ts > matchBlocks`), the reading-order
+ * layout (`ops/structure.ts`) and the overlay (`pdf-ui … TextLayer > displayedBox`) all
+ * convert against exactly this definition.
+ *
  * ## Boundaries
  *
  * Both engines get a **disposable copy** of the bytes: MuPDF through
@@ -102,10 +118,9 @@ interface MeasuredPage {
  *
  * `width`/`height` are the unrotated page box — `/CropBox`, falling back to `/MediaBox`
  * — which is the box the writer's own `readPageBox` uses and the box the viewer's
- * pointer conversion flips about (`PdfViewerPane.pointToPage`). The engine's type
- * comment calls the same number "the MediaBox width"; they are one number for every
- * file that has no CropBox, and where they differ, staying with the reader/writer
- * convention is what keeps the geometry in one space.
+ * pointer conversion flips about (`PdfViewerPane.pointToPage`). They are the extents
+ * the model's `y` counts down over, not an origin: see "Space" above for what `x`
+ * and `y` are measured from when that box does not start at `(0, 0)`.
  *
  * `colors` is per block: the colour most of the block's glyphs were drawn with, as
  * MuPDF reports it. A block without one gets pdf.js's page-dominant text colour; an
@@ -305,7 +320,9 @@ function readBlocks(
         chars = [];
       },
       // The binding builds every glyph colour as an RGB triple (`colorFromNumber`), although
-      // its declared `Color` also allows grey and CMYK shapes.
+      // its declared `Color` also allows grey and CMYK shapes. `ch` is one whole code point, so an
+      // emoji or a mathematical letter is two UTF-16 units: the stock binding cut it to 16 bits
+      // (U+1F600 read as U+F600), and `patches/mupdf@1.28.1.patch` is what keeps the rune whole.
       onChar(ch, origin, font, size, quad, color: [number, number, number]) {
         const at = pointToUser(box, rotation, origin);
         if (chars.length === 0) baseline = at[1];
@@ -341,10 +358,11 @@ function readBlocks(
 }
 
 /**
- * Undo MuPDF's displayed-page rotation, retaining user-space x coordinates.
- * toUserY additionally flips PDF user-space y into the model's downward axis.
- * The production-reader probe verifies every glyph at all four quarter turns,
- * including a CropBox offset; block grouping itself may differ by rotation.
+ * Undo MuPDF's displayed-page rotation, retaining user-space x coordinates (`box.x`
+ * included — see "Space" above). `toUserY` answers the other axis, which is *not*
+ * user-space: it counts down from the box's top edge. `text-source.test.ts` reads a
+ * glyph at all four quarter turns on a box that does not start at the origin.
+ * Block grouping itself may differ by rotation.
  */
 function toUserX(box: PageBox, rotation: Rotation, u: number, v: number): number {
   switch (rotation) {
@@ -359,17 +377,28 @@ function toUserX(box: PageBox, rotation: Rotation, u: number, v: number): number
   }
 }
 
-/** Inverse page rotation followed by the model's top-left y conversion. */
+/**
+ * Inverse page rotation followed by the model's top-left y conversion: the distance
+ * below the unrotated box's top edge (`box.y + box.height − userY`), so `box.y` cancels
+ * out and is deliberately absent. Rotation 0 is the page-space `v` itself; the others
+ * are the inverse turns of the table on `userToPageSpace` (`engines/mupdf.ts`) put
+ * through the same subtraction:
+ *
+ *   rotation   0:  y = v
+ *   rotation  90:  y = box.height − u
+ *   rotation 180:  y = box.height − v
+ *   rotation 270:  y = u
+ */
 function toUserY(box: PageBox, rotation: Rotation, u: number, v: number): number {
   switch (rotation) {
     case 90:
-      return box.y + box.height - u;
+      return box.height - u;
     case 180:
-      return box.y + box.height - v;
+      return box.height - v;
     case 270:
-      return box.y + u;
+      return u;
     default:
-      return box.y + v;
+      return v;
   }
 }
 

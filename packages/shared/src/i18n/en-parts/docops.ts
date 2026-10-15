@@ -33,7 +33,7 @@ export const docopsPart = {
   'op.note.impose.lostInteractive':
     'Links, annotations, form fields and outline bookmarks not carried to new sheets.',
 
-  'op.note.compress.infoDropped': 'Info fields (title, author, dates) stripped.',
+  'op.note.compress.infoDropped': 'Info fields (title, author, dates) and the XMP metadata packet stripped.',
   'op.note.compress.infoKept': 'Info metadata preserved.',
   'op.note.compress.structureContent': 'Content, links, annotations, bookmarks and form fields preserved.',
   'op.note.compress.rasterized':

@@ -2,6 +2,8 @@ export const enginesPart = {
   'op.note.security.encryptionApplied': 'AES-256 encryption applied.',
   'op.note.security.opensWithoutPassword':
     'Document opens without password; permissions are restricted by owner password only.',
+  'op.note.security.ownerPasswordGenerated':
+    'Owner password was left empty; a random owner password was generated and not stored. Permissions cannot be changed with the open password.',
   'op.note.security.signatureInvalidated':
     'The document carries a digital signature. Encrypting rewrites the file, so the signature is no longer valid.',
   'op.note.security.signatureInvalidatedUnlock':
@@ -19,6 +21,8 @@ export const enginesPart = {
     'Metadata cleared: title, author, subject, keywords, creator and the XMP packet. Custom properties are kept.',
   'op.note.redact.producerKept': 'Producer string preserved.',
   'op.note.redact.attachmentsRemoved': '{count} attachment(s) removed.',
+  'op.note.redact.tagTextRemoved':
+    '{count} alternative or replacement text(s) of the tags on the redacted pages removed; they repeated the page text.',
   'op.note.redact.fieldsRemoved': '{count} form field(s) under the marked areas removed.',
   'op.note.redact.xfaDropped':
     'The XFA form definition and data were dropped: they still held the values of the removed fields. The remaining AcroForm fields keep their values.',

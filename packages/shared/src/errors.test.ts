@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isToolError, TOOL_ERROR_CODES, ToolError, toToolError } from './errors';
+import { createTranslator } from './i18n';
 import { tr } from './i18n/tr';
 
 /**
@@ -45,18 +46,50 @@ describe('ToolError contract', () => {
     expect(isToolError({ code: 'internal' })).toBe(false);
   });
 
-  it('names a chunk the browser could not fetch as offline, not as an internal failure', () => {
-    for (const message of [
+  describe('a chunk the browser could not fetch', () => {
+    const CHUNK_MESSAGES = [
       'Failed to fetch dynamically imported module: http://localhost/editor/assets/pdf-1.js',
       'error loading dynamically imported module: http://localhost/editor/assets/pdf-1.js',
       'Importing a module script failed.',
       'Unable to preload CSS for /editor/assets/PrintDialog-1.css',
-    ]) {
-      const error = toToolError(new TypeError(message), 'pdfjs');
-      expect(error.code, message).toBe('asset-offline');
-      expect(error.details.engineMessage).toBe(message);
-    }
-    expect(toToolError(new TypeError('Failed to fetch'), 'pdfjs').code).toBe('internal');
+    ];
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('is offline when the browser has no network: connecting is what brings the chunk', () => {
+      vi.stubGlobal('navigator', { onLine: false });
+      for (const message of CHUNK_MESSAGES) {
+        const error = toToolError(new TypeError(message), 'pdfjs');
+        expect(error.code, message).toBe('asset-offline');
+        expect(error.details.engineMessage).toBe(message);
+      }
+      expect(toToolError(new TypeError('Failed to fetch'), 'pdfjs').code).toBe('internal');
+    });
+
+    it('is stale when the browser has a network: the page outlived its release, so reloading is the cure', () => {
+      vi.stubGlobal('navigator', { onLine: true });
+      for (const message of CHUNK_MESSAGES) {
+        const error = toToolError(new TypeError(message), 'pdfjs');
+        expect(error.code, message).toBe('asset-stale');
+        expect(error.messageKey).toBe('error.asset-stale.message');
+        expect(error.hintKey).toBe('error.asset-stale.hint');
+        expect(error.details.engineMessage).toBe(message);
+      }
+      expect(toToolError(new TypeError('Failed to fetch'), 'pdfjs').code).toBe('internal');
+      // Its words are not the offline ones, which would send a reader whose network works the wrong way.
+      expect(tr['error.asset-stale.hint']).toContain('yenileyin');
+      expect(tr['error.asset-stale.hint']).not.toBe(tr['error.asset-offline.hint']);
+      expect(tr['error.asset-stale.message']).not.toBe(tr['error.asset-offline.message']);
+    });
+
+    it('is offline when the runtime does not say whether it has a network', () => {
+      vi.stubGlobal('navigator', {});
+      expect(toToolError(new TypeError(CHUNK_MESSAGES[0] as string)).code).toBe('asset-offline');
+      vi.stubGlobal('navigator', undefined);
+      expect(toToolError(new TypeError(CHUNK_MESSAGES[0] as string)).code).toBe('asset-offline');
+    });
   });
 
   it('names the message and the hint of every code separately, after the code', () => {
@@ -101,6 +134,33 @@ describe('ToolError contract', () => {
     const abort = toToolError(new DOMException('stopped by user', 'AbortError'), 'fs');
     expect(abort.details.engineMessage).toBe('stopped by user');
     expect(abort.message).toBe('[aborted] fs: stopped by user');
+  });
+
+  it('maps a cancellation to aborted by its name, whether it is a DOMException or a plain Error', () => {
+    // The shape `throwIfAborted` and the engines' own cancel paths throw.
+    const plain = new Error('operation aborted');
+    plain.name = 'AbortError';
+    const fromPlain = toToolError(plain, 'pdfjs');
+    expect(fromPlain.code).toBe('aborted');
+    expect(fromPlain.details).toEqual({ engine: 'pdfjs', engineMessage: 'operation aborted' });
+    expect(fromPlain.message).toBe('[aborted] pdfjs: operation aborted');
+
+    const fromDom = toToolError(new DOMException('stopped', 'AbortError'), 'pdfjs');
+    expect([fromDom.code, fromDom.details.engineMessage]).toEqual(['aborted', 'stopped']);
+
+    // Only the name decides: an error that merely says "abort" is not a cancellation.
+    expect(toToolError(new Error('operation aborted'), 'pdfjs').code).toBe('internal');
+    expect(toToolError({ name: 'AbortError', message: 'not an Error' }, 'pdfjs').code).toBe('internal');
+  });
+
+  it('puts the characters a glyph-missing refusal names into its message, in both languages', () => {
+    const error = new ToolError('glyph-missing', { engine: 'mupdf', params: { chars: '😀 😁' } });
+    for (const locale of ['tr', 'en'] as const) {
+      const translate = createTranslator(locale);
+      const message = translate(error.messageKey, error.details.params);
+      expect(message, locale).toContain('😀 😁');
+      expect(message, locale).not.toContain('{chars}');
+    }
   });
 
   it('carries an explicit cause through the constructor', () => {

@@ -2,7 +2,7 @@
  * The operation contract every capability runs through.
  *
  * One shape for all 18 capabilities: bytes in → bytes (or files) out, with
- * progress, cancellation and an honest report of what changed. The save router
+ * progress, cancellation and an honest report of what changed. The save path
  * and the UI never talk to an engine directly — they call an operation.
  *
  * Why the report is part of the result and not optional:
@@ -80,6 +80,11 @@ export interface PageRect {
   readonly rect: readonly [number, number, number, number];
 }
 
+/**
+ * Stop at a cancellation point. The error is a plain `Error` named `AbortError`; a
+ * caller that wraps what it catches with `toToolError` gets `aborted` from the name,
+ * so no operation has to rethrow it untouched to keep it from becoming `internal`.
+ */
 export function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) {
     const error = new Error('operation aborted');

@@ -9,6 +9,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { loadMupdf, openPdf } from '../engines/mupdf';
 import { readName, readNumbers, resolved } from '../engines/mupdf-write';
+import { transformPdfAnnotations } from './annotation-transform';
 import { addImageStamp, type ImageStampRequest, resizeImageStamp } from './image-stamp';
 
 const run = { signal: new AbortController().signal };
@@ -174,6 +175,53 @@ describe('addImageStamp', () => {
     await expect(addImageStamp(page, request({ pageIndex: 4 }), run)).rejects.toMatchObject({
       code: 'range-invalid',
     });
+  });
+});
+
+describe('a stamp placed on a turned page, then moved or turned', () => {
+  /** Placed at displayed (50, 100) on a page turned a quarter: red at [170 30 199 69], blue at [200 30 229 69]. */
+  async function placedOnTurnedPage() {
+    const placed = await addImageStamp(await blank(90), request({ center: { x: 50, y: 100 } }), run);
+    const before = await render(placed.bytes);
+    expect(before.red).toEqual([170, 30, 199, 69]);
+    expect(before.blue).toEqual([200, 30, 229, 69]);
+    return placed;
+  }
+
+  it('moves with its picture still upright: the whole stamp shifts by the offset, none of it stretched', async () => {
+    const placed = await placedOnTurnedPage();
+    // App space is the unrotated page, y down: +20 across and 10 up there is user (+20, +10); the
+    // page shows its user x downward and its user y rightward, so the picture moves 10 right, 20 down.
+    const out = await transformPdfAnnotations(
+      placed.bytes,
+      { targets: [{ pageIndex: 0, id: placed.annotationId }], transform: { dx: 20, dy: -10, rotation: 0 } },
+      run,
+    );
+    expect((await stamps(out.bytes))[0]?.rect).toEqual([50, 180, 90, 240]);
+    const shown = await render(out.bytes);
+    expect(shown.red).toEqual([180, 50, 209, 89]);
+    expect(shown.blue).toEqual([210, 50, 239, 89]);
+  });
+
+  it('turns a quarter clockwise about its own centre, red left of blue becoming red above blue', async () => {
+    const placed = await placedOnTurnedPage();
+    const out = await transformPdfAnnotations(
+      placed.bytes,
+      { targets: [{ pageIndex: 0, id: placed.annotationId }], transform: { dx: 0, dy: 0, rotation: 90 } },
+      run,
+    );
+    expect((await stamps(out.bytes))[0]?.rect).toEqual([20, 180, 80, 220]);
+    const shown = await render(out.bytes);
+    // Centre (200, 50) on the page as shown; the 60×40 picture is now 40 wide and 60 tall. A picture
+    // that is really turned is resampled at its edges, so a box is right to within a pixel.
+    const near = (actual: readonly number[] | null, expected: readonly number[]): void => {
+      expect(actual).not.toBeNull();
+      for (const [index, value] of expected.entries()) {
+        expect(Math.abs((actual?.[index] ?? Number.NaN) - value)).toBeLessThanOrEqual(1);
+      }
+    };
+    near(shown.red, [180, 20, 219, 49]);
+    near(shown.blue, [180, 50, 219, 79]);
   });
 });
 

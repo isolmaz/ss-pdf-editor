@@ -68,7 +68,7 @@ export function useDocumentEffects({ session, t, tab, handle }: DocumentEffectsH
     document.title = documentTitle(tab, t);
   }, [tab, t]);
   useFormInventory({ store: session, t, tab, handle });
-  useStoredTrust();
+  useStoredTrust(t);
   useDocumentFacts({ store: session, t, tab, handle, revision: inspectionRevision });
   useTextToolBytes(session, tab, handle, t);
   useSelectionEffects({

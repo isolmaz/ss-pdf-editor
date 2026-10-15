@@ -117,14 +117,19 @@ test('a file that is neither JSON, FDF nor XFDF is refused with its reason and a
   });
   expect(await rows(page).count()).toBe(before);
 
+  // The first refusal's line is still on screen and carries the very same words, so it would
+  // satisfy the second check by itself: it is closed first, and the second refusal has to bring
+  // the line back.
+  const refusal = notice(page, 'This file format is not supported. Pick a PDF file.');
+  await refusal.getByRole('button', { name: 'Close' }).click();
+  await expect(refusal).toHaveCount(0);
+
   // An XML file that is not an XFDF is refused the same way.
   await input.setInputFiles({
     name: 'notes.xfdf',
     mimeType: 'application/vnd.adobe.xfdf',
     buffer: Buffer.from('<?xml version="1.0"?><html><body>no comments</body></html>'),
   });
-  await expect(notice(page, 'This file format is not supported. Pick a PDF file.')).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(refusal).toBeVisible({ timeout: 30_000 });
   expect(await rows(page).count()).toBe(before);
 });

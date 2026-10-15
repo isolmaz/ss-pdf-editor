@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vite
 import { cancelOperation, coreStore, initialCoreState, operationRunning, setBusy } from '../core/core-store';
 import { dropHandle, handleFor } from '../core/handles';
 import { persistenceStore } from '../persistence/persistence-store';
-import { type MemoryStorage, manifest, memoryStorage } from '../persistence/vault.fixtures';
+import { fakeChannel, type MemoryStorage, manifest, memoryStorage } from '../persistence/vault.fixtures';
 import { createOpenActions, fileInput, openAndFingerprint } from './open-actions';
 import { initialOpenState, openStore, selectPages, showStartScreen } from './open-store';
 
@@ -173,13 +173,28 @@ describe('openFile', () => {
     expect(notice()).toBe('locked.banner');
   });
 
-  it('keeps no recovery copy of an encrypted document and marks the session sensitive', async () => {
-    outside.openWithPdfjs.mockResolvedValue(fakeHandle(2, [4]));
+  it('keeps no recovery copy and no file handle of a document opened with its password, and marks the session sensitive', async () => {
+    const fileHandle = { name: 'a.pdf' } as FileSystemFileHandle;
 
-    await actions().openFile(pdfFile());
+    await actions().openFile(pdfFile(), fileHandle, 'secret');
 
     expect(session.active?.sensitive).toBe(true);
     expect(storage.sources.size).toBe(0);
+    expect(outside.putRecentHandle).not.toHaveBeenCalled();
+  });
+
+  it('stores a file that only an owner password restricts like any other: it opened without a password', async () => {
+    // Encrypted, so the engine reports permissions — but nothing was typed, so nothing is secret.
+    outside.openWithPdfjs.mockResolvedValue(fakeHandle(2, [4]));
+    const fileHandle = { name: 'owned.pdf' } as FileSystemFileHandle;
+
+    await actions().openFile(pdfFile('owned.pdf'), fileHandle);
+
+    expect(outside.openWithPdfjs).toHaveBeenCalledWith(expect.any(Uint8Array), {});
+    expect(session.active?.sensitive).toBe(false);
+    expect(openStore.get().lockedTabs.size).toBe(0);
+    expect([...storage.sources.values()]).toEqual([new Uint8Array([1, 2, 3])]);
+    expect(outside.putRecentHandle).toHaveBeenCalledWith(session.active?.id, fileHandle);
   });
 
   it('keeps the tab and says the recovery copy was not stored when storage refuses', async () => {
@@ -257,21 +272,6 @@ describe('openFile', () => {
 
     expect(handle.destroy).toHaveBeenCalledOnce();
     expect(notice()).toBe('error.file-too-large.message error.file-too-large.hint');
-  });
-
-  it('releases the handle and reports the original error when its permissions cannot be read', async () => {
-    const handle = fakeHandle();
-    handle.raw.getPermissions = vi.fn(async () => {
-      throw new Error('boom');
-    });
-    handle.destroy.mockRejectedValue(new Error('stuck'));
-    outside.openWithPdfjs.mockResolvedValue(handle);
-
-    await actions().openFile(pdfFile());
-
-    expect(handle.destroy).toHaveBeenCalledOnce();
-    expect(notice()).toBe('error.corrupt-document.message error.corrupt-document.hint');
-    expect(session.getSnapshot().tabs).toHaveLength(0);
   });
 
   it('asks for the password of a protected file, keeping the file and its handle', async () => {
@@ -822,13 +822,49 @@ describe('selectRecent', () => {
     expect(click).not.toHaveBeenCalled();
   });
 
-  it('offers the picker when the draft’s source is gone', async () => {
+  it('says so, then offers the picker, when the draft’s source is gone', async () => {
     storage.drafts.set('doc-1', manifest('doc-1'));
 
     await actions().selectRecent(item);
 
+    expect(notice()).toBe('error.corrupt-document.message {} error.corrupt-document.hint {}');
     expect(click).toHaveBeenCalledOnce();
     expect(session.getSnapshot().tabs).toHaveLength(0);
+  });
+
+  it('restores what startup recovery would: the history, the dirty flag and the source’s page count', async () => {
+    outside.openWithPdfjs.mockResolvedValue(fakeHandle(5));
+    storage.drafts.set(
+      'doc-1',
+      manifest('doc-1', {
+        name: 'doc.pdf',
+        pageCount: 2,
+        sourcePageCount: 5,
+        lastWrittenSha256: 'e'.repeat(64),
+      }),
+    );
+    storage.sources.set('src-doc-1', new Uint8Array([4, 5]));
+
+    await actions().selectRecent(item);
+
+    expect(session.active).toMatchObject({
+      id: 'doc-1',
+      dirty: true,
+      lastWrittenSha256: 'e'.repeat(64),
+      source: { pageCount: 5 },
+    });
+  });
+
+  it('says where the document is, and opens nothing, when another window has it open', async () => {
+    storage.drafts.set('doc-1', manifest('doc-1', { name: 'doc.pdf' }));
+    storage.sources.set('src-doc-1', new Uint8Array([4, 5]));
+    persistenceStore.set({ channel: fakeChannel({ claimDraft: async () => false }) });
+
+    await actions().selectRecent(item);
+
+    expect(notice()).toBe('draft.openElsewhere {"name":"doc.pdf"}');
+    expect(session.getSnapshot().tabs).toHaveLength(0);
+    expect(click).not.toHaveBeenCalled();
   });
 
   it('offers the picker when no draft belongs to the entry', async () => {
@@ -846,5 +882,29 @@ describe('selectRecent', () => {
 
     expect(notice()).toBe('error.corrupt-document.message {} error.corrupt-document.hint {}');
     expect(click).toHaveBeenCalledOnce();
+  });
+});
+
+describe('a tab closed before its first automatic save', () => {
+  it('takes the recovery copy it stored on open with it', async () => {
+    persistenceStore.set({ draftStorage: storage, channel: fakeChannel() });
+    await actions().openFile(pdfFile('a.pdf'));
+    const tab = session.active;
+    if (tab === null) throw new Error('no tab');
+    expect([...storage.sources.keys()]).toEqual(['src-sha']);
+    session.closeTab(tab.id);
+    const { forgetDraft } = await import('../persistence/draft-vault');
+    expect(await forgetDraft(session, tab.id)).toEqual(['src-sha']);
+    expect(storage.sources.size).toBe(0);
+  });
+
+  it('takes the copy of a produced tab with it too', async () => {
+    persistenceStore.set({ draftStorage: storage, channel: fakeChannel() });
+    await actions().openProducedTab('made.pdf', new Uint8Array([9, 9]));
+    const tab = session.active;
+    if (tab === null) throw new Error('no tab');
+    session.closeTab(tab.id);
+    const { forgetDraft } = await import('../persistence/draft-vault');
+    expect(await forgetDraft(session, tab.id)).toEqual(['src-sha']);
   });
 });

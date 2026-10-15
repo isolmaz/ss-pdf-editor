@@ -36,7 +36,7 @@ import type {
 } from 'pdf-core/ops/compare';
 import { compareText, compareVisual } from 'pdf-core/ops/compare';
 import type { OperationProgress } from 'pdf-core/ops/types';
-import { type MessageKey, type Translator, toToolError } from 'pdf-shared';
+import { type MessageKey, progressLine, type Translator, toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PanelMessage } from './PanelParts';
@@ -193,6 +193,20 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
     [],
   );
 
+  /** The failure of a read or a comparison, said in the panel and on the shell's notice line. */
+  const fail = useCallback((error: unknown) => {
+    const failure = toToolError(error);
+    const { t: translate, onNotice: notify } = handlers.current;
+    const message = translate(failure.messageKey);
+    const detail: Failure = {
+      message,
+      hint: translate(failure.hintKey),
+      diagnostic: failure.details.engineMessage ?? null,
+    };
+    setRun({ status: 'error', progress: null, failure: detail });
+    notify?.(message);
+  }, []);
+
   const start = useCallback(
     (method: CompareMethod, second: { readonly name: string; readonly bytes: Uint8Array }) => {
       controllerRef.current?.abort();
@@ -229,20 +243,11 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
         } catch (error) {
           // Cancelling, restarting and unmounting each replace the controller before they abort it.
           if (controllerRef.current !== controller) return;
-          const failure = toToolError(error);
-          const { t: translate, onNotice: notify } = handlers.current;
-          const message = translate(failure.messageKey);
-          const detail: Failure = {
-            message,
-            hint: translate(failure.hintKey),
-            diagnostic: failure.details.engineMessage ?? null,
-          };
-          setRun({ status: 'error', progress: null, failure: detail });
-          notify?.(message);
+          fail(error);
         }
       })();
     },
-    [readDocument],
+    [readDocument, fail],
   );
 
   const cancel = useCallback(() => {
@@ -287,7 +292,15 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
               event.target.value = '';
               if (file === undefined) return;
               void (async () => {
-                const bytes = new Uint8Array(await file.arrayBuffer());
+                // A file that cannot be read any more (moved, locked, a revoked permission)
+                // says so instead of leaving the panel as it was and the rejection unhandled.
+                let bytes: Uint8Array;
+                try {
+                  bytes = new Uint8Array(await file.arrayBuffer());
+                } catch (error) {
+                  fail(error);
+                  return;
+                }
                 setOther({ name: file.name, bytes });
                 setText(null);
                 setPixels(null);
@@ -331,15 +344,9 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
             </Button>
           ) : null}
         </div>
-        {/* The live region exists before it has anything to say (`DESIGN.md`). */}
+        {/* The live region exists before it has anything to say. */}
         <p aria-live="polite" className="min-h-[1.1rem] text-[11px] tabular-nums text-kumo-subtle">
-          {running && run.progress !== null
-            ? t('op.progress', {
-                label: t(run.progress.labelKey),
-                done: run.progress.done ?? 0,
-                total: run.progress.total ?? 0,
-              })
-            : ''}
+          {running && run.progress !== null ? progressLine(t, run.progress) : ''}
         </p>
       </div>
 

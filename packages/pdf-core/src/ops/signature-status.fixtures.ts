@@ -9,7 +9,7 @@
  * writer, so every offset in the file is the one this module computed.
  */
 
-import { fromBER } from 'asn1js';
+import { fromBER, Sequence } from 'asn1js';
 import { RelativeDistinguishedNames } from 'pkijs';
 import { type CertificateFixture, ecdsaRawToDer } from '../signature-trust.fixtures';
 
@@ -160,12 +160,31 @@ export interface SignerInfoParts {
   /** The signature OCTET STRING's content; `null` leaves the OCTET STRING out. */
   readonly signature: Uint8Array | null;
   readonly digestOid?: string;
+  /** The `SignerIdentifier` (see {@link sidOf}); a name that matches no certificate by default. */
+  readonly sid?: Uint8Array;
+}
+
+/**
+ * The `IssuerAndSerialNumber` that names a certificate-shaped DER as a `SignerInfo`'s signer, read
+ * from its `TBSCertificate`; a name that matches nothing when the DER has no issuer to read.
+ */
+export function sidOf(certificate: Uint8Array): Uint8Array {
+  const nobody = sequence(commonNameOf('issuer'), smallInteger(1));
+  const parsed = fromBER(certificate.slice().buffer);
+  const tbs = parsed.result instanceof Sequence ? parsed.result.valueBlock.value[0] : undefined;
+  if (parsed.offset < 0 || !(tbs instanceof Sequence)) return nobody;
+  const fields = tbs.valueBlock.value;
+  const versioned = fields[0]?.idBlock.tagClass === 3 && fields[0].idBlock.tagNumber === 0;
+  const serial = fields[versioned ? 1 : 0];
+  const issuer = fields[versioned ? 3 : 2];
+  if (serial === undefined || issuer === undefined) return nobody;
+  return sequence(new Uint8Array(issuer.toBER(false)), new Uint8Array(serial.toBER(false)));
 }
 
 export function signerInfo(parts: SignerInfoParts): Uint8Array {
   return sequence(
     smallInteger(1),
-    sequence(commonNameOf('issuer'), smallInteger(1)),
+    parts.sid ?? sequence(commonNameOf('issuer'), smallInteger(1)),
     algorithmIdentifier(parts.digestOid ?? OID.sha256),
     ...(parts.attributes === null ? [] : [parts.attributes]),
     ...(parts.signatureAlgorithm === null ? [] : [parts.signatureAlgorithm]),
@@ -250,6 +269,10 @@ const HASH_OID: Readonly<Record<HashName, string>> = {
 export interface HandSignedOptions {
   readonly signer: CertificateFixture;
   readonly chain?: readonly Uint8Array[];
+  /** Certificates the set lists **before** the signer's: a producer that puts the CA first. */
+  readonly before?: readonly Uint8Array[];
+  /** The `SignerIdentifier` written instead of the one that names `signer`. */
+  readonly sid?: Uint8Array;
   /** The ByteRange bytes the CMS is over. */
   readonly covered: Uint8Array;
   readonly hash?: HashName;
@@ -295,9 +318,10 @@ export async function handSignedCms(options: HandSignedOptions): Promise<Uint8Ar
   return contentInfo(
     signedData({
       digestOids: [HASH_OID[hash]],
-      certificates: [options.signer.der, ...(options.chain ?? [])],
+      certificates: [...(options.before ?? []), options.signer.der, ...(options.chain ?? [])],
       signerInfos: [
         signerInfo({
+          sid: options.sid ?? sidOf(options.signer.der),
           attributes,
           signatureAlgorithm: algorithmIdentifier(signatureOid, isEc ? 'none' : 'null'),
           signature: written,
@@ -502,6 +526,8 @@ export interface SealOptions {
   readonly end?: number;
   /** How a literal string escapes parentheses; `escapeLiteral`'s default. */
   readonly parentheses?: 'all' | 'balanced';
+  /** Bytes of the file after the `/Contents` string that the range leaves out as well. */
+  readonly gapAfter?: number;
 }
 
 /**
@@ -522,10 +548,11 @@ export async function seal(
   if (rangeAt < 0 || contentsAt < 0) throw new Error('no placeholder to seal');
   const contentsEnd = contentsAt + placeholder.length;
   const end = options.end ?? bytes.length;
-  const range = [0, contentsAt, contentsEnd, end - contentsEnd];
+  const secondStart = contentsEnd + (options.gapAfter ?? 0);
+  const range = [0, contentsAt, secondStart, end - secondStart];
   const out = bytes.slice();
   out.set(fromLatin1(`[${range.map((value) => String(value).padStart(10, '0')).join(' ')}]`), rangeAt);
-  const covered = concat(out.subarray(0, contentsAt), out.subarray(contentsEnd, end));
+  const covered = concat(out.subarray(0, contentsAt), out.subarray(secondStart, end));
   const produced = await produce(covered);
   if (produced.length > options.capacity) throw new Error('the signature does not fit its placeholder');
   const value =

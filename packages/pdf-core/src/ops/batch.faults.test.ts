@@ -8,6 +8,7 @@
 
 import type { PDFDocument } from 'mupdf';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { BatchItem } from './batch';
 
 const state: { failCountOn: number; opened: number } = { failCountOn: -1, opened: 0 };
 
@@ -57,6 +58,11 @@ afterEach(() => {
   state.opened = 0;
 });
 
+/** A queue item whose file is already in memory. */
+function queued(name: string, bytes: Uint8Array): BatchItem {
+  return { name, size: bytes.length, read: async () => bytes };
+}
+
 async function onePage(): Promise<Uint8Array> {
   const mupdf = await import('mupdf');
   const doc = new mupdf.PDFDocument();
@@ -73,10 +79,7 @@ describe('runBatch page count measurement', () => {
     state.opened = 0;
     state.failCountOn = 0;
     const report = await runBatch(
-      [
-        { name: 'broken.pdf', bytes },
-        { name: 'fine.pdf', bytes },
-      ],
+      [queued('broken.pdf', bytes), queued('fine.pdf', bytes)],
       {
         version: 1,
         name: 'text',

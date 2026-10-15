@@ -22,7 +22,8 @@ pnpm dev                     # the editor on a local dev server
 ## Checks
 
 Every change must pass the local gates. `pnpm ci:verify` runs on your machine the checks of the
-`verify` job in CI except its final `wrangler deploy --dry-run` (`pnpm worker:deploy:dry`); the individual commands are:
+`verify` job in CI except its final `wrangler deploy --dry-run` (`pnpm worker:deploy:dry`) and the upload of
+`dist/`; the individual commands are:
 
 ```sh
 pnpm typecheck
@@ -52,16 +53,19 @@ and on manual dispatch:
 - **`verify`** installs with the frozen lockfile and runs `pnpm typecheck`, `pnpm check`,
   `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`,
   `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist` and
-  `wrangler deploy --dry-run`.
-- **`e2e`** (after `verify`) runs the Playwright suite in four shards. Each shard builds
-  `dist/` itself, installs Playwright Chromium (cached) and runs
+  `wrangler deploy --dry-run`, then uploads the assembled `dist/` as the `dist` artifact. It is the
+  only job that builds the production site: the jobs below that serve or publish the site download
+  that artifact, so the bytes the browser tests ran against are the bytes `deploy` uploads.
+- **`e2e`** (after `verify`) runs the Playwright suite in four shards. Each shard downloads the
+  `dist/` that `verify` built, installs Playwright Chromium (cached) and runs
   `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`. The HTML report and
   the traces of a failed shard are uploaded and kept for 7 days.
 - **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker
   --no-deps`.
-- **`behavior`** (after `verify`) runs `pnpm ci:behavior`: the browser behaviour checks
-  (`tools/behavior/editor-flow-check.mjs`, `tools/behavior/text-edit-check.mjs`) and the
-  OpenSSL signing round trip (`tools/behavior/sign-check.mts`).
+- **`behavior`** (after `verify`) runs `pnpm ci:behavior` against the same downloaded `dist/`:
+  the browser behaviour checks (`tools/behavior/editor-flow-check.mjs`,
+  `tools/behavior/text-edit-check.mjs`) and the OpenSSL signing round trip
+  (`tools/behavior/sign-check.mts`).
 - **`coverage-unit`** (after `verify`) runs `pnpm coverage --unit-only`, and **`coverage-e2e`**
   (after `verify`, four shards) runs `pnpm coverage --e2e-shard=N/4`: each shard builds the
   unminified editor, runs its quarter of the Playwright suite (the last also the service-worker
@@ -70,27 +74,47 @@ and on manual dispatch:
   --merge=coverage-parts --min=100`: the unit suite and the Playwright suite against the
   unminified build, added together, must cover every line, statement, branch and function; the
   report is the `coverage-report` artifact.
-- **`deploy`** runs only on a push to `main`, after every job above has passed: `wrangler deploy`
-  with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
+- **`deploy`** runs only on a push to `main`, after every job above has passed. It builds nothing: it
+  downloads the `dist` artifact of `verify` and runs `pnpm dlx wrangler@4.135.0 deploy` with the
+  `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets (`wrangler` is not a dependency of the
+  repository: the version is written once in the workflow's `WRANGLER_VERSION`, and the
+  `worker:deploy*` scripts name the same one), then
   `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
   runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.
   Deploys run one at a time and a running one is never cancelled; a commit that is not
   `main`'s head when its deploy starts deploys nothing, so a late older run cannot replace a
-  newer build.
+  newer build. If `main`'s head cannot be read at all, the job fails instead of skipping the
+  deploy.
+
+  This job is the only deploy path. In the Cloudflare dashboard, Workers Builds' automatic
+  deploy for the `pdf-editor` Worker (the Worker's Settings, Builds) must be switched off: it
+  would publish every push a second time, from a build the checks above never saw.
 
 `.github/workflows/nightly.yml` runs daily and on manual dispatch. It runs the same three
 coverage jobs, whose `coverage` fails when any total is under 100 % and uploads the report, and
 the Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, so
 a flaky test fails the night.
 
-`.github/workflows/revert-proof.yml` runs on manual dispatch and on a pull request labelled
-`revert-proof`. For every fix on the list that `tools/review/revert-proof.mjs` reads, the fix's
-own test must fail on the fix commit's parent and pass on the fix commit. The manifest
+`.github/workflows/revert-proof.yml` runs on manual dispatch and when the `revert-proof` label is
+added to a pull request. Adding any other label neither starts it nor cancels a run in progress;
+to run it again after a push, remove and add the label, or dispatch it. For every fix on the list
+that `tools/review/revert-proof.mjs` reads, the fix's own test must fail on the fix commit's
+parent and pass on the fix commit. The manifest
 `tools/review/revert-proof.json` is an empty list until a pull request wants the proof: that
 pull request adds one entry per fix commit (`commit` as a full SHA, `title`, `kind` `unit` or
 `e2e`, `tests` the files brought in from the fix, `run` the test files to run, `filter` the
-test-name pattern, and optionally `testCommit` and `failure`). With an empty manifest
-`node tools/review/revert-proof.mjs` says so and exits 0.
+test-name pattern, and optionally `testCommit` and `failure`, the expected failure pattern for a fix
+whose defect was a throw or a hang rather than a wrong value). With an empty manifest
+`node tools/review/revert-proof.mjs` says so and exits 0. Run it locally on a clean work tree with
+`node tools/review/revert-proof.mjs [--shard i/n] [--only <sha-prefix>]`: it checks the commits out,
+restores your `HEAD` afterwards and writes `revert-proof-report.json` (git-ignored). An entry counts
+as proved only when the test fails on an assertion on the parent; a failure to load, or no tests
+found, proves nothing and fails the run.
+
+`tools/audit/workflows.test.ts`, part of `pnpm unit`, pins the shape of these workflows: the
+names of the required checks, one production build per run, the `dist` artifact that the browser
+jobs and `deploy` download, the strict shell of the deploy's head check, the label filter of
+`revert-proof.yml` and exact dependency versions.
 
 ### How a change lands
 
@@ -144,11 +168,9 @@ fixture fails a test when any page of its browser context (a second window, the 
 logged a console error or threw an uncaught exception. A test that provokes an error on purpose
 names it with `test.use({ allowedErrors: [/…/] })`.
 
-The PDF → Word export is not measured round trip in CI. A LibreOffice-based fidelity harness (convert the
-exported DOCX back to PDF and compare it with the original) was removed because LibreOffice is no
-longer used (its headless runs hang), and with it the `fidelity` CI job. The export is covered by its
-unit tests (`packages/pdf-core/src/ops/docx-*.test.ts`) and the Playwright specs. Do not install or run
-LibreOffice for this repository.
+The PDF → Word export is not measured round trip in CI; it is covered by its unit tests
+(`packages/pdf-core/src/ops/docx-*.test.ts`) and the Playwright specs. Do not install or run
+LibreOffice for this repository (see [`AGENTS.md`](AGENTS.md)).
 
 The OCR evaluation tools in `tools/measure/ocr/` benchmark Tesseract against PaddleOCR and OnnxTR
 engines and layout models in Chromium, on 24 synthetic Turkish pages and, when present, the
@@ -215,6 +237,13 @@ family is an `@expo-google-fonts/<family>` package pinned to an exact version, a
 `tools/fetch-engines.mjs`, its licence texts in `tools/assemble-dist.mjs`, and an entry in
 `packages/pdf-core/src/ops/ocr-font-catalog.ts`; its regular face must spell `ğĞıİşŞçÇöÖüÜ`.
 Only SIL OFL-1.1 or Apache-2.0 fonts are accepted.
+
+The one engine that is not the registry's own bytes is MuPDF: `patches/mupdf@1.28.1.patch` (one line
+of `dist/mupdf.js`: characters above U+FFFF were cut to 16 bits) is applied by pnpm through
+`pnpm.patchedDependencies` in the root `package.json`, so `pnpm fetch:engines` serves, and
+`tools/asset-pins.json` pins, the patched file. Moving to another MuPDF version means checking
+whether the defect is gone, and otherwise `pnpm patch mupdf@<version>` and `pnpm patch-commit`
+again, then `pnpm fetch:engines --update`.
 
 A new dependency must carry a free licence; `pnpm check:licenses` audits every installed
 package and fails on one that is neither free nor recognised.

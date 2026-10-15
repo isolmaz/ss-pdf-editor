@@ -818,6 +818,65 @@ describe('sanitizeDocument: what each category counts', () => {
     expect(out.report.notes.some((entry) => entry.key === 'op.note.sanitize.pictureChanges')).toBe(true);
   });
 
+  it('counts an /AF entry that embeds nothing, once however many /AF arrays list it, and drops the key', async () => {
+    const bytes = build((doc, page) => {
+      // A file specification that is only a path, listed by the page and by the catalog; a second
+      // one written in place; an entry that is not a dictionary and a missing object (not files).
+      const external = doc.addObject({ Type: 'Filespec', F: doc.newString('external.txt') });
+      page.put('AF', [external, { Type: 'Filespec', F: doc.newString('direct.txt') }, 7]);
+      doc
+        .getTrailer()
+        .get('Root')
+        .put('AF', [external, doc.newIndirect(9999)]);
+    });
+    const out = await sanitizeDocument(bytes, { ...NONE, files: true }, run);
+    expect(countOfCategory(out.counts, 'files')).toEqual({
+      category: 'files',
+      found: 2,
+      removed: 2,
+      left: 0,
+    });
+    const read = open(out.bytes);
+    try {
+      expect(read.findPage(0).get('AF').isNull()).toBe(true);
+      expect(read.getTrailer().get('Root').get('AF').isNull()).toBe(true);
+    } finally {
+      read.destroy();
+    }
+    expect(haystack(out.bytes)).not.toContain('external.txt');
+  });
+
+  it('counts an /AF that is a single file specification, written in place with a payload or by reference without one', async () => {
+    const bytes = build((doc, page) => {
+      // Page: one direct specification with a payload (counted through its /EF, not twice).
+      page.put('AF', {
+        Type: 'Filespec',
+        F: doc.newString('direct.txt'),
+        EF: { F: doc.addStream('DIRECTAFPAYLOAD', { Type: 'EmbeddedFile' }) },
+      });
+      // Catalog: one indirect specification that is only a path.
+      doc
+        .getTrailer()
+        .get('Root')
+        .put('AF', doc.addObject({ Type: 'Filespec', F: doc.newString('byref.txt') }));
+    });
+    const out = await sanitizeDocument(bytes, { ...NONE, files: true }, run);
+    expect(countOfCategory(out.counts, 'files')).toEqual({
+      category: 'files',
+      found: 2,
+      removed: 2,
+      left: 0,
+    });
+    expect(haystack(out.bytes)).not.toContain('DIRECTAFPAYLOAD');
+    const read = open(out.bytes);
+    try {
+      expect(read.findPage(0).get('AF').isNull()).toBe(true);
+      expect(read.getTrailer().get('Root').get('AF').isNull()).toBe(true);
+    } finally {
+      read.destroy();
+    }
+  });
+
   it('counts web-capture data, the catalog URI base and a signature, and warns that the signature does not survive', async () => {
     const bytes = build((doc, page) => {
       const root = doc.getTrailer().get('Root');

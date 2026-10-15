@@ -16,6 +16,7 @@
  */
 
 import type { Page } from 'playwright/test';
+import { recordNotices } from './app-helpers';
 import { injectEngineFaults, requestCount } from './engine-faults';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
@@ -61,6 +62,21 @@ async function waitForSourceWrites(page: Page, attempts: number): Promise<void> 
       timeout: 15_000,
     })
     .toBeGreaterThanOrEqual(attempts);
+}
+
+/**
+ * The attempt is counted as it is made, and what the application does with the refusal is a
+ * promise chain that ends in one state update, run before the page's next task. Two animation
+ * frames are the page's own signal that this update has been drawn, so an assertion about what the
+ * notice line says now is made after the refusal was handled and not after a guessed delay.
+ */
+async function afterRefusalHandled(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
 }
 
 const notices = (page: Page) => page.locator('[role="status"]');
@@ -190,14 +206,16 @@ test('storage that stays full: the autosave keeps the warning, and the file stay
 }) => {
   await page.goto('/editor/');
   await failSourceWrites(page, true);
+  const noticesSeen = await recordNotices(page);
   await openPdf(page, 'full.pdf', labelledPdf('Full', 2), { navigate: false, advanced: false });
   await expect(notices(page).filter({ hasText: SENTENCE })).toBeVisible();
 
   // The open's own write, then the autosave's: both were refused.
   await waitForSourceWrites(page, 2);
-  await page.waitForTimeout(500);
+  await afterRefusalHandled(page);
   await expect(notices(page).filter({ hasText: SENTENCE })).toBeVisible();
   await expect(notices(page).filter({ hasText: /Could not write to the file/ })).toHaveCount(0);
+  expect((await noticesSeen()).filter((text) => /Could not write to the file/.test(text))).toEqual([]);
   await expect(page.getByText('/ 2', { exact: true })).toBeVisible();
   expect(await openDocuments(page)).toBe(1);
 });
@@ -207,6 +225,7 @@ test('storage that stays full: a converted picture keeps its done line and the w
 }) => {
   await page.goto('/editor/');
   await failSourceWrites(page, true);
+  const noticesSeen = await recordNotices(page);
   await page
     .locator('input[type="file"][accept*="application/pdf"]')
     .first()
@@ -218,10 +237,11 @@ test('storage that stays full: a converted picture keeps its done line and the w
   await expect(notices(page).filter({ hasText: SENTENCE })).toBeVisible({ timeout: 60_000 });
 
   await waitForSourceWrites(page, 2);
-  await page.waitForTimeout(500);
+  await afterRefusalHandled(page);
   const line = notices(page).filter({ hasText: SENTENCE });
   await expect(line).toBeVisible();
   await expect(line).toContainText('The image was opened as a PDF page in a new tab.');
   await expect(notices(page).filter({ hasText: /Could not write to the file/ })).toHaveCount(0);
+  expect((await noticesSeen()).filter((text) => /Could not write to the file/.test(text))).toEqual([]);
   expect(await openDocuments(page)).toBe(1);
 });

@@ -1,0 +1,9 @@
+{
+  "generatedBy": "tools/fetch-engines.mjs",
+  "versions": {
+    "ghostscript": "vf73d804a0693",
+    "mupdf": "va48b9ab348f0",
+    "pdfjs": "va4e7bb4f2187",
+    "tesseract": "vb93fc453731f"
+  }
+}

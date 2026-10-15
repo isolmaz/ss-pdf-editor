@@ -46,6 +46,35 @@ async function stageFolder(
   );
 }
 
+/**
+ * Count the folder scans the dialog has run to their end: a scan lists the directory with
+ * `values()`, and its listing is over when that iteration reports it is done. The count is
+ * raised before the dialog continues with what the scan found, so a test that reads it has
+ * the scan's outcome applied. Returns the reader of the count.
+ */
+async function countFolderScans(page: Page): Promise<() => Promise<number>> {
+  await page.evaluate(() => {
+    Reflect.set(window, 'folderScansDone', 0);
+    const proto = FileSystemDirectoryHandle.prototype;
+    const values: () => AsyncIterator<unknown> = Reflect.get(proto, 'values');
+    Reflect.set(proto, 'values', function listed(this: FileSystemDirectoryHandle) {
+      const inner = values.call(this);
+      const listing = {
+        [Symbol.asyncIterator]: () => listing,
+        next: async () => {
+          const step = await inner.next();
+          if (step.done === true) {
+            Reflect.set(window, 'folderScansDone', Number(Reflect.get(window, 'folderScansDone')) + 1);
+          }
+          return step;
+        },
+      };
+      return listing;
+    });
+  });
+  return () => page.evaluate(() => Number(Reflect.get(window, 'folderScansDone')));
+}
+
 test('the Open button asks for PDFs and queues the ones chosen', async ({ page }) => {
   const dialog = await openBatch(page);
   const chooser = page.waitForEvent('filechooser');
@@ -63,19 +92,26 @@ test('the Open button asks for PDFs and queues the ones chosen', async ({ page }
 test('a watched folder where one file was swapped for another keeps the count but queues the new name; an untouched folder changes nothing', async ({
   page,
 }) => {
+  // The folder is scanned on a 4 s timer: the page's clock is the test's, so the scans come when
+  // the test advances it, and each is awaited by the scan itself rather than by a sleep.
+  await page.clock.install();
   const dialog = await openBatch(page);
+  const scansDone = await countFolderScans(page);
   await stageFolder(page, [{ name: 'old.pdf', bytes: labelledPdf('Old', 1) }]);
   await dialog.getByRole('button', { name: 'Watch Folder' }).click();
   const list = dialog.getByRole('list').first();
   await expect(list.getByText('old.pdf', { exact: true })).toBeVisible();
   await expect(page.getByText('1 PDF files queued from folder.')).toBeVisible();
+  await expect.poll(scansDone).toBeGreaterThanOrEqual(1);
 
-  // Several scans (every 4 s) pass over an unchanged folder: the queue stays as it is.
-  await page.waitForTimeout(9000);
+  // Two scans (at 4 s and 8 s) pass over an unchanged folder: the queue stays as it is.
+  await page.clock.runFor(9_000);
+  await expect.poll(scansDone).toBeGreaterThanOrEqual(3);
   await expect(list.getByText('old.pdf', { exact: true })).toBeVisible();
   await expect(dialog.getByText(/^1\/\d+$/)).toBeVisible();
 
   await stageFolder(page, [{ name: 'new.pdf', bytes: labelledPdf('New', 1) }], ['old.pdf']);
+  await page.clock.runFor(4_000);
   await expect(list.getByText('new.pdf', { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(list.getByText('old.pdf', { exact: true })).toHaveCount(0);
   await expect(dialog.getByText(/^1\/\d+$/)).toBeVisible();

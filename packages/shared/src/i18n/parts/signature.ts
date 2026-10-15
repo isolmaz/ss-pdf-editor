@@ -46,7 +46,6 @@ export const signaturePart = {
   'sig.command': 'İmza ekle (çiz, yaz, görsel)',
 
   'img.add.title': 'Görsel ekle',
-  'img.add.choose': 'Görsel seç',
   'img.add.failed': 'Görsel okunamadı: {name}. PNG, JPEG, WebP, GIF ya da BMP seçin.',
   'img.add.label': 'Görsel',
 

@@ -6,8 +6,8 @@
  * exactly the structure, not what a builder would have produced.
  */
 
-import { PDFDocument, type PDFObject } from 'mupdf';
-import { describe, expect, it } from 'vitest';
+import { Buffer as MupdfBuffer, PDFDocument, PDFObject } from 'mupdf';
+import { describe, expect, it, vi } from 'vitest';
 import { handPdf } from '../ops/forms.fixtures';
 import {
   type DocumentFont,
@@ -93,6 +93,21 @@ describe('/ToUnicode of a composite font', () => {
         [point('z'), 0x52],
       ]);
     });
+  });
+
+  it('releases the buffer it read the map from', () => {
+    const read = vi.spyOn(PDFObject.prototype, 'readStream');
+    const destroy = vi.spyOn(MupdfBuffer.prototype, 'destroy');
+    try {
+      withDocument(composite(cmap('1 beginbfchar <0001> <0041> endbfchar')), (_doc, ref) => {
+        expect(readDocumentFont(ref(10))?.codes.get(point('A'))).toBe(1);
+      });
+      expect(read.mock.results).toHaveLength(1);
+      expect(destroy.mock.contexts).toContain(read.mock.results[0]?.value);
+    } finally {
+      read.mockRestore();
+      destroy.mockRestore();
+    }
   });
 
   it('is not a face when the map holds nothing usable or is not a stream', () => {
@@ -246,6 +261,22 @@ describe('a simple font', () => {
         expect(font?.names).toEqual(['W', 'Face']);
         const bare = readDocumentFont(ref(13));
         expect([bare?.width(65), bare?.ascent, bare?.descent]).toEqual([0, 800, -200]);
+      },
+    );
+  });
+
+  it('keeps /Widths positional: an entry that is not a number leaves its own code at /MissingWidth, not the next ones shifted', () => {
+    const map = stream(cmap('3 beginbfchar <41> <0041> <42> <0042> <43> <0043> endbfchar'));
+    withDocument(
+      {
+        // Code 65 → 500, code 66 → a hole, code 67 → 700.
+        10: '<</Type/Font/Subtype/TrueType/BaseFont/W/ToUnicode 11 0 R/FirstChar 65/Widths[500 null 700]/FontDescriptor 12 0 R>>',
+        11: map,
+        12: '<</Type/FontDescriptor/FontName/Face/MissingWidth 333>>',
+      },
+      (_doc, ref) => {
+        const font = readDocumentFont(ref(10));
+        expect([font?.width(65), font?.width(66), font?.width(67)]).toEqual([500, 333, 700]);
       },
     );
   });

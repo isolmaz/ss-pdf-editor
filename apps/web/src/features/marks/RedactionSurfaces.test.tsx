@@ -5,7 +5,7 @@
  * tool's own controls.
  */
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SessionStore } from 'pdf-model';
 import type { ViewerApi } from 'pdf-ui/viewer';
@@ -44,8 +44,9 @@ describe('RedactionMarkLayer', () => {
     HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
     vi.mocked(viewer.pointToPage).mockImplementation((x, y) => ({ pageIndex: 0, x, y }));
     selectTool('redact');
-    const { session } = mount();
-    const layer = screen.getByRole('application', { name: t('redact.mode.box') });
+    const { session, view } = mount();
+    const layer = view.container.querySelector('[data-redaction-layer]') as HTMLElement;
+    expect(within(layer).getByText(t('redact.mode.box'))).toBeTruthy();
     fireEvent.pointerDown(layer, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
     fireEvent.pointerMove(layer, { clientX: 50, clientY: 30, pointerId: 1 });
     fireEvent.pointerUp(layer, { clientX: 50, clientY: 30, pointerId: 1 });

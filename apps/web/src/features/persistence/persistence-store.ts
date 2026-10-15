@@ -9,7 +9,7 @@
  * an identity, and the keys change on every write without anything on screen depending on them.
  */
 
-import type { DraftStorage } from 'pdf-model';
+import type { DraftStorage, SessionSnapshot, SessionTab } from 'pdf-model';
 import { createOpfsDraftStorage } from '../../drafts';
 import type { VaultChannel } from '../../vault-channel';
 import { createStore } from '../store';
@@ -48,6 +48,23 @@ export function vaultChannelClosed(channel: VaultChannel): void {
 /** The snapshot keys written for each tab: what its manifest references besides the source. */
 const persistedKeys = new Map<string, readonly string[]>();
 
+/**
+ * The source blob this window stored for each tab. It is written when the document opens, long
+ * before any manifest names it, so a tab closed before its first automatic save has a blob
+ * and no manifest: this is the only record that says whose it was.
+ */
+const storedSources = new Map<string, string>();
+
+/** The source key stored for `tabId` (none when no source was stored for it). */
+export function storedSourceKeyFor(tabId: string): string | undefined {
+  return storedSources.get(tabId);
+}
+
+/** `key` is now stored in the vault as `tabId`'s source. */
+export function sourceStored(tabId: string, key: string): void {
+  storedSources.set(tabId, key);
+}
+
 /** The snapshot keys last written for `tabId` (none before its first write). */
 export function persistedKeysFor(tabId: string): readonly string[] {
   return persistedKeys.get(tabId) ?? [];
@@ -61,6 +78,29 @@ export function persistedKeysRecorded(tabId: string, keys: readonly string[]): v
 /** `tabId`'s copies left the vault. */
 export function persistedKeysForgotten(tabId: string): void {
   persistedKeys.delete(tabId);
+  storedSources.delete(tabId);
+}
+
+/**
+ * The tab states whose draft the vault holds. A tab changes by being **replaced** in the
+ * session snapshot, so a state that was written stays a member and every later one is not: no
+ * write yet, one still waiting behind the autosave's debounce, and one that failed all read the
+ * same — the tab as it is now was never stored. A weak set, so a closed tab's bytes are not kept.
+ */
+let draftedTabs = new WeakSet<SessionTab>();
+
+/** `tab` — exactly this state of it — was written to the vault as a draft. */
+export function draftWritten(tab: SessionTab): void {
+  draftedTabs.add(tab);
+}
+
+/**
+ * Whether the window holds work that closing it now would lose: a document with unsaved changes
+ * that no draft protects, because its session keeps none (sensitive) or the draft does not
+ * have its current state (the autosave is still waiting or writing, or the write failed).
+ */
+export function holdsUnprotectedWork(snapshot: SessionSnapshot): boolean {
+  return snapshot.tabs.some((tab) => tab.dirty && (tab.sensitive || !draftedTabs.has(tab)));
 }
 
 /**
@@ -77,9 +117,40 @@ export function queueDraftWrite<T>(work: () => Promise<T>): Promise<T> {
   return queued;
 }
 
+/**
+ * Run `work` on the write queue **inside** the cross-window vault lock (`vault-channel.ts`):
+ * the lock is taken first and the queue entered second, the order `sweepVault` and
+ * `purgeActiveDocument` use. A draft write holds the lock for its blobs *and* its manifest, so
+ * a sweep in another window cannot list a snapshot blob in between and delete it as an orphan.
+ * Taking the lock inside a queued job instead would let a sweep that holds the lock wait on a
+ * queue whose head is waiting for that lock. Without a channel there is no other window to
+ * keep out, and it is the plain queue.
+ */
+export function queueVaultWrite<T>(work: () => Promise<T>): Promise<T> {
+  const { channel } = persistenceStore.get();
+  if (channel === null) return queueDraftWrite(work);
+  return channel.runExclusive(() => queueDraftWrite(work));
+}
+
+/**
+ * Whether this window may write or restore the draft `draftId`: it owns it, or there is no
+ * channel to ask (before the channel opens and in the tests that never open one).
+ */
+export async function ownsDraft(draftId: string): Promise<boolean> {
+  const { channel } = persistenceStore.get();
+  return channel === null || (await channel.claimDraft(draftId));
+}
+
+/** This window stops owning `draftId`: its tab is gone, or a restore of it did not happen. */
+export function disownDraft(draftId: string): void {
+  persistenceStore.get().channel?.releaseDraft(draftId);
+}
+
 /** Back to a clean slate, for tests. */
 export function resetPersistence(): void {
   persistenceStore.set(initialPersistenceState());
   persistedKeys.clear();
+  draftedTabs = new WeakSet();
+  storedSources.clear();
   draftWrites.current = Promise.resolve();
 }

@@ -136,6 +136,39 @@ describe('writeDatasets', () => {
     expect(written).toBe(DATASETS);
   });
 
+  it('replaces a datasets pair that holds no stream, leaving exactly one datasets pair', async () => {
+    const bytes = handPdf({
+      1: '<</Type/Catalog/Pages 2 0 R/AcroForm<</Fields[]/XFA[(template) 5 0 R (datasets) 42 (postamble) 5 0 R]>>>>',
+      2: '<</Type/Pages/Kids[]/Count 0>>',
+      5: `<</Length 3>>\nstream\n<t/>\nendstream`,
+    });
+    const result = await withPdf(bytes, (doc) => {
+      writeDatasets(doc, DATASETS);
+      const xfa = doc.getTrailer().get('Root').get('AcroForm').resolve().get('XFA').resolve();
+      const out: string[] = [];
+      for (let at = 0; at + 1 < xfa.length; at += 2) out.push(xfa.get(at).asString());
+      return { names: out, datasets: datasetsText(doc) };
+    });
+    expect(result.names).toEqual(['template', 'datasets', 'postamble']);
+    expect(result.datasets).toBe(DATASETS);
+  });
+
+  it('puts the new datasets where the old pair was when the old pair is not a stream, and drops duplicates', async () => {
+    const bytes = handPdf({
+      1: '<</Type/Catalog/Pages 2 0 R/AcroForm<</Fields[]/XFA[(datasets) 42 (template) 5 0 R (datasets) 5 0 R]>>>>',
+      2: '<</Type/Pages/Kids[]/Count 0>>',
+      5: `<</Length 3>>\nstream\n<t/>\nendstream`,
+    });
+    const names = await withPdf(bytes, (doc) => {
+      writeDatasets(doc, DATASETS);
+      const xfa = doc.getTrailer().get('Root').get('AcroForm').resolve().get('XFA').resolve();
+      const out: string[] = [];
+      for (let at = 0; at + 1 < xfa.length; at += 2) out.push(xfa.get(at).asString());
+      return out;
+    });
+    expect(names).toEqual(['datasets', 'template']);
+  });
+
   it('swaps the datasets element inside a one-stream XDP, or appends it when there is none', async () => {
     const withData = await xfaPdf({ kind: 'static', layout: 'stream' });
     const replaced = await withPdf(withData, (doc) => {

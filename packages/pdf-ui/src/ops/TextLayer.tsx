@@ -74,6 +74,10 @@ interface PaintedBlock {
  * A model rect → the same rect on the page as displayed (`u` right, `v` down from the
  * turned page's top-left corner, points): the forward turn of the one `toUserX` /
  * `toUserY` in `pdf-core/text-source.ts` undo, against the same unrotated page box.
+ *
+ * The model's `x` is user-space (`box.x` included) and its `y` is the distance below the
+ * box's top edge (`box.y` is already taken out of it), so only `x` has the box origin
+ * to subtract; `y` is used as it comes.
  */
 export function displayedBox(
   rect: readonly [number, number, number, number],
@@ -83,13 +87,13 @@ export function displayedBox(
   const corner = (x: number, y: number): readonly [number, number] => {
     switch (rotation) {
       case 90:
-        return [box.y + box.height - y, x - box.x];
+        return [box.height - y, x - box.x];
       case 180:
-        return [box.x + box.width - x, box.y + box.height - y];
+        return [box.x + box.width - x, box.height - y];
       case 270:
-        return [y - box.y, box.x + box.width - x];
+        return [y, box.x + box.width - x];
       default:
-        return [x - box.x, y - box.y];
+        return [x - box.x, y];
     }
   };
   const [u0, v0] = corner(rect[0], rect[1]);
@@ -135,17 +139,19 @@ export function TextLayer({ t, viewer, layout, bytes, pageIndex, onSelect, onClo
 
   /**
    * Reading the page is async and the viewer keeps painting underneath it, so the
-   * effect re-runs on page change and on a viewer resize; a stale run is dropped by
-   * the `cancelled` latch instead of painting boxes against a viewport that moved.
+   * effect re-runs on page change and on a viewer resize. A stale run is aborted — the
+   * reader stops at its next checkpoint instead of finishing a page nobody will see — and
+   * what it still delivers is dropped rather than painted against a viewport that moved.
    */
   useEffect(() => {
-    let cancelled = false;
-    const context: OperationContext = { signal: new AbortController().signal };
+    const controller = new AbortController();
+    const { signal } = controller;
+    const context: OperationContext = { signal };
     setLoading(true);
     void (async () => {
       try {
         const [source, fonts] = await Promise.all([readPageText(bytes, pageIndex, context), loadTextFonts()]);
-        if (cancelled) return;
+        if (signal.aborted) return;
         const model = buildTextPage(source);
         const report = measureEditability(model);
         // One verdict per block, in the block order (`measureEditability` maps the blocks).
@@ -177,7 +183,7 @@ export function TextLayer({ t, viewer, layout, bytes, pageIndex, onSelect, onClo
         setFailure(null);
         setLoading(false);
       } catch (error) {
-        if (cancelled) return;
+        if (signal.aborted) return;
         setPainted([]);
         setLoading(false);
         // The reader failing is a real failure: say so on the page rather than
@@ -188,9 +194,7 @@ export function TextLayer({ t, viewer, layout, bytes, pageIndex, onSelect, onClo
         setFailure({ code: toolError.code, detail: toolError.message });
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [bytes, pageIndex]);
 
   useEffect(() => {

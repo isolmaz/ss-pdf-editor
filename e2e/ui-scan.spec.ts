@@ -119,6 +119,9 @@ test.describe('without a camera permission', () => {
     await dialog.getByRole('button', { name: 'Skip this photo' }).click();
     await expect(dialog.getByText('This photo could not be opened: broken.png')).toBeVisible();
     await expect(dialog.getByRole('heading', { name: 'Adjust the corners' })).toBeVisible();
+    // The count is the photograph's place in the choice, not how many are left behind it.
+    await expect(dialog.getByText('Photo 3 of 3')).toBeVisible();
+    await expect(dialog.getByText('Photo 1 of 3')).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Add page' }).click();
 
     // One page in the list.
@@ -185,6 +188,26 @@ test.describe('without a camera permission', () => {
     const bytes = await exportBytes(page, 'scan.pdf');
     expect((await readProducedPdf(bytes)).pageCount).toBe(1);
     expect(await readProducedEntry(bytes, 0, 'MediaBox')).toMatch(/612 792/);
+  });
+
+  test('a photograph that cannot be opened after an accepted one leaves the scanner on the pages, not the camera', async ({
+    page,
+  }) => {
+    await openPdf(page);
+    const dialog = await openScan(page);
+    await dialog
+      .getByTestId('scan-file-input')
+      .setInputFiles([
+        sheet('one.png'),
+        { name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('no') },
+      ]);
+    await expect(dialog.getByText('Photo 1 of 2')).toBeVisible();
+    // Accepting the first adds its page and opens the second, which cannot be opened.
+    await dialog.getByRole('button', { name: 'Add page' }).click();
+    await expect(dialog.getByText('This photo could not be opened: broken.png')).toBeVisible();
+    const list = dialog.getByRole('list', { name: 'Scanned pages' });
+    await expect(list.getByRole('button', { name: 'Select page 1' })).toBeVisible();
+    await expect(dialog.getByTestId('scan-shutter')).toHaveCount(0);
   });
 
   test('closing with scanned pages asks first, and the last page deleted returns to the camera', async ({

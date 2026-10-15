@@ -25,6 +25,7 @@ function shell(viewer: ViewerApi | null, pageNumber = 0) {
       viewer={viewer}
       viewerRef={{ current: viewer }}
       pageNumber={pageNumber}
+      read={async () => new Uint8Array([1])}
     />
   );
 }

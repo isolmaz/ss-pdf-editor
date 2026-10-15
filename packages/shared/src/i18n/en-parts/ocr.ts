@@ -42,6 +42,6 @@ export const ocrPart = {
   'ocr.textPresent.skip': 'Skip pages with text',
   'ocr.textPresent.overwrite': 'Read again (adds a layer)',
   'ocr.skipped': '{count} page(s) already contained text; untouched.',
-  'ocr.running': 'Recognizing page {done}/{total}',
+  'ocr.running': 'Recognizing page {page}/{total}',
   'ocr.done': 'Text layer added to {count} page(s).',
 } as const;

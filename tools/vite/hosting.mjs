@@ -48,11 +48,16 @@ export function parseHeadersFile(text) {
     if (rawLine.trim() === '' || rawLine.trimStart().startsWith('#')) continue;
     const isHeader = /^\s/.test(rawLine);
     if (!isHeader) {
-      current = { path: rawLine.trim(), headers: {} };
+      current = { path: rawLine.trim(), headers: {}, detach: [] };
       sections.push(current);
       continue;
     }
     if (current === null) continue;
+    // `! Name` removes what the rules above set for `Name` (Cloudflare's detach syntax).
+    if (rawLine.trim().startsWith('!')) {
+      current.detach.push(rawLine.trim().slice(1).trim());
+      continue;
+    }
     const separator = rawLine.indexOf(':');
     if (separator < 0) continue;
     const name = rawLine.slice(0, separator).trim();
@@ -76,6 +81,9 @@ export function headersFor(sections, pathname) {
   const result = {};
   for (const section of sections) {
     if (!matches(section.path, pathname)) continue;
+    for (const name of section.detach ?? []) {
+      for (const set of Object.keys(result)) if (set.toLowerCase() === name.toLowerCase()) delete result[set];
+    }
     for (const [name, value] of Object.entries(section.headers)) {
       result[name] = result[name] === undefined ? value : `${result[name]}, ${value}`;
     }
@@ -117,6 +125,9 @@ function servePublicDir(publicDir) {
     if (relative.includes('..')) return next();
     const candidates = [relative];
     if (/^editor[/\\]/.test(relative)) candidates.push(relative.replace(/^editor[/\\]/, ''));
+    // `/engines/<engine>/v<digest>/<file>` is the served URL (`assets.ts`); on disk the files sit
+    // in `public/engines/<engine>/`, and `assemble-dist` is what puts them in the version directory.
+    candidates.push(relative.replace(/^(engines[/\\][^/\\]+)[/\\]v[0-9a-f]{12}(?=[/\\])/, '$1'));
     const file = candidates
       .map((item) => join(publicDir, item))
       .find((item) => existsSync(item) && statSync(item).isFile());

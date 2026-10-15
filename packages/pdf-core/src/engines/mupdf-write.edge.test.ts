@@ -6,7 +6,7 @@
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { Font, PDFDocument } from 'mupdf';
+import { Font, PDFDocument, type PDFObject } from 'mupdf';
 import { isToolError, type ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadMupdf } from './mupdf';
@@ -17,9 +17,13 @@ import {
   pageAsForm,
   pageContentParts,
   pageResources,
+  readNumberSlots,
+  readNumbers,
   saveIncremental,
   standardFace,
   subsetEmbeddedFaces,
+  transformedBounds,
+  visibleBox,
 } from './mupdf-write';
 
 function notoRegular(): Uint8Array<ArrayBuffer> {
@@ -177,6 +181,111 @@ describe('page resources and contents', () => {
     );
     source.destroy();
     target.destroy();
+  });
+});
+
+/** A PDF array holding `entries`, a `null` standing for the PDF null object. */
+function arrayOf(doc: PDFDocument, entries: readonly (number | string | null)[]) {
+  const array = doc.newArray();
+  for (const entry of entries) {
+    if (entry === null) array.push(doc.newNull());
+    else if (typeof entry === 'string') array.push(doc.newName(entry));
+    else array.push(entry);
+  }
+  return array;
+}
+
+describe('number arrays', () => {
+  it('reads an array that has a hole in it by position, and as no array of numbers at all for a positional read', () => {
+    const doc = new PDFDocument();
+    const holey = arrayOf(doc, [0, null, 100, 'Name', 200]);
+    // Slot n is entry n: nothing closes up over the holes.
+    expect(readNumberSlots(holey)).toEqual([0, null, 100, null, 200]);
+    // A positional read refuses the array instead of closing the holes up: `[0 100 200]` would
+    // be a different (and valid-looking) box from the one the file stores.
+    expect(readNumbers(holey)).toEqual([]);
+    expect(readNumbers(arrayOf(doc, [0, 0, 612, 792]))).toEqual([0, 0, 612, 792]);
+    expect(readNumbers(arrayOf(doc, []))).toEqual([]);
+    expect(readNumberSlots(doc.newInteger(5))).toEqual([]);
+    expect(readNumberSlots(null)).toEqual([]);
+    doc.destroy();
+  });
+});
+
+describe('visibleBox', () => {
+  /** A one-page document whose page gets its boxes from `set`. */
+  const pageWith = (set: (doc: PDFDocument, page: PDFObject) => void) => {
+    const doc = new PDFDocument();
+    doc.insertPage(0, doc.addPage([0, 0, 200, 300], 0, {}, ''));
+    const page = doc.findPage(0);
+    set(doc, page);
+    return { doc, page };
+  };
+
+  it('is the MediaBox with no CropBox, and the CropBox when it lies inside the MediaBox', () => {
+    const plain = pageWith(() => undefined);
+    expect(visibleBox(plain.page)).toEqual({ x: 0, y: 0, width: 200, height: 300 });
+    plain.doc.destroy();
+    const inside = pageWith((_doc, page) => page.put('CropBox', [10, 20, 110, 220]));
+    expect(visibleBox(inside.page)).toEqual({ x: 10, y: 20, width: 100, height: 200 });
+    inside.doc.destroy();
+  });
+
+  it('clips a CropBox that sticks out of the MediaBox to it (ISO 32000-1 14.11.2)', () => {
+    const sticking = pageWith((_doc, page) => page.put('CropBox', [-50, -40, 110, 220]));
+    expect(visibleBox(sticking.page)).toEqual({ x: 0, y: 0, width: 110, height: 220 });
+    sticking.doc.destroy();
+    // Sticking out on the other two sides, and written with its corners the other way round.
+    const larger = pageWith((_doc, page) => page.put('CropBox', [250, 280, 20, -30]));
+    expect(visibleBox(larger.page)).toEqual({ x: 20, y: 0, width: 180, height: 280 });
+    larger.doc.destroy();
+  });
+
+  it('keeps the MediaBox when the CropBox misses it, has no area or is not four numbers', () => {
+    const misses = pageWith((_doc, page) => page.put('CropBox', [500, 500, 600, 600]));
+    expect(visibleBox(misses.page)).toEqual({ x: 0, y: 0, width: 200, height: 300 });
+    misses.doc.destroy();
+    const flat = pageWith((_doc, page) => page.put('CropBox', [10, 10, 10, 80]));
+    expect(visibleBox(flat.page)).toEqual({ x: 0, y: 0, width: 200, height: 300 });
+    flat.doc.destroy();
+    const holey = pageWith((doc, page) => page.put('CropBox', arrayOf(doc, [10, null, 110, 220, 230])));
+    expect(visibleBox(holey.page)).toEqual({ x: 0, y: 0, width: 200, height: 300 });
+    holey.doc.destroy();
+  });
+
+  it('takes a MediaBox with a hole in it for no MediaBox: US Letter, not the numbers closed up', () => {
+    // Closed up, `[0 0 null 600 700]` would read as the valid-looking `[0 0 600 700]`.
+    const holey = pageWith((doc, page) => page.put('MediaBox', arrayOf(doc, [0, 0, null, 600, 700])));
+    expect(visibleBox(holey.page)).toEqual({ x: 0, y: 0, width: 612, height: 792 });
+    holey.doc.destroy();
+  });
+
+  it('reads both boxes from the page tree when the page has none of its own', () => {
+    const inherited = pageWith((doc, page) => {
+      page.delete('MediaBox');
+      const pages = doc.getTrailer().get('Root').get('Pages');
+      pages.put('MediaBox', [0, 0, 200, 300]);
+      pages.put('CropBox', [-20, 50, 120, 400]);
+    });
+    expect(visibleBox(inherited.page)).toEqual({ x: 0, y: 50, width: 120, height: 250 });
+    inherited.doc.destroy();
+  });
+});
+
+describe('transformedBounds', () => {
+  it('is the box itself for no matrix or one that is not six numbers', () => {
+    expect(transformedBounds([10, 20, 110, 70], [])).toEqual([10, 20, 110, 70]);
+    expect(transformedBounds([10, 20, 110, 70], [1, 0, 0, 1, 5])).toEqual([10, 20, 110, 70]);
+  });
+
+  it('is the box around the four turned corners, so a quarter turn swaps width and height', () => {
+    // x' = -y + 100, y' = x: the 100×40 box becomes 40 wide and 100 tall.
+    expect(transformedBounds([0, 0, 100, 40], [0, 1, -1, 0, 100, 0])).toEqual([60, 0, 100, 100]);
+    // The counter-turn this app writes on a page turned a quarter: x' = -y, y' = x.
+    expect(transformedBounds([0, 0, 60, 40], [0, 1, -1, 0, 0, 0])).toEqual([-40, 0, 0, 60]);
+    // A scale and a shift keep the corners in order; a mirror flips them, and the box is still ascending.
+    expect(transformedBounds([0, 0, 10, 20], [2, 0, 0, 3, 5, 7])).toEqual([5, 7, 25, 67]);
+    expect(transformedBounds([0, 0, 10, 20], [-1, 0, 0, -1, 0, 0])).toEqual([-10, -20, 0, 0]);
   });
 });
 

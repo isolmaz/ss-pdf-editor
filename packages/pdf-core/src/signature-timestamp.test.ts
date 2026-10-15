@@ -11,7 +11,7 @@
 import { Integer, OctetString, Sequence } from 'asn1js';
 import { AlgorithmIdentifier, OtherCertificateFormat } from 'pkijs';
 import { describe, expect, it, vi } from 'vitest';
-import { parseRevocationSources } from './signature-revocation';
+import { parseRevocationSources, type RevocationSources } from './signature-revocation';
 import {
   extKeyUsageExtension,
   issueCrl,
@@ -92,12 +92,13 @@ describe('verifyTimestampToken', () => {
       tsaTrustReason: 'no-roots',
     });
 
+    const cleared = await issueCrl({ issuer: root, thisUpdate: day(5, 1), nextUpdate: day(7, 1) });
     const trusted = await verifyTimestampToken({
       kind: 'signature',
       token,
       covered: COVERED,
       roots: [root.der],
-      sources: NO_SOURCES,
+      sources: parseRevocationSources({ imported: [cleared] }),
       now: NOW,
     });
     expect(trusted).toMatchObject({
@@ -107,6 +108,42 @@ describe('verifyTimestampToken', () => {
       tsaNotAfter: new Date(Date.UTC(2027, 0, 1)).toISOString(),
       trusted: true,
     });
+  });
+
+  it('does not rely on the time of a TSA whose revocation is unknown, or cleared only by a list older than the token', async () => {
+    const root = await makeRoot();
+    const tsa = await makeTsa(root);
+    const token = await issueTimestampToken({ tsa, covered: COVERED, genTime: GEN_TIME });
+    const check = async (sources: RevocationSources) =>
+      await verifyTimestampToken({
+        kind: 'signature',
+        token,
+        covered: COVERED,
+        roots: [root.der],
+        sources,
+        now: NOW,
+      });
+
+    // The TSA reaches the imported root, but no list speaks for its certificate: unknown is not clean.
+    const unknown = await check(NO_SOURCES);
+    expect(unknown).toMatchObject({ status: 'valid', tsaTrust: 'trusted', trusted: false });
+    expect(unknown.tsaRevocation[0]).toMatchObject({
+      role: 'timestamp',
+      status: 'unknown',
+      unknownReason: 'no-list',
+    });
+
+    // A list issued a month before the token cannot exclude a revocation in between.
+    const old = await issueCrl({ issuer: root, thisUpdate: day(2, 1), nextUpdate: day(7, 1) });
+    const early = await check(parseRevocationSources({ imported: [old] }));
+    expect(early.tsaRevocation[0]).toMatchObject({ status: 'good', coversValidationTime: false });
+    expect(early).toMatchObject({ tsaTrust: 'trusted', trusted: false });
+
+    // One issued after it names nothing: cleared.
+    const fresh = await issueCrl({ issuer: root, thisUpdate: day(5, 1), nextUpdate: day(7, 1) });
+    const cleared = await check(parseRevocationSources({ imported: [fresh] }));
+    expect(cleared.tsaRevocation[0]).toMatchObject({ status: 'good', coversValidationTime: true });
+    expect(cleared).toMatchObject({ tsaTrust: 'trusted', trusted: true });
   });
 
   it('accepts the zero padding a PDF /Contents carries after the token', async () => {
@@ -295,7 +332,6 @@ describe('how the token names its signer', () => {
       status: 'valid',
       tsa: 'Test TSA',
       tsaTrust: 'trusted',
-      trusted: true,
     });
 
     // A BER-constructed `[0]` (two OCTET STRING segments), against a certificate whose own
@@ -391,7 +427,7 @@ describe('the signed attributes of a token', () => {
     expect(await verify(token, [root.der])).toMatchObject({
       status: 'valid',
       reason: null,
-      trusted: true,
+      tsaTrust: 'trusted',
       tsa: 'Test TSA',
     });
   });

@@ -8,40 +8,64 @@
  * a form value does, so a review that has to move between machines — or between a
  * draft and a clean copy — needs a file of its own.
  *
- * Two formats, one record model:
+ * Two formats:
  *
  *  - **JSON** is the lossless one, and it is ours: `{ version, pageCount, marks }`.
  *    Everything the model carries (kind, page, quads, colour, opacity, thickness,
  *    shape, ink strokes, contents, author, createdAt, replies, review state)
  *    round-trips exactly.
- *  - **FDF** is the container Acrobat's own “export comments” writes, and it is
- *    reused here through the **same** writer/parser the form-data interchange uses
- *    (`form-data.ts`). The records are keyed `ann.<index>.<field>`; an exported file
- *    is a valid FDF 1.2 document that any FDF reader will list.
+ *  - **FDF** is the container Acrobat's own “Export comments” writes and reads (ISO 32000-1
+ *    §12.7.7): `%FDF-1.2`, one catalog `<< /FDF << /Annots [ … ] /F (file.pdf) /ID [<…><…>] >> >>`,
+ *    and every annotation as an indirect object holding its own dictionary — `/Type /Annot`,
+ *    `/Subtype`, `/Page` (0-based), `/Rect`, `/C`, `/CA`, `/Contents`, `/T`, `/M`,
+ *    `/QuadPoints`, `/InkList`, `/L`, `/BS`, a `/Popup` for the comment and, for a reply or a
+ *    review state, `/IRT` naming the object it answers. The geometry is PDF **user space**, so a
+ *    file leaves through each page's top edge (`pageTop`) and comes back through it
+ *    ({@link toAppSpace}), as XFDF's does.
  *
- * **What the FDF form is not:** Acrobat's comment FDF puts real annotation
- * dictionaries under `/Annots`, appearance streams included. Writing that from here
- * would mean re-deriving `/AP` streams the PDF engine already builds, and importing
- * one would mean parsing arbitrary annotation dictionaries — a fidelity claim this
- * module does not make. The FDF written here carries the same *records* as the JSON
- * (geometry included, so the round trip is lossless for our own files); Acrobat's
- * comment FDF is read by `parseAcrobatCommentsFdf` below.
+ * What the FDF carries is the comment, not its look: appearance streams are not written (a
+ * reader that opens the file builds them), and are skipped when an Acrobat file carries them.
+ * A mark's quarter turn, a marker stroke's “highlight” kind (it is written as the `/Ink` it
+ * is drawn as) and a text box's font do not travel; JSON keeps them all.
+ *
+ * **The reader takes three shapes**, told apart by the file itself (`parseAnnotationData`):
+ * JSON; an FDF with `/Annots` (what Acrobat and this app write now); and the FDF this app
+ * wrote before it wrote Acrobat's, whose `/Fields` hold `ann.<index>.<field>` records. Those
+ * older files are still read, through the same record reader JSON uses (`markFromRecords`).
  *
  * XFDF, the XML form every review tool exchanges, is `annotation-xfdf.ts`: it carries
  * the file's own annotations as well as the session's, with their replies and states.
  */
 
 import { ToolError } from 'pdf-shared';
+import { stateContents } from './annotation-review';
+import { formatPdfDate, parsePdfDate } from './annotation-threads';
 import {
   type AnnotationKind,
   type AnnotationMark,
+  boxesOf,
   type CommentReply,
   type CommentReview,
+  hexToRgb,
+  isStrokedHighlight,
   type MarkBox,
+  markQuadPoints,
+  markRect,
   REVIEW_STATES,
   type ReviewState,
 } from './annotations';
-import { type FdfToken, type FormDataRecord, parseFdf, serializeFdf, tokenizePdfSource } from './form-data';
+import {
+  bytesAsCharacters,
+  escapeFdfString,
+  type FdfDictionary,
+  type FdfFile,
+  type FdfObject,
+  type FormDataRecord,
+  parseFdf,
+  readFdfFile,
+  resolveFdf,
+  tokenizePdfSource,
+} from './form-data';
 
 /** The JSON envelope's version, bumped when the record shape changes meaning. */
 const ANNOTATION_DATA_VERSION = 1;
@@ -57,6 +81,13 @@ const KINDS: readonly AnnotationKind[] = [
   'freetext',
 ];
 
+type Shape = NonNullable<AnnotationMark['shape']>;
+
+const SHAPES: readonly Shape[] = ['square', 'circle', 'line'];
+
+/** What a mark's colour is when a file carries none that is `#rrggbb`. */
+const DEFAULT_COLOUR = '#ffd400';
+
 export interface AnnotationDataResult {
   /** Marks that parsed, in file order. Ids are fresh: an import is a new review. */
   readonly marks: readonly AnnotationMark[];
@@ -66,15 +97,17 @@ export interface AnnotationDataResult {
   readonly pageCount: number | null;
   /**
    * Comments whose page the file did not name, and which were therefore placed on page 1.
-   * Acrobat's own comment export does not write `/Page`, so this is normally the whole
-   * file: the number is what the report shows instead of pretending the placement is right.
+   * Acrobat's FDF names the page of every comment (`/Page`, required in an FDF annotation) and
+   * so does XFDF's `page`; a file from another producer may not, and the number is what the
+   * report shows instead of pretending the placement is right.
    */
   readonly pageUnknown?: number;
   /**
-   * The space the geometry is in. This app's own JSON and FDF records are written in the
-   * app's page space (top-left origin, y down). Acrobat's comment FDF carries PDF **user
-   * space** (bottom-left origin, y up), and only the importer, which knows each page's
-   * top edge, can turn it the right way up ({@link toAppSpace}).
+   * The space the geometry is in. This app's own JSON and its older FDF records are written
+   * in the app's page space (top-left origin, y down). Acrobat's comment FDF (the one this
+   * app writes now too) and XFDF carry PDF **user space** (bottom-left origin, y up), and
+   * only the importer, which knows each page's top edge, can turn it the right way up
+   * ({@link toAppSpace}).
    */
   readonly space: 'app' | 'pdf-user';
 }
@@ -110,11 +143,25 @@ export function toAppSpace(mark: AnnotationMark, pageTop: number): AnnotationMar
   };
 }
 
+/**
+ * The marks of an import that a document of `pageCount` pages can hold. A mark on a page the
+ * document does not have cannot be written (`writeAnnotations` refuses it, and every save
+ * after the import would fail with it), so it is left out and added to `skipped`, which is
+ * what the import's notice reports.
+ */
+export function keepMarksOnPages(result: AnnotationDataResult, pageCount: number): AnnotationDataResult {
+  const marks = result.marks.filter(
+    (mark) => Number.isInteger(mark.pageIndex) && mark.pageIndex >= 0 && mark.pageIndex < pageCount,
+  );
+  if (marks.length === result.marks.length) return result;
+  return { ...result, marks, skipped: result.skipped + result.marks.length - marks.length };
+}
+
 // ---------------------------------------------------------------------------
-// The record model (shared by both formats)
+// The record model (JSON, and the FDF this app wrote before Acrobat's form)
 // ---------------------------------------------------------------------------
 
-/** A quad as one string: `x0 y0 x1 y1`, the form both FDF arrays and JSON carry. */
+/** A quad as one string: `x0 y0 x1 y1`, the form the JSON carries. */
 function encodeQuads(boxes: readonly MarkBox[]): readonly string[] {
   return boxes.map((box) => box.map((value) => Number(value.toFixed(3))).join(' '));
 }
@@ -131,49 +178,6 @@ function decodeQuads(values: readonly string[]): readonly MarkBox[] {
     boxes.push([numbers[0] as number, numbers[1] as number, numbers[2] as number, numbers[3] as number]);
   }
   return boxes;
-}
-
-/** One mark as key/value records, in the order both writers keep. */
-function recordsFor(index: number, mark: AnnotationMark): readonly FormDataRecord[] {
-  const prefix = `ann.${index}`;
-  const records: FormDataRecord[] = [
-    { name: `${prefix}.kind`, value: mark.kind },
-    { name: `${prefix}.page`, value: String(mark.pageIndex) },
-    { name: `${prefix}.quads`, value: encodeQuads(mark.quads) },
-    { name: `${prefix}.color`, value: mark.color },
-    { name: `${prefix}.opacity`, value: String(mark.opacity) },
-    { name: `${prefix}.contents`, value: mark.contents },
-    { name: `${prefix}.author`, value: mark.author },
-    { name: `${prefix}.created`, value: mark.createdAt },
-  ];
-  if (mark.thickness !== undefined) {
-    records.push({ name: `${prefix}.thickness`, value: String(mark.thickness) });
-  }
-  if (mark.rotation !== undefined) {
-    records.push({ name: `${prefix}.rotation`, value: String(mark.rotation) });
-  }
-  if (mark.shape !== undefined) records.push({ name: `${prefix}.shape`, value: mark.shape });
-  // A note carries its place in `rect` alone (its `quads` are empty), so without this
-  // record a note came back from its own export with no place on the page at all.
-  if (mark.rect !== undefined) records.push({ name: `${prefix}.rect`, value: encodeQuads([mark.rect]) });
-  if (mark.fontSize !== undefined) records.push({ name: `${prefix}.fontSize`, value: String(mark.fontSize) });
-  if (mark.strokes !== undefined) {
-    records.push({
-      name: `${prefix}.strokes`,
-      value: mark.strokes.map((stroke) => stroke.map((value) => Number(value.toFixed(3))).join(' ')),
-    });
-  }
-  // Replies and the review state travel as one JSON text per entry: FDF values are
-  // strings, and a reply is three of them that must stay together.
-  if (mark.replies !== undefined && mark.replies.length > 0) {
-    records.push({
-      name: `${prefix}.replies`,
-      value: mark.replies.map((reply) => JSON.stringify(replyRecord(reply))),
-    });
-  }
-  if (mark.review !== undefined)
-    records.push({ name: `${prefix}.review`, value: JSON.stringify(mark.review) });
-  return records;
 }
 
 /** A reply as a file carries it; the id is the session's own and is minted again on import. */
@@ -221,7 +225,16 @@ function decodeReview(value: string | null): CommentReview | null {
   }
 }
 
-/** Rebuilds one mark from its records; `null` when the record set is unusable. */
+/**
+ * Rebuilds one mark from its records; `null` when the record set is unusable.
+ *
+ * A file is not trusted to have written what the writer would: every value that a later
+ * save would refuse is settled here, where the import can still say so. A colour that is
+ * not `#rrggbb` becomes the default colour (the comment is still worth reading), and a
+ * shape this app cannot draw, a page that is not a whole number from 0, a quarter turn
+ * that is not one, or a record with nothing to draw makes the record unusable — it is
+ * skipped and counted, never carried into the session to fail the next save.
+ */
 function markFromRecords(
   records: ReadonlyMap<string, string | readonly string[] | boolean>,
 ): AnnotationMark | null {
@@ -250,7 +263,7 @@ function markFromRecords(
   // (`pageIndex`, `createdAt`). One reader takes both, so neither writer has to be
   // the canonical one — and a file written by either round-trips through both.
   const pageIndex = number('page') ?? number('pageIndex');
-  if (pageIndex === null || pageIndex < 0) return null;
+  if (pageIndex === null || !Number.isInteger(pageIndex) || pageIndex < 0) return null;
   const quads = decodeQuads(list('quads'));
   const rect = decodeQuads(list('rect'))[0];
   // A note or a text box carries its place in `rect`, every other kind in `quads`.
@@ -271,7 +284,11 @@ function markFromRecords(
   const rawRotation = text('rotation');
   const rotation = rawRotation === null ? 0 : Number(rawRotation);
   if (rotation !== 0 && rotation !== 90 && rotation !== 180 && rotation !== 270) return null;
-  const shape = text('shape');
+  // Only a shape has one, and only one of the three this app draws: the writer has no
+  // subtype for any other name (`constructor` included).
+  const shape = kind === 'shapes' ? text('shape') : null;
+  if (shape !== null && !SHAPES.includes(shape as Shape)) return null;
+  const colour = text('color')?.trim() ?? '';
   const createdAt = text('created') ?? text('createdAt');
   const replies = decodeReplies(list('replies'));
   const review = decodeReview(text('review'));
@@ -280,14 +297,14 @@ function markFromRecords(
     kind: kind as AnnotationKind,
     pageIndex,
     quads,
-    color: text('color') ?? '#ffd400',
+    color: /^#[0-9a-f]{6}$/i.test(colour) ? colour.toLowerCase() : DEFAULT_COLOUR,
     opacity: opacity === null ? 0.4 : Math.min(Math.max(opacity, 0.02), 1),
     contents: text('contents') ?? '',
     author: text('author') ?? '',
     createdAt: createdAt ?? new Date().toISOString(),
     ...(thickness === null ? {} : { thickness }),
     ...(rotation === 0 ? {} : { rotation }),
-    ...(shape === null ? {} : { shape: shape as NonNullable<AnnotationMark['shape']> }),
+    ...(shape === null ? {} : { shape: shape as Shape }),
     ...(strokes.length === 0 ? {} : { strokes }),
     ...(rect === undefined ? {} : { rect }),
     ...(fontSize === null ? {} : { fontSize }),
@@ -395,24 +412,293 @@ export function parseAnnotationsJson(text: string): AnnotationDataResult {
 }
 
 // ---------------------------------------------------------------------------
-// FDF
+// FDF: writing Acrobat's comment container
+// ---------------------------------------------------------------------------
+
+export interface AnnotationFdfInput {
+  /** Session marks, in the app's page space (top-left origin). */
+  readonly marks: readonly AnnotationMark[];
+  /** A page's top edge (`viewBox[3]`), or `null` when the page cannot be measured. */
+  readonly pageTop: (pageIndex: number) => number | null;
+  /** The PDF the comments belong to, written as `/F` and `/UF`. */
+  readonly fileName?: string;
+  /**
+   * The PDF's `/ID` as two strings of hex digits (the engine's fingerprints of the file),
+   * written as the FDF's own `/ID`. Left out of the file when it is not given: an identifier
+   * that names no file is worse than none.
+   */
+  readonly fileId?: readonly [string, string];
+}
+
+export interface AnnotationFdfExport {
+  readonly bytes: Uint8Array;
+  /** Comments written (their replies, review states and popups are not counted). */
+  readonly count: number;
+  /** Marks on a page that could not be measured: left out, never written at a guessed place. */
+  readonly skipped: number;
+}
+
+/** `/Subtype` for each way a mark is drawn. A marker stroke (a highlight painted as a path) is an ink. */
+function acrobatSubtype(mark: AnnotationMark): string {
+  if (isStrokedHighlight(mark)) return 'Ink';
+  switch (mark.kind) {
+    case 'ink':
+      return 'Ink';
+    case 'highlight':
+      return 'Highlight';
+    case 'underline':
+      return 'Underline';
+    case 'strikeout':
+      return 'StrikeOut';
+    case 'squiggly':
+      return 'Squiggly';
+    case 'freetext':
+      return 'FreeText';
+    case 'note':
+      return 'Text';
+    case 'shapes':
+      return mark.shape === 'circle' ? 'Circle' : mark.shape === 'line' ? 'Line' : 'Square';
+  }
+}
+
+function num(value: number): string {
+  return String(Number(value.toFixed(3)));
+}
+
+/** A PDF string, escaped (and written as UTF-16BE when it is not ASCII) by the form-data writer. */
+function pdfString(value: string): string {
+  return `(${escapeFdfString(value)})`;
+}
+
+function pdfNumbers(values: readonly number[]): string {
+  return `[${values.map(num).join(' ')}]`;
+}
+
+/** One dictionary; an entry whose value is `undefined` is not written. */
+function pdfDictionary(entries: readonly (readonly [string, string | undefined])[]): string {
+  const written = entries.flatMap(([key, value]) => (value === undefined ? [] : [`/${key} ${value}`]));
+  return `<< ${written.join(' ')} >>`;
+}
+
+/** `D:YYYYMMDDHHmmSSZ` for an ISO 8601 time, or `undefined` when it names no time. */
+function pdfDateString(iso: string): string | undefined {
+  const date = formatPdfDate(Date.parse(iso));
+  return date === null ? undefined : pdfString(date);
+}
+
+/** The shape of every annotation's own entries, in the order Acrobat writes them. */
+function commonEntries(
+  page: number,
+  rect: readonly number[],
+  who: { readonly id: string; readonly author: string; readonly contents: string; readonly at: string },
+  flags: number,
+): (readonly [string, string | undefined])[] {
+  const date = pdfDateString(who.at);
+  return [
+    ['Type', '/Annot'],
+    ['Page', String(page)],
+    ['Rect', pdfNumbers(rect)],
+    ['NM', pdfString(who.id)],
+    ['T', who.author === '' ? undefined : pdfString(who.author)],
+    ['Contents', who.contents === '' ? undefined : pdfString(who.contents)],
+    ['M', date],
+    ['CreationDate', date],
+    ['F', String(flags)],
+  ];
+}
+
+/** The entries one session mark adds to the common ones, by the subtype it is drawn as. */
+function markEntries(
+  mark: AnnotationMark,
+  subtype: string,
+  top: number,
+): (readonly [string, string | undefined])[] {
+  const entries: (readonly [string, string | undefined])[] = [['Subtype', `/${subtype}`]];
+  const border = (): readonly [string, string] => [
+    'BS',
+    `<< /Type /Border /W ${num(mark.thickness ?? 2)} /S /S >>`,
+  ];
+  switch (subtype) {
+    case 'Highlight':
+    case 'Underline':
+    case 'StrikeOut':
+    case 'Squiggly':
+      entries.push(['QuadPoints', pdfNumbers(markQuadPoints(mark, top))]);
+      break;
+    case 'Ink': {
+      // Each stroke is flat `x y x y …`; only the y of a pair is mirrored.
+      const runs = (mark.strokes ?? []).map((stroke) =>
+        pdfNumbers(stroke.map((value, index) => (index % 2 === 1 ? top - value : value))),
+      );
+      entries.push(['InkList', `[${runs.join(' ')}]`], border());
+      break;
+    }
+    case 'Line': {
+      // A line's `rect` is its two ends in drag order: `/L` keeps the direction `/Rect` cannot.
+      const [x0, y0, x1, y1] = boxesOf(mark)[0] as MarkBox;
+      entries.push(['L', pdfNumbers([x0, top - y0, x1, top - y1])], border());
+      break;
+    }
+    case 'Square':
+    case 'Circle':
+      entries.push(border());
+      break;
+    case 'FreeText':
+      entries.push([
+        'DA',
+        pdfString(`/Helv ${num(mark.fontSize ?? 12)} Tf ${hexToRgb(mark.color).map(num).join(' ')} rg`),
+      ]);
+      break;
+    default:
+      // `Text`: the sticky note's icon, as Acrobat names it.
+      entries.push(['Name', '/Comment']);
+  }
+  // A typed text box has no ground colour: `/C` would paint its background, not its ink.
+  if (subtype !== 'FreeText') entries.push(['C', pdfNumbers(hexToRgb(mark.color))]);
+  entries.push(['CA', num(mark.opacity)]);
+  return entries;
+}
+
+/**
+ * The marks as Acrobat's “comments” FDF: every annotation an indirect object, listed in
+ * `/FDF /Annots`. A mark is its annotation, a `/Popup` for its comment, one `/Text` per
+ * reply (`/IRT` → the comment, or the reply it answers) and one for its review state
+ * (`/State`, `/StateModel`, hidden), exactly the records Acrobat writes and reads back as a
+ * thread. Coordinates are PDF user space, turned through each page's top edge; a mark on a
+ * page `pageTop` cannot measure is counted in `skipped` instead of being written at a guess.
+ */
+export function serializeAnnotationsFdf(input: AnnotationFdfInput): AnnotationFdfExport {
+  const objects: string[] = [];
+  const listed: number[] = [];
+  let next = 2;
+  /** One indirect object (number 1 is the catalog); answers its number. */
+  const emit = (body: string): number => {
+    const number = next;
+    next += 1;
+    listed.push(number);
+    objects.push(`${number} 0 obj`, body, 'endobj');
+    return number;
+  };
+
+  let count = 0;
+  let skipped = 0;
+  for (const mark of input.marks) {
+    const top = input.pageTop(mark.pageIndex);
+    if (top === null) {
+      skipped += 1;
+      continue;
+    }
+    const subtype = acrobatSubtype(mark);
+    // A stroked mark's rectangle holds the whole stroke (`markRect` grows it by half the
+    // width), and the reader takes that half off again.
+    const stroked = subtype === 'Ink' || mark.kind === 'shapes';
+    const rect = markRect(stroked ? { ...mark, thickness: mark.thickness ?? 2 } : mark, top);
+    const withPopup = subtype !== 'FreeText';
+    const parent = next;
+    emit(
+      pdfDictionary([
+        ...commonEntries(
+          mark.pageIndex,
+          rect,
+          { id: mark.id, author: mark.author, contents: mark.contents, at: mark.createdAt },
+          4,
+        ),
+        ...markEntries(mark, subtype, top),
+        ['Popup', withPopup ? `${parent + 1} 0 R` : undefined],
+      ]),
+    );
+    if (withPopup) {
+      // The window the comment opens in, beside the annotation: 180 × 100 points from its upper-right corner.
+      const [, , right = 0, upper = 0] = rect;
+      emit(
+        pdfDictionary([
+          ['Type', '/Annot'],
+          ['Subtype', '/Popup'],
+          ['Page', String(mark.pageIndex)],
+          ['Parent', `${parent} 0 R`],
+          ['Open', 'false'],
+          ['Rect', pdfNumbers([right, upper - 100, right + 180, upper])],
+        ]),
+      );
+    }
+    // A reply is a small note at the comment's corner; where it sits is not what it says.
+    const [left = 0, , , corner = 0] = rect;
+    const small = [left, corner - 20, left + 20, corner];
+    for (const reply of mark.replies ?? []) {
+      emit(
+        pdfDictionary([
+          ...commonEntries(
+            mark.pageIndex,
+            small,
+            { id: reply.id, author: reply.author, contents: reply.contents, at: reply.createdAt },
+            28,
+          ),
+          ['Subtype', '/Text'],
+          ['Name', '/Comment'],
+          ['IRT', `${parent} 0 R`],
+          ['RT', '/R'],
+        ]),
+      );
+    }
+    if (mark.review !== undefined && mark.review.state !== 'None') {
+      emit(
+        pdfDictionary([
+          ...commonEntries(
+            mark.pageIndex,
+            small,
+            {
+              id: `${mark.id}-state`,
+              author: mark.review.author,
+              contents: stateContents(mark.review.state, mark.review.author),
+              at: mark.review.at,
+            },
+            // Print, no-zoom, no-rotate and hidden: a state is not a second icon on the page.
+            30,
+          ),
+          ['Subtype', '/Text'],
+          ['Name', '/Comment'],
+          ['IRT', `${parent} 0 R`],
+          ['RT', '/R'],
+          // Text strings (ISO 32000-1 Table 172), not names.
+          ['State', pdfString(mark.review.state)],
+          ['StateModel', pdfString('Review')],
+        ]),
+      );
+    }
+    count += 1;
+  }
+
+  const fileName = input.fileName === undefined ? undefined : pdfString(input.fileName);
+  const [first, second] = input.fileId ?? [];
+  const hex = /^(?:[0-9a-f]{2})+$/i;
+  const fileId =
+    first !== undefined && second !== undefined && hex.test(first) && hex.test(second)
+      ? `[<${first}><${second}>]`
+      : undefined;
+  const catalog = pdfDictionary([
+    [
+      'FDF',
+      pdfDictionary([
+        ['Annots', `[${listed.map((number) => `${number} 0 R`).join(' ')}]`],
+        ['F', fileName],
+        ['UF', fileName],
+        ['ID', fileId],
+      ]),
+    ],
+    ['Type', '/Catalog'],
+  ]);
+  const lines = ['%FDF-1.2', '1 0 obj', catalog, 'endobj', ...objects, 'trailer', '<< /Root 1 0 R >>'];
+  return { bytes: new TextEncoder().encode(`${lines.join('\n')}\n%%EOF\n`), count, skipped };
+}
+
+// ---------------------------------------------------------------------------
+// FDF: reading
 // ---------------------------------------------------------------------------
 
 /**
- * The same marks in the FDF container Acrobat's “export comments” produces, written
- * through the form-data writer so string escaping, arrays and the trailer are the
- * ones already verified for form data.
+ * The FDF this app wrote before it wrote Acrobat's: `ann.<index>.<field>` form records.
+ * Read for the files that are already out there; nothing writes it any more.
  */
-export function serializeAnnotationsFdf(marks: readonly AnnotationMark[], pageCount: number): Uint8Array {
-  const records: FormDataRecord[] = [
-    { name: 'ann.version', value: String(ANNOTATION_DATA_VERSION) },
-    { name: 'ann.pageCount', value: String(pageCount) },
-    { name: 'ann.count', value: String(marks.length) },
-  ];
-  for (const [index, mark] of marks.entries()) records.push(...recordsFor(index, mark));
-  return serializeFdf(records);
-}
-
 export function parseAnnotationsFdf(bytes: Uint8Array): AnnotationDataResult {
   const records = parseFdf(bytes);
   return annotationsFromRecords(records, 'FDF');
@@ -467,15 +753,21 @@ function annotationsFromRecords(records: readonly FormDataRecord[], format: stri
 export function parseAnnotationData(bytes: Uint8Array): AnnotationDataResult {
   const head = new TextDecoder('latin1').decode(bytes.slice(0, 16)).trimStart();
   if (head.startsWith('%FDF')) {
-    // Our own container carries `ann.*` records; Acrobat's carries annotation objects. The
-    // file itself says which it is, and the two are told apart by trying the *record* shape
-    // first — a file that has neither is refused by both readers, loudly.
+    // Acrobat's comment file (and this app's now) holds `/Annots`; the one this app wrote
+    // before holds `ann.*` records under `/Fields`. The file itself says which it is.
+    const file = readCommentFile(bytes);
+    const annots = fdfAnnotsOf(file);
+    if (annots !== null) return commentsFromFile(file, annots);
     try {
       return parseAnnotationsFdf(bytes);
-    } catch {
-      // `parseFdf` and the record reader refuse with a `ToolError` and nothing else;
-      // the Acrobat reader then answers for the same bytes with its own refusal.
-      return parseAcrobatCommentsFdf(bytes);
+    } catch (error) {
+      // The bytes were read as objects above, so what is left to refuse is a file with
+      // neither kind of content: a form-data FDF, or one with nothing in it we know.
+      throw new ToolError(
+        'unsupported-format',
+        { engine: 'model', engineMessage: 'the FDF carries neither /Annots comments nor ann.* records' },
+        { cause: error },
+      );
     }
   }
   if (head.startsWith('{')) return parseAnnotationsJson(new TextDecoder('utf-8').decode(bytes));
@@ -490,122 +782,139 @@ export function parseAnnotationData(bytes: Uint8Array): AnnotationDataResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Acrobat's “export comments” container.
+ * Acrobat's “export comments” container: `/FDF << /Annots [ 2 0 R 3 0 R … ] /F (file.pdf)
+ * /ID [<…><…>] >>`, every annotation an indirect object (or, from another producer, a
+ * dictionary in the array itself).
  *
- * It is an FDF whose `/Fields` entries are **annotations**, not form values, and the
- * annotation travels as a PDF object: either as a `/V` **string** whose text is the
- * annotation's dictionary (`<< /Subtype /Highlight … >>`), which is what Acrobat writes,
- * or — from other producers — as a `/V` dictionary directly. Both are read here.
+ * **What is read.** `/Highlight`, `/Underline`, `/StrikeOut`, `/Squiggly`, `/Ink`, `/Square`,
+ * `/Circle`, `/Line`, `/Text` and `/FreeText` become session marks in PDF user space (the
+ * importer turns them through each page's top edge, `toAppSpace`), with the page from `/Page`
+ * (0-based; ISO 32000-1 requires it in an FDF), the colour from `/C`, the words from
+ * `/Contents`, the author from `/T` and the date from `/CreationDate` or `/M` (zone
+ * applied). An annotation with `/IRT` is a reply — or, with `/State`, a review state — and is
+ * attached to the comment its chain of `/IRT`s ends at. A `/Popup` is part of its comment and
+ * is not counted.
  *
- * **What this reader knows and what it does not.** The shape above is the documented one,
- * and the check that covers it built a file in exactly that shape; a file **exported by a real Acrobat** has not been run
- * through it, because the repository has no such file. The
- * honest consequences are visible in the result: values that do not parse are *skipped and
- * counted*, a subtype this model cannot hold is counted too, and the page a comment sits on
- * is taken from `/Page` when the producer wrote it — Acrobat's own export does not, and a
- * comment whose page is unknown lands on page 1 with a note that says so.
+ * **What is counted instead of read.** An annotation of another subtype (a stamp, a polygon, a
+ * file attachment…), one with nothing this model can draw, a reply to a comment that is not in
+ * the file, a state of a model other than `/Review`: each adds one to `skipped`. A comment
+ * without `/Page` goes to page 1 and is counted in `pageUnknown`. Appearance streams are
+ * skipped over, not read — the writer builds a new one when the comment is saved — and a
+ * file's names (`/NM`) only link a thread together: every mark and reply gets a fresh id.
  */
 export function parseAcrobatCommentsFdf(bytes: Uint8Array): AnnotationDataResult {
-  const source = new TextDecoder('latin1').decode(bytes);
-  if (!source.startsWith('%FDF')) {
-    throw new ToolError('unsupported-format', { engine: 'model', engineMessage: 'not an FDF file' });
-  }
-  const tokens = tokenizePdfSource(source);
-  const { entries, unreadable } = readCommentEntries(tokens);
-  // No annotation at all — not even a broken one — is a different answer from "some of
-  // them were unreadable": the first is not this file's format, the second is a review
-  // that arrived damaged. (`unreadable` on its own is still reported below.)
-  if (entries.length === 0) {
+  const file = readCommentFile(bytes);
+  const annots = fdfAnnotsOf(file);
+  if (annots === null) {
     throw new ToolError('unsupported-format', {
       engine: 'model',
-      engineMessage: 'the FDF carries no /Fields entries that look like annotations',
+      engineMessage: 'the FDF carries no /FDF /Annots array',
     });
   }
+  return commentsFromFile(file, annots);
+}
 
-  const marks: AnnotationMark[] = [];
-  // Both kinds of loss are counted: an entry whose value is not a dictionary at all
-  // (`unreadable`) and one whose dictionary names a subtype this model cannot hold.
-  let skipped = unreadable;
-  let pageUnknown = 0;
-  for (const [index, entry] of entries.entries()) {
-    const mark = markFromAcrobat(index, entry);
-    if (mark === null) skipped += 1;
-    else {
-      if (entry.pageIndex === null) pageUnknown += 1;
-      marks.push(mark);
-    }
+/** An FDF's objects, read as bytes (PDFDocEncoding strings, stream bodies skipped over). */
+function readCommentFile(bytes: Uint8Array): FdfFile {
+  const source = bytesAsCharacters(bytes);
+  if (!source.slice(0, 16).trimStart().startsWith('%FDF')) {
+    throw new ToolError('unsupported-format', { engine: 'model', engineMessage: 'not an FDF file' });
   }
-  return { marks, skipped, pageCount: null, pageUnknown, space: 'pdf-user' };
+  return readFdfFile(tokenizePdfSource(source, { bytes: true }));
 }
 
-/** Acrobat's `/Subtype` names, mapped onto the kinds this model holds. */
-const ACROBAT_KINDS: Record<
-  string,
-  { readonly kind: AnnotationKind; readonly shape?: 'square' | 'circle' | 'line' }
-> = {
-  Highlight: { kind: 'highlight' },
-  Underline: { kind: 'underline' },
-  StrikeOut: { kind: 'strikeout' },
-  Squiggly: { kind: 'squiggly' },
-  Text: { kind: 'note' },
-  Ink: { kind: 'ink' },
-  /**
-   * Acrobat's free-text box becomes typed text at the same place with the same words.
-   * Its size comes from `/DA` when the file states one; its font and border do not
-   * survive — the text is re-drawn in the embedded Noto Sans every typed box uses.
-   */
-  FreeText: { kind: 'freetext' },
-  Square: { kind: 'shapes', shape: 'square' },
-  Circle: { kind: 'shapes', shape: 'circle' },
-  Line: { kind: 'shapes', shape: 'line' },
-};
-
-interface CommentEntry {
-  readonly dictionary: Record<string, PdfValue>;
-  readonly pageIndex: number | null;
-  readonly fallbackId: string;
-}
-
-type PdfValue =
-  | string
-  | number
-  | null
-  | readonly PdfValue[]
-  | { readonly [key: string]: PdfValue }
-  | { readonly name: string };
-
-function isName(value: PdfValue | undefined): value is { readonly name: string } {
-  return typeof value === 'object' && value !== null && 'name' in value;
-}
-
-function numberOf(value: PdfValue | undefined): number | null {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? parsed : null;
+/** `/Annots` of the FDF dictionary: `/FDF` of a top-level dictionary, or the dictionary itself. */
+function fdfAnnotsOf(file: FdfFile): readonly FdfObject[] | null {
+  for (const root of file.roots) {
+    const fdf = resolveFdf(file, root.entries.get('FDF'));
+    const container = fdf?.type === 'dict' ? fdf : root;
+    const annots = resolveFdf(file, container.entries.get('Annots'));
+    if (annots?.type === 'array') return annots.items;
   }
   return null;
 }
 
-function numbersOf(value: PdfValue | undefined): readonly number[] {
-  if (!Array.isArray(value)) return [];
-  const out: number[] = [];
-  for (const item of value) {
-    const parsed = numberOf(item);
-    if (parsed !== null) out.push(parsed);
-  }
-  return out;
+/** Acrobat's `/Subtype` names, mapped onto the kinds this model holds. */
+interface AcrobatKind {
+  readonly kind: AnnotationKind;
+  readonly shape?: Shape;
 }
 
-function textOf(value: PdfValue | undefined): string {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number') return String(value);
-  return '';
+/**
+ * A `Map`, because the key is a name out of a file: `constructor` or `__proto__` is found on a
+ * plain object's prototype and used to import as a mark of no kind at all.
+ */
+const ACROBAT_KINDS: ReadonlyMap<string, AcrobatKind> = new Map<string, AcrobatKind>([
+  ['Highlight', { kind: 'highlight' }],
+  ['Underline', { kind: 'underline' }],
+  ['StrikeOut', { kind: 'strikeout' }],
+  ['Squiggly', { kind: 'squiggly' }],
+  ['Text', { kind: 'note' }],
+  ['Ink', { kind: 'ink' }],
+  // Acrobat's free-text box becomes typed text at the same place with the same words.
+  // Its size and colour come from `/DA` when the file states them; its font and border do
+  // not survive — the text is re-drawn in the embedded Noto Sans every typed box uses.
+  ['FreeText', { kind: 'freetext' }],
+  ['Square', { kind: 'shapes', shape: 'square' }],
+  ['Circle', { kind: 'shapes', shape: 'circle' }],
+  ['Line', { kind: 'shapes', shape: 'line' }],
+]);
+
+/** How the values of one comment file are read: references followed, a wrong type is "nothing". */
+interface CommentValues {
+  /** An entry of a dictionary, its reference followed. */
+  readonly get: (dict: FdfDictionary, key: string) => FdfObject | undefined;
+  /** A finite number; a string that starts with one is read as it (`(2)`). */
+  readonly number: (value: FdfObject | undefined) => number | null;
+  /** The numbers of an array, the items that are not one skipped. */
+  readonly numbers: (value: FdfObject | undefined) => readonly number[];
+  /** A string, or a number as its digits; anything else is no text (`''`). */
+  readonly text: (value: FdfObject | undefined) => string;
+  /** A name's text, or `null` for anything but a name. */
+  readonly name: (value: FdfObject | undefined) => string | null;
+  /** A text string or a name: `/State` is written as either (ISO 32000-1 Table 172). */
+  readonly label: (value: FdfObject | undefined) => string | null;
 }
 
-/** `[/C [r g b]]` (0…1) or a single grey value → `#rrggbb`. */
-function colourOf(value: PdfValue | undefined): string {
-  const parts = Array.isArray(value) ? numbersOf(value) : value === undefined ? [] : [numberOf(value) ?? 0];
+function commentValues(file: FdfFile): CommentValues {
+  const get = (dict: FdfDictionary, key: string): FdfObject | undefined =>
+    resolveFdf(file, dict.entries.get(key));
+  const number = (value: FdfObject | undefined): number | null => {
+    const resolved = resolveFdf(file, value);
+    if (resolved?.type === 'number') return Number.isFinite(resolved.value) ? resolved.value : null;
+    if (resolved?.type === 'string') {
+      const parsed = Number.parseFloat(resolved.text);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  };
+  const numbers = (value: FdfObject | undefined): readonly number[] => {
+    const array = resolveFdf(file, value);
+    if (array?.type !== 'array') return [];
+    return array.items.flatMap((item) => {
+      const parsed = number(item);
+      return parsed === null ? [] : [parsed];
+    });
+  };
+  const text = (value: FdfObject | undefined): string => {
+    const resolved = resolveFdf(file, value);
+    if (resolved?.type === 'string') return resolved.text;
+    if (resolved?.type === 'number') return String(resolved.value);
+    return '';
+  };
+  const name = (value: FdfObject | undefined): string | null => {
+    const resolved = resolveFdf(file, value);
+    return resolved?.type === 'name' ? resolved.text : null;
+  };
+  const label = (value: FdfObject | undefined): string | null => {
+    const resolved = resolveFdf(file, value);
+    return resolved?.type === 'string' || resolved?.type === 'name' ? resolved.text : null;
+  };
+  return { get, number, numbers, text, name, label };
+}
+
+/** `[r g b]` (0…1) or a single grey value → `#rrggbb`; no colour at all is the default amber. */
+function colourOf(parts: readonly number[]): string {
   if (parts.length === 0) return '#f5c400';
   const [first = 0, second, third] = parts;
   const to255 = (component: number): number => Math.max(0, Math.min(255, Math.round(component * 255)));
@@ -618,13 +927,12 @@ function colourOf(value: PdfValue | undefined): string {
 
 /**
  * `/QuadPoints` is `x1 y1 x2 y2 x3 y3 x4 y4` per line, in **bottom-left** user space; the
- * model wants one box per line run in top-left space, which is what this converts. Acrobat
- * writes the points in an order that varies by producer, so the box is taken as the
- * bounding box of each group of four — the alternative is guessing which corner comes
- * first, and a bounding box is wrong only by the skew of a rotated quad.
+ * model wants one box per line run, which is what this makes. Acrobat writes the points in an
+ * order that varies by producer, so the box is the bounding box of each group of four — the
+ * alternative is guessing which corner comes first, and a bounding box is wrong only by the
+ * skew of a rotated quad. A trailing group of fewer than eight numbers is not a quad.
  */
-function quadsOf(value: PdfValue | undefined, rect: readonly number[]): readonly MarkBox[] {
-  const points = numbersOf(value);
+function quadBoxes(points: readonly number[]): readonly MarkBox[] {
   const boxes: MarkBox[] = [];
   for (let at = 0; at + 7 < points.length; at += 8) {
     // `at + 7 < points.length` bounds every read.
@@ -642,150 +950,229 @@ function quadsOf(value: PdfValue | undefined, rect: readonly number[]): readonly
     ];
     boxes.push([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
   }
-  if (boxes.length > 0) return boxes;
-  if (rect.length === 4)
-    return [[rect[0] as number, rect[1] as number, rect[2] as number, rect[3] as number]];
-  return [];
+  return boxes;
 }
 
-/** `/InkList` is `[[x y x y …] …]` per stroke, in user space. */
-function strokesOf(value: PdfValue | undefined): readonly (readonly number[])[] {
-  if (!Array.isArray(value)) return [];
-  const strokes: number[][] = [];
-  for (const stroke of value) {
-    const points = numbersOf(stroke);
-    if (points.length >= 4) strokes.push([...points]);
-  }
-  return strokes;
+/** The box with its corners in order, from the first four numbers of a `/Rect`. */
+function orderedBox(rect: readonly number[]): MarkBox | null {
+  if (rect.length < 4) return null;
+  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = rect;
+  return [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)];
 }
 
-function markFromAcrobat(index: number, entry: CommentEntry): AnnotationMark | null {
-  const { dictionary } = entry;
-  const subtype = isName(dictionary.Subtype) ? dictionary.Subtype.name : '';
-  const mapped = ACROBAT_KINDS[subtype];
-  if (mapped === undefined) return null;
-  const rect = numbersOf(dictionary.Rect);
-  const quads = quadsOf(dictionary.QuadPoints, rect);
-  if (quads.length === 0) return null;
-  const date = textOf(dictionary.M);
-  // A free text box states its text size and colour in `/DA` (`/Helv 12 Tf 0 0 1 rg`);
-  // its `/C` is the box's background, not the ink.
-  const appearance = mapped.kind === 'freetext' ? textOf(dictionary.DA) : '';
-  const size = /([\d.]+)\s+Tf/.exec(appearance);
-  const ink = /([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg/.exec(appearance);
-  const textColour = ink === null ? '#000000' : colourOf([Number(ink[1]), Number(ink[2]), Number(ink[3])]);
-  return {
-    id: textOf(dictionary.NM) || entry.fallbackId || `acrobat-${index}`,
-    kind: mapped.kind,
-    pageIndex: entry.pageIndex ?? 0,
-    quads,
-    color: mapped.kind === 'freetext' ? textColour : colourOf(dictionary.C),
-    ...(size === null ? {} : { fontSize: Number(size[1]) }),
-    opacity: Math.max(0, Math.min(1, numberOf(dictionary.CA) ?? 1)),
-    contents: textOf(dictionary.Contents),
-    author: textOf(dictionary.T),
-    createdAt: isoFromAcrobatDate(date),
-    ...(mapped.shape === undefined ? {} : { shape: mapped.shape }),
-    ...(mapped.kind === 'ink' ? { strokes: strokesOf(dictionary.InkList) } : {}),
-    ...(rect.length === 4
-      ? { rect: [rect[0] as number, rect[1] as number, rect[2] as number, rect[3] as number] as const }
-      : {}),
+/** The box around flat `[x, y, …]` runs of at least one point each (an ink's strokes). */
+function boundsOfRuns(runs: readonly (readonly number[])[]): MarkBox {
+  const flat = runs.flat();
+  const xs = flat.filter((_, index) => index % 2 === 0);
+  const ys = flat.filter((_, index) => index % 2 === 1);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+/**
+ * One annotation dictionary as a mark in PDF user space, or `null` when it holds nothing this
+ * model can draw (no place, a stroke with no points, a text box with no words, a line with no
+ * ends). The stroke of a shape or an ink is the border's width: its `/Rect` holds the whole
+ * stroke, so half of it is taken off to get the mark's own box back (`markRect` grows by it).
+ */
+function markFromAnnotation(
+  values: CommentValues,
+  dict: FdfDictionary,
+  mapped: AcrobatKind,
+): AnnotationMark | null {
+  const box = orderedBox(values.numbers(values.get(dict, 'Rect')));
+  const style = values.get(dict, 'BS');
+  const width =
+    (style?.type === 'dict' ? values.number(style.entries.get('W')) : null) ??
+    values.numbers(values.get(dict, 'Border'))[2];
+  const stroke = Math.max(width ?? 2, 0);
+  const inset = (outer: MarkBox): MarkBox => {
+    const x = Math.min(stroke / 2, (outer[2] - outer[0]) / 2);
+    const y = Math.min(stroke / 2, (outer[3] - outer[1]) / 2);
+    return [outer[0] + x, outer[1] + y, outer[2] - x, outer[3] - y];
   };
+  // `/C` is `[r g b]`; a single number is a grey, and no colour is the default.
+  const colour = values.get(dict, 'C');
+  let channels: readonly number[] = [];
+  if (colour?.type === 'array') channels = values.numbers(colour);
+  else if (colour !== undefined) channels = [values.number(colour) ?? 0];
+  const page = values.number(dict.entries.get('Page'));
+  const opacity = values.number(dict.entries.get('CA'));
+  const created = values.text(values.get(dict, 'CreationDate')) || values.text(values.get(dict, 'M'));
+  const base = {
+    id: crypto.randomUUID(),
+    kind: mapped.kind,
+    pageIndex: page === null ? 0 : Math.max(0, Math.trunc(page)),
+    color: colourOf(channels),
+    opacity: Math.max(0, Math.min(1, opacity ?? 1)),
+    contents: values.text(values.get(dict, 'Contents')),
+    author: values.text(values.get(dict, 'T')),
+    createdAt: isoFromAcrobatDate(created),
+    ...(width === undefined ? {} : { thickness: width }),
+  };
+  switch (mapped.kind) {
+    case 'highlight':
+    case 'underline':
+    case 'strikeout':
+    case 'squiggly': {
+      // No quad points: the rectangle is the one box (a comment with neither has no place).
+      const quads = quadBoxes(values.numbers(values.get(dict, 'QuadPoints')));
+      if (quads.length > 0) return { ...base, quads };
+      return box === null ? null : { ...base, quads: [box] };
+    }
+    case 'ink': {
+      const list = values.get(dict, 'InkList');
+      const items: readonly FdfObject[] = list?.type === 'array' ? list.items : [];
+      const runs = items
+        .map((item) => values.numbers(item))
+        // A stroke needs two points, and a point is a pair: an odd last number is dropped.
+        .filter((points) => points.length >= 4)
+        .map((points) => points.slice(0, points.length - (points.length % 2)));
+      if (runs.length === 0) return null;
+      // Without a `/Rect` the box is the one around the strokes themselves.
+      return { ...base, quads: [inset(box ?? boundsOfRuns(runs))], strokes: runs, thickness: stroke };
+    }
+    case 'shapes': {
+      if (mapped.shape === 'line') {
+        const ends = values.numbers(values.get(dict, 'L'));
+        if (ends.length < 4) return null;
+        // `/L` is the two ends in drag order, which is what the mark's `rect` is for a line.
+        const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = ends;
+        // Without a `/Rect` the box is the one around the two ends (four numbers, checked above).
+        const around = box ?? (orderedBox(ends) as MarkBox);
+        return { ...base, quads: [around], shape: 'line', rect: [x0, y0, x1, y1] };
+      }
+      if (box === null) return null;
+      return {
+        ...base,
+        quads: [inset(box)],
+        shape: mapped.shape as Shape,
+        rect: inset(box),
+        thickness: stroke,
+      };
+    }
+    case 'freetext': {
+      // A typed box states its size and ink in `/DA` (`/Helv 12 Tf 0 0 1 rg`); its `/C` is
+      // the background, not the ink. A box without words is not a mark.
+      if (box === null || base.contents.trim() === '') return null;
+      const appearance = values.text(values.get(dict, 'DA'));
+      const size = /([\d.]+)\s+Tf/.exec(appearance);
+      const ink = /([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg/.exec(appearance);
+      return {
+        ...base,
+        color: ink === null ? '#000000' : colourOf([Number(ink[1]), Number(ink[2]), Number(ink[3])]),
+        quads: [],
+        rect: box,
+        ...(size === null ? {} : { fontSize: Number(size[1]) }),
+      };
+    }
+    case 'note':
+      return box === null ? null : { ...base, quads: [], rect: box };
+  }
 }
 
 /** `/M` in Acrobat's own date form; anything else becomes “now”, which is a fact about the
  * import and is why the panel shows the date the file carried when it carried one. */
 export function isoFromAcrobatDate(value: string): string {
-  const match = /^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?/.exec(value.trim());
-  if (match === null) return new Date().toISOString();
-  const [, year, month = '01', day = '01', hour = '00', minute = '00', second = '00'] = match;
-  return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`).toISOString();
+  return new Date(parsePdfDate(value) ?? Date.now()).toISOString();
 }
 
 /**
- * The `/Fields` entries, each read into an object graph or counted as unreadable.
- *
- * `/Page`, when a producer writes it, is read as the **0-based** index this model uses —
- * the PDF convention. A producer that wrote 1-based numbers is indistinguishable from one
- * that wrote 0-based ones, and the consequence (a comment one page later) is recorded in
- * this module's header rather than guessed at twice. When the key is absent the comment is
- * placed on page 1 and counted in `pageUnknown`.
+ * The annotations of a comment file as marks, with the replies and the review state that
+ * answer them. Everything that is not a mark, a reply or a popup is counted, never dropped
+ * in silence.
  */
-function readCommentEntries(tokens: readonly FdfToken[]): {
-  readonly entries: readonly CommentEntry[];
-  readonly unreadable: number;
-} {
-  const out: CommentEntry[] = [];
-  let unreadable = 0;
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token?.kind !== 'name' || token.text !== 'T') continue;
-    const nameToken = tokens[index + 1];
-    const valueName = tokens[index + 2];
-    if (nameToken?.kind !== 'string' || valueName?.kind !== 'name' || valueName.text !== 'V') continue;
-    const value = tokens[index + 3];
-    if (value === undefined) continue;
-    let dictionary: Record<string, PdfValue> | null = null;
-    if (value.kind === 'dict-open') {
-      // A `<<` token always reads as a dictionary.
-      dictionary = readValue(tokens, index + 3).value as Record<string, PdfValue>;
-    } else if (value.kind === 'string' && value.text.trimStart().startsWith('<<')) {
-      // The text starts with `<<`, so its first token opens a dictionary.
-      dictionary = readValue(tokenizePdfSource(value.text), 0).value as Record<string, PdfValue>;
-    }
-    if (dictionary === null) {
-      // A `/T`-`/V` record that is not an annotation: counted, never silently dropped.
-      unreadable += 1;
+function commentsFromFile(file: FdfFile, annots: readonly FdfObject[]): AnnotationDataResult {
+  const values = commentValues(file);
+  /** The comments by their dictionary: a reply's `/IRT` is resolved to the same object. */
+  const roots = new Map<FdfDictionary, AnnotationMark>();
+  const answers: FdfDictionary[] = [];
+  let skipped = 0;
+  let pageUnknown = 0;
+  const seen = new Set<FdfDictionary>();
+  for (const item of annots) {
+    const dict = resolveFdf(file, item);
+    if (dict?.type !== 'dict') {
+      skipped += 1;
       continue;
     }
-    const page = numberOf(dictionary.Page);
-    out.push({
-      dictionary,
-      pageIndex: page === null ? null : Math.max(0, Math.trunc(page)),
-      fallbackId: nameToken.text,
-    });
+    // An object listed twice is one annotation.
+    if (seen.has(dict)) continue;
+    seen.add(dict);
+    const subtype = values.name(dict.entries.get('Subtype'));
+    // A popup is the window of its comment, not a comment.
+    if (subtype === 'Popup') continue;
+    // `/RT /Group` is grouped with another annotation, not an answer to it.
+    if (dict.entries.has('IRT') && values.name(dict.entries.get('RT')) !== 'Group') {
+      answers.push(dict);
+      continue;
+    }
+    const mapped = subtype === null ? undefined : ACROBAT_KINDS.get(subtype);
+    const mark = mapped === undefined ? null : markFromAnnotation(values, dict, mapped);
+    if (mark === null) {
+      skipped += 1;
+      continue;
+    }
+    if (values.number(dict.entries.get('Page')) === null) pageUnknown += 1;
+    roots.set(dict, mark);
   }
-  return { entries: out, unreadable };
-}
 
-/** One PDF object out of tokens: a dictionary, an array, a name, a string or a number. */
-function readValue(
-  tokens: readonly FdfToken[],
-  start: number,
-): { readonly value: PdfValue; readonly next: number } {
-  const token = tokens[start];
-  if (token === undefined) return { value: null, next: start + 1 };
-  if (token.kind === 'dict-open') {
-    const out: Record<string, PdfValue> = {};
-    let at = start + 1;
-    while (at < tokens.length && tokens[at]?.kind !== 'dict-close') {
-      const key = tokens[at];
-      if (key?.kind !== 'name') {
-        at += 1;
+  /** The comment a reply's chain of `/IRT`s ends at; `null` for one that ends elsewhere or loops. */
+  const rootOf = (start: FdfDictionary): FdfDictionary | null => {
+    let current: FdfDictionary | undefined = start;
+    const visited = new Set<FdfDictionary>();
+    while (current !== undefined && !roots.has(current) && !visited.has(current)) {
+      visited.add(current);
+      const parent: FdfObject | undefined = values.get(current, 'IRT');
+      current = parent?.type === 'dict' ? parent : undefined;
+    }
+    return current !== undefined && roots.has(current) ? current : null;
+  };
+  const replies = new Map<FdfDictionary, CommentReply[]>();
+  const reviews = new Map<FdfDictionary, CommentReview>();
+  for (const answer of answers) {
+    const root = rootOf(answer);
+    const state = values.label(answer.entries.get('State'));
+    const model = values.label(answer.entries.get('StateModel')) ?? 'Review';
+    // A model other than `Review` (Acrobat's private “Marked” check) is not held by this model.
+    if (root === null || (state !== null && model !== 'Review')) {
+      skipped += 1;
+      continue;
+    }
+    const author = values.text(values.get(answer, 'T'));
+    const at = isoFromAcrobatDate(
+      values.text(values.get(answer, 'CreationDate')) || values.text(values.get(answer, 'M')),
+    );
+    if (state !== null) {
+      if (!REVIEW_STATES.includes(state as ReviewState)) {
+        skipped += 1;
         continue;
       }
-      const read = readValue(tokens, at + 1);
-      out[key.text] = read.value;
-      at = read.next;
+      const previous = reviews.get(root);
+      if (previous === undefined || Date.parse(previous.at) <= Date.parse(at)) {
+        reviews.set(root, { state: state as ReviewState, author, at });
+      }
+      continue;
     }
-    return { value: out, next: at + 1 };
-  }
-  if (token.kind === 'array-open') {
-    const items: PdfValue[] = [];
-    let at = start + 1;
-    while (at < tokens.length && tokens[at]?.kind !== 'array-close') {
-      const read = readValue(tokens, at);
-      items.push(read.value);
-      at = read.next;
+    const contents = values.text(values.get(answer, 'Contents'));
+    if (contents.trim() === '') {
+      skipped += 1;
+      continue;
     }
-    return { value: items, next: at + 1 };
+    const list = replies.get(root) ?? [];
+    list.push({ id: crypto.randomUUID(), author, contents, createdAt: at });
+    replies.set(root, list);
   }
-  if (token.kind === 'string') return { value: token.text, next: start + 1 };
-  if (token.kind === 'name') {
-    const numeric = Number.parseFloat(token.text);
-    if (Number.isFinite(numeric) && /^[-+]?[\d.]/.test(token.text))
-      return { value: numeric, next: start + 1 };
-    return { value: { name: token.text }, next: start + 1 };
-  }
-  return { value: null, next: start + 1 };
+
+  const marks = [...roots].map(([dict, mark]) => {
+    const thread = [...(replies.get(dict) ?? [])].sort(
+      (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+    );
+    const review = reviews.get(dict);
+    return {
+      ...mark,
+      ...(thread.length === 0 ? {} : { replies: thread }),
+      ...(review === undefined ? {} : { review }),
+    };
+  });
+  return { marks, skipped, pageCount: null, pageUnknown, space: 'pdf-user' };
 }

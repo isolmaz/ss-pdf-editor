@@ -46,7 +46,9 @@ export const TOOL_ERROR_CODES = [
   'asset-missing',
   'asset-hash-mismatch',
   'asset-offline',
+  'asset-stale',
   'font-missing',
+  'glyph-missing',
   'ocr-language-missing',
   'voice-unavailable',
   'permission-denied',
@@ -81,6 +83,12 @@ export interface ToolErrorDetails {
   readonly path?: string;
   /** Verbatim engine text. Diagnostics only — never rendered as the user message. */
   readonly engineMessage?: string;
+  /**
+   * Values the localized message and hint interpolate (`{chars}`), for the codes whose
+   * text is only useful when it names what failed — the user's own characters, not
+   * engine text. Surfaces that translate a code pass them to `t(key, params)`.
+   */
+  readonly params?: Readonly<Record<string, string | number>>;
   readonly cause?: unknown;
 }
 
@@ -121,14 +129,26 @@ const CHUNK_LOAD_FAILED =
 /**
  * Last line of defence: never let a raw error escape to the UI layer.
  * Unknown shapes become `internal` with the engine message preserved.
+ *
+ * A cancellation is recognised by its name, whoever raised it: `fetch` and
+ * `AbortSignal.throwIfAborted` throw a `DOMException`, while `throwIfAborted`
+ * (`pdf-core/ops/types`) and the engines' own cancel paths throw a plain `Error`. The
+ * name is what they share, so it is the one rule — a cancellation is never `internal`.
  */
 export function toToolError(value: unknown, engine = 'model'): ToolError {
   if (isToolError(value)) return value;
-  if (value instanceof DOMException && value.name === 'AbortError') {
+  if ((value instanceof Error || value instanceof DOMException) && value.name === 'AbortError') {
     return new ToolError('aborted', { engine, engineMessage: value.message });
   }
   if (value instanceof Error && CHUNK_LOAD_FAILED.test(value.message)) {
-    return new ToolError('asset-offline', { engine, engineMessage: value.message }, { cause: value });
+    // A browser with a network that still cannot fetch a chunk of this build is holding a page
+    // from a release that has since replaced it: "connect to the internet" would be the wrong
+    // instruction there, and reloading is the right one. Offline, connecting is the cure. A
+    // runtime that does not report connectivity (no `navigator`, no `onLine`) is not claimed
+    // to be online.
+    const online = typeof navigator !== 'undefined' && navigator.onLine === true;
+    const code = online ? 'asset-stale' : 'asset-offline';
+    return new ToolError(code, { engine, engineMessage: value.message }, { cause: value });
   }
   if (value instanceof Error) {
     return new ToolError('internal', { engine, engineMessage: value.message }, { cause: value });

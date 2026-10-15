@@ -18,21 +18,9 @@ import { buildReadingBlocks, type ReadingBlock, type ReadingTextItem, toReadingT
 
 /**
  * The viewer payload the reading pane consumes: `ViewerApi` (zoom, find, navigation)
- * plus the pdf-core document handle the text comes from.
- *
- * `ViewerApi` carries no document today, so the field is optional here and the hook
- * reports the gap instead of guessing (see {@link NO_TEXT_SOURCE}). Integration: add
- * `document: PdfDocumentHandle` to the object `PdfViewerPane` hands to `onReady` and
- * to `ViewerApi` — one line each, and no other file has to change.
+ * plus the pdf-core document handle the text comes from (`ViewerApi.document`).
  */
-export type ReadingViewer = ViewerApi & { readonly document?: PdfDocumentHandle };
-
-/**
- * Every failure is a dictionary key, never an engine message.
- * This one means the viewer handed us no text source at all — a wiring gap, not a
- * document problem, so it must not be reported as "no text on this page".
- */
-const NO_TEXT_SOURCE: MessageKey = 'error.internal.message';
+export type ReadingViewer = ViewerApi;
 
 /** The adapter's own code for a cancelled load (`pdf-core` maps `AbortException` to it). */
 function aborted(): ToolError {
@@ -67,10 +55,6 @@ export function useReadingText(
       return undefined;
     }
     const source = viewer.document;
-    if (source === undefined) {
-      setState({ blocks: [], loading: false, error: NO_TEXT_SOURCE });
-      return undefined;
-    }
 
     const controller = new AbortController();
     const abort = () => controller.abort();

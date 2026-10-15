@@ -5,7 +5,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from 'vitest';
 import { loadMupdf } from '../engines/mupdf';
 import { OPEN_FAMILIES, type OpenFaceStyle, type OpenFamily } from './ocr-font-catalog';
 
@@ -28,6 +28,18 @@ async function freshLoader(): Promise<typeof import('./ocr-font-catalog').loadOp
   vi.resetModules();
   return (await import('./ocr-font-catalog')).loadOpenFace;
 }
+
+/** `public/fonts` is fetched, not committed: say so once, before a test reads a file that is not there. */
+beforeAll(() => {
+  const missing = ALL_FACES.map((face) => face.path).filter(
+    (path) => !existsSync(new URL(`.${path}`, `${PUBLIC.href}/`)),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `${missing.length} font file(s) of public/fonts are missing, the first is public${missing[0]}: run \`pnpm fetch:engines --sync\``,
+    );
+  }
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -78,10 +90,6 @@ describe('the shipped files', () => {
   it.each(ALL_FACES.map((face) => [`${face.family.id} ${face.style}`, face] as const))(
     '%s is on disk and MuPDF opens it',
     async (_label, { path }) => {
-      expect(
-        existsSync(new URL(`.${path}`, `${PUBLIC.href}/`)),
-        `${path} — run pnpm fetch:engines --sync`,
-      ).toBe(true);
       const bytes = diskBytes(path);
       // a TrueType program: sfnt version 0x00010000
       expect([...bytes.subarray(0, 4)]).toEqual([0, 1, 0, 0]);

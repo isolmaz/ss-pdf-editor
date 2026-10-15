@@ -12,24 +12,29 @@ import type { OperationOutcome } from 'pdf-core';
 import { listPdfAttachments, readPdfAttachment } from 'pdf-core/attachments';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { type SessionStore, type SessionTab, workingPageCount } from 'pdf-model';
-import { type MessageKey, ToolError, type Translator } from 'pdf-shared';
+import type { MessageKey, Translator } from 'pdf-shared';
 import type { AttachmentRow } from 'pdf-ui';
 import { addAttachments, removeAttachments } from '../../lazy-ops';
 import { applyProducedBytes, downloadFiles, materializeBase } from '../../operations';
-import { isBusy, setBusy, showNotice } from '../core/core-store';
+import { showNotice } from '../core/core-store';
 import { documentContext } from '../core/document';
+import { failureLine, runGatedOperation } from '../core/gated-operation';
 import { handleFor, swapHandle } from '../core/handles';
 
 /** What the shell still holds that the attachment handlers run on. */
 export interface AttachmentDeps {
   readonly session: SessionStore;
   readonly t: Translator;
-  /** The shared writer pipeline: journal the outcome, swap the handle, say what it did. */
+  /**
+   * The shared writer pipeline: journal the outcome, swap the handle, say what it did. `signal`
+   * is the running operation's, so a Cancel keeps the bytes out of the session.
+   */
   readonly applyWriterOutcome: (
     tab: SessionTab,
     handle: PdfDocumentHandle,
     outcome: OperationOutcome,
     labelKey: MessageKey,
+    signal: AbortSignal,
   ) => Promise<void>;
 }
 
@@ -67,35 +72,19 @@ function activeDocument(session: SessionStore): { tab: SessionTab; handle: PdfDo
   return tab === null || handle === undefined ? null : { tab, handle };
 }
 
-/** A failed operation says why, in the interface language; anything unexpected is `internal`. */
-function reportFailure(t: Translator, error: unknown): void {
-  const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-  showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-}
-
 /**
- * Hold the busy gate while `work` runs on the active document. Nothing runs without a tab and
- * a handle; an operation already holding the document is refused with the busy notice.
+ * Run `work` as an operation on the active document (`runGatedOperation`: busy gate, a Cancel
+ * that aborts the `signal` it receives, a failure as a notice). Nothing runs without a tab and
+ * a handle.
  */
 async function withDocument(
   deps: AttachmentDeps,
   ready: () => boolean,
-  work: (tab: SessionTab, handle: PdfDocumentHandle) => Promise<void>,
+  work: (tab: SessionTab, handle: PdfDocumentHandle, signal: AbortSignal) => Promise<void>,
 ): Promise<void> {
   const document = activeDocument(deps.session);
   if (document === null || !ready()) return;
-  if (isBusy()) {
-    showNotice(deps.t('op.busy'));
-    return;
-  }
-  setBusy(true);
-  try {
-    await work(document.tab, document.handle);
-  } catch (error) {
-    reportFailure(deps.t, error);
-  } finally {
-    setBusy(false);
-  }
+  await runGatedOperation(deps.t, (signal) => work(document.tab, document.handle, signal));
 }
 
 /** The bytes of picked files, ready for the writer to embed. */
@@ -131,12 +120,12 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
     await withDocument(
       deps,
       () => files.length > 0,
-      async (tab, handle) => {
-        const base = await materializeBase(documentContext(deps.session, deps.t, tab, handle));
+      async (tab, handle, signal) => {
+        const base = await materializeBase(documentContext(deps.session, deps.t, tab, handle), { signal });
         const payloads = await payloadsOf(files, (file) =>
           file.type.length === 0 ? 'application/octet-stream' : file.type,
         );
-        const outcome = await addAttachments(base, payloads, { signal: new AbortController().signal });
+        const outcome = await addAttachments(base, payloads, { signal });
         const next = await applyProducedBytes(
           documentContext(deps.session, deps.t, tab, handle),
           outcome.bytes,
@@ -144,6 +133,7 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
           { key: 'props.attach.added', params: { count: outcome.added.length } },
           outcome.report.engine,
           outcome.report.steps,
+          { signal },
         );
         swapHandle(deps.t, tab.id, next);
         showNotice(t('props.attach.added', { count: outcome.added.length }));
@@ -156,9 +146,9 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
     await withDocument(
       deps,
       () => true,
-      async (tab, handle) => {
-        const base = await materializeBase(documentContext(deps.session, deps.t, tab, handle));
-        const outcome = await removeAttachments(base, [name], { signal: new AbortController().signal });
+      async (tab, handle, signal) => {
+        const base = await materializeBase(documentContext(deps.session, deps.t, tab, handle), { signal });
+        const outcome = await removeAttachments(base, [name], { signal });
         const next = await applyProducedBytes(
           documentContext(deps.session, deps.t, tab, handle),
           outcome.bytes,
@@ -166,6 +156,7 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
           { key: 'props.attach.removed', params: { count: outcome.removed.length } },
           outcome.report.engine,
           outcome.report.steps,
+          { signal },
         );
         swapHandle(deps.t, tab.id, next);
         showNotice(
@@ -189,7 +180,7 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
       downloadFiles([{ name: attachment.filename, bytes, mime: 'application/octet-stream' }]);
       showNotice(t('props.attach.readNamed', { name: attachment.filename }));
     } catch (error) {
-      reportFailure(t, error);
+      showNotice(failureLine(error, t));
     }
   }
 
@@ -202,11 +193,9 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
     await withDocument(
       deps,
       () => true,
-      async (tab, handle) => {
-        const bytes = await materializeBase(documentContext(deps.session, deps.t, tab, handle), {
-          signal: new AbortController().signal,
-        });
-        const operation = { signal: new AbortController().signal };
+      async (tab, handle, signal) => {
+        const bytes = await materializeBase(documentContext(deps.session, deps.t, tab, handle), { signal });
+        const operation = { signal };
         let outcome: OperationOutcome;
         if (request.add !== undefined && request.add.length > 0) {
           // A browser that knows nothing about the type says `''`, and the writer stores
@@ -221,7 +210,7 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
         } else {
           return;
         }
-        await deps.applyWriterOutcome(tab, handle, outcome, 'panel.attachments');
+        await deps.applyWriterOutcome(tab, handle, outcome, 'panel.attachments', signal);
       },
     );
   }

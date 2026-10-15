@@ -161,19 +161,20 @@ test('Export Text: a text file comes with the finished PDF', async ({ page }) =>
   expect(text).toContain('Memo 2');
 });
 
-test('Security without an owner password fails every file with the policy message', async ({ page }) => {
+test('Security without an owner password generates one and still encrypts every file', async ({ page }) => {
   const dialog = await openBatch(page);
   await queue(dialog, [{ name: 'memo.pdf', bytes: labelledPdf('Memo', 2) }]);
   await onlySteps(dialog, ['Security']);
   await dialog.getByLabel('Open password').fill('s3cret');
   await dialog.getByRole('button', { name: 'Run batch' }).click();
-  await expect(dialog.getByText('0 completed, 1 failed, 0 skipped').first()).toBeVisible({
+  await expect(dialog.getByText('1 completed, 0 failed, 0 skipped').first()).toBeVisible({
     timeout: 120_000,
   });
-  const failure = fileReport(dialog).getByRole('alert');
-  await expect(failure).toContainText('Failed at step Security:');
-  await expect(failure).toContainText('Operation halted by password policy.');
-  await expect(failure).toContainText('owner password is required');
+  const files = await downloads(page, 1, () =>
+    dialog.getByRole('button', { name: 'Download finished files' }).click(),
+  );
+  const bytes = [...files.values()][0] ?? new Uint8Array();
+  expect(await readProducedEntry(bytes, 'trailer', 'Encrypt', 'Filter')).toContain('Standard');
 });
 
 test('Security: the finished PDF is encrypted with the open password and the chosen permissions', async ({
@@ -241,7 +242,8 @@ test('a page range that cannot be read stops the run before any file is touched'
   await dialog.getByRole('button', { name: 'Run batch' }).click();
   const alert = dialog.getByRole('alert');
   await expect(alert).toContainText('Could not read step settings.');
-  await expect(alert).toContainText('pages: two to three');
+  await expect(alert).toContainText('Enter a range like 1-3, 5 or 8-10.');
+  await expect(alert).toContainText('Step “Extract Pages”, page range “two to three”.');
   await expect(fileReport(dialog)).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Download finished files' })).toHaveCount(0);
 });
@@ -332,13 +334,20 @@ test('Cancel stops a running batch: progress names the file, finished files are 
   await dialog.getByRole('button', { name: 'Run batch' }).click();
   // While it runs the progress shows which file it is on, and the run button is the cancel one.
   await expect(dialog.getByText('Processing').first()).toBeVisible();
-  const cancel = dialog.getByRole('button', { name: 'Cancel' }).last();
+  // One way out while it runs: Cancel stops the run; Close is offered only when nothing runs.
+  const cancel = dialog.getByRole('button', { name: 'Cancel' });
+  await expect(cancel).toHaveCount(1);
+  await expect(dialog.getByRole('button', { name: 'Close' })).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Run batch' })).toHaveCount(0);
   await expect(dialog.getByText(/^(one|two|three)\.pdf$/).last()).toBeVisible({ timeout: 60_000 });
   await cancel.click();
   await expect(dialog.getByText(/^Batch cancelled\. Completed files:/)).toBeVisible({ timeout: 60_000 });
   await expect(dialog.getByText(/\d+ completed, \d+ failed, [1-9]\d* skipped/).first()).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Run batch' })).toBeEnabled();
+  // The dialog stays open on its report, the progress is gone, and Close is back.
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Processing')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible();
 });
 
 /* ------------------------------------------------------------------ *
@@ -434,4 +443,163 @@ test('choosing files after loading a ruleset keeps the loaded ruleset', async ({
   );
   const texts = await readProducedPageTexts([...files.values()][0] ?? new Uint8Array());
   expect(texts.map((text) => text.trim())).toEqual(['Memo 1', 'Memo 2']);
+});
+
+/* ------------------------------------------------------------------ *
+ * The queue is sized before it is read, and one run is one run
+ * ------------------------------------------------------------------ */
+
+interface ReadLog {
+  readonly reads: string[];
+  inFlight: number;
+  most: number;
+}
+
+const MIB = 1024 * 1024;
+
+/**
+ * Watch the page read the queued files: every `arrayBuffer()` of a named PDF is logged with how many
+ * reads were in flight beside it, and `sizes` makes a named file declare a size it does not have (a
+ * 300 MB file cannot be fed to a browser test).
+ */
+async function watchReads(page: Page, sizes: Readonly<Record<string, number>>): Promise<void> {
+  await page.addInitScript((declared) => {
+    const log: ReadLog = { reads: [], inFlight: 0, most: 0 };
+    Object.defineProperty(window, '__reads', { value: log });
+    const original = Blob.prototype.arrayBuffer;
+    Blob.prototype.arrayBuffer = async function (this: Blob) {
+      const name = (this as File).name ?? '';
+      if (!name.endsWith('.pdf')) return original.call(this);
+      log.reads.push(name);
+      log.inFlight += 1;
+      log.most = Math.max(log.most, log.inFlight);
+      try {
+        return await original.call(this);
+      } finally {
+        log.inFlight -= 1;
+      }
+    };
+    const size = Object.getOwnPropertyDescriptor(Blob.prototype, 'size');
+    Object.defineProperty(Blob.prototype, 'size', {
+      configurable: true,
+      get(this: Blob) {
+        return declared[(this as File).name] ?? size?.get?.call(this) ?? 0;
+      },
+    });
+  }, sizes);
+}
+
+const readLog = (page: Page): Promise<ReadLog> =>
+  page.evaluate(() => (window as unknown as { __reads: ReadLog }).__reads);
+
+test('a file over the size ceiling is refused from its size without being read, and the rest are read one at a time', async ({
+  page,
+}) => {
+  await watchReads(page, { 'huge.pdf': 301 * MIB });
+  const dialog = await openBatch(page);
+  await queue(dialog, [
+    { name: 'huge.pdf', bytes: labelledPdf('Huge', 1) },
+    { name: 'a.pdf', bytes: labelledPdf('A', 1) },
+    { name: 'b.pdf', bytes: labelledPdf('B', 1) },
+    { name: 'c.pdf', bytes: labelledPdf('C', 1) },
+  ]);
+  await onlySteps(dialog, ['Page labels']);
+  await dialog.getByRole('button', { name: 'Run batch' }).click();
+  await expect(dialog.getByText('3 completed, 1 failed, 0 skipped').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(fileReport(dialog).getByRole('alert')).toContainText('The file exceeds the size limit.');
+  const log = await readLog(page);
+  expect(log.reads).toEqual(['a.pdf', 'b.pdf', 'c.pdf']);
+  expect(log.most).toBe(1);
+});
+
+test('a queue whose sizes add up past the total bound is refused before any file is read', async ({
+  page,
+}) => {
+  await watchReads(page, {
+    'one.pdf': 300 * MIB,
+    'two.pdf': 300 * MIB,
+    'three.pdf': 300 * MIB,
+    'four.pdf': 300 * MIB,
+  });
+  const dialog = await openBatch(page);
+  await queue(
+    dialog,
+    ['one', 'two', 'three', 'four'].map((stem) => ({ name: `${stem}.pdf`, bytes: labelledPdf(stem, 1) })),
+  );
+  await dialog.getByRole('button', { name: 'Run batch' }).click();
+  const alert = dialog.getByRole('alert');
+  await expect(alert).toContainText('The queued files add up to more than 1024 MB.');
+  await expect(alert).toContainText('Remove some files from the queue and run again.');
+  expect((await readLog(page)).reads).toEqual([]);
+  await expect(fileReport(dialog)).toHaveCount(0);
+  await expect(dialog.getByText('Processing')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Run batch' })).toBeEnabled();
+});
+
+test('two presses of Run in the same moment start one run, and the progress is gone when it ends', async ({
+  page,
+}) => {
+  await watchReads(page, {});
+  const dialog = await openBatch(page);
+  await queue(dialog, [
+    { name: 'a.pdf', bytes: labelledPdf('A', 1) },
+    { name: 'b.pdf', bytes: labelledPdf('B', 1) },
+  ]);
+  await onlySteps(dialog, ['Page labels']);
+  await dialog.getByRole('button', { name: 'Run batch' }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  await expect(dialog.getByText('2 completed, 0 failed, 0 skipped').first()).toBeVisible({
+    timeout: 120_000,
+  });
+  // One run reads each file once; a second run would have read them again.
+  expect((await readLog(page)).reads).toEqual(['a.pdf', 'b.pdf']);
+  await expect(dialog.getByText('Processing')).toHaveCount(0);
+});
+
+test('the ruleset is named in the interface language, and a bad page range is worded from the dictionary', async ({
+  page,
+}) => {
+  const dialog = await openBatch(page);
+  await expect(dialog.getByRole('textbox', { name: 'Ruleset name' })).toHaveAttribute(
+    'placeholder',
+    'ruleset',
+  );
+  const files = await downloads(page, 1, () =>
+    dialog.getByRole('button', { name: 'Save ruleset (JSON)' }).click(),
+  );
+  expect([...files.keys()]).toEqual(['ruleset.batch.json']);
+  expect(JSON.parse(new TextDecoder().decode(bytesOf(files, 'ruleset.batch.json'))).name).toBe('ruleset');
+});
+
+test('closing the dialog while watching a folder stops the folder timer', async ({ page }) => {
+  await page.addInitScript(() => {
+    const live = new Set<number>();
+    Object.defineProperty(window, '__watchTimers', { value: live });
+    const set = window.setInterval.bind(window);
+    const clear = window.clearInterval.bind(window);
+    window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+      const id = set(handler, timeout, ...args);
+      if (timeout === 4000) live.add(id);
+      return id;
+    }) as typeof window.setInterval;
+    window.clearInterval = ((id?: number) => {
+      if (id !== undefined) live.delete(id);
+      clear(id);
+    }) as typeof window.clearInterval;
+  });
+  const timers = () =>
+    page.evaluate(() => (window as unknown as { __watchTimers: Set<number> }).__watchTimers.size);
+  const dialog = await openBatch(page);
+  const before = await timers();
+  await stageFolder(page, [{ name: 'a.pdf', bytes: labelledPdf('A', 1) }]);
+  await dialog.getByRole('button', { name: 'Watch Folder' }).click();
+  await expect(dialog.getByText('Watching folder: watched')).toBeVisible();
+  await expect.poll(timers).toBe(before + 1);
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(timers).toBe(before);
 });

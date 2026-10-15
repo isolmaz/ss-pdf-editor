@@ -52,7 +52,7 @@ export const docopsPart = {
     'Bağlantılar, açıklamalar, form alanları ve içindekiler yeni yapraklara taşınmaz.',
 
   /* compression: structure and raster */
-  'op.note.compress.infoDropped': 'Info alanları (başlık, yazar, tarihler) silindi.',
+  'op.note.compress.infoDropped': 'Info alanları (başlık, yazar, tarihler) ve XMP üst veri paketi silindi.',
   'op.note.compress.infoKept': 'Info alanları korundu.',
   'op.note.compress.structureContent':
     'İçerik, bağlantılar, açıklamalar, içindekiler ve form alanları korundu.',

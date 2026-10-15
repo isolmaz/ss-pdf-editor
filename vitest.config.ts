@@ -10,8 +10,10 @@ import { defineConfig } from 'vitest/config';
  * test. `tsconfig.json` includes `e2e/**` for typechecking, so the two suites live in the
  * same tree and the boundary has to be stated rather than inferred.
  *
- * The measurement suite (`tools/measure/**`) is excluded for the opposite reason: it
- * reports numbers instead of asserting them, and runs under `vitest.measure.config.ts`.
+ * The repository's own tooling is tested here too (the `*.test.ts` files under `tools/`: the audit gates and the
+ * pipeline's workflow files), so a gate that stops gating fails `pnpm unit`. The measurement
+ * suite (the `*.measure.ts` files under `tools/measure/`) is not a test and stays out: it reports numbers
+ * instead of asserting them, and runs under `vitest.measure.config.ts`.
  */
 export default defineConfig({
   test: {
@@ -20,6 +22,7 @@ export default defineConfig({
       'packages/**/src/**/*.test.tsx',
       'apps/**/src/**/*.test.ts',
       'apps/**/src/**/*.test.tsx',
+      'tools/**/*.test.ts',
     ],
     environment: 'node',
     // MuPDF loads from the installed package in Node (`vitest.setup.ts`).

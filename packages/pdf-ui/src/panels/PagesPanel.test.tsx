@@ -792,6 +792,85 @@ describe('PagesPanel thumbnails', () => {
     expect(doc.renderPage).toHaveBeenCalledOnce();
   });
 
+  it('gives a drawn thumbnail up when it scrolls away, and draws it again when it comes back', async () => {
+    const doc = fakeDocument(3);
+    show({ document: doc.handle, marks: [mark(1, 'a')] });
+    reveal(holderOf(2));
+    await waitFor(() => expect(holderOf(2).querySelector('canvas')).not.toBeNull());
+    const first = holderOf(2).querySelector('canvas') as HTMLCanvasElement;
+    expect(first.width).toBe(104);
+    expect(option(2).querySelectorAll('[data-thumbnail-marks] > div')).toHaveLength(1);
+
+    reveal(holderOf(2), false);
+    expect(holderOf(2).querySelector('canvas')).toBeNull();
+    // The buffer is dropped, not left for the collector, and the marks go with the picture.
+    expect([first.width, first.height]).toEqual([0, 0]);
+    expect(option(2).querySelector('[data-thumbnail-marks]')).toBeNull();
+    // The item keeps its height, so the list does not move under the reader.
+    expect((holderOf(2).parentElement as HTMLElement).style.height).toBe('156px');
+
+    reveal(holderOf(2));
+    await waitFor(() => expect(holderOf(2).querySelector('canvas')).not.toBeNull());
+    expect(doc.renderPage).toHaveBeenCalledTimes(2);
+    expect(holderOf(2).querySelector('canvas')).not.toBe(first);
+    expect(option(2).querySelectorAll('[data-thumbnail-marks] > div')).toHaveLength(1);
+  });
+
+  it('stops the render of a thumbnail that scrolls away before it has finished, and drops its canvas', async () => {
+    const slow = Promise.withResolvers<void>();
+    const doc = fakeDocument(3, { renderPage: () => slow.promise });
+    show({ document: doc.handle });
+    reveal(holderOf(2));
+    await waitFor(() => expect(doc.renderPage).toHaveBeenCalledOnce());
+    const [, canvas, { signal }] = doc.renderPage.mock.calls[0] as [
+      number,
+      HTMLCanvasElement,
+      { signal: AbortSignal },
+    ];
+    expect(signal.aborted).toBe(false);
+
+    reveal(holderOf(2), false);
+    expect(signal.aborted).toBe(true);
+    await act(async () => slow.resolve());
+    // What finished after the cancel is never shown, and its buffer is let go.
+    expect(holderOf(2).querySelector('canvas')).toBeNull();
+    expect([canvas.width, canvas.height]).toEqual([0, 0]);
+
+    reveal(holderOf(2));
+    await waitFor(() => expect(doc.renderPage).toHaveBeenCalledTimes(2));
+    const second = doc.renderPage.mock.calls[1]?.[2] as { signal: AbortSignal };
+    expect(second.signal.aborted).toBe(false);
+  });
+
+  it('lets go of the canvas of a render that fails, and of one it replaces by a redraw', async () => {
+    let attempts = 0;
+    const seen: HTMLCanvasElement[] = [];
+    const doc = fakeDocument(2, {
+      renderPage: async (...args: unknown[]) => {
+        seen.push(args[1] as HTMLCanvasElement);
+        attempts += 1;
+        if (attempts === 1) throw new Error('worker gone');
+      },
+    });
+    const spies: Spies = { onSelectionChange: vi.fn(), onGoToPage: vi.fn(), onPageAction: vi.fn() };
+    const { rerender } = render(<Host spies={spies} initial={[]} document={doc.handle} />);
+    reveal(holderOf(1));
+    await waitFor(() => expect(doc.renderPage).toHaveBeenCalledOnce());
+    await waitFor(() => expect(seen[0]?.width).toBe(0));
+
+    reveal(holderOf(1));
+    await waitFor(() => expect(holderOf(1).querySelector('canvas')).not.toBeNull());
+    const drawn = holderOf(1).querySelector('canvas') as HTMLCanvasElement;
+    expect(drawn.width).toBe(104);
+
+    // A new revision of the document draws over the picture, and the old buffer is let go.
+    const next = fakeDocument(2);
+    rerender(<Host spies={spies} initial={[]} document={next.handle} />);
+    reveal(holderOf(1));
+    await waitFor(() => expect(holderOf(1).querySelector('canvas')).not.toBe(drawn));
+    expect(drawn.width).toBe(0);
+  });
+
   it('reserves a placeholder height before the page size is known', () => {
     show();
     expect((holderOf(1).parentElement as HTMLElement).style.height).toBe('140px');

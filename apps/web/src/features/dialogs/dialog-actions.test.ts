@@ -567,19 +567,46 @@ describe('dialogResult', () => {
     expect(notice()).toBe('op.saved {}');
   });
 
-  it('names no file when a download has none', async () => {
-    openFrozen(spec({ resultKind: 'download' }));
-    await runs().dialogResult(result({ files: [] }));
-    expect(notice()).toBe('op.result.downloaded {"name":""}');
-  });
+  describe('a result with no file', () => {
+    it.each([
+      ['replace', 'replace'],
+      ['new-tab', 'new-tab'],
+      ['download', 'download'],
+    ] as const)('says the dialog’s own sentence and closes it for a %s dialog', async (_name, resultKind) => {
+      openFrozen(spec({ resultKind }));
+      await runs().dialogResult(result({ files: [], noticeKey: 'properties.noChange' }));
+      expect(notice()).toBe('properties.noChange {}');
+      expect(dialogsStore.get()).toMatchObject({ dialogSpec: null, dialogInput: null });
+      expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
+      expect(mocks.downloadFiles).not.toHaveBeenCalled();
+      expect(openProducedTab).not.toHaveBeenCalled();
+      expect(busy()).toBe(false);
+      expect(operationRunning()).toBe(false);
+    });
 
-  it('does nothing and keeps the dialog when a non-download result has no file', async () => {
-    openFrozen();
-    await runs().dialogResult(result({ files: [] }));
-    expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
-    expect(dialogsStore.get().dialogSpec).not.toBeNull();
-    expect(notice()).toBeNull();
-    expect(busy()).toBe(false);
+    it('fills the sentence’s parameters, as a validate-only form run reports its field count', async () => {
+      openFrozen();
+      await runs().dialogResult(
+        result({ files: [], noticeKey: 'form.note.inventory', noticeParams: { count: 3 } }),
+      );
+      expect(notice()).toBe('form.note.inventory {"count":3}');
+      expect(dialogsStore.get().dialogSpec).toBeNull();
+    });
+
+    it('says plainly that nothing changed when the dialog gave no sentence of its own', async () => {
+      openFrozen(spec({ resultKind: 'download' }));
+      await runs().dialogResult(result({ files: [] }));
+      expect(notice()).toBe('op.result.nothing');
+      expect(dialogsStore.get().dialogSpec).toBeNull();
+    });
+
+    it('still refuses a result whose tab is gone, before saying anything', async () => {
+      openFrozen();
+      session.closeTab(tab.id);
+      await runs().dialogResult(result({ files: [], noticeKey: 'properties.noChange' }));
+      expect(notice()).toBeNull();
+      expect(dialogsStore.get().dialogSpec).toBeNull();
+    });
   });
 
   it('opens a new-tab result beside the document, with the stored-copy warning', async () => {
@@ -718,19 +745,32 @@ describe('startResult', () => {
     expect(dialogsStore.get().startSpec).toBeNull();
   });
 
-  it('lets the result choose to download over the spec’s default, naming no file when it has none', async () => {
+  it('lets the result choose to download over the spec’s default', async () => {
     startDialogOpened(spec({ resultKind: 'new-tab' }));
-    await runs().startResult(result({ deliver: 'download', files: [] }));
-    expect(notice()).toBe('op.result.downloaded {"name":""}');
+    await runs().startResult(result({ deliver: 'download' }));
+    expect(mocks.downloadFiles).toHaveBeenCalledOnce();
+    expect(notice()).toBe('op.result.downloaded {"name":"new.pdf"}');
     expect(dialogsStore.get().startSpec).toBeNull();
   });
 
-  it('keeps the modal when there is no file to open', async () => {
-    startDialogOpened(spec({ resultKind: 'new-tab' }));
-    await runs().startResult(result({ files: [] }));
+  it('says that nothing was produced and closes the modal when there is no file to open or download', async () => {
+    for (const over of [{ files: [] }, { deliver: 'download', files: [] }]) {
+      startDialogOpened(spec({ resultKind: 'new-tab' }));
+      await runs().startResult(result(over));
+      expect(notice()).toBe('op.result.nothing');
+      expect(dialogsStore.get().startSpec).toBeNull();
+      clearNotice();
+    }
+    expect(mocks.downloadFiles).not.toHaveBeenCalled();
     expect(openProducedTab).not.toHaveBeenCalled();
-    expect(dialogsStore.get().startSpec).not.toBeNull();
     expect(busy()).toBe(false);
+  });
+
+  it('says the dialog’s own sentence for a result with no file', async () => {
+    startDialogOpened(spec({ resultKind: 'new-tab' }));
+    await runs().startResult(result({ files: [], noticeKey: 'op.custom', noticeParams: { n: 1 } }));
+    expect(notice()).toBe('op.custom {"n":1}');
+    expect(dialogsStore.get().startSpec).toBeNull();
   });
 
   it('refuses while another operation holds the gate and keeps the modal', async () => {

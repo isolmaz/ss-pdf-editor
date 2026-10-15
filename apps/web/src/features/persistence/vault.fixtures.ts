@@ -45,13 +45,15 @@ export function memoryStorage(): MemoryStorage {
   return storage;
 }
 
-/** A channel with no peers: reachable, answers every probe, runs work at once. */
+/** A channel with no peers: reachable, answers every probe, runs work at once, grants every claim. */
 export function fakeChannel(over: Partial<VaultChannel> = {}): VaultChannel {
   return {
     announce: vi.fn(),
     probe: async () => true,
     peerReferences: () => [],
     runExclusive: (work) => work(),
+    claimDraft: async () => true,
+    releaseDraft: vi.fn(),
     canReachPeers: () => true,
     close: vi.fn(),
     ...over,

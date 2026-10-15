@@ -99,10 +99,11 @@ export const pageLabelsDialog: OperationDialogSpec = {
     // would otherwise be reported as written.
     const labels = await readPageLabels(outcome.bytes, context.pageCount, context.signal);
     const expected = formatLabel(style, prefix, 0, start);
-    // The write above puts a label on every page from `startPage` on, so the reader returns one
-    // for each page of the document (`startPage` is inside it: the scope was resolved against it).
-    const firstLabel = labels[startPage] as string;
-    const lastLabel = labels[labels.length - 1] as string;
+    // The write above puts a label on every page from `startPage` on, so the reader should return
+    // one for each page. A label it did not return is reported as empty — and so as a mismatch
+    // below — never as the raw `{first}` placeholder an undefined parameter would leave in the note.
+    const firstLabel = labels[startPage] ?? '';
+    const lastLabel = labels.at(-1) ?? '';
     const count = Math.max(0, context.pageCount - startPage);
 
     return {

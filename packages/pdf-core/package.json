@@ -11,14 +11,14 @@
   },
   "dependencies": {
     "@xmldom/xmldom": "0.8.15",
-    "asn1js": "3",
+    "asn1js": "3.0.10",
     "jszip": "3.10.1",
     "mammoth": "1.13.0",
     "mupdf": "1.28.1",
     "pdf-shared": "workspace:*",
     "pdf-text-engine": "workspace:*",
     "pdfjs-dist": "6.3.289",
-    "pkijs": "3",
+    "pkijs": "3.4.0",
     "tesseract.js": "6.0.1"
   },
   "sideEffects": false,

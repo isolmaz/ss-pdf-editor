@@ -19,6 +19,8 @@ interface Plan {
   pageText?: string;
 }
 const state: Plan = {};
+/** How many structured-text objects the verification asked for, and how many it destroyed. */
+const structured = { opened: 0, destroyed: 0 };
 
 vi.mock('../engines/mupdf', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../engines/mupdf')>();
@@ -42,7 +44,15 @@ vi.mock('../engines/mupdf', async (importOriginal) => {
                 return new Proxy(page, {
                   get(pageTarget, pageProperty) {
                     if (pageProperty === 'toStructuredText') {
-                      return () => ({ asText: () => state.pageText });
+                      return () => {
+                        structured.opened += 1;
+                        return {
+                          asText: () => state.pageText,
+                          destroy: () => {
+                            structured.destroyed += 1;
+                          },
+                        };
+                      };
                     }
                     const value: unknown = Reflect.get(pageTarget, pageProperty, pageTarget);
                     return typeof value === 'function' ? value.bind(pageTarget) : value;
@@ -108,6 +118,8 @@ describe('buildFlattenedXfa verification', () => {
     state.pageCount = undefined;
     state.loadPageError = undefined;
     state.pageText = undefined;
+    structured.opened = 0;
+    structured.destroyed = 0;
   });
 
   it('refuses a file whose page count is not the number of pictures it was built from', async () => {
@@ -126,12 +138,17 @@ describe('buildFlattenedXfa verification', () => {
       code: 'verification-failed',
       details: { pageIndex: 0, engineMessage: 'the text layer does not hold "Merhaba"' },
     });
+    // The wasm text object is released on the failing path too.
+    expect(structured.opened).toBe(1);
+    expect(structured.destroyed).toBe(1);
   });
 
   it('accepts the file when the layer holds the sampled word', async () => {
     state.pageText = 'Merhaba';
     const out = await buildFlattenedXfa([await onePage(true)], run);
     expect(out.report.steps).toEqual(['xfa.flatten', 'ocr.layer', 'verify', 'save']);
+    expect(structured.opened).toBe(1);
+    expect(structured.destroyed).toBe(1);
   });
 
   it('maps an engine failure while reading the file back to a tool error', async () => {

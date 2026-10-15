@@ -1,20 +1,22 @@
 /**
  * The facts the properties panel shows about the document on screen: fonts, embedded files,
- * security and the four-state signature verdict. They are read per working version — a font
- * list from a previous version is not a fact about this one — so every fact is tagged with the
- * tab and version it was read from, and a reader only sees the facts that match the tab it asks
- * about.
+ * security and the four-state signature verdict. They are read from the bytes of one version —
+ * a font list from a previous version is not a fact about this one — so every fact is tagged with
+ * the tab and the bytes key (`workingBytesKey`) it was read from, and a reader only sees the facts
+ * that match the tab it asks about. The key is not `working.id`: a mark step mints a new working
+ * id without touching a byte, and keying on that would read the facts again, and keep Save shut
+ * until they landed, every time the user drew something.
  */
 
 import type { PdfFontInfo, SignatureVerification } from 'pdf-core';
-import type { SessionTab } from 'pdf-model';
+import { type SessionTab, workingBytesKey } from 'pdf-model';
 import type { ToolError } from 'pdf-shared';
 import type { AttachmentRow } from 'pdf-ui';
 import { createStore, shallowEqual, useStore } from '../store';
 
 export interface DocumentFacts {
   readonly tabId: string;
-  readonly version: string;
+  readonly bytesKey: string;
   readonly fonts: readonly PdfFontInfo[];
   readonly attachments: readonly AttachmentRow[];
   readonly signatures: readonly SignatureVerification[];
@@ -23,7 +25,7 @@ export interface DocumentFacts {
 
 export interface FactsFailure {
   readonly tabId: string;
-  readonly version: string;
+  readonly bytesKey: string;
   readonly error: ToolError;
 }
 
@@ -50,13 +52,16 @@ export function factsFailed(failure: FactsFailure): void {
 }
 
 function factsOf(facts: DocumentFacts | null, tab: SessionTab | null): DocumentFacts | null {
-  return facts !== null && tab !== null && facts.tabId === tab.id && facts.version === tab.working.id
+  return facts !== null && tab !== null && facts.tabId === tab.id && facts.bytesKey === workingBytesKey(tab)
     ? facts
     : null;
 }
 
 function failureOf(failure: FactsFailure | null, tab: SessionTab | null): ToolError | null {
-  return failure !== null && tab !== null && failure.tabId === tab.id && failure.version === tab.working.id
+  return failure !== null &&
+    tab !== null &&
+    failure.tabId === tab.id &&
+    failure.bytesKey === workingBytesKey(tab)
     ? failure.error
     : null;
 }

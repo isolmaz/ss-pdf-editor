@@ -20,7 +20,7 @@
  */
 
 import { Meter } from '@cloudflare/kumo/components/meter';
-import type { Translator } from 'pdf-shared';
+import { progressCounts, progressLabel, type Translator } from 'pdf-shared';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { DialogSteps } from './DialogSteps';
@@ -169,14 +169,17 @@ export function OperationForm({
                     numbers, so a phase change is announced without the bar itself
                     re-announcing every tick. */}
                 <p role="status" aria-live="polite" className="text-xs text-kumo-subtle">
-                  {progress === null ? t('op.running') : t(progress.labelKey)}
+                  {progress === null ? t('op.running') : progressLabel(t, progress)}
                 </p>
                 {progress !== null && progress.total !== undefined ? (
                   <Meter
                     label={t('progress.label')}
                     value={progress.done ?? 0}
                     max={progress.total}
-                    customValue={t('progress.pages', { done: progress.done ?? 0, total: progress.total })}
+                    customValue={t('progress.pages', {
+                      done: progressCounts(progress).done,
+                      total: progress.total,
+                    })}
                     // A width animation on every progress tick is exactly the kind of
                     // movement `prefers-reduced-motion` exists to refuse.
                     indicatorClassName="transition-none"

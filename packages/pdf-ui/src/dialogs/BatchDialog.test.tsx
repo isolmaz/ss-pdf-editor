@@ -9,7 +9,8 @@
 import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { BatchRuleSet } from 'pdf-core/ops/batch';
-import { createTranslator } from 'pdf-shared';
+import { createTranslator, LIMITS } from 'pdf-shared';
+import { StrictMode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mupdfForTests, textPdf } from '../pdf-fixtures';
 import { BatchDialog } from './BatchDialog';
@@ -132,7 +133,7 @@ describe('BatchDialog rule sets built from the form', () => {
     const saved = await savedRuleSet(onDownload);
     expect(saved).toEqual({
       version: 1,
-      name: 'toplu',
+      name: 'ruleset',
       steps: [
         { kind: 'compress', params: { mode: 'structure', stripMetadata: false, keepProducer: true } },
         {
@@ -141,7 +142,22 @@ describe('BatchDialog rule sets built from the form', () => {
         },
       ],
     });
-    expect(onDownload.mock.calls[0]?.[0][0].name).toBe('toplu.batch.json');
+    expect(onDownload.mock.calls[0]?.[0][0].name).toBe('ruleset.batch.json');
+  });
+
+  it('names the rule set in the interface language: the English default is not the Turkish word', async () => {
+    const handlers = { onClose: vi.fn(), onDownload: vi.fn(), onNotice: vi.fn() };
+    render(<BatchDialog open t={createTranslator('tr')} {...handlers} />);
+    expect(field('Kural kümesi adı').placeholder).toBe('toplu');
+    await user.click(screen.getByRole('button', { name: 'Kural kümesini kaydet (JSON)' }));
+    const saved = handlers.onDownload.mock.calls[0]?.[0] as { name: string; bytes: Uint8Array }[];
+    expect(saved[0]?.name).toBe('toplu.batch.json');
+    expect((JSON.parse(new TextDecoder().decode(saved[0]?.bytes)) as BatchRuleSet).name).toBe('toplu');
+    cleanup();
+
+    const english = show();
+    expect(field('Ruleset name').placeholder).toBe('ruleset');
+    expect((await savedRuleSet(english.onDownload)).name).toBe('ruleset');
   });
 });
 
@@ -159,15 +175,15 @@ function replace(input: HTMLInputElement, text: string) {
 }
 
 describe('BatchDialog step settings', () => {
-  it('names the rule set and its file after the typed name, and falls back to "toplu" when it is blank', async () => {
+  it('names the rule set and its file after the typed name, and falls back to the default when it is blank', async () => {
     const { onDownload } = show();
     replace(field('Ruleset name'), '  Invoices ');
     expect((await savedRuleSet(onDownload)).name).toBe('Invoices');
     expect(onDownload.mock.calls.at(-1)?.[0][0].name).toBe('Invoices.batch.json');
 
     replace(field('Ruleset name'), '   ');
-    expect((await savedRuleSet(onDownload)).name).toBe('toplu');
-    expect(onDownload.mock.calls.at(-1)?.[0][0].name).toBe('toplu.batch.json');
+    expect((await savedRuleSet(onDownload)).name).toBe('ruleset');
+    expect(onDownload.mock.calls.at(-1)?.[0][0].name).toBe('ruleset.batch.json');
   });
 
   it('reads a typed page range as zero-based pages and an empty one as every page', async () => {
@@ -419,6 +435,9 @@ describe('BatchDialog running', () => {
 
     expect(summary()).toContain('2 completed, 0 failed, 0 skipped');
     expect(onNotice).toHaveBeenCalledWith('2 completed, 0 failed, 0 skipped');
+    // The run is over: no "Processing" line or progress bar stays beside the report.
+    expect(screen.queryByText('Processing')).toBeNull();
+    expect(screen.queryByText('2/2')).toBeNull();
     const rows = screen.getAllByRole('listitem').map((node) => node.textContent ?? '');
     expect(
       rows.some((row) => /^a\.pdf — Optimize \/ Compress · \d+ → \d+ bytes, 1 page\(s\)/.test(row)),
@@ -490,19 +509,115 @@ describe('BatchDialog running', () => {
     ]);
   });
 
-  it('fails a file over the size ceiling before any step, naming no step', async () => {
-    show();
-    const huge = {
-      name: 'huge.pdf',
-      arrayBuffer: async () => new ArrayBuffer(300 * 1024 * 1024 + 1),
-    } as File;
-    await user.click(screen.getByRole('button', { name: 'Open' }));
-    fireEvent.change(pdfInput(), { target: { files: [huge] } });
-    await user.click(screen.getByRole('button', { name: 'Run batch' }));
+  /** A file the dialog can size but must not read: `arrayBuffer` is the spy that proves it was not. */
+  const sized = (name: string, size: number, arrayBuffer = vi.fn(async () => new ArrayBuffer(0))) =>
+    ({ name, size, arrayBuffer }) as unknown as File;
+  const chosen = (...files: File[]) => fireEvent.change(pdfInput(), { target: { files } });
+  const run = () => user.click(screen.getByRole('button', { name: 'Run batch' }));
+
+  it('fails a file over the size ceiling from its size alone, without reading it, and runs the others', async () => {
+    const { onNotice } = show();
+    const huge = sized('huge.pdf', LIMITS.desktop.maxBytes + 1);
+    chosen(huge, await pdfFile('ok.pdf'));
+    await run();
     await screen.findByRole('heading', { name: 'File report' }, { timeout: 20000 });
-    expect(screen.getByRole('alert').textContent).toMatch(
-      /^Failed at step Export Text|^Failed at step Document properties:/,
+    expect(huge.arrayBuffer).not.toHaveBeenCalled();
+    expect(summary()).toContain('1 completed, 1 failed, 0 skipped');
+    expect(onNotice).toHaveBeenCalledWith('1 completed, 1 failed, 0 skipped');
+    const lines = Array.from(screen.getByRole('alert').querySelectorAll('p')).map((line) => line.textContent);
+    expect(lines.slice(1)).toEqual([
+      'Reduce the file size and try again.',
+      `item is ${LIMITS.desktop.maxBytes + 1} bytes, the ceiling is ${LIMITS.desktop.maxBytes}`,
+    ]);
+    expect(lines[0]).toContain('The file exceeds the size limit.');
+  });
+
+  it('refuses a queue whose sizes add up past the total bound before reading any file, and says so', async () => {
+    const { onNotice } = show();
+    // Four files each under the file ceiling, 1200 MB together: over the 1024 MB bound.
+    const queue = ['a', 'b', 'c', 'd'].map((stem) => sized(`${stem}.pdf`, LIMITS.desktop.maxBytes));
+    chosen(...queue);
+    await run();
+    const alert = await screen.findByRole('alert');
+    expect(Array.from(alert.querySelectorAll('p')).map((line) => line.textContent)).toEqual([
+      'The queued files add up to more than 1024 MB.',
+      'Remove some files from the queue and run again.',
+    ]);
+    for (const file of queue) expect(file.arrayBuffer).not.toHaveBeenCalled();
+    expect(screen.queryByRole('heading', { name: 'File report' })).toBeNull();
+    expect(onNotice).not.toHaveBeenCalled();
+    // Nothing started: no progress, and the Run button is back for another try.
+    expect(screen.queryByText('Processing')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Run batch' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('reads the files one after another, never all at once', async () => {
+    show();
+    let inFlight = 0;
+    let most = 0;
+    const order: string[] = [];
+    const watched = async (name: string) => {
+      const file = await pdfFile(name);
+      const read = file.arrayBuffer.bind(file);
+      Object.defineProperty(file, 'arrayBuffer', {
+        value: async () => {
+          inFlight += 1;
+          most = Math.max(most, inFlight);
+          order.push(name);
+          // Long enough for a second read, had one been started, to be in flight beside it.
+          const pause = Promise.withResolvers<void>();
+          setTimeout(pause.resolve, 10);
+          await pause.promise;
+          const buffer = await read();
+          inFlight -= 1;
+          return buffer;
+        },
+      });
+      return file;
+    };
+    chosen(await watched('a.pdf'), await watched('b.pdf'), await watched('c.pdf'));
+    await run();
+    await screen.findByRole('heading', { name: 'File report' }, { timeout: 20000 });
+    expect(summary()).toContain('3 completed, 0 failed, 0 skipped');
+    expect(order).toEqual(['a.pdf', 'b.pdf', 'c.pdf']);
+    expect(most).toBe(1);
+  });
+
+  it('reports a file that cannot be read as its own failure, and the next file still runs', async () => {
+    show();
+    const gone = sized(
+      'gone.pdf',
+      12,
+      vi.fn(async () => Promise.reject(new Error('the file changed on disk'))),
     );
+    chosen(gone, await pdfFile('ok.pdf'));
+    await run();
+    await screen.findByRole('heading', { name: 'File report' }, { timeout: 20000 });
+    expect(summary()).toContain('1 completed, 1 failed, 0 skipped');
+    const lines = Array.from(screen.getByRole('alert').querySelectorAll('p')).map((line) => line.textContent);
+    expect(lines.slice(1)).toEqual([
+      'Try again; report it if it keeps happening.',
+      'the file changed on disk',
+    ]);
+    expect(lines[0]).toContain('Something unexpected went wrong.');
+  });
+
+  it('starts one run for two presses of Run in the same moment', async () => {
+    let runs = 0;
+    seam.before = async () => {
+      runs += 1;
+    };
+    show();
+    await user.upload(pdfInput(), await pdfFile('a.pdf'));
+    const button = screen.getByRole('button', { name: 'Run batch' });
+    // Both presses reach the same button: no render separates them.
+    act(() => {
+      button.click();
+      button.click();
+    });
+    await screen.findByRole('heading', { name: 'File report' }, { timeout: 20000 });
+    expect(runs).toBe(1);
+    expect(summary()).toContain('1 completed, 0 failed, 0 skipped');
   });
 
   it('holds the running state: fields locked, Escape ignored, and Cancel stops the queue as skipped files', async () => {
@@ -517,28 +632,42 @@ describe('BatchDialog running', () => {
     const { onClose } = show();
     await user.upload(pdfInput(), [await pdfFile('a.pdf'), await pdfFile('b.pdf')]);
     await user.click(screen.getByRole('button', { name: 'Run batch' }));
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Cancel' })).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Cancel' })).toHaveLength(1));
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
     expect((screen.getByRole('button', { name: 'Open' }) as HTMLButtonElement).disabled).toBe(true);
     expect(field('Ruleset name').disabled).toBe(true);
     await user.keyboard('{Escape}');
     expect(onClose).not.toHaveBeenCalled();
 
-    await user.click(screen.getAllByRole('button', { name: 'Cancel' })[1] as HTMLElement);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(signal?.aborted).toBe(true);
     await act(async () => release());
     await screen.findByRole('heading', { name: 'File report' });
     expect(summary()).toContain('0 completed, 0 failed, 2 skipped');
     expect(screen.getByText(/^Batch cancelled\. Completed files:/)).toBeTruthy();
     expect(screen.getAllByText('Skipped (run stopped).')).toHaveLength(2);
+    // The run is over, cancelled included: no "Processing" line is left beside the report.
+    expect(screen.queryByText('Processing')).toBeNull();
   });
 
-  it('leaves through the first Cancel button while running', async () => {
-    seam.before = () => new Promise<void>(() => {});
+  it('cancels through the one Cancel button: the run stops, the dialog stays open on its report, and Close returns', async () => {
+    const gate = Promise.withResolvers<void>();
+    seam.before = async (_items, _rules, options) => {
+      options.signal.addEventListener('abort', () => gate.resolve());
+      await gate.promise;
+    };
     const { onClose } = show();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
     await user.upload(pdfInput(), await pdfFile('a.pdf'));
-    await user.click(screen.getByRole('button', { name: 'Run batch' }));
-    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Cancel' })).toHaveLength(2));
-    await user.click(screen.getAllByRole('button', { name: 'Cancel' })[0] as HTMLElement);
+    await run();
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Cancel' })).toHaveLength(1));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await screen.findByRole('heading', { name: 'File report' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(summary()).toContain('0 completed, 0 failed, 1 skipped');
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -581,6 +710,25 @@ describe('BatchDialog running', () => {
     await screen.findByText('b.pdf', { selector: 'p' });
     expect(screen.getByText('Optimize / Compress', { selector: 'p' })).toBeTruthy();
     expect(screen.getByText('1/2')).toBeTruthy();
+  });
+
+  it('fills an OCR step`s own page counters instead of showing {done}', async () => {
+    seam.before = async (_items, _rules, options) => {
+      options.onProgress?.({
+        itemIndex: 0,
+        itemName: 'a.pdf',
+        doneItems: 0,
+        totalItems: 1,
+        stepIndex: 0,
+        step: 'ocr',
+        operation: { phase: 'ocr', labelKey: 'ocr.running', done: 2.4, total: 10 },
+      });
+      await new Promise<void>(() => {});
+    };
+    show();
+    await user.upload(pdfInput(), [await pdfFile('a.pdf')]);
+    await user.click(screen.getByRole('button', { name: 'Run batch' }));
+    expect(await screen.findByText('Recognizing page 3/10', { selector: 'p' })).toBeTruthy();
   });
 });
 
@@ -648,7 +796,9 @@ describe('BatchDialog rulesets from a file', () => {
     expect(alert.textContent).toBe(
       'This operation has nothing to work with yet.Choose the file or images it asks for in the panel, or scan a page, then run it again.',
     );
-    expect(screen.getByText('0/0')).toBeTruthy();
+    // The refused run leaves no progress line or 0/0 bar behind.
+    expect(screen.queryByText('0/0')).toBeNull();
+    expect(screen.queryByText('Processing')).toBeNull();
   });
 
   it('refuses a page range it cannot read and says which field', async () => {
@@ -657,7 +807,22 @@ describe('BatchDialog rulesets from a file', () => {
     replace(field('Page range'), 'zzz');
     await user.upload(pdfInput(), await pdfFile('a.pdf'));
     await user.click(screen.getByRole('button', { name: 'Run batch' }));
-    expect((await screen.findByRole('alert')).textContent).toBe('Could not read step settings.pages: zzz');
+    const alert = await screen.findByRole('alert');
+    // The hint is the range error's own sentence from the dictionary, then where the text was typed.
+    expect(Array.from(alert.querySelectorAll('p')).map((line) => line.textContent)).toEqual([
+      'Could not read step settings.',
+      'Enter a range like 1-3, 5 or 8-10. Step “Extract Pages”, page range “zzz”.',
+    ]);
+    expect(alert.textContent).not.toContain('Error');
+  });
+
+  it('names the step whose page range it cannot read', async () => {
+    show();
+    await stepsOnly(STEPS.textExport);
+    replace(field('Page range'), 'q');
+    await user.upload(pdfInput(), await pdfFile('a.pdf'));
+    await user.click(screen.getByRole('button', { name: 'Run batch' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Step “Export Text”, page range “q”.');
   });
 });
 
@@ -668,10 +833,12 @@ describe('BatchDialog watching a folder', () => {
   function folder(name: string, initial: File[]) {
     const contents = { current: initial };
     let hold: Promise<void> | null = null;
+    let listings = 0;
     const handle = {
       kind: 'directory',
       name,
       async *values() {
+        listings += 1;
         if (hold !== null) await hold;
         yield { kind: 'directory', name: 'sub' };
         yield { kind: 'file', name: 'notes.txt', getFile: async () => pdf('notes.txt') };
@@ -679,7 +846,12 @@ describe('BatchDialog watching a folder', () => {
           yield { kind: 'file', name: file.name, getFile: async () => file };
       },
     };
-    return { handle, contents, holdListing: (gate: Promise<void>) => (hold = gate) };
+    return {
+      handle,
+      contents,
+      holdListing: (gate: Promise<void>) => (hold = gate),
+      listings: () => listings,
+    };
   }
 
   function offerPicker(...handles: unknown[]) {
@@ -818,5 +990,71 @@ describe('BatchDialog watching a folder', () => {
     dir.contents.current = [pdf('x.pdf')];
     await tick();
     expect(onNotice).not.toHaveBeenCalled();
+  });
+
+  it('starts no watch when the dialog closed while the folder picker was still open', async () => {
+    const dir = folder('Late', [pdf('a.pdf')]);
+    const picked = Promise.withResolvers<unknown>();
+    Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: () => picked.promise });
+    const { onNotice } = show();
+    watch();
+    cleanup();
+    await act(async () => picked.resolve(dir.handle));
+    await tick();
+    expect(dir.listings()).toBe(0);
+    expect(onNotice).not.toHaveBeenCalled();
+  });
+
+  it('starts no timer when the dialog closed while the folder was being listed', async () => {
+    const dir = folder('Slow', [pdf('a.pdf')]);
+    const listed = Promise.withResolvers<void>();
+    dir.holdListing(listed.promise);
+    offerPicker(dir.handle);
+    const { onNotice } = show();
+    watch();
+    await screen.findByText('Watching folder: Slow');
+    cleanup();
+    await act(async () => listed.resolve());
+    await tick();
+    // The one listing the dialog asked for finished after it was gone: nothing queued, nothing listed again.
+    expect(onNotice).not.toHaveBeenCalled();
+    expect(dir.listings()).toBe(1);
+  });
+
+  it('drops a listing that finishes after Stop', async () => {
+    const dir = folder('Inbox', [pdf('a.pdf')]);
+    offerPicker(dir.handle);
+    const { onNotice } = show();
+    watch();
+    await screen.findByText('Watching folder: Inbox');
+    onNotice.mockClear();
+    const listed = Promise.withResolvers<void>();
+    dir.holdListing(listed.promise);
+    dir.contents.current = [pdf('a.pdf'), pdf('b.pdf')];
+    // The timer's listing starts and waits; Stop comes before it ends.
+    await tick();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Watching' }));
+    await act(async () => listed.resolve());
+    expect(onNotice).not.toHaveBeenCalled();
+    expect(screen.queryByText('b.pdf')).toBeNull();
+    expect(screen.getByText('1/256')).toBeTruthy();
+  });
+
+  it('announces a changed folder once, even where state updaters run twice', async () => {
+    const dir = folder('Inbox', [pdf('a.pdf')]);
+    offerPicker(dir.handle);
+    const onNotice = vi.fn();
+    render(
+      <StrictMode>
+        <BatchDialog open t={t} onClose={vi.fn()} onDownload={vi.fn()} onNotice={onNotice} />
+      </StrictMode>,
+    );
+    watch();
+    await screen.findByText('Watching folder: Inbox');
+    onNotice.mockClear();
+    dir.contents.current = [pdf('a.pdf'), pdf('b.pdf')];
+    await tick();
+    expect(onNotice.mock.calls).toEqual([['2 PDF files queued from folder.']]);
+    expect(screen.getByText('b.pdf')).toBeTruthy();
   });
 });

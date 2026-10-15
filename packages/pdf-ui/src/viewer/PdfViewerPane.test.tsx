@@ -143,15 +143,12 @@ const stage = vi.hoisted(() => {
     viewers: [] as unknown[],
     buses: [] as unknown[],
     links: [] as unknown[],
+    /** The module the pane imports its viewer stack from, as the browser would have fetched it. */
+    engine: () => ({ EventBus, PDFLinkService, PDFFindController, PDFViewer }),
   };
 });
 
-vi.mock('pdfjs-dist/web/pdf_viewer.mjs', () => ({
-  EventBus: stage.EventBus,
-  PDFLinkService: stage.PDFLinkService,
-  PDFFindController: stage.PDFFindController,
-  PDFViewer: stage.PDFViewer,
-}));
+vi.mock('pdfjs-dist/web/pdf_viewer.mjs', () => stage.engine());
 
 // The stylesheet ships with the engine chunk; the pane only needs the import to settle.
 vi.mock('pdfjs-dist/web/pdf_viewer.css', () => ({}));
@@ -301,13 +298,18 @@ function mountNow(doc: DocumentFake, props: Partial<PdfViewerPaneProps> = {}): P
   };
 }
 
-/** Mounts the pane and waits until its first stack has been published. */
+/**
+ * Mounts the pane and waits until its first stack has been published. `onReady(null)` is the
+ * pane saying it has no viewer, so a first call that is not an api is a failed mount, named as
+ * such here instead of surfacing as a silent listener in whichever test comes next.
+ */
 async function mount(
   doc: DocumentFake = makeDocument(),
   props: Partial<PdfViewerPaneProps> = {},
 ): Promise<Pane> {
   const pane = mountNow(doc, props);
   await settle(() => expect(pane.onReady).toHaveBeenCalledTimes(1));
+  expect(pane.onReady.mock.calls[0]?.[0]).not.toBeNull();
   return pane;
 }
 
@@ -705,6 +707,20 @@ describe('a rewritten document', () => {
     expect(lastViewer().options.viewer).toBe(pane.slots[1]);
   });
 
+  it('tells the shell the dropped replacement’s api is dead when a second rewrite comes before it paints', async () => {
+    const pane = await mount(makeDocument());
+    emit(lastBus(), 'pagerendered', { pageNumber: 1 });
+    pane.rerender({ document: makeDocument().handle });
+    await settle(() => expect(viewers()).toHaveLength(2));
+    const droppedApi = apiOf(pane);
+    pane.onReady.mockClear();
+    pane.rerender({ document: makeDocument().handle });
+    await settle(() => expect(viewers()).toHaveLength(3));
+    // Null for the stack that was disposed, then the third's own api: the shell never holds a dead one.
+    expect(pane.onReady.mock.calls.map(([api]) => api)).toEqual([null, apiOf(pane)]);
+    expect(apiOf(pane)).not.toBe(droppedApi);
+  });
+
   it('lets a different document take the screen from a frozen stack', async () => {
     const { pane, first, firstViewer } = await rewritten();
     pane.rerender({ document: makeDocument().handle, documentKey: 'tab-other' });
@@ -753,6 +769,77 @@ describe('a rewritten document', () => {
     pane.rerender({ document: makeDocument().handle });
     await settle(() => expect(viewers()).toHaveLength(3));
     expect(pane.slots[0].style.width).toBe('123px');
+  });
+});
+
+describe('a viewer chunk the browser cannot fetch', () => {
+  /**
+   * The viewer chunk cannot be fetched from here on: the import the pane makes rejects. The
+   * returned spy is the module's factory, called each time an import reaches the broken chunk.
+   */
+  function breakImport(): Mock {
+    // Vitest wraps what a factory throws in its own message (the browser's wording is only in
+    // `cause`), so the pane sees an unclassified failure here: the sentence is the generic one.
+    // How the browser's own wording is told offline from stale is `errors.test.ts`'s, and the
+    // whole path in a real browser is `e2e/shell-recovery.spec.ts`'s.
+    const reached = vi.fn(() => {
+      throw new TypeError('Failed to fetch dynamically imported module: /editor/assets/pdf_viewer-1.js');
+    });
+    vi.doMock('pdfjs-dist/web/pdf_viewer.mjs', reached);
+    return reached;
+  }
+
+  /** The chunk is served again. */
+  function repairImport(): void {
+    vi.doMock('pdfjs-dist/web/pdf_viewer.mjs', () => stage.engine());
+  }
+
+  afterEach(() => {
+    repairImport();
+  });
+
+  it('says why instead of preparing pages for ever, tells the shell there is no viewer and reloads on request', async () => {
+    breakImport();
+    const pane = mountNow(makeDocument());
+    await screen.findByRole('alert');
+
+    expect(screen.getByRole('alert').textContent).toContain(t('error.internal.message'));
+    expect(screen.getByRole('alert').textContent).toContain(t('error.internal.hint'));
+    expect(screen.getByRole('alert').textContent).not.toContain('dynamically imported module');
+    expect(screen.queryByText(t('viewer.rendering'))).toBeNull();
+    expect(pane.onReady).toHaveBeenCalledExactlyOnceWith(null);
+
+    const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => undefined);
+    await userEvent.click(screen.getByRole('button', { name: t('recovery.reload') }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the failure when the next document finds the chunk', async () => {
+    breakImport();
+    const first = makeDocument();
+    const pane = mountNow(first);
+    await screen.findByRole('alert');
+    repairImport();
+    pane.rerender({ document: makeDocument().handle, documentKey: 'tab-2' });
+    await settle(() => expect(viewers()).toHaveLength(1));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(pane.onReady.mock.calls.at(-1)?.[0]).not.toBeNull();
+  });
+
+  it('says nothing for a pane that is gone before the failure arrives', async () => {
+    const reached = breakImport();
+    const pane = mountNow(makeDocument());
+    pane.unmount();
+    // The failure is late only once the import has reached the broken chunk. A test that ends
+    // before that leaves its import in flight while `afterEach` repairs the chunk; measured, the
+    // next test's pane then failed to load with this test's broken chunk and published
+    // `onReady(null)` — which `mount` took for its stack — in about one run in six.
+    await act(async () => {
+      await vi.waitFor(() => expect(reached).toHaveBeenCalled());
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+    // Only the unmount's own "no viewer"; the late failure is not reported over it.
+    expect(pane.onReady).toHaveBeenCalledExactlyOnceWith(null);
   });
 });
 
@@ -966,6 +1053,66 @@ describe('page geometry', () => {
     lastViewer().pageViews = [pageView(new DOMRect(100, 50, 318, 418), { border: 9 })];
     expect(apiOf(pane).pointToPage(x, y)).toBeNull();
   });
+
+  /** A page view that counts how often the layout is read off its element. */
+  function counted(rect: DOMRect, reads: { count: number }): PageViewFake {
+    const view = pageView(rect);
+    view.div.getBoundingClientRect = () => {
+      reads.count += 1;
+      return rect;
+    };
+    return view;
+  }
+
+  it('finds the page under a point in a long document without measuring every page', async () => {
+    const pane = await mount();
+    const reads = { count: 0 };
+    lastViewer().pagesCount = 2000;
+    // 100 pt tall pages, 20 px apart, one under the other.
+    lastViewer().pageViews = Array.from({ length: 2000 }, (_, index) =>
+      counted(new DOMRect(100, index * 120, 300, 100), reads),
+    );
+    const api = apiOf(pane);
+    expect(api.pointToPage(250, 1500 * 120 + 50)).toEqual({ pageIndex: 1500, x: 300, y: 100 });
+    expect(reads.count).toBeLessThanOrEqual(20);
+    // The gap between two pages, above the first and below the last are no page.
+    expect(api.pointToPage(250, 1500 * 120 + 110)).toBeNull();
+    expect(api.pointToPage(250, -5)).toBeNull();
+    expect(api.pointToPage(250, 1999 * 120 + 101)).toBeNull();
+    expect(api.pointToPage(250, 50)).toEqual({ pageIndex: 0, x: 300, y: 100 });
+    expect(api.pointToPage(250, 1999 * 120 + 50)).toEqual({ pageIndex: 1999, x: 300, y: 100 });
+  });
+
+  it('finds either page of a spread whose two pages differ in height', async () => {
+    const pane = await mount();
+    lastViewer().pagesCount = 7;
+    // Rows of two pages side by side; in the second row the left page is tall and the right one
+    // short and centred, so the pages' bottoms are not in page order inside that row.
+    lastViewer().pageViews = [
+      pageView(new DOMRect(100, 0, 300, 400)),
+      pageView(new DOMRect(420, 0, 300, 400)),
+      pageView(new DOMRect(100, 500, 300, 400)),
+      pageView(new DOMRect(420, 600, 300, 100)),
+      pageView(new DOMRect(100, 1000, 300, 400)),
+      pageView(new DOMRect(420, 1000, 300, 400)),
+      pageView(new DOMRect(100, 1500, 300, 400)),
+    ];
+    const api = apiOf(pane);
+    expect(api.pointToPage(150, 800)?.pageIndex).toBe(2);
+    expect(api.pointToPage(450, 650)?.pageIndex).toBe(3);
+    expect(api.pointToPage(450, 800)).toBeNull();
+    expect(api.pointToPage(450, 50)?.pageIndex).toBe(1);
+    expect(api.pointToPage(150, 1200)?.pageIndex).toBe(4);
+    expect(api.pointToPage(450, 1200)?.pageIndex).toBe(5);
+    expect(api.pointToPage(150, 1600)?.pageIndex).toBe(6);
+  });
+
+  it('leaves the scroll container to its mark layers: no touch scrolling while one draws', async () => {
+    const pane = await mount();
+    // The class that turns `touch-action: none` on while a mounted layer carries `data-touch-draw`;
+    // what it does to a finger is exercised in a real browser (e2e `ui-layers-annotations.spec.ts`).
+    expect(pane.container.className).toContain('has-[[data-touch-draw]]:touch-none');
+  });
 });
 
 describe('the find bar', () => {
@@ -1027,15 +1174,62 @@ describe('the find bar', () => {
     runFrames();
   });
 
-  it('closes on Escape and says nothing when it was not open', async () => {
+  const closed = (bus: BusFake) => bus.dispatched.filter((event) => event.name === 'findbarclose');
+
+  it('says nothing to pdf.js on Escape when the bar was not open', async () => {
     await mount();
+    await userEvent.setup().keyboard('{Escape}');
+    expect(screen.queryByRole('textbox', { name: 'Find in document' })).toBeNull();
+    expect(closed(lastBus())).toEqual([]);
+  });
+
+  it('closes on Escape pressed in its field, telling pdf.js to drop the highlights', async () => {
+    const pane = await mount();
+    act(() => apiOf(pane).find('tax'));
+    emit(lastBus(), 'updatefindmatchescount', { matchesCount: { total: 4, current: 1 } });
     const user = userEvent.setup();
+    await user.click(screen.getByRole('textbox', { name: 'Find in document' }));
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('textbox', { name: 'Find in document' })).toBeNull();
+    expect(closed(lastBus())).toEqual([{ name: 'findbarclose', payload: { query: '' } }]);
+    // The query is forgotten: a reopened bar is empty and has no matches to step through.
     await user.keyboard('{Control>}f{/Control}');
-    expect(screen.getByRole('textbox', { name: 'Find in document' })).toBeTruthy();
+    expect((screen.getByRole('textbox', { name: 'Find in document' }) as HTMLInputElement).value).toBe('');
+    expect((screen.getByRole('button', { name: 'Next match' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('closes on Escape pressed in the page area or with nothing focused', async () => {
+    const pane = await mount();
+    const user = userEvent.setup();
+    act(() => apiOf(pane).find('tax'));
+    const inPage = document.createElement('button');
+    pane.container.append(inPage);
+    inPage.focus();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('textbox', { name: 'Find in document' })).toBeNull();
+    expect(closed(lastBus())).toHaveLength(1);
+
+    act(() => apiOf(pane).find('tax'));
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('textbox', { name: 'Find in document' })).toBeNull();
+    expect(closed(lastBus())).toHaveLength(2);
+  });
+
+  it('keeps the bar and its highlights when Escape is pressed somewhere else in the shell', async () => {
+    const pane = await mount();
+    const outside = document.createElement('input');
+    document.body.append(outside);
+    try {
+      act(() => apiOf(pane).find('tax'));
+      outside.focus();
+      await userEvent.setup().keyboard('{Escape}');
+      expect(screen.getByRole('textbox', { name: 'Find in document' })).toBeTruthy();
+      expect(closed(lastBus())).toEqual([]);
+    } finally {
+      outside.remove();
+    }
   });
 
   it('starts a search on Enter, and walks the matches with Enter and Shift+Enter after that', async () => {

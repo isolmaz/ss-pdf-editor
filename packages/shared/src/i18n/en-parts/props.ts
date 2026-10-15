@@ -61,6 +61,8 @@ export const propsPart = {
   'props.sig.trustReason.pathLength': "An issuer's pathLenConstraint is exceeded.",
   'props.sig.trustReason.nameConstraint':
     'A subordinate certificate has names outside the permitted subtrees, or inside an excluded one.',
+  'props.sig.trustReason.searchLimit':
+    'The certificates in this file offer too many possible chains to try them all; the search stopped at its limit, so no chain was confirmed or ruled out.',
   'props.sig.revocation.indeterminate': 'Indeterminate',
   'props.sig.revocation.note':
     'Revocation is read only from lists already on this device: the CRLs you import below and the CRLs and OCSP responses stored in the PDF. Nothing is fetched from the network; with no list for an issuer, the result is "indeterminate".',
@@ -76,6 +78,10 @@ export const propsPart = {
   'props.sig.roots.none': 'No readable certificate found in selected files.',
   'props.sig.roots.addedRefused':
     '{count} trust root(s) added; {refused} file(s) could not be read as certificate.',
+  'props.sig.storeFailed':
+    'The change to your trust roots and revocation lists could not be stored on this device, so nothing was changed. {reason}',
+  'props.sig.storeUnreadable':
+    'The stored trust roots and revocation lists could not be read from this device; certificate trust is shown as "not checked" until you import them again.',
   'props.sig.certValidUntil': 'Certificate valid until: {date}',
   'props.sig.certExpired': 'Certificate expired on {date}.',
   'props.sig.certNotYet': 'Certificate is not valid until {date}.',

@@ -52,14 +52,15 @@ import { persistDraft, saveDraft } from './features/persistence/draft-persist';
 import { forgetDraft } from './features/persistence/draft-vault';
 import { useDraftRecovery } from './features/persistence/use-draft-recovery';
 import { usePersistenceActions } from './features/persistence/use-persistence-actions';
+import { useUnsavedGuard } from './features/persistence/use-unsaved-guard';
 import { useDraftAutosave, useVaultChannel } from './features/persistence/use-vault-sync';
 import { openSnapshot } from './features/reading/reading-store';
 import { createResultsActions } from './features/results/results-actions';
 import { openPrintDialog, setProgress } from './features/results/results-store';
 import { discardDocument } from './features/save/close-actions';
 import { prepareOutput as prepareDocumentOutput } from './features/save/prepare-output';
-import { CloseDocumentHost } from './features/save/SaveSurfaces';
-import { saveDocument } from './features/save/save-actions';
+import { CloseDocumentHost, SaveConflictHost } from './features/save/SaveSurfaces';
+import { type SaveOptions, saveDocument } from './features/save/save-actions';
 import { setCurrentPage, useSave, viewerRef } from './features/save/save-store';
 import { useSaveActions } from './features/save/use-save-actions';
 import { clearTextEdit, useTextTool } from './features/selection/text-tool-store';
@@ -156,10 +157,7 @@ export function App({ store }: AppProps) {
     if (!refuseUnappliedRedactions()) openSnapshot();
   }, [refuseUnappliedRedactions]);
 
-  /**
-   * The persistence callbacks the audit pins (`tools/audit/regressions.cjs`): the work is in
-   * `features/persistence`, and these bind it to the shell's session and device tier.
-   */
+  /** The persistence callbacks: the work is in `features/persistence`, and these bind it to the shell's session and device tier. */
   const forgetTabDraft = useCallback((tabId: string) => forgetDraft(store, tabId), [store]);
   const persistTabDraft = useCallback((tabId: string) => persistDraft(store, tabId, tier), [store, tier]);
   const opfsSave = useCallback(() => saveDraft(store, persistTabDraft, t), [store, persistTabDraft, t]);
@@ -175,6 +173,7 @@ export function App({ store }: AppProps) {
   useDraftRecovery({ store, translator: tRef, openAndFingerprint });
   useDraftAutosave({ session, store, persist: persistTabDraft, translator: tRef });
   useVaultChannel(store, session);
+  useUnsavedGuard(store);
 
   /** What the forms handlers need from the shell. */
   const formsHost = useMemo(() => ({ store, t }), [store, t]);
@@ -203,8 +202,8 @@ export function App({ store }: AppProps) {
     [store, t],
   );
   const saveActive = useCallback(
-    (tabId?: string): Promise<boolean> =>
-      saveDocument({ session: store, t, prepareOutput }, tabId ?? store.active?.id),
+    (tabId?: string, options?: SaveOptions): Promise<boolean> =>
+      saveDocument({ session: store, t, prepareOutput }, tabId ?? store.active?.id, options),
     [prepareOutput, store, t],
   );
   const discardTab = useCallback(
@@ -450,6 +449,7 @@ export function App({ store }: AppProps) {
         saveActive={saveActive}
         exportActive={exportActive}
       />
+      <SaveConflictHost t={t} session={store} discardTab={discardTab} saveActive={saveActive} />
       <XfaFormDialogHost t={t} onSave={saveXfaForm} />
       <SignatureDialogHost t={t} canRemember={activeTab?.sensitive !== true} />
       <ImagePickerInput t={t} />

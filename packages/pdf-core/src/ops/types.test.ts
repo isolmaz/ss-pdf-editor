@@ -1,3 +1,4 @@
+import { ToolError, toToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import { formatBytes, note, throwIfAborted } from './types';
 
@@ -28,5 +29,20 @@ describe('throwIfAborted', () => {
     expect(() => throwIfAborted(controller.signal)).not.toThrow();
     controller.abort();
     expect(() => throwIfAborted(controller.signal)).toThrow(expect.objectContaining({ name: 'AbortError' }));
+  });
+
+  it('is an aborted ToolError, not an internal one, once an operation wraps it with toToolError', () => {
+    const controller = new AbortController();
+    controller.abort();
+    let thrown: unknown;
+    try {
+      throwIfAborted(controller.signal);
+    } catch (error) {
+      thrown = error;
+    }
+    const wrapped = toToolError(thrown, 'pdfjs');
+    expect(wrapped).toBeInstanceOf(ToolError);
+    expect(wrapped.code).toBe('aborted');
+    expect(wrapped.details).toEqual({ engine: 'pdfjs', engineMessage: 'operation aborted' });
   });
 });

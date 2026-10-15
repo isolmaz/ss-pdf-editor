@@ -34,6 +34,39 @@ async function pages(...contents: string[]): Promise<Uint8Array> {
 
 const at = (x: number, y: number, text: string, size = 12) => `BT /F ${size} Tf ${x} ${y} Td (${text}) Tj ET`;
 
+/**
+ * One 400×200 page, Helvetica as `/F` whose codes `A`–`H` are the Hebrew letters א–ח through
+ * `/ToUnicode` (no Hebrew font is needed to read the text back): `AB` is the word אב.
+ */
+async function hebrewPage(content: string): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const letters = [...'ABCDEFGH']
+    .map((code, index) => {
+      const unicode = (0x05d0 + index).toString(16).padStart(4, '0');
+      return `<${code.charCodeAt(0).toString(16)}> <${unicode}>`;
+    })
+    .join(' ');
+  const map = [
+    '/CIDInit /ProcSet findresource begin 12 dict begin begincmap',
+    '/CMapName /Adobe-Identity-UCS def /CMapType 2 def',
+    '1 begincodespacerange <00> <FF> endcodespacerange',
+    `8 beginbfchar ${letters} endbfchar`,
+    'endcmap end end',
+  ].join('\n');
+  const font = doc.addObject({
+    Type: 'Font',
+    Subtype: 'Type1',
+    BaseFont: 'Helvetica',
+    Encoding: 'WinAnsiEncoding',
+    ToUnicode: doc.addStream(map, {}),
+  });
+  doc.insertPage(0, doc.addPage([0, 0, 400, 200], 0, { Font: { F: font } }, content));
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
 /** A heading, a two-line paragraph, a gap, and a second paragraph; words and kerning on one line. */
 const ARTICLE = [
   at(50, 360, 'Baslik', 24),
@@ -108,6 +141,58 @@ describe('exportText', () => {
     // The spaces carry no line of their own: the two words are 30 pt apart, so two paragraphs.
     expect(decode(result.file.bytes)).toBe('Bir\n\nIki\n\n---\n\n\n');
     expect(result.emptyPages).toEqual([1]);
+  });
+
+  it('reads a right-to-left line from its rightmost word, whichever order the words were shown in', async () => {
+    // Four Hebrew words, אב גד הו זח, laid out right to left; each word is a piece of its own, its
+    // glyphs in the order they stand on the page (the first letter, א, is the rightmost: `BA`).
+    const right = (x: number, word: string) => at(x, 100, word);
+    const rightFirst = [right(300, 'BA'), right(250, 'DC'), right(200, 'FE'), right(150, 'HG')];
+    const result = await exportText(
+      await hebrewPage(rightFirst.join('\n')),
+      { pages: [0], format: 'text', baseName: 'x' },
+      run,
+    );
+    expect(decode(result.file.bytes).slice(1)).toBe('\u05D0\u05D1 \u05D2\u05D3 \u05D4\u05D5 \u05D6\u05D7\n');
+    const leftFirst = await exportText(
+      await hebrewPage([...rightFirst].reverse().join('\n')),
+      { pages: [0], format: 'text', baseName: 'x' },
+      run,
+    );
+    expect(decode(leftFirst.file.bytes).slice(1)).toBe(
+      '\u05D0\u05D1 \u05D2\u05D3 \u05D4\u05D5 \u05D6\u05D7\n',
+    );
+  });
+
+  it('keeps a Latin word inside a right-to-left line where it is read, and its letters in order', async () => {
+    // On the page, left to right: זח xyz גד. A Hebrew reader meets גד first, then xyz, then זח.
+    const content = [at(150, 100, 'HG'), at(200, 100, 'xyz'), at(250, 100, 'DC')].join('\n');
+    const result = await exportText(
+      await hebrewPage(content),
+      { pages: [0], format: 'text', baseName: 'x' },
+      run,
+    );
+    expect(decode(result.file.bytes).slice(1)).toBe('\u05D2\u05D3 xyz \u05D6\u05D7\n');
+  });
+
+  it('leaves a left-to-right sentence with Hebrew words in it as it reads: the Hebrew run from its right end', async () => {
+    // On the page, left to right: `xyzuvw`, then `גד` and `אב`, a Hebrew run that stands right to left.
+    // The Latin letters outnumber the Hebrew ones, so the sentence is read left to right: its Hebrew
+    // run is read from the right, אב גד, and the Latin word before it stays first.
+    const content = [at(100, 100, 'xyzuvw'), at(150, 100, 'DC'), at(170, 100, 'BA')].join('\n');
+    const result = await exportText(
+      await hebrewPage(content),
+      { pages: [0], format: 'text', baseName: 'x' },
+      run,
+    );
+    expect(decode(result.file.bytes).slice(1)).toBe('xyzuvw \u05D0\u05D1 \u05D2\u05D3\n');
+    // A lone Hebrew word in it, and one left of it, do not move.
+    const lone = await exportText(
+      await hebrewPage([at(100, 100, 'xyzuvw'), at(150, 100, 'DC')].join('\n')),
+      { pages: [0], format: 'text', baseName: 'x' },
+      run,
+    );
+    expect(decode(lone.file.bytes).slice(1)).toBe('xyzuvw \u05D2\u05D3\n');
   });
 
   it('reports progress per page', async () => {

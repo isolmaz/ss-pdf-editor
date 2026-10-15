@@ -1187,4 +1187,107 @@ describe('documentFaces', () => {
       source.close();
     }
   });
+
+  it('destroys the document it opened when reading the models fails, since the caller never gets `close`', async () => {
+    const { bytes, model, fonts } = await readPage();
+    const mupdf = await loadMupdf();
+    const destroy = vi.spyOn(mupdf.PDFDocument.prototype, 'destroy');
+    try {
+      // The document has one page; a model of page 7 makes the font lookup throw.
+      await expect(documentFaces(bytes, [{ ...model, pageIndex: 7 }], fonts)).rejects.toThrow();
+      expect(destroy.mock.contexts).toHaveLength(1);
+      expect(destroy.mock.contexts[0]).toBeInstanceOf(mupdf.PDFDocument);
+    } finally {
+      destroy.mockRestore();
+    }
+  });
+
+  it('destroys the standard faces it opened for measuring, and the document, when closed', async () => {
+    const { bytes, model, fonts } = await readPage();
+    const mupdf = await loadMupdf();
+    const source = await documentFaces(bytes, [model], fonts);
+    source.faces.measure('Merhaba', 'helvetica', 10, 0);
+    source.faces.measure('Merhaba', 'helvetica-bold', 10, 0);
+    // Measuring again reuses the open face rather than opening another.
+    source.faces.measure('dünya', 'helvetica', 10, 0);
+    const destroyed: string[] = [];
+    const original = mupdf.Font.prototype.destroy;
+    const destroy = vi.spyOn(mupdf.Font.prototype, 'destroy').mockImplementation(function (
+      this: InstanceType<typeof mupdf.Font>,
+    ) {
+      destroyed.push(this.getName());
+      original.call(this);
+    });
+    try {
+      source.close();
+      expect(destroyed.sort()).toEqual(['Helvetica', 'Helvetica-Bold']);
+    } finally {
+      destroy.mockRestore();
+    }
+  });
+});
+
+/**
+ * A 612×792 `/MediaBox` cropped to `[100 200 400 600]` — a 300×400 page whose box starts away
+ * from the origin — with `Alpha quick fox` at user-space (120, 500) and `Beta line below` at
+ * (120, 400) in 12 pt Helvetica: baselines 100 and 200 below the box's top edge.
+ */
+async function croppedPage(): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const helvetica = doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin');
+  const content = [
+    'BT /F 12 Tf 1 0 0 1 120 500 Tm (Alpha quick fox) Tj ET',
+    'BT /F 12 Tf 1 0 0 1 120 400 Tm (Beta line below) Tj ET',
+  ].join('\n');
+  doc.insertPage(0, doc.addPage([0, 0, 612, 792], 0, { Font: { F: helvetica } }, content));
+  doc.findPage(0).put('CropBox', [100, 200, 400, 600]);
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/** MuPDF's text lines left to right, each with its baseline in displayed space (origin at the box's top-left). */
+async function baselines(bytes: Uint8Array): Promise<{ text: string; x: number; y: number }[]> {
+  const mupdf = await loadMupdf();
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+  try {
+    const json = JSON.parse(doc.loadPage(0).toStructuredText('preserve-whitespace').asJSON()) as {
+      blocks: { lines?: { text: string; x: number; y: number }[] }[];
+    };
+    return json.blocks.flatMap((block) => block.lines ?? []).sort((left, right) => left.x - right.x);
+  } finally {
+    doc.destroy();
+  }
+}
+
+describe('findReplace on a page box that does not start at the origin', () => {
+  it('replaces a word on its own baseline and leaves the line below where it was', async () => {
+    const out = await findReplace(
+      await croppedPage(),
+      query({ find: 'quick', replace: 'slow', matchCase: true }),
+      run,
+    );
+    expect(out.replaced).toBe(1);
+    const lines = await baselines(out.bytes);
+    // Two rows, told apart by baseline: 100 for the edited line, 200 for the one under it.
+    const upper = lines.filter((entry) => entry.y < 150);
+    const lower = lines.filter((entry) => entry.y >= 150);
+    expect(
+      upper
+        .map((entry) => entry.text)
+        .join('')
+        .replace(/\s+/g, ''),
+    ).toBe('Alphaslowfox');
+    expect(
+      lower
+        .map((entry) => entry.text)
+        .join('')
+        .replace(/\s+/g, ''),
+    ).toBe('Betalinebelow');
+    // Every piece of the edited line sits on the old baseline (±1 pt) — the `box.y` of the old
+    // reader would have drawn it 200 pt lower — and the line below has not moved.
+    for (const entry of upper) expect(Math.abs(entry.y - 100)).toBeLessThanOrEqual(1);
+    for (const entry of lower) expect(Math.abs(entry.y - 200)).toBeLessThanOrEqual(1);
+  });
 });

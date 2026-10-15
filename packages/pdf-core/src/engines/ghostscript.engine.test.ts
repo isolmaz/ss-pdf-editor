@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const assets = vi.hoisted(() => ({ js: '/engines/ghostscript/gs.js', wasm: '/engines/ghostscript/gs.wasm' }));
@@ -63,6 +64,10 @@ function loaderSource(convert: string): string {
 
 class FakeWorker {
   static instances: FakeWorker[] = [];
+  /** What the browser throws when it refuses to start a worker. */
+  static constructFailure: Error | null = null;
+  /** What `postMessage` throws when the document cannot be handed over. */
+  static postFailure: Error | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onerror: ((event: { message: string }) => void) | null = null;
   terminated = 0;
@@ -71,9 +76,11 @@ class FakeWorker {
     readonly url: URL,
     readonly options: { type: string },
   ) {
+    if (FakeWorker.constructFailure !== null) throw FakeWorker.constructFailure;
     FakeWorker.instances.push(this);
   }
   postMessage(message: unknown, transfer: unknown): void {
+    if (FakeWorker.postFailure !== null) throw FakeWorker.postFailure;
     this.posted.push({ message, transfer });
   }
   terminate(): void {
@@ -95,11 +102,54 @@ describe('ghostscriptFailure', () => {
 describe('in a browser (a worker per conversion)', () => {
   beforeEach(() => {
     FakeWorker.instances = [];
+    FakeWorker.constructFailure = null;
+    FakeWorker.postFailure = null;
     vi.stubGlobal('Worker', FakeWorker);
     vi.stubGlobal('self', { location: { href: 'https://editor.test/app/index.html' } });
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('reports a browser that refuses to start the worker as an engine that is offline, not a raw DOMException', async () => {
+    FakeWorker.constructFailure = new DOMException('Worker blocked', 'SecurityError');
+    const controller = new AbortController();
+    const added = vi.spyOn(controller.signal, 'addEventListener');
+    const failure = await convertWithGhostscript(request(), { signal: controller.signal }).catch(
+      (error: unknown) => error,
+    );
+    expect(isToolError(failure)).toBe(true);
+    expect(failure).toMatchObject({
+      code: 'asset-offline',
+      details: { engine: 'ghostscript', engineMessage: 'Worker blocked' },
+    });
+    expect(added).not.toHaveBeenCalled();
+  });
+
+  it('reports a refusal that is not an Error by its text, at construction and at hand-over', async () => {
+    FakeWorker.constructFailure = 'no workers here' as unknown as Error;
+    await expect(
+      convertWithGhostscript(request(), { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'asset-offline', details: { engineMessage: 'no workers here' } });
+    FakeWorker.constructFailure = null;
+    FakeWorker.postFailure = 'detached' as unknown as Error;
+    await expect(
+      convertWithGhostscript(request(), { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'pdfa-failed', details: { engineMessage: 'detached' } });
+    expect(FakeWorker.instances[0]?.terminated).toBe(1);
+  });
+
+  it('terminates the worker and drops the abort listener when the document cannot be handed over', async () => {
+    FakeWorker.postFailure = new DOMException('could not be cloned', 'DataCloneError');
+    const controller = new AbortController();
+    const removed = vi.spyOn(controller.signal, 'removeEventListener');
+    await expect(convertWithGhostscript(request(), { signal: controller.signal })).rejects.toMatchObject({
+      code: 'pdfa-failed',
+      details: { engine: 'ghostscript', engineMessage: 'could not be cloned' },
+    });
+    expect(FakeWorker.instances).toHaveLength(1);
+    expect(FakeWorker.instances[0]?.terminated).toBe(1);
+    expect(removed).toHaveBeenCalledWith('abort', expect.any(Function));
   });
 
   it('starts a module worker, hands the document over by transfer, and relays pages and the result', async () => {
@@ -255,6 +305,27 @@ describe('in this thread (no Worker)', () => {
       convertWithGhostscript(request(), { signal: new AbortController().signal }),
     ).rejects.toMatchObject({
       code: 'out-of-memory',
+    });
+  });
+
+  it('reports an engine that cannot copy its sRGB profile as a PDF/A failure instead of converting without it', async () => {
+    assets.js = loader(
+      'profile.mjs',
+      `export default async () => ({
+        callMain: () => 2,
+        FS: { writeFile: () => undefined, readFile: () => { throw new Error('missing'); }, unlink: () => undefined },
+      });`,
+    );
+    const failure = await convertWithGhostscript(request(), { signal: new AbortController().signal }).catch(
+      (error: unknown) => error,
+    );
+    expect(isToolError(failure)).toBe(true);
+    expect(failure).toMatchObject({
+      code: 'pdfa-failed',
+      details: {
+        engine: 'ghostscript',
+        engineMessage: 'Ghostscript could not copy its sRGB profile (exit status 2)',
+      },
     });
   });
 

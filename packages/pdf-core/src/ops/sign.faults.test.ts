@@ -11,8 +11,9 @@ import { generateKey, issueCertificate } from '../signature-trust.fixtures';
 
 const state: {
   damage: ((bytes: Uint8Array) => Uint8Array) | undefined;
-  verdicts: 'real' | 'none';
-} = { damage: undefined, verdicts: 'real' };
+  damageAppend: ((bytes: Uint8Array) => Uint8Array) | undefined;
+  verdicts: 'real' | 'none' | 'other-field';
+} = { damage: undefined, damageAppend: undefined, verdicts: 'real' };
 
 vi.mock('../engines/mupdf-write', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../engines/mupdf-write')>();
@@ -22,6 +23,10 @@ vi.mock('../engines/mupdf-write', async (importOriginal) => {
       const bytes = actual.saveRewrite(...args);
       return state.damage === undefined ? bytes : state.damage(bytes);
     },
+    saveIncremental: (...args: Parameters<typeof actual.saveIncremental>) => {
+      const bytes = actual.saveIncremental(...args);
+      return state.damageAppend === undefined ? bytes : state.damageAppend(bytes);
+    },
   };
 });
 
@@ -29,8 +34,14 @@ vi.mock('./signature-status', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./signature-status')>();
   return {
     ...actual,
-    verifySignatures: (...args: Parameters<typeof actual.verifySignatures>) =>
-      state.verdicts === 'none' ? Promise.resolve([]) : actual.verifySignatures(...args),
+    verifySignatures: async (...args: Parameters<typeof actual.verifySignatures>) => {
+      if (state.verdicts === 'none') return [];
+      const verdicts = await actual.verifySignatures(...args);
+      // The right signature, reported under another field's name.
+      return state.verdicts === 'other-field'
+        ? verdicts.map((entry) => ({ ...entry, fieldName: 'Baska' }))
+        : verdicts;
+    },
   };
 });
 
@@ -40,6 +51,7 @@ const run = { signal: new AbortController().signal };
 
 afterEach(() => {
   state.damage = undefined;
+  state.damageAppend = undefined;
   state.verdicts = 'real';
 });
 
@@ -93,6 +105,31 @@ describe('signPdf guards against a damaged serialisation', () => {
     await expect(signPdf(await blank(), { identity: await identity() }, run)).rejects.toMatchObject({
       code: 'verification-failed',
       details: { engineMessage: 'the produced file carries no signature field to verify' },
+    });
+  });
+
+  it('refuses a produced file whose verdicts are all for other fields than the one written', async () => {
+    state.verdicts = 'other-field';
+    await expect(
+      signPdf(await blank(), { identity: await identity(), field: { name: 'Onay' } }, run),
+    ).rejects.toMatchObject({
+      code: 'verification-failed',
+      details: { engineMessage: 'the produced file carries no signature in a field named "Onay"' },
+    });
+  });
+
+  it('refuses an update that did not keep the bytes an earlier signature covers', async () => {
+    const first = await signPdf(await blank(), { identity: await identity() }, run);
+    state.damageAppend = (bytes) => {
+      const damaged = bytes.slice();
+      damaged[20] = (damaged[20] ?? 0) ^ 0x01;
+      return damaged;
+    };
+    await expect(signPdf(first.bytes, { identity: await identity() }, run)).rejects.toMatchObject({
+      code: 'internal',
+      details: {
+        engineMessage: 'the incremental update did not keep the bytes the earlier signatures cover',
+      },
     });
   });
 

@@ -103,6 +103,9 @@ export const tr = {
     'Dışa aktar indirmeyi başlatır; dosyanın diske kaydedildiğini doğrulayamayız. Belge açık kalır. Dosyayı kontrol ettikten sonra Kaydetmeden kapat ile taslağı silebilirsiniz.',
   'close.discard': 'Kaydetmeden kapat',
   'close.save': 'Kaydet ve kapat',
+  'conflict.body':
+    'Üzerine yazarsanız dosya sizin sürümünüzle değiştirilir ve dosyada o zamandan beri yapılan değişiklikler kaybolur. Farklı kaydet, sürümünüzü yeni bir dosyaya yazar ve bu dosyaya dokunmaz.',
+  'conflict.overwrite': 'Üzerine yaz',
   'inspection.loading': 'Belge bilgileri inceleniyor…',
   'inspection.failed': 'Belge bilgileri okunamadı. Kaydetme ve dışa aktarma durduruldu; yeniden deneyin.',
   'inspection.retry': 'Yeniden incele',
@@ -115,6 +118,8 @@ export const tr = {
   'panel.goToPage': '{page}. sayfaya git',
   'draft.restored': '{count} taslak geri yüklendi; belge ve değişiklik günlüğü hazır.',
   'draft.corrupt': '{count} taslak dosyası bozulmuş ve okunamadı.',
+  'draft.openElsewhere':
+    '“{name}” düzenleyicinin başka bir penceresinde açık. Üzerinde çalışmaya devam etmek için o pencereye geçin.',
   'draft.engineValues': '{count} form/not düzenlemesi geri yüklendi. Kaydetmeden kapatırsanız kaybolur.',
   'draft.engineValuesDropped': '{count} düzenleme taslakta taşınamadı; kaydetmek için belgeyi açık tutun.',
   'draft.engineValuesLost':
@@ -152,7 +157,7 @@ export const tr = {
   'vault.sweepNoChannel':
     'Bu tarayıcıda pencereler arası bilgi kanalı yok; artık kopya taraması, başka bir pencerede açık belgeleri göremeden çalıştırılmadı.',
   'vault.peerSilent':
-    'Düzenleyicinin başka bir penceresi hangi belgeleri tuttuğunu bildirmedi; hiçbir şey silinmedi. O pencere yanıt verdiğinde yeniden deneyin ya da pencereyi kapatın.',
+    'Düzenleyicinin diğer pencerelerinin hangi belgeleri tuttuğu doğrulanamadı; hiçbir şey silinmedi. Diğer pencerelerin hepsi yanıt verdiğinde yeniden deneyin ya da onları kapatın.',
   'batch.folder.watch': 'Klasör İzle',
   'batch.folder.watching': 'Klasör izleniyor',
   'batch.folder.stop': 'İzlemeyi Durdur',
@@ -233,13 +238,17 @@ export const tr = {
   'error.verification-failed.message': 'Kaydetme doğrulanamadı; özgün dosya korunuyor.',
   'error.verification-failed.hint': 'Belge kirli kaldı; Dışa aktar ile yeni dosya oluşturun.',
   'error.conflict.message': 'Dosya siz açtıktan sonra değişmiş.',
-  'error.conflict.hint': 'Üzerine yazın, yeni dosya olarak kaydedin veya vazgeçin.',
+  'error.conflict.hint':
+    'Dosyayı sizin sürümünüzle değiştirmek için Üzerine yaz’ı, yeni bir dosyaya yazmak için Farklı kaydet’i seçin ya da Vazgeç’e basın.',
   'error.asset-missing.message': 'Gerekli motor paketi indirilmemiş.',
   'error.asset-missing.hint': 'Çevrimdışı hazırlık ekranından paketi indirin.',
   'error.asset-hash-mismatch.message': 'Motor paketi doğrulanamadı.',
   'error.asset-hash-mismatch.hint': 'Paketi yeniden indirin.',
   'error.asset-offline.message': 'Düzenleyicinin bu parçası henüz bu cihazda yok.',
   'error.asset-offline.hint': 'İnternete bağlanıp sayfayı yenileyin.',
+  'error.asset-stale.message':
+    'Düzenleyicinin bu parçası yüklenemedi; bu sayfa açıldığından beri uygulama güncellenmiş olabilir.',
+  'error.asset-stale.hint': 'Yeni sürümü almak için sayfayı yenileyin; sürerse bağlantınızı denetleyin.',
   'error.font-missing.message': 'Gerekli yazı tipi bulunamadı.',
   'error.font-missing.hint': 'Yazı tipi paketini indirin veya başka bir yazı tipi seçin.',
   'error.ocr-language-missing.message': 'Seçilen OCR dili yüklü değil.',
@@ -298,8 +307,6 @@ export const tr = {
   'tools.snapshotDownload': 'PNG indir',
   'tools.snapshotSaved': 'Görüntü kaydedildi: {name}',
   'tools.magnifier': 'Büyüteç',
-  'tools.present': 'Sunum modu',
-  'tools.presentExit': 'Sunumdan çık',
   'lang.select': 'Dil',
 
   // Tools Rail
@@ -383,6 +390,8 @@ export const tr = {
 
   'update.available': 'Yeni bir güncelleme mevcut. Değişiklikleri uygulamak için yenileyin.',
   'update.refresh': 'Yenile',
+  'update.saveFirst':
+    'Yeni sürüm hazır ama bu sekmede kaydedilmemiş çalışma var, bu yüzden yenilenmedi. Kaydedip yeniden yükleyin.',
 } as const;
 
 export type MessageKey = keyof typeof tr;

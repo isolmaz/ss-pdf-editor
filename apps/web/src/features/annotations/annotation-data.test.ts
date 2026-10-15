@@ -6,6 +6,7 @@
  */
 
 import type { AnnotationMark } from 'pdf-core';
+import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { serializeAnnotationsJson } from 'pdf-core/ops/annotation-data';
 import { SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
@@ -13,6 +14,7 @@ import type { ViewerApi } from 'pdf-ui/viewer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pendingOverlays } from '../../operations';
 import { coreStore, initialCoreState } from '../core/core-store';
+import { adoptHandle, dropHandle } from '../core/handles';
 import { exportAnnotationData, importAnnotationData } from './annotation-data';
 import { writeAnnotations } from './annotation-marks';
 import { annotationsStore, existingAnnotationsRead, initialAnnotationsState } from './annotations-store';
@@ -100,13 +102,70 @@ describe('exporting the review', () => {
     expect(notice()).toBe(t('ann.data.exported', { count: 2, name: 'report-comments.json' }));
   });
 
-  it('downloads the marks as FDF', async () => {
-    writeAnnotations(session, [mark('a')]);
-    await exportAnnotationData(host(), 'fdf');
+  it('downloads the marks as Acrobat’s comment FDF, in user space with the page height the viewer measures', async () => {
+    writeAnnotations(session, [mark('a', { quads: [], rect: [10, 20, 30, 40] })]);
+    await exportAnnotationData(host(viewerWith()), 'fdf');
     expect(downloads[0]?.name).toBe('report-comments.fdf');
     expect(downloads[0]?.blob.type).toBe('application/vnd.fdf');
     expect(notice()).toBe(t('ann.data.exported', { count: 1, name: 'report-comments.fdf' }));
-    expect(await downloads[0]?.blob.text()).toContain('%FDF');
+    const text = (await downloads[0]?.blob.text()) ?? '';
+    expect(text.startsWith('%FDF-1.2\n1 0 obj\n<< /FDF << /Annots [2 0 R 3 0 R]')).toBe(true);
+    expect(text).toContain('/F (report.pdf)');
+    expect(text).toContain('/Subtype /Text');
+    // The note's box 10,20–30,40 from the top of an 800 pt page is 760,780 from the bottom.
+    expect(text).toContain('/Rect [10 760 30 780]');
+  });
+
+  describe('the /ID of the FDF', () => {
+    /** A handle whose pdf.js document reports `fingerprints`, registered for the active tab. */
+    function openWith(fingerprints: readonly (string | null)[] | undefined): void {
+      adoptHandle(session.active?.id ?? '', { raw: { fingerprints } } as unknown as PdfDocumentHandle);
+    }
+    const exportedText = async (): Promise<string> => {
+      writeAnnotations(session, [mark('a', { rect: [10, 20, 30, 40] })]);
+      await exportAnnotationData(host(viewerWith()), 'fdf');
+      return (await downloads[0]?.blob.text()) ?? '';
+    };
+
+    afterEach(() => {
+      dropHandle(session.active?.id ?? '');
+    });
+
+    it('is the two fingerprints pdf.js reports for the open file', async () => {
+      openWith(['ab12cd34', 'ef567890']);
+      expect(await exportedText()).toContain('/ID [<ab12cd34><ef567890>]');
+    });
+
+    it('repeats the first fingerprint when the file has no second one', async () => {
+      openWith(['ab12cd34', null]);
+      expect(await exportedText()).toContain('/ID [<ab12cd34><ab12cd34>]');
+    });
+
+    it('is left out when the file reports none, or none that is hex', async () => {
+      openWith(undefined);
+      expect(await exportedText()).not.toContain('/ID');
+      downloads.length = 0;
+      openWith([null, null]);
+      expect(await exportedText()).not.toContain('/ID');
+      downloads.length = 0;
+      openWith(['not hex', 'ab12']);
+      expect(await exportedText()).not.toContain('/ID');
+    });
+  });
+
+  it('adds what it had to skip to the FDF notice: a page the viewer cannot measure', async () => {
+    writeAnnotations(session, [mark('a', { rect: [10, 20, 30, 40] }), mark('b', { pageIndex: 1 })]);
+    await exportAnnotationData(host(viewerWith([1])), 'fdf');
+    expect(notice()).toBe(
+      `${t('ann.data.exported', { count: 1, name: 'report-comments.fdf' })} ${t('ann.data.fdfSkipped', { count: 1 })}`,
+    );
+  });
+
+  it('says the review is empty when no page can be measured for the FDF either', async () => {
+    writeAnnotations(session, [mark('a')]);
+    await exportAnnotationData(host(), 'fdf');
+    expect(notice()).toBe(t('ann.data.empty'));
+    expect(downloads).toEqual([]);
   });
 
   it('downloads the whole review as XFDF, placing marks with the page height the viewer measures', async () => {

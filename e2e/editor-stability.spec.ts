@@ -174,15 +174,20 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   // written to a protected tab, so neither its form nor its drawing layer may appear.
   await useAdvancedMode(page);
   const redactForm = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
-  const redactLayer = page.getByRole('application', { name: 'Draw rectangle', exact: true });
+  const redactLayer = page.locator('[data-redaction-layer]');
+  // The form is a lazy chunk behind an operation that holds the strip's button off while it
+  // runs (opening the form is one). Selected by text, not role: a modal palette hides the
+  // strip from the accessibility tree. Enabled again means that whatever an attempt started
+  // has ended, with its form up or its failure shown, so an absence asserted after it is
+  // conclusive without a guessed delay.
+  const unlockCopy = page.locator('button', { hasText: 'Create unlocked copy' });
 
   // (a) The command palette lists the command but disabled; choosing it opens nothing.
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill('Redaction (Permanent Erase)');
   await expect.soft(page.getByRole('option', { name: /Redaction \(Permanent Erase\)/ })).toBeDisabled();
   await page.keyboard.press('Enter');
-  // The form is a lazy chunk: give an opening one the time it needs before asserting absence.
-  await page.waitForTimeout(2_000);
+  await expect(unlockCopy).toBeEnabled();
   await expect.soft(redactForm).toHaveCount(0);
   await page.keyboard.press('Escape');
 
@@ -197,7 +202,7 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   const permanent = tools.getByRole('button', { name: /^Permanent Redaction/ });
   await expect(permanent).toBeVisible();
   await permanent.click();
-  await page.waitForTimeout(2_000);
+  await expect(unlockCopy).toBeEnabled();
   await expect(redactForm).toHaveCount(0);
   await expect(redactLayer).toHaveCount(0);
 });
@@ -234,6 +239,8 @@ test('an operation applied from the tools panel reaches the document', async ({ 
   // back cancels the operation in flight — the apply that has just started — and the result
   // would be dropped with no notice and the page left as it was.
   await open(page, 'watermark.pdf', toolFixturePdf());
+  // Watermarks are an advanced-mode tool: the simple mode's palette does not offer them.
+  await useAdvancedMode(page);
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill('Watermark');
   await page.keyboard.press('Enter');
@@ -277,6 +284,27 @@ test('document properties written in the browser reach the exported file', async
   const produced = await readProducedPdf(new Uint8Array(readFileSync(path)));
   expect(produced.title).toBe('Şişli Şubesi — Yıllık Rapor');
   expect(produced.producer).toBe('SsPdfEditor (MuPDF 1.28)');
+});
+
+test('document properties with nothing changed say so and close, instead of staying on the report', async ({
+  page,
+}) => {
+  await open(page, 'properties-unchanged.pdf', toolFixturePdf());
+  await useAdvancedMode(page);
+  await page.keyboard.press('Control+k');
+  await page.getByRole('combobox').fill('Document properties');
+  await page.keyboard.press('Enter');
+  const form = page.getByRole('region', { name: 'Document properties' });
+  await expect(form).toBeVisible({ timeout: 30_000 });
+  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  // The report is still shown: the run found nothing to write and says so there too.
+  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
+  await expect(form.getByText('No changes to write; document untouched.').first()).toBeVisible();
+  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
+
+  // A result with no file has nothing to apply: the notice is the answer and the panel closes.
+  await expect(form).toBeHidden({ timeout: 30_000 });
+  await expect(notice(page, 'No changes to write; document untouched.')).toBeVisible();
 });
 
 test('an attachment added and removed in the panel is in, then out of, the exported file', async ({

@@ -28,6 +28,8 @@ test.describe.configure({ timeout: 180_000 });
 const PENDING =
   'Unapplied redaction marks; saving, exporting, printing and every tool that produces a file or moves pages are held.';
 
+const BUSY = 'Another operation is running — wait for it to complete.';
+
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 test('a second Save while the save picker is still open is refused, and the first one then completes', async ({
@@ -46,17 +48,20 @@ test('a second Save while the save picker is still open is refused, and the firs
   // The first Save owns the document while its picker is open: the second one is told so,
   // and it opens no picker of its own.
   await page.keyboard.press('Control+s');
-  await expect(notice(page, 'Another operation is running — wait for it to complete.')).toBeVisible();
+  await expect(notice(page, BUSY)).toBeVisible();
   expect(await page.evaluate(() => Reflect.get(window, '__saveCalls'))).toBe(1);
 
-  // Closing the tab is refused for the same reason: the document is mid-save.
+  // Closing the tab is refused for the same reason: the document is mid-save. The second
+  // Save's line is still up, so it is dismissed first: the close's own refusal is then the
+  // line that shows again, which is the proof that the close handler ran and refused.
+  await dismissNotice(page, BUSY);
   await page
     .getByRole('button', { name: /^held\.pdf/ })
     .first()
     .click();
   await page.getByRole('button', { name: 'Close tab' }).click();
+  await expect(notice(page, BUSY)).toBeVisible();
   // A refused close asks nothing: the edited document's "Close" question never comes up.
-  await page.waitForTimeout(500);
   await expect(page.getByRole('dialog', { name: /Close "held.pdf"/ })).toHaveCount(0);
   await expect(page.locator(CANVAS).first()).toBeVisible();
 
@@ -172,7 +177,7 @@ test('Word and text export, Print and Snapshot are held back while a redaction m
   }
 });
 
-async function dismissNotice(page: Page): Promise<void> {
-  await notice(page, PENDING).getByRole('button', { name: 'Close' }).click();
-  await expect(notice(page, PENDING)).toHaveCount(0);
+async function dismissNotice(page: Page, text: string = PENDING): Promise<void> {
+  await notice(page, text).getByRole('button', { name: 'Close' }).click();
+  await expect(notice(page, text)).toHaveCount(0);
 }

@@ -15,7 +15,7 @@
  *    gesture leaves the original state exactly as it was.
  */
 
-import type { JsonValue } from 'pdf-model';
+import { type JsonValue, workingBytesKey } from 'pdf-model';
 import { ToolError } from 'pdf-shared';
 import {
   isEmptyRemoval,
@@ -97,11 +97,7 @@ export function removeTargets(host: MarksHost, keys: readonly string[]): boolean
       // moved is the document the request was planned against — the tab and the
       // bytes behind it.
       const fresh = session.getSnapshot().tabs.find((item) => item.id === tab.id) ?? null;
-      if (
-        fresh === null ||
-        session.active?.id !== tab.id ||
-        fresh.working.produced?.id !== tab.working.produced?.id
-      )
+      if (fresh === null || session.active?.id !== tab.id || workingBytesKey(fresh) !== workingBytesKey(tab))
         return;
       if (request.existing.length === 0) {
         session.setOverlays(

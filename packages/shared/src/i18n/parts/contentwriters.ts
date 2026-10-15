@@ -90,6 +90,12 @@ export const contentWritersPart = {
   'op.progress.sign.verify': 'Üretilen imza doğrulanıyor',
   'op.note.sign.fieldCreated': 'Yeni imza alanı oluşturuldu: {name}',
   'op.note.sign.fieldFilled': 'Belgedeki boş imza alanı dolduruldu: {name}',
+  'op.note.sign.fieldPlaceKept':
+    'Boş imza alanı ({name}) formun verdiği yerde ve boyutta kullanıldı; seçtiğiniz damga konumu uygulanmadı.',
+  'op.note.sign.earlierKept':
+    'Belgedeki {count} önceki imza geçerli kalır: yeni imza dosyaya ek bir sürüm olarak eklendi, önceki imzaların kapsadığı baytlar değişmedi.',
+  'op.note.sign.earlierLost':
+    'Belgede {count} önceki imza var. Dosya ek sürüm olarak yazılamadı (onarım gerektiriyordu), bu yüzden baştan yazıldı ve önceki imzalar artık doğrulanmayacak.',
   'op.note.sign.signed': 'PAdES B-B imzası yazıldı ({digest}, {bytes} bayt CMS).',
   'op.note.sign.byteRange':
     'İmzalanan aralık: {start}–{end} ve {tail} baytlık kuyruk; aradaki baytlar imzanın kendisi.',
@@ -103,7 +109,7 @@ export const contentWritersPart = {
   'sign.field.passwordHint': 'Parola yalnızca anahtarı açmak için kullanılır, hiçbir yerde saklanmaz.',
   'sign.field.name': 'İmza alanı adı (isteğe bağlı)',
   'sign.field.nameHint':
-    'Boş bırakılırsa belgedeki boş imza alanı doldurulur; yoksa bu adla yeni alan oluşturulur.',
+    'Boş bırakılırsa belgedeki ilk boş imza alanı olduğu yerde doldurulur, yoksa yeni alan oluşturulur. Ad verirseniz yalnızca bu adlı boş alan doldurulur; böyle bir alan yoksa bu adla yeni alan oluşturulur.',
   'sign.field.digest': 'Özet algoritması',
   'sign.field.digestHint': 'SHA-256 B-B için yaygın olandır; daha uzun özet daha büyük CMS yazar.',
   'sign.digest.sha256': 'SHA-256',

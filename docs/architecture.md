@@ -32,7 +32,7 @@ Five rules explain most of the decisions in this codebase:
    Operations are `bytes in → bytes (or files) out` plus a report
    (`packages/pdf-core/src/ops/types.ts`).
 2. **Document state is a data model, not a store library.** Sessions, the operation
-   journal, drafts and the save router are plain TypeScript in `pdf-model`, DOM-free and
+   journal and drafts are plain TypeScript in `pdf-model`, DOM-free and
    Node-testable. React subscribes through `useSyncExternalStore`.
 3. **Undo is chronological, across engines.** Every applied operation is a *new whole
    PDF*; the journal records that fact as data and keeps the bytes in a bounded snapshot
@@ -158,7 +158,8 @@ which nothing draws (the editor uses `regular`, `bold`, `fill` and `duotone`; Ku
 (`LocaleInfo.load`), because only one is ever shown, and `main.tsx` awaits the interface
 language's catalogue before the first render. `main.tsx` imports from `pdf-ui/ui`, not the
 `pdf-ui` barrel, which the editor's measure layer (`features/measure/MeasureOverlay.tsx`) loads
-lazily.
+lazily, and `warmPdfjs` from `pdf-core/engines/pdfjs-handle`, not the `pdf-core` barrel, which
+re-exports every operation module.
 
 **The editor is its own chunk.** The home screen is all the first paint needs, so what only an
 open document shows leaves the entry graph: `features/shell/editor.ts` re-exports `EditorSurface`
@@ -174,15 +175,28 @@ what they render for a document that is still opening — the home screen and he
 strip switch in one commit and no empty frame is painted. The chunk is requested twice over:
 `main.tsx` warms it on idle with the engine, so a document opened after the first seconds never
 waits for it, and `ShellBody` asks for it as soon as a file is opening or a tab exists
-(`requestEditor`), in parallel with reading and parsing the file. A fetch that fails (offline,
-evicted cache) is reported as the `asset-offline` notice and forgotten, where the browser retries.
+(`requestEditor`), in parallel with reading and parsing the file. A fetch that fails is reported
+as the `asset-offline` notice (offline, evicted cache) or the `asset-stale` notice (online: the
+release replaced the file) and forgotten, where the browser retries.
+
+**A chunk that cannot be fetched never leaves a white page.** `main.tsx` renders `App` inside
+`RootBoundary` (`apps/web/src/recovery.tsx`): a render that throws, most often a `lazy()` chunk
+that rejects inside its `Suspense`, ends in a recovery screen in the interface language (the
+classified failure, what becomes of the open documents, a **Reload** button), and the
+boundary's crash handler writes every open tab's draft once more (`flushDrafts`), because the
+autosave timer goes down with the shell. Narrower boundaries (`features/shell/SurfaceBoundaries.tsx`)
+contain what the rest of the editor does not depend on: the right dock's panel (a sentence in its
+place, keyed by the tab) and the layers over the pages (nothing drawn, the notice line says why).
+`PdfViewerPane` guards its own engine import: a failure is a message and a Reload button in the
+pane, and the shell is told there is no viewer. The browser keeps a failed dynamic import for the
+page's lifetime, so the way out of each of these is a reload, not a retry in place.
 
 The entry chunk is not all of the first paint: the `modulepreload` links the build adds for
 it (Kumo's shared dialog chunk, the React runtime, the `mupdf-write` vocabulary and the few
 `pdf-core` modules the shell's hooks and the editor chunk share) download with it. The first
-paint is the entry chunk plus every one of those links, gzipped at Node's default level: about
-248 KiB, of which the entry chunk is about 187 KiB (the compiled `App` and status bar are about
-5 KiB of it). The 250 KiB target
+paint is the entry chunk plus every one of those links, gzipped at Node's default level:
+245.5 KiB over nine files, of which the entry chunk is 198.7 KiB (the compiled `App` and status
+bar are about 5 KiB of it). The 250 KiB target
 (`BUILD_BUDGETS.firstPaintJsGzipBytes`) is checked on that sum: `pnpm check:budgets`
 (`tools/check-build-budgets.mjs`) reads the built `apps/web/dist/index.html`, prints each file's
 gzip size and fails when the sum is over the budget; it is a step of `pnpm ci:verify` and of the
@@ -194,8 +208,8 @@ CI `verify` job, after `pnpm build`.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (37 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) becomes `asset-offline`, never a damaged document. |
-| `limits.ts` | Two-tier limits (`LIMITS`), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()`. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (39 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
+| `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`. |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
 Because `MessageKey` is a union of literal keys, passing an unknown key is a compile
@@ -208,7 +222,7 @@ id rather than inventing English copy when the catalogue has no entry.)
 
 ---
 
-## 4. `pdf-model` — sessions, history, drafts, save routing
+## 4. `pdf-model` — sessions, history, drafts, outputs
 
 ### 4.1 Three versions of a document
 
@@ -276,56 +290,59 @@ data therefore cannot be wired in at all.
   bytes. There is exactly one `keepNewest` constant in the tree (`SNAPSHOT_BUDGET` in
   `packages/pdf-model/src/operations.ts`); `session.ts` reads it from there.
 
-### 4.4 Save routing
+### 4.4 Saving a version
 
-`save-router.ts` picks the paths a change set actually needs and orders them by
-dependency. It is not a chain of engines run "just in case".
+Every capability runs when the user applies it, and nothing runs again at save time: its
+result becomes the working version (§4.1) and a
+`document.change` entry (§4.2), in the order the user applied them. Save and Export
+therefore do not replay anything; they write the bytes of the **current version** after one
+preparation (`features/save/prepare-output.ts`), then record what was written
+(`features/save/save-actions.ts`).
 
 ```mermaid
 flowchart TD
-    A["ChangeSummary"] --> B{"encrypted input and plain-bytes work?"}
-    B -->|yes| C["1 decrypt-input (in memory only, never persisted)"]
-    B -->|no| D
-    C --> D{"base PDF: exactly one path"}
-    D -->|redaction| E["mupdf-rewrite — full rewrite, incremental is over"]
-    D -->|page order| F["pdfjs-extract-pages — keeps outline, AcroForm, labels"]
-    D -->|"annotations or forms"| G["pdfjs-save-document — incremental fast path"]
-    D -->|"nothing"| H
-    E --> H{"writer steps needed?"}
-    F --> H
-    G --> H
-    H -->|"overlays, boxes, layers, widgets"| I["writer-steps (MuPDF)"]
-    H -->|no| J
-    I --> J{"metadata change or redaction?"}
-    J -->|yes| K["metadata-write — after the final MuPDF write"]
-    J -->|no| L
-    K --> L{"encryption requested, or input was protected?"}
-    L -->|yes| M["qpdf-encrypt — AES-256 + permissions, or re-apply input protection"]
-    L -->|no| N
-    M --> N{"signature requested?"}
-    N -->|yes| O["signature-finalize — after content and encryption"]
-    N -->|no| P["write, then mark only that version saved"]
-    O --> P
+    A["Save or Export"] --> B{"facts and form inventory read, no unapplied redaction marks?"}
+    B -->|no| X["notice, nothing is written"]
+    B -->|yes| C["materializeBase: engine values, else the newest produced bytes, else a copy of the master"]
+    C --> D["session annotations and measurements written into those bytes"]
+    D --> E["inspectProtection reads the output's encryption back from the bytes"]
+    E --> F["planSaveExecution: incremental = the output keeps every byte of the opened file"]
+    F --> G{"signatures in the opened, produced or earlier version?"}
+    G -->|no| I["verifyForWrite: page count, form fields, this run's own steps"]
+    G -->|"the save would break or extend one"| H["signature warning, the user confirms or declines"]
+    H -->|declined| X
+    H -->|confirmed| I
+    I --> J["Save writes in place, through the file picker or as a download; Export downloads"]
+    J --> K["Save only: addOutput marks that version saved, with steps and verification"]
 ```
 
-The path ids (`SavePathId`) are stable names: `decrypt-input` and `qpdf-encrypt` carry the
-engine tag `qpdf`, but the work behind them is MuPDF's (§5.6), the only encryption engine in
-the build. With no change at all the plan is the single path `no-op`.
+`materializeBase()` is the one place engine-side edits meet the bytes (`apps/web/src/operations.ts`):
+a pdf.js `saveDocument()` for the form values and annotations the engine holds, the
+static-XFA datasets sync, then the session's own annotation marks and measurements through
+the MuPDF writers. Redaction marks are **not** applied here: a Save with unapplied marks is
+refused, because it would mark the tab clean while the delivered file still contains the
+content the user asked to remove.
 
-Contract points the router returns and the report shows:
+Contract points the plan returns and the report shows (`apps/web/src/save-plan.ts`):
 
-- `incremental` is true **only** for `no-op` and for the single pdf.js `saveDocument` path
-  on an unencrypted input, including the steps MuPDF appends to it as one more revision
-  (`saveIncremental`): the static-XFA datasets sync, and the annotation settle step and
-  sticky notes (`writeAnnotationsToFile`). Any other writer ends the fast path and says
-  `incremental: false`; so does an append MuPDF cannot make and turns into a rewrite.
-- `rewritesStructure` is true for redaction, writer steps and page composition — those
-  normalise object numbering, compression and XMP.
-- `reprotects` is true when the input was encrypted and the user did not ask for
-  protection to be removed: protection is never silently downgraded.
-- Redaction forces the MuPDF full rewrite, because `canBeSavedIncrementally()` is false
-  after `applyRedactions()` and an incremental write would keep the erased revision
-  reachable through `/Prev`.
+- `incremental` is a byte fact, not a guess from engine names: it is true only when the
+  output starts with every byte of the opened file (an identical file counts), which is
+  what an incremental update is. A save that only adds pdf.js engine values, the
+  static-XFA datasets sync, and the annotation settle step and sticky notes
+  (`writeAnnotationsToFile`) appends revisions and stays incremental. Any operation that
+  rewrote the file earlier says `incremental: false`, and so does an append MuPDF cannot
+  make and turns into a rewrite.
+- `steps` are the steps this run itself executed (pending engine values, the XFA sync,
+  annotations, measurements), not a replay recipe; `appliedSteps` are the historical
+  operations the applied journal already put into the bytes, excluding undone entries.
+  Verification is declared against the run's own steps only.
+- The output's protection is read back from the bytes (`inspectProtection`) and stored on the
+  output as `encrypted`; it is not a flag a dialog chose.
+- A rewrite is the operation's own fact. Redaction is a MuPDF full rewrite with a single
+  revision, because `canBeSavedIncrementally()` is false after `applyRedactions()` and an
+  incremental write would keep the erased revision reachable through `/Prev` (§5.4).
+- The only ordering rule between operations that exists in the tree is the batch runner's
+  dependency order (`planBatch`, §5.6), which orders a rule set before it runs.
 
 ### 4.5 Drafts and the vault
 
@@ -339,6 +356,10 @@ Contract points the router returns and the report shows:
   System Access handle is referenced by an opaque key; a handle-less source is written to
   the vault **once** on open. `sourceKeyFor()` derives the key from the content hash, so
   the same document never writes twice and two tabs share one blob.
+- A draft also carries the SHA-256 of the file the editor last wrote in place
+  (`lastWrittenSha256`): outputs are not persisted, so without it a restored tab would
+  compare the file on disk with the *original* source and report a conflict nobody caused.
+  A source page count or write hash that is not valid makes the draft unreadable.
 - `parseDraft()` treats stored data as untrusted input and validates the journal **as a
   unit**. A filtered array would be worse than a rejected one: the persisted cursor points
   into that array, so dropping one malformed entry silently shifts every later state.
@@ -355,6 +376,8 @@ retain**:
   references it — no manifest, no open document, no peer window;
 - `enumerationFailed` or any `unreadable` manifest makes the plan **refuse**
   (`{ ok: false, reason: 'incomplete-inventory' }`) rather than sweep;
+- `peerReferences` is a required input of both plans: "no other window" is stated by the
+  caller, never implied by an omitted field;
 - sensitive documents own nothing (`keysForDraft` returns the source key and snapshot
   keys, and a sensitive document is never persisted at all);
 - deletion is logical, not physical — it cannot overwrite the bytes underneath and cannot
@@ -365,11 +388,20 @@ retain**:
 `trust-roots.ts` stores exactly what the user imported: the certificate DER (base64), a
 label and a timestamp, in a versioned file (`version: 1`). There is no built-in CA list,
 because shipping one would vouch for certificates the user never chose. base64 is
-implemented in the module rather than via `btoa`, so the code runs identically in Node and
-the browser. The decoder ignores every character outside the base64 alphabet (line breaks, PEM
+implemented once, in `base64.ts` (shared with revocation lists and the draft bitmaps), rather than
+via `btoa`, so the code runs identically in Node and the browser. The decoder ignores every character outside the base64 alphabet (line breaks, PEM
 indentation), so it has no failure of its own; a stored root that decodes to fewer than 64 bytes is
 dropped rather than trusted, and `trustRootFrom` derives the id from the DER, so importing
 the same certificate twice is one entry.
+
+The roots and the revocation lists live in the app's own OPFS directory, and
+`features/facts/trust-store.ts` keeps the store equal to the file: a change is written first and
+applied to the store (and to the verdicts that depend on it) only when the write succeeded. A write
+the browser refuses leaves the store as it was and says why (the same storage reason as a failed draft
+copy, `storageReasonKey`), so a removed root never returns after a reload and an added one never
+judges signatures for a session only. The writes run one at a time and each change is derived from the
+state its turn finds, so two quick imports both land; a read the browser refuses is reported rather
+than shown as an empty list.
 
 ---
 
@@ -382,8 +414,8 @@ From here on, a path that starts with `ops/` or `engines/` is relative to
 
 | Adapter | Upstream | Threading | Used for |
 |---|---|---|---|
-| `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
-| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
+| `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/v<digest>/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
+| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction audit, encryption, page boxes (auto-crop), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
 | `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
@@ -442,7 +474,15 @@ writer does, and the steps it reports:
   `ops/convert-ooxml.ts` over JSZip and `@xmldom/xmldom` (a part xmldom cannot read, or that is empty, is
   `corrupt-document`; an attribute is read through `attribute()`, which answers `null` when it is
   absent, because xmldom's `getAttribute` answers `''` and no default would ever apply; one it had to repair, such as a sheet cut off mid-row, is converted and
-  named in a `lost` note), text and CSV by `ops/convert-text.ts` (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are. Every part is
+  named in a `lost` note; a boolean attribute is read through `onOff()`, which takes `1`, `true` and `on`
+  as on and `0`, `false` and `off` as off), text and CSV by `ops/convert-text.ts` (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are.
+  The reads are bounded by what actually comes out, not by what a file declares: every ZIP entry is
+  inflated through JSZip's `internalStream`, which counts the bytes chunk by chunk and stops at 64 MiB
+  for one entry or 256 MiB for one package (`file-too-large`; images count too), and a DOCX package is
+  measured that way in full before mammoth, which has no limit of its own, opens it. A sheet's merged
+  ranges are cut to the table that is drawn and may together cover no more cells than it has (the sheet
+  is then reported as damaged); a CSV row of more than 1000 fields, or a table of more than two million
+  cells (the kept rows × the widest row), is refused as `file-too-large`. Every part is
   laid out (`Document.style` adds only the `@page` margin, before `layout`) and run through
   one `DocumentWriter`. The source's outline and links are written afterwards by the
   existing writers (`applyOutlineEdit`, `applyLinkEdit`, schemes other than `http:`,
@@ -450,8 +490,13 @@ writer does, and the steps it reports:
   count compared. `ops/convert-formats.ts` holds the extension table with no dependencies,
   so the shell can recognise a convertible file without loading the converters;
 - PDF → Word, Excel and CSV (`ops/export-office.ts`, steps `office.read` / `office.tables` /
-  `office.write` / `verify`; `verify` is reported for Word, read back with mammoth, and for
-  CSV, read back with the RFC 4180 parser). A download: nothing is written to the document.
+  `office.write` / `verify`; `verify` is reported for Word, read back with mammoth, for Excel, read
+  back with an XML parser (`verifyXlsx`), and for CSV, read back with the RFC 4180 parser). A
+  download: nothing is written to the document. The pages are read one at a time and each is
+  reduced to what the format needs (its items for Word, its sheets for Excel and CSV) before the
+  next is read, so the layout of a long document is not held whole. Right-to-left lines are put in
+  reading order by the bidirectional algorithm (`ops/bidi.ts`: the order of pdf.js items in the
+  text export, of MuPDF's runs in the Word paragraphs, which then carry `w:bidi`).
   The ideas are pdf2docx's (MIT; none of its code), the table modes Tabula's.
   `ops/page-layout.ts` reads a page as layout. Characters with font, size, weight and colour come from the
   structured-text walker. Pictures are drawn through their own transform into a transparent
@@ -934,7 +979,10 @@ writer does, and the steps it reports:
          of its own with a `note`, written as a comment and listed in `ocrLowConfidence`; the
          pages read are listed in `ocrPages`.
   - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
-    is not read back (the XLSX path reports no `verify` step; only Word and CSV do). CSV rows are read back through `parseCsv`. A CSV text
+    is read back with an XML parser (`verifyXlsx`: every part well-formed, the sheet names, each
+    cell's reference and value, the merged ranges). The pictures of the pages are counted from
+    the page's own drawing (`ReadLayout.pictures`) and reported as left out (`sheetPicturesLost`).
+    CSV rows are read back through `parseCsv`. A CSV text
     cell that a spreadsheet would evaluate (`csvFormulaLike`: a leading `=`, `+`, `-`, `@`,
     tab or carriage return, and not a number by `cellNumber`) is written with a leading `'`
     (CWE-1236); XLSX needs no such guard, since its text cells are `inlineStr`.
@@ -943,7 +991,18 @@ writer does, and the steps it reports:
     garbage collection the engine asserted (`remove non-existent hash entry`) and the next
     render failed (`Unexpected mesh type 0`). `borrowed()` takes those wrappers off the
     finalizer. Paths, stroke states and text are kept by the binding and need nothing, and
-    the walker's fonts and images were measured sound;
+    the walker's fonts and images were measured sound.
+  - **mupdf.js 1.28.1 defect: characters above U+FFFF.** The walker read every character as
+    `String.fromCharCode(rune)`, which keeps 16 bits of a code point: U+1F600 came back as
+    U+F600, U+10000 as U+0000 (then dropped by `xmlSafe` as a control character), U+1D800 as a
+    lone surrogate. The text model (`text-source.ts`, so editing and find-and-replace) and the
+    Word export both read their characters that way. The fix is
+    `patches/mupdf@1.28.1.patch` (`String.fromCodePoint`), applied by pnpm
+    (`pnpm.patchedDependencies` in the root `package.json`) and so present in the copy
+    `fetch-engines` serves as well as in the one the unit suite imports (§13.1); the patch file
+    stays in the repository, as the AGPL asks of a changed MuPDF. `xmlSafe` also replaces a
+    surrogate with no partner by U+FFFD, since JSZip in a browser writes one as invalid UTF-8
+    (`ED A0 80`) where Node writes U+FFFD;
 - images → PDF (`ops/images.ts`, steps `images.create` / `images.embed` / `save`): every EXIF
   orientation is one unit-square matrix, so an upright phone photo stays upright and
   `contain`/`cover` use the turned photo's aspect ratio, and the embedded JPEG's own tag is
@@ -991,7 +1050,7 @@ writer does, and the steps it reports:
   page numbers handed to the engine are the source document's own, not the plan's slot index,
   so "insert pages 3-4 of this file" inserts pages 3-4;
 - imposition and the print layout (`ops/impose.ts`), where each source page is a form XObject
-  (`pageAsForm`, resources grafted once per document). A poster's rows count from the top of
+  (`pageAsForm`, resources grafted once per document). The print layout (`buildPrintDocument`) bakes annotations and form fields into the page content first (`PDFDocument.bake`), because a form XObject carries no `/Annots`. A poster's rows count from the top of
   the enlarged page, so every row of tiles prints, and the enlargement is the smaller of the
   two scales, so the whole page fits the grid. A poster refuses a fractional tile count (1.5
   columns or rows) as `range-invalid`;
@@ -1007,7 +1066,12 @@ writer does, and the steps it reports:
   not used: measured, it places the baseline outside the widget box. A field whose dictionary
   is also its widget reports its page, and a created text field gets a `/DA`. A calculation's numbers follow the
   documented grammar (`[0-9]+('.'[0-9]+)?`) and a malformed one (`1.2.3`, `1..2`) is refused, not read as a
-  shorter number;
+  shorter number. A field's value is read as a number by its `AFNumber_Format` separator style, else by
+  the separators it shows (`1.234,56`, `1,234.56` and `12,5` are numbers), and `/MaxLen` counts Unicode
+  code points on every path. Flattening draws a text or choice field again from its `/V` when the form
+  says `/NeedAppearances true` or a value sits under an empty appearance, leaves Hidden and NoView
+  widgets out, writes the widgets of a page as one content stream, and takes a parent field out of
+  `/Fields` once its last child is flattened;
 - the OCR text layer (`ops/ocr.ts` `writeOcrLayer`, step `ocr.layer`), one content stream per
   page. A word Noto Sans can spell uses it; any other uses Tesseract's glyph-less design
   rebuilt in `engines/glyphless-font.ts` (Type 0 over Identity-H, every CID drawing one empty
@@ -1018,7 +1082,11 @@ writer does, and the steps it reports:
   the glyphs drawn before the save (`subsetEmbeddedFaces`, below), a
   standard-14 face is drawn through WinAnsiEncoding (`standardFace`) only when WinAnsi can
   spell the line, and a `doc:<name>` face is the page's own font (`engines/doc-fonts.ts`,
-  §5.8); and the page geometry of the text source (`text-source.ts`);
+  §5.8), used only when it has a code for every character of the line. Noto Sans is the last
+  face: a line with a character it has no glyph for is refused as `glyph-missing`, naming the
+  characters, before anything is drawn, because glyph 0 would be a box or unextractable text;
+  and the page geometry of the text source (`text-source.ts`, whose `y` is measured from the
+  top edge of the page box, so a box that does not start at `y = 0` round-trips);
 - the batch runner's page count (`ops/batch.ts`), measured through `openForWrite`, so a
   password-locked item fails on its own with `encrypted-unsupported`;
 - signing and signature verification (`ops/sign.ts`, `ops/signature-status.ts`); the Node
@@ -1092,7 +1160,7 @@ carry their alpha the same way, since pdf.js and PDFium paint the `/AP` and igno
 stroke width is the annotation's own `/BS /W` (and `/Border`), not only a number inside the
 appearance stream: a reader that rebuilds the appearance draws the border, and reopening the
 file here reads back the thickness that was drawn. The
-viewer's `imageResourcesPath` points at `PDFJS_ASSETS.images` (`/engines/pdfjs/images/`,
+viewer's `imageResourcesPath` points at `PDFJS_ASSETS.images` (`/engines/pdfjs/v<digest>/images/`,
 pinned by `fetch-engines`), where pdf.js finds the `annotation-<name>.svg` icon it lays over a
 file's own `/Text` note.
 
@@ -1148,7 +1216,15 @@ mechanics are arranged around one number, `/ByteRange`:
    `/ByteRange` as four integers of a fixed 10-digit width (`2000000000`).
 2. The document is serialised **once** through the MuPDF writer base (no object streams,
    no appearance regeneration); an encrypted document is refused, since its placeholders
-   would be encrypted too.
+   would be encrypted too. A document that already carries a signature is **appended to**
+   as an incremental update instead of rewritten (a rewrite moves the bytes the earlier
+   signatures cover, and an append is what makes a counter-signature possible); the
+   output must start with every input byte, or the operation throws. Only a file MuPDF
+   cannot append to (one it repaired on open) is rewritten, and the report then carries a
+   `lost` note, as `protectDocument`'s does. The written field is told apart from the
+   others by its full name, which a new field may not repeat; a named request fills only
+   the empty field of that name and otherwise creates one, and a reused field also gets
+   its `/AP`.
 3. The `/Contents` placeholder is located in the produced bytes (uniqueness enforced); the
    real ByteRange is computed from those offsets and written over the same digits, with a
    length-equality assertion.
@@ -1170,8 +1246,9 @@ on every export of a document signed in the session, and the produced version al
 miss an edit that had already broken the opened file's signature.
 
 **CMS (`signature-cms.ts`).** `pkijs` + `asn1js` for structure, WebCrypto for crypto — no
-network. Signed attributes are `contentType`, `signingTime`, `messageDigest` and
-`signingCertificateV2`; the attribute SET is DER-sorted (X.690 §11.6) and the bytes signed
+network. Signed attributes are `contentType`, `messageDigest` and
+`signingCertificateV2` — no `signingTime`, which PAdES B-B (EN 319 142-1 §6.3) forbids;
+the time is the signature dictionary's `/M`. The attribute SET is DER-sorted (X.690 §11.6) and the bytes signed
 are the DER of the attributes re-tagged to the universal `SET OF` tag (RFC 5652 §5.4) —
 both measured against `openssl cms -verify`. Algorithms come from the key: RSA PKCS#1 v1.5
 (with the explicit ASN.1 NULL parameter RSA requires) or ECDSA P-256/384/521, with
@@ -1179,12 +1256,20 @@ SHA-256/384/512.
 
 **Identity (`signature-pkcs12.ts`).** PKCS#12 only, parsed with `checkIntegrity: true`, so
 a wrong password or a damaged container cannot be signed with. The key is imported
-**non-extractable** with `['sign']` only, and the container bytes are dropped after
-parsing. There is no OS keychain integration.
+**non-extractable** with `['sign']` only. The signer is the certificate whose public key
+the private key signs for (not the first one the container lists), and the password's
+bytes and the key's plain PKCS#8 are overwritten with zeros when the import ends (the
+password string itself cannot be wiped). There is no OS keychain integration.
 
 **Verification (`ops/signature-status.ts`).** Signatures are found by **scanning the raw
-bytes** for `/ByteRange` and the `/Contents` whose own offset falls inside the gap; a scan
+bytes** for `/ByteRange` and the `/Contents` whose own offset falls inside the gap — in one pass
+that also finds the last `startxref`; a gap wider than the `/Contents` string (delimiters
+included) leaves other bytes unsigned, so the range reports `covers-partial` even when it
+reaches the end of the file; a scan
 entry is only accepted when its integers agree with the object graph's (read with MuPDF).
+The signer certificate is the one the `SignerInfo`'s `sid` names (`IssuerAndSerialNumber` or key
+identifier), wherever the CMS lists it; when the `sid` names none of them there is no signer
+certificate and the signature is `unchecked`, never `invalid`.
 MuPDF hands numbers over as 32-bit floats, so above 2^24 (a file over 16 MiB) "agree" means
 the scanned integers round to what the object graph read; the scan's exact integers are what
 is hashed, and ranges that differ but round alike pair with nothing (`unchecked`). Only a
@@ -1218,8 +1303,14 @@ certificate), and `validationTime` with its `validationTimeSource`.
 **Trust (`signature-trust.ts`).** Path building follows the RFC 5280 §6.1 shape: candidate
 issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates, each link's
 signature verified over the child's `tbsCertificate`, validity windows checked against the
-supplied clock, and `basicConstraints` cA / `keyUsage.keyCertSign` / `pathLenConstraint` /
-`nameConstraints` enforced. **Policy processing (RFC 5280 §6.1.5) is deliberately not
+supplied clock, and `basicConstraints` cA (on every issuer but the trust anchor — the user's
+import is the statement that it may issue, and a v1 self-signed root has no extensions) /
+`keyUsage.keyCertSign` / `pathLenConstraint` / `nameConstraints` enforced. Depth and candidate
+counts bound one path, not the number of paths, so the search is also bounded in work: a
+certificate from which no imported root is reachable is never entered, each (certificate,
+issuer) signature is verified once, and after 2048 expansions or 128 distinct signature
+verifications the answer is `indeterminate` with reason `search-limit`; the search yields to
+the event loop every 64 expansions. **Policy processing (RFC 5280 §6.1.5) is deliberately not
 implemented**, and a critical extension outside the applied set forces `indeterminate`
 rather than being ignored. A certificate or extension whose DER cannot be read, and name constraints that cannot be read or evaluated,
 give `indeterminate` (`malformed` / `unsupported-critical-extension`), never a pass. The verdict carries
@@ -1236,11 +1327,16 @@ settings directory, `packages/pdf-model/src/revocation-lists.ts`, file `revocati
 dates shown in the panel), a CRL or OCSP response in the signature's CMS (the Adobe
 `adbe-revocationInfoArchival` attribute, read from the signed *and* unsigned attributes, and
 `SignedData.crls`) or in the document's `/DSS` (`Certs`, `CRLs`, `OCSPs`, read by reference and
-bounded to 256 entries / 16 MiB). The signer certificate and every certificate above it, up to
+bounded to 256 entries / 16 MiB, the budget checked against a stream's `/DL` and stored length
+before it is decoded). The signer certificate and every certificate above it, up to
 but not including a self-signed root, are checked.
 
 - **Who may speak for whom.** The chain is rebuilt from *signatures* (each certificate's issuer
-  is the pool member whose key verifies it), and a list is accepted for a certificate only when
+  is the pool member whose key verifies it; each step tries at most eight same-named
+  candidates, the key-identifier match first and each distinct certificate once, and the chain
+  ends where it would loop back on itself, so a pool of hundreds of same-named certificates costs
+  a bounded number of verifications and an issuer it crowds out is `no-issuer`, never clean), and
+  a list is accepted for a certificate only when
   it is signed by that verified issuer: the CRL's issuer name must match, its signature must
   verify, the issuer's `keyUsage` must allow `cRLSign` when present and the issuer must be valid
   at `thisUpdate`. An OCSP response must be signed by the issuer or by a delegate the issuer
@@ -1276,7 +1372,10 @@ the CMS signature verify with the TSA certificate found by its `sid`; that certi
 `unchecked`. The TSA's chain is validated by `signature-trust.ts` at `genTime` (its critical
 `extKeyUsage`, which RFC 3161 mandates, is passed as a leaf extension the caller enforces) and its
 certificates go through §5.3.1. `status` says what the token is; `trusted` says whether its time
-may be used: valid, chained to an imported root, nothing revoked.
+may be used: valid, chained to an imported root, and every certificate of the TSA cleared by a
+verified list issued after `genTime` — a certificate no list speaks for is `unknown`, and unknown
+is never clean, as for the signer. At most 64 signature timestamp tokens are read from one
+signature, and when several verify the first trusted one is used, else the first valid one.
 
 `signature-validation.ts` orders it: the timestamp first, then the validation time
 (`timestamp` > `timestamp-untrusted` > claimed `signing-time` > `clock`), then trust (validated at the
@@ -1303,6 +1402,7 @@ sequenceDiagram
     M->>M: structured-text coverage probe (empty marks are reported)
     M->>M: applyRedactions(black_boxes=false, lineArt=remove-if-touched, image/text method)
     M->>M: sweep annotations + form fields under the marks (ops/redact-annots.ts)
+    M->>M: marked pages' thumbnails + tag text, and (option) every attached file (ops/redact-leaks.ts)
     M->>M: save garbage=compact,compress,clean (single revision, no /Prev)
     M->>V: produced bytes
     V-->>UI: re-opened, per-glyph check, annotation check; a glyph >=50% covered, or any annotation under a mark, fails verification
@@ -1350,6 +1450,32 @@ Details that matter:
   its `save(garbage=…)`) with `formFieldCount`/`formFieldValues` for `applyRedactions`, so the
   save-time check measures a removed field as a declared change instead of calling the run
   unverified.
+- `applyRedactions` does not touch three more things that kept the erased words or a file the
+  user asked to clear, and `ops/redact-leaks.ts` cleans them. *Attachments:* MuPDF's
+  `deleteEmbeddedFile` left `/Root /AF`, a page's `/AF` and every `/FileAttachment` annotation, and an
+  empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
+  reads from the Attachments panel — that list is empty for a file that is attached only as an
+  annotation or in `/AF` — and the step removes every attached file: each file specification of the
+  name tree (walked through `/Kids` as well; the tree and a `/Names` that holds nothing else leave
+  the catalog), every `/AF` entry (catalog and pages), and every file-attachment annotation
+  (through `sweepWhere` of `redact-annots.ts`: popup and replies included), with the file
+  specification and `/EF` streams behind each (`fileSpecObjects` of `ops/attachments-write.ts`).
+  A file reachable two ways counts once, and a reference to nothing not at all. *Thumbnails:* each marked page's
+  `/Thumb` is deleted. *Tag text:* `/Alt`, `/ActualText` and `/E` leave the structure elements of a
+  marked page (its `/Pg`, one of its `/MCR`/`/OBJR` references, or its `/ParentTree` entry names the
+  element) and the property dictionaries of the `BDC`/`DP` operators of its content stream, read
+  by `ops/marked-content.ts` — a reader that, unlike the accessibility tokenizer, steps over a string
+  inside `<<…>>` (`/ActualText<FEFF…>>>`) — and every property dictionary and form XObject (nested
+  ones too) in its resources, used by the content or not. Nothing is edited in place, because the
+  originals can be shared with pages that carried no mark: the page's content is written as a new
+  stream, its resources and `/Properties` groups are copied, and a changed form is a new stream
+  (with copied resources) that the marked page's `/XObject` entry points at. The structure,
+  parent-tree and form walks are iterative and read each indirect object once, so a cycle or a
+  node listed twice ends them. The report counts the files (`op.note.redact.attachmentsRemoved`, only those that were there)
+  and the tag text entries (`op.note.redact.tagTextRemoved`). The attachment panel's own removal
+  (`removeAttachments`) matches a name against pdf.js's reading of the key as well as MuPDF's
+  (`pdfjsText`): the two differ for a language escape inside UTF-16 and for the undefined
+  PDFDocEncoding bytes, and the names the panel holds are pdf.js's.
 - The write uses `garbage=compact,compress,clean`, measured to leave a single revision
   with the erased stream's object dropped and the survivors renumbered.
 - `verifyRedaction()` re-opens the **produced** bytes, inverts the page's actual transform
@@ -1357,10 +1483,16 @@ Details that matter:
   ≥ 50 % covered throws `verification-failed`. The same pass reads the page's `/Annots`: an
   annotation or widget (anything but `/Redact`) that still shares area with a mark fails the
   page the same way, so a form field's value cannot hide behind a clean text check.
-- `auditRedactedDocument()` is a raw-byte scan and **documents its own blind spot**: it
-  cannot see inside deflated streams or object streams. It emits a `/FlateDecode` row and
-  suppresses the orphan-object verdict entirely when `/ObjStm` is present, instead of
-  implying a clean file.
+- `auditRedactedDocument()` is a raw-byte scan plus a string-object pass, and **documents
+  its own blind spot**: it cannot see inside deflated streams or object streams. The
+  string pass parses literal `(…)` and hex `<…>` strings outside filtered streams, decodes
+  them (UTF-16BE after `FE FF`, UTF-8 after a BOM, else PDFDocEncoding) and matches the
+  needle in NFC, so `Yaşar` is found in `/Alt`, `/ActualText` and form `/V` values, and
+  ASCII needles are found in hex strings. It emits a `/FlateDecode` row and suppresses the
+  orphan-object verdict entirely when `/ObjStm` is present, instead of implying a clean
+  file. Object definitions are found after LF, CR, CRLF or at the file start, and the empty
+  `/Names /EmbeddedFiles` tree MuPDF leaves after the last attachment is deleted is not
+  reported as an attachment.
 
 ### 5.5 OCR and accessibility
 
@@ -1389,8 +1521,21 @@ warning because it is additive; the dialog therefore calls it "Read again (adds 
 not "Overwrite", since the existing text stays. A worker that fails to start (a missing core, language pack or worker script) is mapped to
 `ocr-language-missing` or `asset-missing` rather than surfacing as a raw error, and a failed
 start is not cached. Cancellation is a real `worker.terminate()`, and the
-`finally` awaits worker termination, so "memory is back" is true when the function
-resolves.
+`finally` awaits the termination of the workers the run claimed, so "memory is back" is true
+when the function resolves. A pool is shared by every operation reading with the same language
+set and quality, so an operation holds it through a claim (`claimOcrWorkers`) and lets go of
+its own share only: the pool closes when its last holder does, and an OCR run finishing never
+terminates a worker a Word export is still reading with. A worker whose read fails, or does not
+answer within `OCR_READ_TIMEOUT_MS` (a dead thread answers nothing), is terminated and left out
+of its pool instead of being given back, so the next page starts a fresh worker. Each pdf.js
+page is released with `page.cleanup()` as soon as it has been read (memory does not grow with
+the page count), and a page index that is not a whole number fails as `range-invalid`. Before
+the first page the run probes every language pack with a GET to its pinned path, reading only
+the status and cancelling the body: the service worker answers GETs only, so a pack the device
+holds in the worker's cache is found with the network off. The Word export reads pages side by
+side on up to three workers (`suggestedOcrWorkers`: one fewer than the cores), and on one when
+the browser reports under 4 GiB of memory or does not report it (Firefox, Safari and iOS have no
+`navigator.deviceMemory`).
 
 The same recogniser reads the scanned pages of the exact Word layout (`recognizePage`, quality
 `best`, passed to `exportOffice` as `ocr.recognize`; see "Word exact layout" in 5.1). That path
@@ -1411,12 +1556,20 @@ deliberately not a score:
   `/Document` → one element per MCID with the parent tree a tagged PDF needs, and
   **re-opens the output** to compare marked-content sequences against the tree's MCRs. A
   document that already has a `/StructTreeRoot` is refused rather than merged.
-- `setImageAlt()` writes `/Alt` on the image XObject and `/TU` on form fields; an empty
-  alt text is refused, because decorative content would belong in an `/Artifact`, which
-  the tags editor below writes.
+- `setImageAlt()` writes `/Alt` on the `Figure` element that owns the picture in a tagged
+  file (the check reads it from there too) and on the image XObject when no figure owns it,
+  and `/TU` on the form field itself — the parent of a radio group's widgets, not one of
+  them; an empty alt text is refused, because decorative content would belong in an
+  `/Artifact`, which the tags editor below writes.
 
 `tagDocument()` places each block's shows into marked-content sequences that stay inside
-one text object and one `q` level (`nestingOf`, `expandToNesting`); a block spread over
+one text object, one `q` level and the marked-content sequences the page already has
+(`nestingOf`, `expandToNesting`), and the re-read compares how the stream's scopes nest, not
+only how many sequences it has; the content-stream tokenizer skips strings inside dictionaries
+(`/ActualText<FEFF0041>>> BDC`) and ends an inline image by the same `EI` rule as the PDF/A
+reader (`inlineImageEnd`). The text of every page is read through one MuPDF document
+(`readDocumentText`, in batches of 64 pages), and `ParentTreeNextKey` is one past the highest
+key in use. A block spread over
 several text objects becomes several sequences with one element owning all their MCIDs
 (`treeOrder` groups claims by block). A `plan` option (`TagPlan`: per-page order, roles and
 figure alt text) lets the reading-order editor tag an untagged file in the order and with
@@ -1486,6 +1639,10 @@ result, with the writer's real step ids.
 and both `protectDocument()` and `unlockDocument()` **re-open their own output and
 verify** (cipher and permissions for protect; page count plus a text sample for unlock),
 because a mis-authenticated MuPDF save writes undecryptable garbage instead of failing.
+An empty owner password is replaced by 256 random bits that nobody sees (`op.note.security.ownerPasswordGenerated`),
+so the permissions bind every reader who only has the open password; an input that is already
+password-locked is authenticated with `oldPassword` first; and a password containing `=` or `,`
+is refused as `password-policy`, because MuPDF splits its option list on both.
 Encrypting or unlocking rewrites the file, so a signed input (counted by
 `collectSignatureFields`, the collector `verifySignatures` uses: the `/AcroForm /Fields` tree plus
 signature widgets only a page's `/Annots` reach, once the password has opened the file) gets a
@@ -1498,12 +1655,16 @@ ended in a password prompt). A run may also overrule its dialog's `resultKind` f
 with `OpRunResult.deliver` — the form-data **export** uses it to download its data file from a
 `replace` dialog instead of replacing the document with it.
 
-`ops/batch.ts` is not a second save router: every step names an existing operation, and
-the order comes from the same dependency phases `save-router.ts` uses. Page-set changes go
+`ops/batch.ts` is not a second save path: every step names an existing operation, and
+the order comes from its dependency phases (`STEP_PHASE`: page composition first,
+encryption last). Page-set changes go
 through `openWithPdfjs` + `composeDocument` — the same route as the interactive page
-actions — so there is no third composition path. Bounds: 256 items, per-item failures are
-captured as mapped `ToolError` codes and the run continues, and cancellation is a report
-rather than an exception.
+actions — so there is no third composition path. Bounds: 256 items and `MAX_BATCH_BYTES` (1 GiB)
+of declared size in total, both checked before any file is read (a `BatchItem` is a name, the
+size `File.size` declares and a reader the runner calls one item at a time; an item over the
+desktop file ceiling fails as `file-too-large` unread); per-item failures, an unreadable
+file included, are captured as mapped `ToolError` codes and the run continues, and cancellation
+is a report rather than an exception.
 
 `ops/compare.ts` offers two independent answers and always names the method: a line-level
 LCS over text extracted by the **existing** text exporter (changes listed in document order, with word-level detail inside
@@ -1763,8 +1924,8 @@ dynamic, in a real browser):
 
 | File | Role |
 |---|---|
-| `ops/xfa-data.ts` | Pure XML (xmldom): the binding of AcroForm names to data nodes through the template, the sync plan, the date picture, data import and export markup. DOM-free, Node-testable. |
-| `ops/xfa.ts` | MuPDF packet I/O: read both layouts, write `datasets` (create it when missing), remove the XFA, `syncXfaInDocument`. Imported by `forms.ts` **lazily** (`import('./xfa')` only when the form has `/XFA`), so the XML parser stays out of the entry chunk. |
+| `ops/xfa-data.ts` | Pure XML (xmldom): the binding of AcroForm names to data nodes through the template, the sync plan, the date picture, data import and export markup (several data roots export under one `xfa:data` root). A document nested deeper than 256 levels or past 500 000 nodes is refused at parse time with a `ToolError` (`unsupported`), before any recursive walk. DOM-free, Node-testable. |
+| `ops/xfa.ts` | MuPDF packet I/O: read both layouts, write `datasets` (create it when missing), remove the XFA, `syncXfaInDocument`. `removeXfaEntries` and every form write that rewrites the file also drop the Reader Extensions signature (`/Perms /UR3`, `/UR`, `ops/usage-rights.ts`), which the rewrite invalidates; `/DocMDP` stays. Imported by `forms.ts` **lazily** (`import('./xfa')` only when the form has `/XFA`), so the XML parser stays out of the entry chunk. |
 | `ops/xfa-form.ts` | The operations: `inspectXfa`, `syncXfaDatasets`, `removeXfa`, `exportXfaData`, `importXfaData`, `finishXfaFill`. |
 | `ops/xfa-flatten.ts` | `buildFlattenedXfa`: pictures to a PDF, the OCR text-layer writer over them, read-back. |
 | `pdf-ui/src/dialogs/XfaFormDialog.tsx` | The XFA viewer dialog (pdf.js `PDFViewer` over its own `enableXfa` document). |
@@ -1888,6 +2049,7 @@ rewrite and the report says so; an XFA form carrying `<script` is dropped whole,
 dynamic one (no AcroForm fields besides signatures): its page is only the placeholder, so a
 run that would drop its XFA is refused with `xfa-dynamic` before anything is written, as
 removing or flattening one is.
+
 ### 5.12 Form field detection
 
 `ops/form-detect.ts` finds the places a flat page asks to be written in and offers them as
@@ -1954,6 +2116,7 @@ precision and 67 % recall. Documents that are not forms (an article, a résumé,
 Word, PowerPoint, HTML, EPUB and text, a 100-page book) gave no candidates, except a
 "Notes:" colon, a spreadsheet's TRUE cell, and the signature captions of a certificate and
 an invoice.
+
 ### 5.13 PDF/A: conversion and checker
 
 `ops/pdfa.ts` (`convertToPdfA`) converts to PDF/A-1b, 2b or 3b; `ops/pdfa-check.ts`
@@ -2014,7 +2177,9 @@ values are drawn into the page then).
 **What preparing is for.** Each step exists because a fixture lost something without it. An annotation
 written inline in `/Annots` is first made an object of its own, so it gets its appearance like any other and one
 that cannot be drawn is really removed from the file.
-Ghostscript drops every widget and field value (fields are flattened first, `forms.ts`); it
+Ghostscript drops every widget and field value (fields are flattened first, `forms.ts`; a form the
+flattener fails on stops the conversion with its error instead of being converted blank, and a
+widget left over that held a value is counted in its own note); it
 copied an `OpenAction` script into a stray catalog `/A` key (forbidden actions are removed from
 the catalog, pages, annotations and outline); it drops annotations without the Print flag, links
 and sticky notes included (the flag is set, and a missing appearance is drawn through MuPDF by
@@ -2092,7 +2257,7 @@ The pieces, in the order the text-edit pipeline uses them:
    programme this package does not ship → **substituted**; a shipped face matching on
    family, weight and italic → **editable**.
 3. **Reflow (`reflow.ts`)** — block-local reflow with `measureLineWidth()` and a font
-   metric table: greedy line breaking inside the block's own box, left/centre/right/justify
+   metric table: greedy line breaking inside the block's own box (at spaces; for text written without them, between ideographic characters — Han, kana — with the line-start and line-end prohibitions of CJK typesetting, and between the words of Thai, Lao, Khmer and Burmese, which the runtime's `Intl.Segmenter` dictionary finds; such a break adds no space and no hyphen), left/centre/right/justify
    alignment, first-line indent, leading and paragraph spacing, hyphenation only when asked
    (at a code-point boundary with at least two characters on each side of the break; a word
    that still does not fit is placed whole and shows as an overflow) and an auto-shrink walk
@@ -2150,7 +2315,10 @@ pdf.js; hand-tool panning writes `scrollLeft`/`scrollTop` directly.
 
 - `pointToPage(clientX, clientY)` — viewport point → page index + point in unrotated user
   space with a top-left origin, via pdf.js's `PageViewport.convertToPdfPoint` plus a Y
-  flip. This is MuPDF's page space, which is what redaction marks are expressed in.
+  flip. This is MuPDF's page space, which is what redaction marks are expressed in. It runs on
+  every pointer move of every mark tool, so it finds the page by a binary search over the
+  pages' bottom edges (reading a handful of page rectangles, not one per page) and checks the
+  pages around where the search lands, which is what a spread of two unequal pages needs.
 - `pageGeometry(i)`, `pageRect(i)`, `containerRect()` — the three reads an overlay needs
   to place a mark. `containerRect()` answers the **origin of the scrolled content**
   (padding box minus the scroll offsets), so `pageRect − containerRect` is a page's offset in
@@ -2183,6 +2351,20 @@ in the model's page space and places them at render, so its boxes follow zoom an
 it uses: `MeasureLayer` keeps its own scale (`page.width / displaySize(geometry).width`) and
 its docblock records that the annotation layer's projection does not multiply by zoom — the
 kind of drift that produces "at 150 % a mark is drawn at two-thirds of its offset".
+
+Touch: a finger's drag is a scroll unless `touch-action` says otherwise, and the browser then
+ends the pointer with `pointercancel` a few pixels into a stroke. `RedactionLayer` and the armed
+`MeasureLayer` surface are the touched element and carry `touch-none` themselves. The page is
+what a finger touches under `AnnotationLayer`, whose root is inert, so the layer marks its root
+`data-touch-draw` while the pen, the marker, shapes or the link region is armed and the pane's
+scroll container answers with `touch-action: none` (`has-[[data-touch-draw]]:touch-none`). A
+cancelled gesture adds nothing: the redaction layer drops the rectangle it had, as the
+annotation layer drops its stroke. The text-markup tools commit the browser's selection only on
+the release of a press that itself began on a page with the primary button — never on a right
+click, a press that began on the chrome or a press the browser cancelled — and merge a
+selection's spans into lines along the page's own text direction (columns on a `/Rotate`
+90/270 page). The measure tool's Backspace, Enter and Escape are left to a text field that holds
+the keyboard (the strip's Scale and Author).
 
 `MarkInteractionLayer` is the fifth and it is deliberately *not* an intercepting sibling: its
 root is `pointer-events-none` and it listens on `window` in the capture phase rather than
@@ -2268,7 +2450,7 @@ runs the operation and shows the report; only the result's own action
 anything, and "Close" discards. Modals remain for decisions that block: password, unsaved
 changes, signature warning, export choice, print, settings and the shortcut list.
 
-The host (`handleDialogResult`) applies a result and closes the form itself once the result
+The host (`dialogResult`, built by `createDialogRuns` in `features/dialogs/dialog-actions.ts`) applies a result and closes the form itself once the result
 has landed; the panel must not also go "back". Going back cancels the operation in flight,
 so a panel that did so right after handing over its result would abort every result before
 it reached the document (`e2e/editor-stability.spec.ts` guards this).
@@ -2286,7 +2468,7 @@ converted to PDF (`convert-to-pdf`, several files converted one by one and merge
 document open, their context carries no bytes, and their one result opens in a new tab. A
 tab's tools panel is frozen against that tab and dismissed when it changes, so these get a
 modal host instead (`dialogs/StartDialog.tsx`, the same `OperationForm` body) and their own
-result path (`handleStartResult`); `openDialog` returns without a tab, so routing a
+result path (`startResult`, from the same `createDialogRuns`); `openDialog` returns without a tab, so routing a
 standalone operation through it would leave a command that is enabled with no document and
 does nothing.
 
@@ -2306,7 +2488,10 @@ been highlighted before. The empty state's
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
 the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.ts` that
-dispatches keyboard actions, keeping the displayed bindings and their behavior together. The page keys (`PageUp`, `PageDown`,
+dispatches keyboard actions, keeping the displayed bindings and their behavior together. A chord
+names the modifiers it needs and ignores the rest (`F4` answers with `Shift` held), except a `bare`
+chord: `F5` toggles the tools dock only with no modifier down, so `Ctrl+F5` and `Shift+F5` stay the
+browser's reloads instead of being swallowed. The page keys (`PageUp`, `PageDown`,
 `Home`, `End`) stand aside while focus is inside a composite widget (menu bar, menu, listbox,
 tree, grid, tab list, or a list marked `data-owns-page-keys` such as the form panel's field
 list), which owns them. They stand aside for a full-screen presentation too: its own key
@@ -2372,9 +2557,9 @@ them once rather than twice.
 
 `apps/web/src/App.tsx` is the composition root: the wiring between the feature modules,
 `pdf-model`, `pdf-core` and `pdf-ui`, the link-region and image-list state its hosts share,
-the six audit-pinned callbacks
+the six one-line callbacks
 (`saveActive`, `persistTabDraft`, `opfsSave`, `prepareOutput`, `forgetTabDraft`, `discardTab`,
-thin wrappers over the feature functions that `tools/audit/regressions.cjs` exercises), the
+thin bindings of feature functions that `tools/audit/regressions.cjs` exercises directly), the
 drop target, and the feature hosts. UI state that several surfaces share
 lives in feature stores under `apps/web/src/features/`, each made with `createStore` from
 `features/store.ts` (module state read through `useSyncExternalStore`, the same convention as
@@ -2388,7 +2573,7 @@ testable logic lives:
 | Module | Responsibility |
 |---|---|
 | `features/store.ts` | `createStore()` and `useStore(store, selector, equality?)`, the one store helper |
-| `features/core/` | The state every feature shares: notice line, busy gate, the running operation's controller (`beginOperation` / `endOperation` / `cancelOperation`) and the busy refusal (`refuseBusy(t)`), the armed canvas tool, docks and tabs, interface mode (`core-store.ts`), engine handles and their swap (`handles.ts`: `swapHandle`, `releaseHandle`), the operation context and the edit rule read at call time (`document.ts`: `documentContext`, `canEdit`, `deviceTier`), the pending-overlay writer (`overlays.ts`), the markup tool set (`tools.ts`) and the compact-viewport watcher (`viewport.ts`) |
+| `features/core/` | The state every feature shares: notice line, busy gate, the running operation's controller (`beginOperation` / `endOperation` / `cancelOperation`) and the busy refusal (`refuseBusy(t)`), the run every document-holding write follows — busy refusal, registered controller so Cancel reaches the engine call, failure as a notice (`gated-operation.ts`: `runGatedOperation`, `failureLine`) — the armed canvas tool, docks and tabs, interface mode (`core-store.ts`), engine handles and their swap (`handles.ts`: `swapHandle`, `releaseHandle`), the operation context and the edit rule read at call time (`document.ts`: `documentContext`, `canEdit`, `deviceTier`), the pending-overlay writer (`overlays.ts`), the markup tool set (`tools.ts`) and the compact-viewport watcher (`viewport.ts`) |
 | `features/reading/` | Reading mode, snapshot, magnifier and lens zoom, the document language, and the reading-order layer |
 | `features/facts/` | The facts read for the active document (protection, signatures, fonts, attachments) and its failure, the imported trust roots and revocation lists, the signature-warning prompt before a write, the redaction audit, and the properties panel host |
 | `features/attachments/` | The embedded files: the measured list the properties panel shows, and adding, removing, reading out and writing them (`createAttachmentActions`) |
@@ -2401,7 +2586,7 @@ testable logic lives:
 | `features/forms/` | Forms and XFA: the form and annotation inventories, the inspection revision, the selected field, form-field detection and the XFA state (`forms-store.ts`), filling, flattening and detecting fields (`form-actions.ts`), the inventory read (`use-form-inventory.ts`), and the XFA banner, field-candidate layer, forms panel and XFA dialog hosts (`FormsSurface.tsx`) |
 | `features/marks/` | Marks: the mark targets (`marks-store.ts`, `mark-targets.ts`), the visible and editable overlays (`overlays.ts`), removing and transforming marks, writing a file annotation, the writer pipeline (`writer.ts`: a writer's outcome and layer writes), and redaction (the erased words per tab in `redaction-store.ts`, the redaction marks and writer in `redaction.ts`, and `RedactionSurfaces.tsx`), run through `useWriterActions` and `useMarkActions` |
 | `features/dialogs/` | The dialog runner: the batch, operation, start and shortcuts dialogs' state (`dialogs-store.ts`), opening them and handling their results (`dialog-actions.ts`), dismissing a dialog whose tab or working version changed (`use-dialog-dismissal.ts`), and the hosts (`DialogSurfaces.tsx`) |
-| `features/persistence/` | Drafts and the vault: the storage tier, the persisted snapshots and the draft write queue (`persistence-store.ts`), writing, forgetting and saving drafts (`draft-persist.ts`, `draft-vault.ts`), recovery on start (`use-draft-recovery.ts`), vault sync across windows (`use-vault-sync.ts`) and offline preparation (`offline-actions.ts`) |
+| `features/persistence/` | Drafts and the vault: the storage tier, the persisted snapshots and the draft write queue (`persistence-store.ts`), writing, forgetting and saving drafts (`draft-persist.ts`, `draft-restore.ts` — the one restore path, `draft-vault.ts`), recovery on start (`use-draft-recovery.ts`), vault sync across windows (`use-vault-sync.ts`) and offline preparation (`offline-actions.ts`) |
 | `features/export/` | Export and the context menu: their open state (`export-store.ts`), choosing an export, opening the context menu and reading the current bytes (`export-actions.ts`), and the export dialog and context menu hosts (`ExportSurfaces.tsx`) |
 | `features/selection/` | Mark selection and the text tool: the selected marks and the mark to select after a write (`selection-store.ts`), deleting and selecting all marks and opening a note (`selection-actions.ts`), the selection effects (`use-selection.ts`), the text tool's picked block and frozen bytes (`text-tool-store.ts`, `use-text-tool-bytes.ts`) and the text layer host (`TextToolSurface.tsx`) |
 | `features/open/` | Opening and producing documents: the home screen, opening state, password prompt, locked tabs, page selection and pending home command (`open-store.ts`), opening a file, a produced tab, a conversion, a recent entry or the picker (`open-actions.ts`, `use-open-actions.ts`), and the home header, password prompt and file input hosts (`OpenSurfaces.tsx`) |
@@ -2410,9 +2595,9 @@ testable logic lives:
 | `features/diagnostics/` | The memory sampler (`memory-store.ts`): a sample every 2.5 s, kept only when it changed, read by the status bar alone |
 | `operations.ts` | `materializeBase()`, `applyProducedBytes()`, `applyPageAction()`, `verifyForWrite()`, `redactionNeedles()`, `removeMarkTargets()`, `pruneOverlays()`, `OPERATION_TABLE` |
 | `annotation-interaction.ts` | The mark target universe and the removal split: `buildMarkTargets()`, `planMarkRemoval()`, `markTargetKey()` (§8.7) |
-| `save-plan.ts` | `changeSetFor()` / `planSaveExecution()` — turns the applied journal into the change set and the executed-step list |
+| `save-plan.ts` | `planSaveExecution()` — the byte facts of one save (is the output an incremental update of the opened file) and the applied and executed step lists; `signatureWarning()`, `heldByPendingRedactions()` |
 | `notices.ts` | Turns notice descriptors, verification results and failures into sentences (i18n keys and params only, no English literals) |
-| `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App`, then warms the engine, editor, printer and palette chunks on idle (§2) |
+| `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App` inside the root error boundary (`recovery.tsx`), then warms the engine, editor, printer and palette chunks on idle (§2) |
 | `lazy-ops.ts` | Same-signature wrappers that load the writers and readers the shell runs only on an action (§2) |
 | `export-presets.ts`, `signature-store.ts` | What the export dialog's "Compressed PDF" level fills into the Optimize form, and the remembered simple signature (§8.7) |
 | `drafts.ts` | The OPFS half of draft storage |
@@ -2429,10 +2614,11 @@ oversized file produced no notice at all, because the drop zone and the home scr
 this fire-and-forget. It reads the bytes, then runs `openWithPdfjs(bytes)` and
 `sha256Hex(bytes)` in parallel: the fingerprint only reads bytes, so on a large document it
 costs nothing on the path the user waits on. The parsed handle's page count feeds the same
-`checkDocumentLimits()` verdict. Encrypted inputs become **sensitive sessions** and are not
-written to the vault. Four surfaces open a file (picker, drop zone, home screen, hidden
-input) and all four go through one wrapper, so error handling cannot be forgotten at three
-of them. That wrapper (`openFromSurface`) also routes files that are not PDFs. A format
+`checkDocumentLimits()` verdict. A document opened **with its open password** becomes a
+**sensitive session** and is not written to the vault; a file that only an owner password
+restricts opens without one, has no secret to protect and is stored like any other. Four
+surfaces open a file (picker, drop zone, home screen, hidden input) and all four go through
+one wrapper, so error handling cannot be forgotten at three of them. That wrapper (`openFromSurface`) also routes files that are not PDFs. A format
 `ops/convert-formats.ts` lists is converted with defaults (the locale's paper, landscape for
 a spreadsheet, 15 mm margin) and opened as a new tab. The conversion's caveats are shown in
 the notice. A picture becomes a page through `imagesToPdf`. DOC, XLS, PPT, OpenDocument
@@ -2455,7 +2641,9 @@ after the other (`openFilesFromSurface`), because an open holds the busy gate un
 the ways to begin — open, a blank document, a PDF from images, merging several PDFs, a batch
 run — and the recent list (search, sort, star, page count, an "open" badge for entries that
 are a tab right now; removing an entry or clearing the list never touches a file, it forgets
-the entry's stored handle at once, and the clear asks first). *All tools*
+the entry's stored handle at once, and the clear asks first; the clear keeps the handle of a
+document that is open in a tab or has a draft in the vault, and prunes nothing when the draft
+inventory cannot be read completely). *All tools*
 (`components/HomeToolGrid.tsx`, loaded with the tab) lays the command registry out by task:
 each tile is a command id, its title is the command's label and pressing it runs the
 command, so the grid cannot drift from the menus or the palette. It lists
@@ -2493,6 +2681,14 @@ files through the input, never the picker), so it never reaches that read.
 Page actions from the status bar and the context menu act on the page panel's selection, or
 on the page on screen when nothing is selected.
 
+The context menu keeps the keyboard contract of a menu: the first live entry takes focus as it
+opens, the arrow keys, Home and End walk the live entries (a disabled entry takes no focus), Tab
+and Escape close it, and focus goes back to the element that had it. A menu asked for with the
+keyboard (the Menu key, Shift+F10 — an event with no pointer position) opens under the focused
+element instead of in the window's top-left corner. In the viewer pane, Escape closes the find
+bar — and tells pdf.js to drop its highlights — only when it is pressed in the pane or with
+nothing focused, so the Escape of a dialog, the palette or a menu leaves the search alone.
+
 ### 8.2 The write pipeline
 
 ```mermaid
@@ -2514,7 +2710,7 @@ sequenceDiagram
     A->>C: verifySignatures (a rewrite breaks an existing signature — ask first)
     A->>V: verifyForWrite(base, this run's own steps, live handle as reference)
     V-->>A: per-fact table, or throws verification-failed
-    A->>A: re-check the destination hash, then write and close the writable
+    A->>A: re-check the destination (in place by hash, Save As by size and modified time), then write and close the writable
     A->>M: addOutput — only the version this preparation produced
     A->>U: notice naming the facts that were and were not established
 ```
@@ -2526,26 +2722,44 @@ Ordering rules encoded here, each of which prevents a specific defect:
   would run a second preparation and a second write against the same document.
 - **The conflict baseline belongs to the file about to be written**, not to the document
   that was opened — otherwise every Save As that is not a re-save of the original is
-  rejected. The in-place path keeps the original/last-written protection.
+  rejected. The in-place path keeps the original/last-written protection. A Save As
+  destination is read and hashed once, for its baseline; before the write its size and
+  modified time say whether anything touched it, and only a touched file is read and hashed
+  again (a touch that left the bytes alone is no conflict, a changed byte is).
 - **Pending redaction marks refuse the save.** They are intents the user staged; the
   alternative is a Save that marks the tab clean while the delivered file still contains
   the content the user asked to remove. The same marks refuse every dialog whose result
   leaves the tab — a download (Word, text, split, protect) or a new tab (PDF/A, extract) —
   and every dialog that moves pages under them (`heldByPendingRedactions`,
-  `apps/web/src/save-plan.ts`). Print and Snapshot are refused too: they render the engine
-  document, which carries no session marks, and the print dialog's imposed file opens as a
-  new tab.
+  `apps/web/src/save-plan.ts`). Print and Snapshot are refused too: they render the working bytes a Save would write
+  (`createCurrentBytes`, opened as a throw-away copy by `pdf-ui/src/viewer/workingPages.ts`), which carry the
+  session's annotations and measurements but never a staged redaction; the print dialog's imposed
+  file opens as a new tab.
 - **A handle is attached only after the write succeeded**, so the next Save cannot write in
   place over a file this one never managed to commit.
 - **`addOutput` records the version the preparation produced**, not the one captured before
   the picker, so an edit made while the picker was open is not recorded as saved.
 - **A failed write leaves the tab dirty.** `dirty` flips back only when a write for that
   exact version succeeded.
+- **Export is a copy, except where a download is the only way to save.** The download is named
+  as a PDF, as Save names its own. With no file handle and no `showSaveFilePicker` the
+  download *is* the save, so the version is recorded like Save's download (`recordOutput`) and
+  the tab is no longer dirty; with a handle, or in a browser that can write files, an export is
+  a copy and the tab stays as dirty as it was.
 - **Save and Export are offered only for an inspected version.** Both are enabled from the
   same verdict: the document-facts read (fonts, signatures, attachments, protection) *and*
-  the form inventory must describe the tab's current `working.id`. A byte operation moves
-  that id, so the two reads re-run and the buttons go quiet until the new answers land — a
-  save cannot be prepared against a version nothing has looked at.
+  the form inventory must describe the bytes the tab shows. The facts are keyed to the produced
+  version's own id (`workingBytesKey`; `'source'` for the master), the form inventory to that id
+  plus the values typed into the engine that are not in the bytes yet (`formInventoryKey`: Save
+  hands the inventory to `verifyForWrite`, and one read from before the typing would record every
+  typed field as changed). A byte operation or a typed value moves the key, so the reads re-run
+  and the buttons go quiet until the new answers land — a save cannot be prepared against bytes
+  nothing has looked at. A mark step (draw, erase, undo of a mark) moves `working.id` but neither
+  key, so it reads nothing again and Save stays open. The header's Save button
+  and the menu and palette entry share one answer, `saveModeFor` (`features/save/save-mode.ts`):
+  write over the tab's file, ask where (no file yet and the browser can), or no Save at all
+  where the browser cannot write files — there the download is Export, and `Ctrl+S`, which
+  does not consult it, downloads as well.
 
 ### 8.3 `materializeBase` — which bytes are the base
 
@@ -2598,7 +2812,8 @@ deletes, and when" need answers that span windows. `vault-channel.ts` uses
 `BroadcastChannel` for the first and `navigator.locks` for the second, with a
 `localStorage` + `storage`-event fallback for the first. Neither is assumed: with no lock
 manager the work runs unserialised (every vault operation is idempotent, so the worst case
-is a repeated `removeEntry`, not a lost document), and only when **both** channels are
+is a repeated `removeEntry`, not a lost document), a draft cannot be claimed (every claim is
+granted) and a probe reports `false`, so a sweep deletes nothing; and only when **both** channels are
 unavailable does `canReachPeers()` return false — and then the sweep refuses to run,
 because without peer knowledge "delete everything unreferenced" would delete another
 window's only copy.
@@ -2614,26 +2829,45 @@ waits, the probe asks the lock manager again every 250 ms and stops waiting for 
 whose lock is gone: a tab closed a moment before the sweep can still be listed by the first
 query, and it will never answer. A window the lock manager lists but that stays silent for
 10 s (a frozen tab) makes `probe()` resolve `false` and the sweep refuses
-(`vault.peerSilent`: nothing is deleted). Only without a lock manager does the probe fall
-back to a fixed 250 ms wait.
+(`vault.peerSilent`: nothing is deleted). Without a lock manager, or when it cannot be asked,
+the probe still collects the answers that arrive within 250 ms but reports `false`: a timer
+cannot prove that no window is missing, so the sweep refuses (fail closed).
+
+A draft is owned by the window that has its tab open. That window holds a lock named after the
+draft (`pdf-editor.vault.draft.<id>`, `claimDraft`); startup recovery and "open from the recent
+list" restore a draft only when they can claim it (`draft-restore.ts` — one restore path for
+both, with the draft's history, snapshots and source page count), and `persistDraft` writes only
+drafts it owns, so two windows never write one `drafts/<id>.json` or delete each other's
+snapshots. Recovery asks again for about a second before it decides a draft is another window's: a
+window that is closing or reloading has not always dropped its locks yet. Draft writes run inside
+the vault lock with the window's write queue inside that (`queueVaultWrite`), so a sweep never
+lists a snapshot blob between its write and its manifest.
 
 ### 8.5 Sensitive sessions, drafts and cleanup
 
 Persistence is a shared callback used by both the manual OPFS save and the automatic draft
 path, so the two cannot disagree about what was persisted. A restore does not rerun just
-because the UI language changed, one unreadable draft does not stop the others from
-recovering, a draft whose document was opened meanwhile (from the recent list, say) is
+because the UI language changed, one draft whose source cannot be read is reported and skipped (each draft has its own
+guard, and a vault that cannot be read at all is said on the notice line) while the others
+recover, a draft whose document was opened meanwhile (from the recent list, say) is
 skipped while the rest are still restored, and a document the user opens while recovery waits
 for a draft's stored file handle keeps the front: the document in front is read after the
 last `await` before the restored tab goes in, with nothing awaited in between, so a restored
 tab never takes the place of a document that is in front (`e2e/ui-recovery-race.spec.ts`
 holds the handle store open with `e2e/recent-handles-gate.ts` to prove it). Discarding a tab
-retains any source another valid draft still references.
+retains any source another valid draft still references, and removes the source blob it stored
+at open when no manifest ever named it (a tab closed before its first automatic save).
+
+An in-place Save writes only over the file the editor last saw (the original, the last write, or
+the hash a restored draft carried). When the file differs, nothing is written and a dialog asks
+(`SaveConflictHost`): **Overwrite** (the confirmation itself; `saveDocument` with
+`overwrite: true`), **Save as** (`saveAs: true`: a new file that becomes the document's own) or
+Cancel.
 When the inventory is unreadable or incomplete, the discard path deletes nothing and says
 so.
 
-Opening has one boundary: everything that can refuse a document (the engine, its permissions,
-the hash, the limits) runs before the tab is registered, and a handle opened beside a failed
+Opening has one boundary: everything that can refuse a document (the engine, the hash, the
+limits) runs before the tab is registered, and a handle opened beside a failed
 hash is destroyed. Storing the recovery copy comes after and is not part of opening: when that
 write fails, the document stays open and the notice says its recovery copy could not be stored
 and why (`draft.sourceNotStored`), next to whatever the operation reports
@@ -2644,6 +2878,23 @@ stays full does not replace the operation's line.
 Vault writes are serialised in-window through a single promise chain, and a writable that
 rejects is aborted best-effort **without replacing the error that explains what went wrong**
 — the caller must see the failure rather than a success.
+
+A draft is what makes closing a window safe, so the window knows which changes one protects
+(`holdsUnprotectedWork` in `features/persistence/persistence-store.ts`). A tab changes by
+being replaced in the session snapshot, and `persistDraft` records the exact tab object its
+manifest describes, so "the draft holds this state" is a lookup: a document with unsaved
+changes is **unprotected** when its session is sensitive, or when its current state was not
+written (the autosave's 600 ms debounce still waits, or the write failed — a tab with no engine
+handle, which `persistDraft` skips, stays unprotected for as long as it is dirty). Only then does the
+window act (`useUnsavedGuard`): `beforeunload` asks before it is closed or reloaded, and a
+service worker that takes over does not reload it. A worker answers every open window at
+once, so one window's "Refresh" must not reload the others under work a reload would lose —
+the same holds for a window with an operation or a save running. Such a window keeps its old
+code and its update banner says to save and reload (`update.saveFirst`); the banner's
+"Close" closes the update in the module, not only in that banner, and the next worker to
+finish installing offers it again (`serviceWorkerUpdate.ts`). A window whose changes a draft
+holds never asks and reloads as before. The password a tab was opened with lives in
+`lockedTabs` only as long as the tab: `discardDocument` removes it.
 
 ### 8.6 Interface modes
 
@@ -2685,14 +2936,22 @@ Two rules make that list trustworthy:
   is listed — deleting it is what removes bytes — and the pending copy is dropped, so the
   count the strip shows and what deletion removes are the same number.
 
-Ids crossing into session state are **reminted**: an FDF import carries the `/NM` the file was
-annotated with (`ops/annotation-data.ts`), which is not unique across documents, so an id
-already in use becomes a fresh UUID. The import result also states its geometry space:
-this app's own JSON and FDF records are in app space, while Acrobat's comment FDF is PDF user
-space and is mirrored into app space with each page's top edge (`toAppSpace`) — read as
-app space, every Acrobat comment would land mirrored about the page's middle. The records carry
-`rect` and `fontSize` as well, because a note's place is its `rect` alone. The comments panel shows a saved
-mark's words through `commentText()`, never the `pdf-editor-ann:<id>` marker itself. Duplicate ids would break React keys and make one deletion
+Ids crossing into session state are **reminted**: the readers (`ops/annotation-data.ts`,
+`annotation-xfdf.ts`) give every mark a fresh id, and the importer still gives a fresh UUID to
+an id already in use, because a name a file carries is not unique across documents. The import
+result also states its geometry space: this app's JSON and the older `ann.N.*` FDF records
+are in app space, while Acrobat's comment FDF and XFDF are PDF user space and are mirrored
+into app space with each page's top edge (`toAppSpace`) — read as app space, every Acrobat
+comment would land mirrored about the page's middle. The JSON records carry `rect` and
+`fontSize` as well, because a note's place is its `rect` alone. Before a result becomes session state, `keepMarksOnPages()`
+drops the marks on pages the document does not have and counts them as skipped, and the record
+reader settles what a later save would refuse: a colour that is not `#rrggbb` becomes the
+default, and a shape this app cannot draw or a page that is not a whole number from 0 makes
+the record skipped, so a bad record never makes a later save fail
+(`hexToRgb`, the page range check and the shape subtype all throw on write). The comments panel shows a saved
+mark's words through `commentText()`, never the `pdf-editor-ann:<id>` marker itself — which is only
+the head of the text (`markerId()`): the same words in the middle of a comment are the reader's
+and are kept. Duplicate ids would break React keys and make one deletion
 remove several marks. New drawing gestures already use session UUIDs. Recovered engine
 records are converted through their original storage keys and reminted; engine-local keys
 must never become persistent mark identity.
@@ -2729,11 +2988,53 @@ none (Node); an attribute is read with `hasAttribute` first, because that packag
 `''` for a missing one. `toAppSpace` mirrors a line's two ends point by point. A line's
 `rect` is its ends in drag order, and normalising it as a box turned the line around.
 
+**Comment FDF** (`ops/annotation-data.ts`) is Acrobat's own comment container (ISO 32000-1
+§12.7.7), not a form-data file with comment-shaped keys. The writer emits `%FDF-1.2`, a catalog
+`<< /FDF << /Annots [ … ] /F (file.pdf) /UF (file.pdf) /ID [<…><…>] >> /Type /Catalog >>` and
+every annotation as an indirect object with the keys a reader needs (`/Type /Annot`,
+`/Subtype`, `/Page`, `/Rect`, `/C`, `/CA`, `/Contents`, `/T`, `/M`, `/CreationDate`, `/NM`,
+`/QuadPoints`, `/InkList`, `/L`, `/BS`, `/DA`, `/Popup`); a reply and a review state are `/Text`
+annotations with `/IRT` naming the object they answer (`/State`, `/StateModel` as text strings
+for a state). `/ID` is the engine's fingerprint of the open file and is left out when there is
+none. The reader takes the same shape from Acrobat: it tokenises with the form-data
+tokenizer (hex strings, PDFDocEncoding, and the bodies of appearance streams skipped over
+rather than scanned as tokens), reads the objects through `readFdfFile` (a dictionary is a
+`Map`, so `__proto__` or `constructor` as a key or a `/Subtype` is an entry like any other), and
+follows `/IRT` references to attach replies and states. A `/Subtype` is looked up in a `Map`
+for the same reason. `/Page` is the 0-based page; a comment without one lands on page 1 and
+is counted in `pageUnknown`. `parseAnnotationData` tells the three shapes apart from the
+bytes: JSON, an FDF with `/Annots`, and the older `ann.N.*` record FDF, which is read through the
+same record reader as JSON.
+
+**PDF dates.** `parsePdfDate()` (`ops/annotation-threads.ts`) is the one reader of
+`D:YYYYMMDDHHmmSS` + zone for the thread list, the FDF and the XFDF. Every field is checked
+(month 1–12, a day the month has, hour below 24, minute and second below 60), so
+`D:20241301` is no date instead of rolling into 2025 or throwing `RangeError`, and the zone is
+applied (`+02'00'` is two hours earlier in UTC). A comment with a date that is not a date is
+imported with the time of the import.
+
 **FDF strings.** Octal escapes of one to three digits are read (`\1`, `\12`), and the FDF reader
 uses the shared PDF tokenizer. A value with any character outside ASCII is written whole as UTF-16BE
 behind the `\376\377` BOM (`form-data.ts`): escaping only the non-ASCII characters as two-byte
 units inside a single-byte string would read back `gö` as `g\0ö`, which breaks Turkish form
 values and comments in every reader.
+
+The tokenizer advances on every character, so a lone `<`, `>` or `)` cannot keep it in
+place (a hex `/ID [<0123ABCD><4567EF01>]`, as Acrobat writes it, is read like any other string).
+A hex string (`<FEFF00C7>`) reads like a literal one; a string without a BOM is PDFDocEncoding
+(`0x9A` is `ı`, `0xA0` is `€`) when `parseFdf` reads a file's bytes. `parseFdf` then reads the
+tokens as dictionaries: `/T` and `/V` in either order, `/Kids` as `parent.child`, a field written
+as an indirect object, and a `/V` that is a name (`/On`, `/1`, `/Evet`, `/Off`) or an array. A name
+is kept as text with `stateName` set to it — `/Off` is `false` and `/Yes` is `true` — and
+`writeValue` matches it against the checkbox's own on-states (`checkboxStates`), so a value the
+field has no state for is not written. A radio group reads a name as a widget's **state** and a
+plain text (JSON, or an FDF string) as an **option's** text; the two differ whenever `/Opt` is
+present (`/Opt [(1)(2)(3)]` over states `/0 /1 /2`), and a name no widget has falls back to the
+option of that spelling. The export is the inverse: `FormDataRecord.stateName` carries the state a
+checkbox or the selected radio widget is in (a checkbox group with several on-states writes the
+one that is on), and `serializeFdf` writes it as the `/V` name (JSON keeps `true` and the option
+text). `importFormData` returns the number of values written, not the number of records found, and
+refuses a file with none (`input-missing`).
 
 `planMarkRemoval(targets, keys)` turns a selection into the two paths it needs, and
 `removeTargets()` is **the one removal intent** for Delete, the strip and both panels:
@@ -2759,7 +3060,8 @@ Pending geometry changes in one overlay step; persisted changes use
 `ops/annotation-transform.ts`. Its writer transforms `/Rect`, quads, paths and appearance
 streams together, wraps shared appearances without mutating non-targets, and reads back
 geometry, appearance references, page facts and form values. Directional pending marks
-retain a quarter-turn value until export; JSON/FDF interchange preserves it. A mixed
+retain a quarter-turn value until export; JSON interchange preserves it (FDF and XFDF write the
+geometry as it was drawn). A mixed
 selection remains one journal step. MuPDF raster regressions verify actual rotated pixels
 and continuous marker strokes, rather than merely checking stored rectangles.
 
@@ -2799,7 +3101,7 @@ PDF editor, so each one is stated once:
 
 | Space | Origin | Where |
 |---|---|---|
-| **App / page space** | unrotated page, **top-left**, Y down, points | every overlay, `RedactRect` (`space: 'app-v1'`), `PageRect`, the text engine's rects |
+| **App / page space** | unrotated page, **top-left**, Y down, points; `x` is the user-space x, `y` the distance below the page box's top edge (a CropBox that does not start at `y = 0` adds nothing) | every overlay, `RedactRect` (`space: 'app-v1'`), `PageRect`, the text engine's rects |
 | **PDF user space** | bottom-left, Y up, points | what the writers write; `topLeftToUserPoint()` in the MuPDF adapter is the one flip |
 | **MuPDF page space** | top-left, Y down, rotation included | what `page.search()` and `toStructuredText()` report; `rectToPageSpace()` converts through the verified four-rotation table |
 | **Client pixels** | viewport | overlays; `pointToPage()` and each layer's projection handle zoom, rotation and offset |
@@ -2876,10 +3178,10 @@ the session saved. The table is stored on the output version, and the notice lin
 facts and their reasons, because "verified" without its list is a sentence this part of the
 code exists to stop producing.
 
-A `changeSetFor()` helper derives the change summary from the applied journal by matching
-step ids against patterns. It is the *reporting* side, not the promise: the promise comes
-from the operation table, which is keyed by exact ids the engines report rather than by a
-label a dialog chose.
+The step ids the applied journal already put into the bytes are listed on the output
+(`appliedSteps`, from `planSaveExecution()`). That is the *reporting* side, not the promise:
+the promise comes from the operation table, which is keyed by exact ids the engines report
+rather than by a label a dialog chose.
 
 ### 10.2 After a redaction
 
@@ -2944,14 +3246,31 @@ shows.
 requests and anything outside `/editor/`, `/engines/`, `/fonts/` and a few root files;
 document bytes never enter `CacheStorage`. It re-applies the CORP/COOP/COEP headers to
 cached responses so cross-origin isolation survives an offline load, and its one offline
-answer is an explicit, un-cacheable 503 rather than a hang.
+answer is an explicit, un-cacheable 503 rather than a hang, worded in the first of the
+browser's languages (`navigator.languages`) that is Turkish or English, else Turkish — a
+worker has no `localStorage`, so the language chosen in the editor is not known to it. The editor shell and its bundle
+assets are network-first, and "the network failed" includes a 404 or 503: when the origin
+answers a file this build's cache holds with an error status, the cached copy is served (a
+hashed chunk a deploy removed stays loadable for a page that is still open), and the error
+passes through only when there is no copy.
 
 Versioning is the interesting half:
 
 - `CACHE_NAME` is `pdf-editor-static-<version>`, and `<version>` is stamped at build time
   by `tools/assemble-dist.mjs` from the release stamp plus a digest over the pinned
-  `path + sha256` list.
-- The name therefore changes when a pinned asset changes. A release never reads the
+  `path + sha256` list and the editor build.
+- The stamp also covers the editor build (`tools/release-version.mjs`: the entry page and the
+  hashed name of every file in the manifest), so a deploy that changes only code changes
+  `sw.js` as well and the update banner appears.
+- Every engine URL is `/engines/<engine>/v<digest>/<file>`, the digest taken over that
+  engine's pinned files (`engine-versions.json`, held to the pins by `verify-assets`;
+  `assemble-dist` places the files there). `/engines/*` is `immutable` for a year, so a
+  rebuilt engine has to be a different URL; a directory and not a query, because mupdf.js
+  imports its wasm next to itself and pdf.js and tesseract.js append file names to the
+  directories they are given. Fonts keep their paths and are revalidated, not immutable;
+  hashed `/editor/assets/*` are immutable (`! Cache-Control` detaches the `/editor/*` rule).
+  A `?retry=N` module import (MuPDF's loader) is looked up and stored without the parameter.
+- The name therefore changes when a pinned asset or the code changes. A release never reads the
   previous release's cache, and activation deletes only caches in **its own** namespace —
   the origin's storage is shared with other applications.
 - Install fills the new cache without touching the old one, so an interrupted preparation
@@ -2978,7 +3297,8 @@ Versioning is the interesting half:
   a PDF offline without `app`. Prepare fetches `app` and readiness requires it (`requiredCapabilities`);
   install still holds only the shell above, so a first visit stays light.
 - A cache written under a different identity is not evidence for this build:
-  `matchesBuild` is false and nothing may be called ready.
+  `matchesBuild` (the manifest's version against the version the worker was stamped with) is
+  false and nothing is ready; the worker also refuses to prepare against that manifest.
 - The worker only ever caches paths from the build's own manifest. `PREPARE_PACKAGE` carries
   capability *names*, never URLs, and the worker resolves them against the manifest, so a
   page cannot hand it an arbitrary URL (a name the manifest lacks asks for nothing). Work
@@ -3003,6 +3323,13 @@ touches the network. It hashes each file (SHA-256, 1 MiB chunks) into
 hardcoding them. Modes: default = verify, `--update` = copy and rewrite the pins,
 `--sync` = copy then verify against the committed pins (what the gate runs, rewriting nothing).
 
+One engine is not the registry's bytes: `mupdf.js` carries `patches/mupdf@1.28.1.patch`
+(root `package.json` > `pnpm.patchedDependencies`, hash recorded in `pnpm-lock.yaml`), which pnpm
+applies at install. The patched package sits in the store as `mupdf@1.28.1_patch_hash=<hash>`, and
+`fetch-engines` finds it by its name prefix, so the file the browser loads, the file the unit
+suite imports and the pin are one set of bytes. Changing the patch means `pnpm install`, then
+`pnpm fetch:engines --update`.
+
 Inventory: 308 pinned files across seventeen groups — `mupdf` (3), `pdfjs` (211: worker,
 cmaps, standard fonts, wasm), `tesseract` (33: module, worker, core `.wasm.js` + `.wasm`,
 Turkish and English in `fast` and `best`, 25 more languages in `best`), `ghostscript` (2:
@@ -3020,7 +3347,9 @@ runs `biome check --staged`, so a file is formatted, import-sorted and lint-clea
 enters git; a checkout without `node_modules` skips that step with a note.
 
 Because the pins are the identity offline caching keys on, changing a pinned asset changes
-the cache name, the manifest and the worker stamp together.
+the cache name, the manifest and the worker stamp together, and `verify-assets` also fails on a
+file under `public/engines/**` that no pin names and on an `engine-versions.json` that no
+longer matches the pins (`node tools/fetch-engines.mjs --versions` rewrites it).
 
 ### 13.2 Assembling the distribution
 
@@ -3071,51 +3400,26 @@ Functions, no SSR, no database, and the request path never executes application 
 styled Turkish `dist/404.html`, or the English `dist/en/404.html` under `/en/` (see
 [Cloudflare's static-site routing](https://developers.cloudflare.com/workers/static-assets/routing/static-site-generation/))
 — and the custom domain is declared in the config. `tools/preview-dist.mjs` follows the
-same nearest-404 rule when it serves `dist/`. Wrangler is pinned at 4.135.0 inside the
-deploy scripts.
+same nearest-404 rule when it serves `dist/`. Wrangler is run at the pinned version 4.135.0 with `pnpm dlx`
+(the workflow's `WRANGLER_VERSION` and the `worker:deploy*` scripts), not installed as a dependency.
 
 The release path is a pull request, then GitHub Actions, then a deploy that only a push to
 `main` triggers. `main` is protected: a pull request is required, the required checks are
-`verify`, `e2e` (4 shards), `e2e-service-worker` and `behavior`, force-pushes are blocked, and
+`verify`, `e2e` (4 shards), `e2e-service-worker`, `behavior` and `coverage`, force-pushes are blocked, and
 merges are merge commits.
 
-- `.github/workflows/ci.yml` runs on `pull_request`, `push` to `main` and `workflow_dispatch`.
-  `verify` installs with the frozen lockfile and runs `pnpm typecheck`, `pnpm check`,
-  `pnpm check:docs` (the documentation sync check), `pnpm fetch:engines --sync`, `pnpm unit`,
-  `pnpm audit:model-types`, `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`,
-  `pnpm assemble:dist` and `wrangler deploy --dry-run`. `e2e` needs `verify`: four shards,
-  each builds `dist/` itself, installs Playwright Chromium (cached) and runs
-  `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`, uploading, on failure,
-  the HTML report and the traces (7 days). `e2e-service-worker` needs `e2e` and runs
-  `playwright test --project=service-worker --no-deps`. `behavior` needs `verify` and runs
-  `pnpm ci:behavior` (the OpenSSL signing round trip). The PDF → Word export is not measured round
-  trip in CI: the LibreOffice-based fidelity harness (export to DOCX, convert back to PDF, compare)
-  and its `fidelity` job were removed because LibreOffice is no longer used (its headless runs
-  hang). The LibreOffice layout notes elsewhere in this file stay as measured facts. Coverage runs
-  as three kinds of job, so that no runner holds the whole browser run: `coverage-unit` (needs
-  `verify`) runs `pnpm coverage --unit-only`; `coverage-e2e` (needs `verify`) runs `pnpm coverage
-  --e2e-shard=N/4` in four shards; and `coverage` needs both, downloads what they uploaded and runs
-  `pnpm coverage --merge=coverage-parts --min=100` (every total at 100 %, the report uploaded as
-  `coverage-report`).
-- `deploy` runs only on a push to `main` and needs every job above: `wrangler deploy` with the
-  `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets publishes
-  <https://pdf.isolmaz.com/>, then `tools/deploy/smoke.mjs` checks the live site against the built
-  `dist/` (an HTML page the zone's bot protection challenges from the runner's network, 403 with
-  `cf-mitigated: challenge`, is reported rather than failed; this build's content-hashed editor
-  scripts, the security headers on the first of them and `/sw.js` are checked either way); if
-  the smoke check fails or runs past its time limit, `wrangler rollback` returns the Worker to
-  the previous version and the job fails. One deploy runs at a time (a concurrency
-  group; a running deploy is never cancelled), and a commit that is no longer `main`'s head when
-  its deploy starts deploys nothing. `pnpm run worker:deploy` is the same publish by hand.
-- `.github/workflows/nightly.yml` (daily and on demand) runs the same three coverage jobs as
-  `ci.yml` (`coverage-unit`, `coverage-e2e` in four shards, and `coverage`, whose `pnpm coverage
-  --merge=coverage-parts --min=100` fails when any total is under 100 % and uploads the report for
-  14 days) and `flaky`, which runs the `chromium` project in four shards with `--repeat-each=2
-  --retries=0 --fail-on-flaky-tests`.
-- `.github/workflows/revert-proof.yml` (on demand, and on a pull request labelled
-  `revert-proof`; six shards) takes every fix a pull request lists in the manifest
-  `tools/review/revert-proof.json` (empty by default) and checks that the fix's own test fails
-  on the fix commit's parent and passes on the fix commit.
+- **One build, one deploy path.** `verify` in `.github/workflows/ci.yml` is the only job that
+  builds the production site; the browser jobs download its `dist` artifact and `deploy`
+  (a push to `main`, after every other job) publishes exactly those files with
+  `pnpm dlx wrangler@4.135.0`, then `tools/deploy/smoke.mjs` checks the live site against the
+  built `dist/` (an HTML page the zone's bot protection challenges from the runner's network,
+  403 with `cf-mitigated: challenge`, is reported rather than failed; this build's
+  content-hashed editor scripts, the security headers on the first of them and `/sw.js` are
+  checked either way). The Workers Builds auto-deploy of the Cloudflare dashboard must stay
+  off, and `pnpm run worker:deploy` is the same publish by hand. Every job, the nightly and
+  revert-proof workflows and the protection of `main` are described in `CONTRIBUTING.md`
+  ("Continuous integration"); the PDF → Word export is not measured round trip in CI (the
+  LibreOffice layout notes in this file are recorded measurements, not a dependency).
 
 The `dist/_headers` file is part of the upload, so the CSP and the COOP/COEP pair are
 host-enforced rather than dashboard settings. A green pipeline is not evidence that the deployed
@@ -3129,21 +3433,19 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 
 | Layer | Mechanism |
 |---|---|
-| Pure logic (`pdf-model`, `pdf-shared`, `pdf-text-engine`, op planners) | Vitest in a Node environment (`pnpm unit`); the page-range parser, journal, session, drafts, save router, the save plan's byte facts and signature fate (`save-plan.test.ts`), vault policy, trust roots, pdf.js handle, Tesseract adapter, text source, the text model's word segmentation (`model.test.ts`), the typed-text layout and writer with the pinned face (`annotation-freetext.test.ts`), shapes, settled (renamed and retagged) text markup and marker resolution read back through pdf.js (`annotation-shapes.test.ts`), measurement geometry, scale, unit and comment (`measure.test.ts`), the MuPDF writer vocabulary (`mupdf-write.test.ts`), document properties and attachments against real MuPDF bytes, read back through the pdf.js reader (`metadata.test.ts`, `attachments-write.test.ts`), the font inventory over inherited, indirect and descendant-font resources (`pdf-fonts.test.ts`), layer toggles, order, rename and refusals read back through the viewer's layer reader (`layer-write.test.ts`), link add/remove on rotated pages with URI refusal and encoding read back through pdf.js (`link-edit.test.ts`), outline replace/add/rename/remove, counts, orphan objects and refusals read back through the outline reader (`outline-edit.test.ts`), footer, Bates and watermark placement on turned pages, extraction and the no-print group (`stamp.test.ts`), image opacity, listing, sample reads, in-place replacement and EXIF placement for all eight orientations (`image-opacity.test.ts`, `image-edit.test.ts`, `images.test.ts`), every page-box mode rendered back, turned pages included (`page-boxes.test.ts`), composition turns added to the page's own rotation and a merge keeping the base title and XMP through the real `extractPages` (`compose.test.ts`), matched blank and image pages, chosen pages of another document and replacement with the base Info kept (`page-insert.test.ts`), N-up cells, booklet reading order, turned and cropped sources, poster tiles and the duplex back side read back as text (`impose.test.ts`), the structure rewrite with and without Info and the in-place raster page keeping the outline (`compress.test.ts`), form reading, filling, creation, locking, flattening, calculation and data round trips read back through MuPDF's widget API (`forms.test.ts`), the OCR layer's placement on a turned page through pdf.js's own viewport (`ocr.test.ts`), text-edit erase, baseline placement, WinAnsi substitution and justified words (`text-edit.test.ts`), the batch runner resolving `all` per item and failing a locked item alone (`batch.test.ts`), signing verified by the product's own verifier, a tampered byte and an encrypted refusal (`sign.test.ts`), accessibility facts, tagging over real marked content and shared alt text (`accessibility.test.ts`), the font-bytes cache (`noto.test.ts`) and the comment-exchange round trip and space conversion (`annotation-data.test.ts`) all have specs |
+| Pure logic (`pdf-model`, `pdf-shared`, `pdf-text-engine`, op planners) | Vitest in a Node environment (`pnpm unit`); the page-range parser, journal, session, drafts, the save plan's byte facts and signature fate (`save-plan.test.ts`), vault policy, trust roots, pdf.js handle, Tesseract adapter, text source, the text model's word segmentation (`model.test.ts`), the typed-text layout and writer with the pinned face (`annotation-freetext.test.ts`), shapes, settled (renamed and retagged) text markup and marker resolution read back through pdf.js (`annotation-shapes.test.ts`), measurement geometry, scale, unit and comment (`measure.test.ts`), the MuPDF writer vocabulary (`mupdf-write.test.ts`), document properties and attachments against real MuPDF bytes, read back through the pdf.js reader (`metadata.test.ts`, `attachments-write.test.ts`), the font inventory over inherited, indirect and descendant-font resources (`pdf-fonts.test.ts`), layer toggles, order, rename and refusals read back through the viewer's layer reader (`layer-write.test.ts`), link add/remove on rotated pages with URI refusal and encoding read back through pdf.js (`link-edit.test.ts`), outline replace/add/rename/remove, counts, orphan objects and refusals read back through the outline reader (`outline-edit.test.ts`), footer, Bates and watermark placement on turned pages, extraction and the no-print group (`stamp.test.ts`), image opacity, listing, sample reads, in-place replacement and EXIF placement for all eight orientations (`image-opacity.test.ts`, `image-edit.test.ts`, `images.test.ts`), every page-box mode rendered back, turned pages included (`page-boxes.test.ts`), composition turns added to the page's own rotation and a merge keeping the base title and XMP through the real `extractPages` (`compose.test.ts`), matched blank and image pages, chosen pages of another document and replacement with the base Info kept (`page-insert.test.ts`), N-up cells, booklet reading order, turned and cropped sources, poster tiles and the duplex back side read back as text (`impose.test.ts`), the structure rewrite with and without Info and the in-place raster page keeping the outline (`compress.test.ts`), form reading, filling, creation, locking, flattening, calculation and data round trips read back through MuPDF's widget API (`forms.test.ts`), the OCR layer's placement on a turned page through pdf.js's own viewport (`ocr.test.ts`), text-edit erase, baseline placement, WinAnsi substitution and justified words (`text-edit.test.ts`), the batch runner resolving `all` per item and failing a locked item alone (`batch.test.ts`), signing verified by the product's own verifier, a tampered byte and an encrypted refusal (`sign.test.ts`), accessibility facts, tagging over real marked content and shared alt text (`accessibility.test.ts`), the font-bytes cache (`noto.test.ts`) and the comment-exchange round trip and space conversion (`annotation-data.test.ts`) all have specs |
 | Model integrity | `tools/audit/typecheck-model.cjs` re-runs the root compiler options over `pdf-model`, `pdf-shared`, `pdf-text-engine` and `apps/web/src/drafts.ts` with paths mapped to source, so a regression that makes the model depend on the app fails even if the bundler would resolve it. The gate runs it as its own step |
 | Mark selection and editing | `mark-interaction.test.ts` (projection, hit tests, identity), `annotation-remove.test.ts` (deletion and refusal), `annotation-transform.test.ts` (geometry and independent MuPDF raster readback), `annotations.test.ts` (recovered engine records), and history/save cases in `apps/web/src/operations.test.ts` |
 | Parity features | One `*.test.ts` beside each module, against bytes re-read by MuPDF or pdf.js: comment replies and review states (`annotation-review`, `annotation-threads`), XFDF/FDF/JSON round trips with Turkish text, font subsets (`mupdf-write`), the locale registry and the Phosphor weight plugin; find and replace, the glyph-less font, Office and text conversion (a damaged part becomes a loss note), Office export and page layout; CRLs, RFC 3161 timestamps and the signature evidence (`signature-revocation.fixtures.ts` builds the PKI); form-field detection and XFA (`xfa-data`, `xfa-form`, `xfa-flatten`); the scan geometry, detector (every turn, antialiased and hard-edged), warp and filters; sanitize per category; one real Ghostscript PDF/A-2b run checked by `checkPdfA`, the PDF/UA rules and the structure editor (`ua.fixtures.ts`); and `useShortcuts.test.ts`, which refuses a chord two rows share |
-| Source-level behaviour | `tools/audit/regressions.cjs` — browser-free checks (it prints its own count) that transpile the **real** sources and run them against doubles (OPFS, service worker, pdf.js handle), plus selected React callbacks extracted from `App.tsx` by AST. Subjects: Save/Save As semantics, draft validation and encoding, journal snapshot stability, branch release, service-worker offline behaviour and cache isolation, OPFS persistence and recovery, pdf.js loading paths, OCR worker cleanup, the redaction save guard, failed writes and dirtiness, and a final unhandled-rejection sweep |
-| Gate integrity | `tools/audit/require-tests.mjs` fails the build when the unit run discovered zero test files, so an empty run cannot pass as a green gate |
+| Source-level behaviour | `tools/audit/regressions.cjs` — browser-free checks (it prints its own count) that transpile the **real** sources and run them against doubles (OPFS, service worker, pdf.js handle), calling the feature functions the shell binds in `App.tsx` with the arguments it passes (the audit reads no source of the shell). Subjects: Save/Save As semantics, draft validation and encoding, journal snapshot stability, branch release, service-worker offline behaviour and cache isolation, OPFS persistence and recovery, pdf.js loading paths, OCR worker cleanup, the redaction save guard, failed writes and dirtiness, and a final unhandled-rejection sweep |
+| Gate integrity | `tools/audit/require-tests.mjs` fails the build when the unit run discovered zero test files, so an empty run cannot pass as a green gate. The gates are tested too (`pnpm unit` includes `tools/**/*.test.ts`): `require-tests.test.ts` runs it on synthetic reports, `regressions.test.ts` runs the regression harness against a copy of the tree with a seeded defect, and `workflows.test.ts` pins the shape of the workflow files |
 | Built application | Playwright against assembled `dist/` under production headers (`playwright.config.ts`, served by `tools/preview-dist.mjs`), Chromium only, no launch flags. Every spec goes through `e2e/test.ts`, whose automatic fixture fails a test on any console error or uncaught exception in any page of its browser context unless the test names it (`allowedErrors`; `referee.spec.ts` checks the referee itself on a second page) and which, when `E2E_COVERAGE` is set, records every page's V8 coverage (the Coverage row). Two projects: `chromium` runs everything except tests tagged `@service-worker` (the worker's install, update and offline reload: `offline.spec.ts`, `app-flows.spec.ts`, `app15-update.spec.ts`, `flows-modes.spec.ts`), and `service-worker` runs those once the first has passed (`dependencies`), because their timing depends on an idle machine; a targeted run of one of them takes `--no-deps`. `E2E_WORKERS` caps the browsers on a machine someone is using; CI runs with one retry. What is asserted is what the user sees and the file the export writes, re-read with MuPDF or pdf.js (`readProducedEntry` in `tool-fixture.ts`; fixtures are generated in the test, the OCR scan included: known printed lines rasterised by MuPDF into an image-only PDF, recognised words asserted in reading order). The suite comes in families. **Shell and document:** `smoke`, `document`, `web-shell`, `ui-shell` (menu bar, palette, settings), `editor-stability` (a mark scrolls with its page, arming a tool or posting a notice leaves the viewer where it is), `ocr`, `offline`, `two-window` (two windows on one vault) and `ui-recovery-race` (a document opened while draft recovery waits keeps the front; `recent-handles-gate.ts` holds the handle store). **`flows-*`:** document, pages, modes (undo queueing, reading and presentation mode, the update banner against a second origin, signing and the save warning), commands (one test per menu command) and parity (comment threads, field detection, sanitize, PDF/A, PDF/UA, right-to-left). **`app-*`:** files (pickers and write-back), flows (other formats opened as PDFs, history, tab lifecycle), home and shortcuts (every chord, and the widgets that keep their keys). **`app15-*`:** work that arrives while the shell is busy, commands on a selection, navigation, refusals, the start page when part of it cannot be fetched, the update banner's dismissal and a damaged vault. **`ui-*`:** one family per surface, each checked in the produced file: marks (`ui-marks-*`, `ui-layers-*`, `tool-interaction`), panels (`ui-panels*`, `ui-tags`, `ui-accessibility`, `ui-comments`, `ui-compare`, `ui-outline`, `ui-pages`, `ui-properties`, `ui-attachments`, `ui-search`), the viewer, print, presentation, read-aloud and snapshot (`ui-viewer15*`, `ui-rest16*`, `ui-print`, `ui-presentation`, `ui-read-aloud`, `ui-snapshots`), scan, signatures and stamps (`ui-scan*`, `ui-signature*`, `ui-stamp-image`), XFA and batch (`ui-xfa*`, `ui-batch`), Office export (`ui-office-*`), dialogs and badges (`ui-small`, `ui-password`). **`faults16*`:** engine failures injected in the running app through `e2e/engine-faults.ts` (Engine and hostile-input guards row). `e2e/settings.ts` reaches the language, theme and interface mode through the settings dialog, as a user does; `untranslated-labels.test.ts` is the unit guard for Turkish literals in attributes |
 | Landing and legal pages | `e2e/site.spec.ts`, Playwright against the same assembled `dist/`, covers the six pages of `apps/site` in Turkish and English: each is well-formed (one `h1` and one `main`, language, description, canonical, three `hreflang` links and a sitemap entry, resolving links and anchors), the language switch leads to the translation and back, the English pages contain no Turkish letters, the header call to action opens `/editor/` from both languages, section anchors scroll and the FAQ expands, an unknown path gets the styled 404 page with working exits (the English one under `/en/`, whose exits stay in English), the stored theme is applied by a synchronous `theme-boot.js` before first paint and survives a reload, fonts and images load with no CSP violation, and the skip link is the first tab stop with no sideways scroll at phone width |
 | Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
 | Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the Playwright suite against an unminified build without the React Compiler (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` and writes it to its own gzipped file when the page is collected (`e2e/test.ts`), a worker keeping nothing between tests; the records are merged a batch at a time, mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. With no mode flag one process does all of this; the hosted workflows split it: `--unit-only` runs the unit suite and leaves `coverage/unit/coverage-final.json`, `--e2e-shard=N/M` builds, runs the chromium project's shard N of M (shard M also the service-worker tests) and leaves its records in `coverage/e2e-v8/`, and `--merge=<dir>[,<dir>...]` takes those files from the directories, builds the editor again for its source maps (the build is deterministic), restores the production build and writes the report. `--skip-e2e` reports the unit suite alone; `--min=<percent>` fails a run that prints a report when the total lines, statements, branches or functions are under it, and names the files that miss (the CI and nightly `coverage` jobs pass `--merge=coverage-parts --min=100`). `E2E_WORKERS` caps the browsers and Vitest's own `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
 | Engine and hostile-input guards | A guard against a misbehaving engine or a hostile file is tested by fault injection. In Node, a `*.faults.test.ts` beside the operation (for example `structure.faults.test.ts`) wraps `loadMupdf` in a proxy that damages the document just before it is saved or makes one call fail, while the bytes that come out and the second reader stay real. In the browser, `e2e/engine-faults.ts` serves the real MuPDF module through a wrapper and wraps pdf.js's worker, so a spec can make one named engine call fail (`failNext`, optionally letting the first matching calls through) or hold it (`holdNext`) to stage a race, without touching product code; the `faults16*` specs assert the notice, that the exported file is unchanged and that the retry works. `e2e/recent-handles-gate.ts` does the same for the handle store that draft recovery waits on (`e2e/ui-recovery-race.spec.ts`) |
-| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each builds `dist/`, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); `coverage-unit` (`pnpm coverage --unit-only`), `coverage-e2e` in 4 shards (`pnpm coverage --e2e-shard=N/4`, each building the unminified editor and uploading its pages' V8 records) and `coverage`, which needs both and runs `pnpm coverage --merge=coverage-parts --min=100` on the artifacts they uploaded; then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
-| Nightly | `.github/workflows/nightly.yml`: the three coverage jobs of `ci.yml`, whose `coverage` runs `pnpm coverage --merge=coverage-parts --min=100` (fails when any total is under 100 %, uploads the report), and the Playwright suite in 4 shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, which finds a flaky test the retry of the pull-request run would hide |
-| Revert proof | `.github/workflows/revert-proof.yml` (on demand, or a pull request labelled `revert-proof`): for every fix a pull request lists in `tools/review/revert-proof.json`, the fix's own test fails on the fix commit's parent and passes on the fix commit |
-| Documentation sync | `pnpm check:docs`, a step of `verify`, fails when the documentation and the code disagree |
+| Hosted CI, nightly, revert proof | `.github/workflows/ci.yml`, `nightly.yml` and `revert-proof.yml`; every job is described once, in `CONTRIBUTING.md` ("Continuous integration"), and the deploy in §13.4 |
+| Documentation sync | `pnpm check:docs` (`tools/audit/docs-sync.mjs`), a step of `verify`, fails when a file path, `pnpm` script or command the documentation names does not exist, when a Turkish site page and its English page differ in structure, or when a site link does not resolve; whether the prose is true is a reviewer's check |
 | Numbers rather than assertions | `pnpm measure:model` reports journal append/undo/redo timings at depth 100/1k/10k, snapshot retention at 8/40/130 MiB versions, and engine-value encode/decode/drop counts. It is deliberately outside `pnpm unit` so a measurement can never become a build gate |
 
 `tools/behavior/` holds the three `ci:behavior` checks

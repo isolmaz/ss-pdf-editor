@@ -104,6 +104,7 @@ import {
   pageGestureAt,
   releaseFocusHolder,
 } from './mark-interaction';
+import { selectionBoxes } from './selection-boxes';
 
 /**
  * The armed tool. Every annotation kind plus one tool that is **not** an annotation
@@ -119,12 +120,6 @@ export type AnnotationTool = AnnotationKind | 'link';
 
 /** The kinds `markStyle` paints with one styled box per line: ink, shapes and typed text have their own branches. */
 type MarkupKind = Exclude<AnnotationKind, 'ink' | 'shapes' | 'freetext'>;
-
-/** A text selection, already reduced to per-line boxes in page points. */
-export interface TextSelection {
-  readonly pageIndex: number;
-  readonly boxes: readonly MarkBox[];
-}
 
 export interface AnnotationLayerProps {
   readonly t: Translator;
@@ -203,79 +198,6 @@ function isTextTool(
   tool: AnnotationTool | null,
 ): tool is 'highlight' | 'underline' | 'strikeout' | 'squiggly' {
   return tool === 'highlight' || tool === 'underline' || tool === 'strikeout' || tool === 'squiggly';
-}
-
-/**
- * Selection → per-line boxes, one entry per page the selection touches.
- *
- * The text layer is a stack of absolutely positioned spans, one per text run, so
- * a selection is measured by walking the DOM ranges it spans and collecting each
- * client rect. Consecutive rects on the same line are merged (a line is usually
- * several spans), and each rect is converted through the viewer's own point
- * mapping — which is why a mark lands exactly on the words even at 250 % zoom on
- * a rotated page.
- *
- * One mark per page: a selection spanning a page break yields one entry per page
- * and the caller creates one mark from each. Returning only the first page would
- * silently mark just the part of the selection above the break.
- */
-export function selectionBoxes(viewer: ViewerApi): readonly TextSelection[] {
-  const selection = window.getSelection();
-  if (selection === null || selection.isCollapsed || selection.rangeCount === 0) return [];
-
-  const rects: { pageIndex: number; box: MarkBox }[] = [];
-  for (let rangeIndex = 0; rangeIndex < selection.rangeCount; rangeIndex += 1) {
-    const range = selection.getRangeAt(rangeIndex);
-    for (const client of range.getClientRects()) {
-      if (client.width <= 0 || client.height <= 0) continue;
-      const first = viewer.pointToPage(client.left, client.top);
-      const second = viewer.pointToPage(client.right, client.bottom);
-      if (first === null || second === null || first.pageIndex !== second.pageIndex) continue;
-      rects.push({
-        pageIndex: first.pageIndex,
-        box: [
-          Math.min(first.x, second.x),
-          Math.min(first.y, second.y),
-          Math.max(first.x, second.x),
-          Math.max(first.y, second.y),
-        ],
-      });
-    }
-  }
-  if (rects.length === 0) return [];
-
-  const boxesByPage = new Map<number, MarkBox[]>();
-  for (const { pageIndex, box } of rects) {
-    const page = boxesByPage.get(pageIndex);
-    if (page === undefined) boxesByPage.set(pageIndex, [box]);
-    else page.push(box);
-  }
-  return [...boxesByPage].map(([pageIndex, boxes]) => ({ pageIndex, boxes: mergeLineBoxes(boxes) }));
-}
-
-/** Merge boxes that overlap vertically (same line, several spans) into one. */
-function mergeLineBoxes(boxes: readonly MarkBox[]): readonly MarkBox[] {
-  const sorted = [...boxes].sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-  const merged: MarkBox[] = [];
-  for (const box of sorted) {
-    const previous = merged[merged.length - 1];
-    if (previous === undefined) {
-      merged.push(box);
-      continue;
-    }
-    const overlapsVertically = box[1] <= previous[3] + 1 && box[3] >= previous[1] - 1;
-    if (!overlapsVertically) {
-      merged.push(box);
-      continue;
-    }
-    merged[merged.length - 1] = [
-      Math.min(previous[0], box[0]),
-      Math.min(previous[1], box[1]),
-      Math.max(previous[2], box[2]),
-      Math.max(previous[3], box[3]),
-    ];
-  }
-  return merged;
 }
 
 /**
@@ -373,8 +295,16 @@ export function AnnotationLayer({
     if (tool === null) return;
     const layer = layerRef.current;
 
+    /**
+     * The pointer of the press a text tool is waiting to see released: the press that
+     * began on a page with the primary button, whose drag is the browser's own selection.
+     * It is what ties a release to a selection (see `commitSelection`).
+     */
+    let textPress: number | null = null;
+
     const resetGesture = (): void => {
       dragRef.current = null;
+      textPress = null;
       setLive(null);
       setPreview(null);
     };
@@ -382,8 +312,9 @@ export function AnnotationLayer({
     /**
      * The text tools fire on release: the browser has finished the selection by
      * then, and the measured boxes are the ones the user can see. A selection made
-     * earlier must not be re-committed, so only a release whose own press started
-     * on a page counts.
+     * earlier must not be re-committed, so only the release of a press that itself
+     * started on a page (`textPress`, primary button) counts — never a right click,
+     * a press that began on the chrome, or a gesture the browser cancelled.
      */
     const commitSelection = (kind: AnnotationKind): void => {
       const selections = selectionBoxes(viewer);
@@ -407,7 +338,10 @@ export function AnnotationLayer({
       // drawn **freehand** — over a scan, or any page area with no text to select — so
       // its press starts sampling instead of returning, and its release decides between
       // the two: the selection when the browser made one, the stroke when it did not.
-      if (isTextTool(tool) && tool !== 'highlight') return;
+      if (isTextTool(tool) && tool !== 'highlight') {
+        textPress = event.pointerId;
+        return;
+      }
       if (!isTextTool(tool)) {
         releaseFocusHolder();
         event.preventDefault();
@@ -510,7 +444,11 @@ export function AnnotationLayer({
     const onPointerUp = (event: PointerEvent): void => {
       const drag = dragRef.current;
       if (drag === null || drag.pointerId !== event.pointerId) {
-        if (isTextTool(tool) && pageGestureAt(event.clientX, event.clientY).available) commitSelection(tool);
+        // The release of a text tool's press: it ends that press, and commits only as the
+        // primary button's (a chord's last release is another button's).
+        const pressed = textPress === event.pointerId;
+        if (pressed) textPress = null;
+        if (pressed && event.button === 0 && isTextTool(tool)) commitSelection(tool);
         return;
       }
       dragRef.current = null;
@@ -587,6 +525,10 @@ export function AnnotationLayer({
     };
 
     const cancel = (event: PointerEvent): void => {
+      // A text press the browser took over (dragging the selected words, a system gesture)
+      // never produces the release that would commit, and must not be committed by the
+      // release of whatever press comes next.
+      if (textPress === event.pointerId) textPress = null;
       if (dragRef.current?.pointerId !== event.pointerId) return;
       resetGesture();
     };
@@ -756,7 +698,18 @@ export function AnnotationLayer({
         {tool === 'highlight' ? liveStroke : null}
       </div>
 
-      <div ref={layerRef} className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+      <div
+        ref={layerRef}
+        className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+        // The pen, the marker, shapes and the link region are drags across the page, and the
+        // finger that drags must not scroll the document (which cancels the pointer): the
+        // viewer's scroll container answers this mark with `touch-action: none`
+        // (`PdfViewerPane`). The page, not this inert layer, is what the finger touches.
+        // The other tools are a tap or the browser's own selection, and keep touch scrolling.
+        data-touch-draw={
+          tool === 'ink' || tool === 'shapes' || tool === 'link' || tool === 'highlight' ? '' : undefined
+        }
+      >
         {/* The armed tool's name, for assistive tech. It is a status, not a control:
             every binding stays in `useShortcuts.ts`. */}
         {tool === null ? null : (
