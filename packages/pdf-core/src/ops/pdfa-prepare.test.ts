@@ -4,12 +4,29 @@
  * Print flag, a missing `/ToUnicode`), read back from the produced bytes.
  */
 
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import type { PDFPage } from 'mupdf';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadMupdf, openPdf } from '../engines/mupdf';
 import { blankForm, formPdf, handPdf, widgetBody } from './forms.fixtures';
 import { prepareForPdfA, toUnicodeCMap } from './pdfa-prepare';
 
 const run = { signal: new AbortController().signal };
+
+// A field that holds a value under an empty appearance is drawn again before it is flattened,
+// and that is drawn with the Noto Sans the app serves: the asset fetch is the only stub.
+beforeEach(() => {
+  const require = createRequire(import.meta.url);
+  const file = require.resolve('@expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf', {
+    paths: [process.cwd()],
+  });
+  const font = new Uint8Array(readFileSync(file));
+  vi.stubGlobal('fetch', async () => new Response(font));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 async function fixture(options: { readonly save?: string } = {}): Promise<Uint8Array> {
   const mupdf = await import('mupdf');
@@ -348,6 +365,14 @@ describe('prepareForPdfA on a file with everything PDF/A forbids', () => {
       run,
     );
     expect(flattened.counters).toMatchObject({ formFieldsFlattened: 1, widgetsRemoved: 0 });
+    // The field's value sat under an empty appearance: it is on the page now, not lost with the widget.
+    const reread = openPdf(await loadMupdf(), flattened.bytes);
+    try {
+      const page = reread.loadPage(0) as PDFPage;
+      expect(page.toStructuredText('preserve-whitespace').asText()).toContain('x');
+    } finally {
+      reread.destroy();
+    }
     // A text field with no widget cannot be flattened: the flattener refuses and nothing is flattened.
     const broken = await prepareForPdfA(form('<</FT/Tx/T(t)>>', '[]'), 1, run);
     expect(broken.counters.formFieldsFlattened).toBe(0);

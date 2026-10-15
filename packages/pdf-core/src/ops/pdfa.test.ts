@@ -6,11 +6,27 @@
  * result of that conversion or stop before the engine starts.
  */
 
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadMupdf, openPdf } from '../engines/mupdf';
 import { convertToPdfA } from './pdfa';
 import { plain, rich, withUnreadableContent } from './pdfa.fixtures';
 import { checkPdfA } from './pdfa-check';
+
+// `rich()` holds a text value under an empty appearance: flattening draws it again with the
+// Noto Sans the app serves, so that asset's fetch is stubbed (Ghostscript loads from disk).
+beforeEach(() => {
+  const require = createRequire(import.meta.url);
+  const file = require.resolve('@expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf', {
+    paths: [process.cwd()],
+  });
+  const font = new Uint8Array(readFileSync(file));
+  vi.stubGlobal('fetch', async () => new Response(font));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const run = { signal: new AbortController().signal };
 
