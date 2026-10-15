@@ -101,4 +101,9 @@ export const formsPart = {
   'form.reason.required': 'Bu alan zorunlu.',
   'form.reason.maxLength': 'Girilen metin alanın uzunluk sınırından uzun.',
   'form.reason.notAnOption': 'Seçilen değer alanın seçenekleri arasında değil.',
+  'form.reason.unknownField': 'Belgede bu adla bir alan yok.',
+  'form.note.violation': '{name}: {reason}',
+  'form.note.invalid': '{count} değer veya alan kurallara uymuyor; ayrıntılar raporda.',
+  'form.note.flattenSkipped':
+    '{count} alan düzleştirilemedi (düğme veya imza alanı) ve belgede olduğu gibi kaldı: {names}',
 } as const;

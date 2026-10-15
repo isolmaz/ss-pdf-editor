@@ -33,6 +33,15 @@ import { ToolError } from 'pdf-shared';
 import type { OperationDialogSpec } from '../dialogs/types';
 import { resolveScope } from './scope';
 
+/** The field kinds `flattenForm` can paint into the page; a push button or a signature field it refuses. */
+const FLATTENABLE_KINDS: readonly FormFieldInfo['kind'][] = [
+  'text',
+  'checkbox',
+  'dropdown',
+  'radio',
+  'optionlist',
+];
+
 /** Cap so one paste cannot ask for a thousand widgets in one run. */
 const MAX_CREATED_FIELDS = 200;
 
@@ -95,12 +104,52 @@ function parseCalculations(text: string): readonly FormCalculation[] {
   return calculations;
 }
 
-/** One line naming what the document already declares — the dialog's inventory. */
-function inventoryNote(fields: readonly FormFieldInfo[]): string {
-  return fields
-    .slice(0, 40)
-    .map((field) => `${field.name} [${field.kind}]`)
-    .join(', ');
+/** One value or field the validate-only run refuses, with the dictionary key that says why. */
+interface Violation {
+  readonly name: string;
+  readonly reasonKey: MessageKey;
+}
+
+/**
+ * The rule check of the validate-only run: every fill against its field's rules, every
+ * calculation target against the field list, and every required field that would still be
+ * empty once the fills are in (a read-only field the user cannot change is not counted).
+ */
+function validationViolations(
+  fields: readonly FormFieldInfo[],
+  fills: readonly FormFill[],
+  calculations: readonly FormCalculation[],
+): readonly Violation[] {
+  const byName = new Map(fields.map((field) => [field.name, field]));
+  const violations: Violation[] = [];
+  const filled = new Set<string>();
+  for (const fill of fills) {
+    filled.add(fill.name);
+    const field = byName.get(fill.name);
+    if (field === undefined) {
+      violations.push({ name: fill.name, reasonKey: 'form.reason.unknownField' });
+      continue;
+    }
+    const verdict = validateField(field, fill.value);
+    if (!verdict.ok && verdict.reasonKey !== undefined) {
+      violations.push({ name: fill.name, reasonKey: verdict.reasonKey });
+    }
+  }
+  const calculated = new Set<string>();
+  for (const calculation of calculations) {
+    calculated.add(calculation.target);
+    if (!byName.has(calculation.target)) {
+      violations.push({ name: calculation.target, reasonKey: 'form.reason.unknownField' });
+    }
+  }
+  for (const field of fields) {
+    if (!field.required || field.readOnly || filled.has(field.name) || calculated.has(field.name)) continue;
+    const verdict = validateField(field, field.value ?? '');
+    if (!verdict.ok && verdict.reasonKey !== undefined) {
+      violations.push({ name: field.name, reasonKey: verdict.reasonKey });
+    }
+  }
+  return violations;
 }
 
 /**
@@ -151,31 +200,14 @@ export const formFieldsDialog: OperationDialogSpec = {
   ],
   run: async (params, context) => {
     const fields = await readFormFields(context.bytes, context.signal);
-    const inventory = inventoryNote(fields);
     const fills = parseFills(String(params.fills ?? ''), fields);
     const calculations = parseCalculations(String(params.calculations ?? ''));
 
-    // Validation runs first and always: a value that cannot be written must be
-    // reported before the document is touched, not after half of the fills landed.
-    const byName = new Map(fields.map((field) => [field.name, field]));
-    const refused: string[] = [];
-    for (const fill of fills) {
-      const field = byName.get(fill.name);
-      if (field === undefined) {
-        refused.push(fill.name);
-        continue;
-      }
-      const verdict = validateField(field, fill.value);
-      if (!verdict.ok) refused.push(fill.name);
-    }
-    if (refused.length > 0 && params.validateOnly === true) {
-      throw new ToolError('range-invalid', {
-        engine: 'ui',
-        engineMessage: `form validation refused: ${refused.join(', ')} (inventory: ${inventory})`,
-      });
-    }
-
-    if (params.validateOnly === true && fills.length + calculations.length === 0) {
+    // Validate only: nothing below this block may write. The fills and calculations are
+    // checked against the rules the document declares, and the report is the whole result —
+    // no output file and no new bytes.
+    if (params.validateOnly === true) {
+      const violations = validationViolations(fields, fills, calculations);
       return {
         files: [],
         report: {
@@ -183,16 +215,22 @@ export const formFieldsDialog: OperationDialogSpec = {
           steps: [],
           notes: [
             note('preserved', 'form.note.inventory', { count: fields.length }),
-            // A refused fill has thrown above, so nothing is refused once the run gets here.
-            note('preserved', 'form.note.valid'),
+            ...(violations.length === 0
+              ? [note('preserved', 'form.note.valid')]
+              : violations.map((violation) =>
+                  note('warning', 'form.note.violation', {
+                    name: violation.name,
+                    reason: context.t(violation.reasonKey),
+                  }),
+                )),
           ],
           inputBytes: context.bytes.length,
           outputBytes: context.bytes.length,
           pageCount: context.pageCount,
           incremental: true,
         },
-        noticeKey: 'form.note.inventory',
-        noticeParams: { count: fields.length },
+        noticeKey: violations.length === 0 ? 'form.note.inventory' : 'form.note.invalid',
+        noticeParams: { count: violations.length === 0 ? fields.length : violations.length },
       };
     }
 
@@ -494,13 +532,31 @@ export const formDataDialog: OperationDialogSpec = {
     const notes = [...imported.report.notes];
     let steps = [...imported.report.steps];
     if (params.flatten === true) {
-      const flattened = await flattenForm(bytes, null, {
-        signal: context.signal,
-        onProgress: context.onProgress,
-      });
-      bytes = flattened.bytes;
-      steps = [...steps, ...flattened.report.steps];
-      notes.push(...flattened.report.notes);
+      // Flatten refuses a whole form that holds a push button or a signature field, so only
+      // the fields it can draw are named; the others stay in the document and the report says so.
+      // A document with no fields at all goes to `flattenForm` unchanged so that it refuses
+      // (nothing to flatten, or a dynamic XFA form) instead of returning an untouched file.
+      const present = await readFormFields(bytes, context.signal);
+      const flattenable = present.filter((field) => FLATTENABLE_KINDS.includes(field.kind));
+      const kept = present.filter((field) => !FLATTENABLE_KINDS.includes(field.kind));
+      if (present.length === 0 || flattenable.length > 0) {
+        const flattened = await flattenForm(
+          bytes,
+          present.length === 0 ? null : flattenable.map((field) => field.name),
+          { signal: context.signal, onProgress: context.onProgress },
+        );
+        bytes = flattened.bytes;
+        steps = [...steps, ...flattened.report.steps];
+        notes.push(...flattened.report.notes);
+      }
+      if (kept.length > 0) {
+        notes.push(
+          note('warning', 'form.note.flattenSkipped', {
+            count: kept.length,
+            names: kept.map((field) => field.name).join(', '),
+          }),
+        );
+      }
     }
     if (imported.missing.length > 0) {
       notes.push(note('warning', 'form.note.missing', { count: imported.missing.length }));
