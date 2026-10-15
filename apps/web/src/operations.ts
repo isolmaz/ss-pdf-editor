@@ -802,6 +802,11 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     mayChange: ['pageContent'],
     why: 'straightening wraps the page contents in a rotation, so what the page shows is turned; the text, the boxes, the annotations and /Rotate are not touched',
   },
+  {
+    steps: ['split-two-up'],
+    mayChange: ['pageCount', 'pageOrder', 'pageContent', 'textContent', 'rotation', 'cropBox', 'pageLabels'],
+    why: 'page-tidy turns each landscape page into a left and a right page that window the same content through their own boxes, and re-plans the labels so each half keeps the label of the page it came from',
+  },
 
   /* — annotation and outline writers — */
   {

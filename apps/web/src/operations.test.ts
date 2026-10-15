@@ -33,6 +33,7 @@ import { scanDocument, tiltedText } from 'pdf-core/ops/deskew.fixtures';
 import { fieldValueText } from 'pdf-core/ops/form-value';
 import { readFormFields } from 'pdf-core/ops/forms';
 import { scaleForRatio } from 'pdf-core/ops/measure';
+import { splitTwoUpPages } from 'pdf-core/ops/page-tidy';
 import { redactDocument } from 'pdf-core/ops/redact';
 import { readPageText } from 'pdf-core/text-source';
 import {
@@ -637,6 +638,30 @@ describe('verifyForWrite: the steps straightening reports', () => {
     for (const fact of ['pageCount', 'pageOrder', 'rotation', 'cropBox']) {
       expect(checkFor(result, fact)?.verdict, fact).toBe('verified');
     }
+  });
+});
+
+/** Splitting two-up scans journals the step ids `splitTwoUpPages` reports; the table has to know the one that splits. */
+describe('verifyForWrite: the steps a two-up split reports', () => {
+  it('declares every step the writer reports, so a split scan verifies against the scan it came from', async () => {
+    const source = await scanDocument([{ content: tiltedText(0), size: [842, 595] }]);
+    const outcome = await splitTwoUpPages(source, [0], SIGNAL);
+    expect(outcome.report.steps).toEqual(['load', 'split-two-up', 'save']);
+
+    const result = await verify(outcome.bytes, source, {
+      expectedPageCount: 2,
+      steps: outcome.report.steps,
+    });
+    expect(result.operation).toEqual({ kind: 'declared', steps: [] });
+    expect(result.declared).toEqual([
+      'pageCount',
+      'pageOrder',
+      'pageContent',
+      'textContent',
+      'rotation',
+      'cropBox',
+      'pageLabels',
+    ]);
   });
 });
 
