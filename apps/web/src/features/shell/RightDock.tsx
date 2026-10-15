@@ -13,7 +13,7 @@ import {
   useLocale,
 } from 'pdf-ui/ui';
 import { lazy, Suspense } from 'react';
-import { SIMPLE_MODE_RAIL_GROUPS } from '../../commands';
+import { SIMPLE_MODE_RAIL_GROUPS, SIMPLE_MODE_RIGHT_TABS } from '../../commands';
 import type { PageAction } from '../../operations';
 import { useAnnotationMarks } from '../annotations/annotation-marks';
 import type { AnnotationActions } from '../annotations/use-annotation-actions';
@@ -112,22 +112,27 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
   const { annotations, setAnnotations } = useAnnotationMarks(session);
   const { redactionMarks } = useRedactionMarks(session);
   if (!rightDock || activeTab === null) return null;
+  const tabs =
+    mode === 'simple' ? RIGHT_TABS.filter((tab) => SIMPLE_MODE_RIGHT_TABS.includes(tab.id)) : RIGHT_TABS;
+  // A tab the mode hides may still be the stored one (the mode changed, or a hidden command
+  // opened it): show the tools tab instead, as the left dock does for its own hidden tab.
+  const shownTab = tabs.some((tab) => tab.id === rightTab) ? rightTab : 'tools';
   const goToPage = (pageIndex: number) => currentViewer()?.goToPage(pageIndex);
   return (
     <div className={compactViewport ? 'absolute inset-y-0 end-0 z-40 max-w-full' : 'contents'}>
       <Dock
         t={t}
         side="right"
-        tabs={RIGHT_TABS}
-        activeId={rightTab}
+        tabs={tabs}
+        activeId={shownTab}
         onSelect={selectRightTab}
         onToggle={() => hideRightDock()}
-        wide={rightTab === 'accessibility'}
+        wide={shownTab === 'accessibility'}
       >
         {/* A panel that cannot load (offline, a replaced chunk) is a sentence in its place with
             the tabs still there; keyed by the tab, so choosing another starts clean. */}
-        <PanelBoundary key={rightTab} t={t}>
-          {rightTab === 'tools' ? (
+        <PanelBoundary key={shownTab} t={t}>
+          {shownTab === 'tools' ? (
             <ToolsRailPanel
               t={t}
               activeSpec={dialogSpec}
@@ -164,7 +169,7 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
               onExportModal={openExportDialog}
               visibleGroups={mode === 'simple' ? SIMPLE_MODE_RAIL_GROUPS : undefined}
             />
-          ) : rightTab === 'history' ? (
+          ) : shownTab === 'history' ? (
             <HistoryPanel
               t={t}
               entries={activeTab.journal.entries}
@@ -172,7 +177,7 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
               onUndo={() => void actions.stepHistoryNow('undo')}
               onRedo={() => void actions.stepHistoryNow('redo')}
             />
-          ) : rightTab === 'comments' ? (
+          ) : shownTab === 'comments' ? (
             <CommentsDock
               t={t}
               marks={visibleMarks.annotations}
@@ -216,7 +221,7 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
               onRemoveReply={actions.commentReview.onRemoveReply}
               disabled={!canEdit}
             />
-          ) : rightTab === 'properties' ? (
+          ) : shownTab === 'properties' ? (
             <PropertiesFacts
               t={t}
               tab={activeTab}
@@ -226,7 +231,7 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
               onRemoveAttachment={(name) => void actions.attachments.removeFromDocument(name)}
               onReadAttachment={(name) => void actions.attachments.readOut(name)}
             />
-          ) : rightTab === 'redaction-audit' ? (
+          ) : shownTab === 'redaction-audit' ? (
             <RedactionAuditView
               key={activeTab.working.id}
               store={session}
@@ -234,7 +239,7 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
               erasedTerms={erasedWordsOf}
               workingId={activeTab.working.id}
             />
-          ) : rightTab === 'compare' ? (
+          ) : shownTab === 'compare' ? (
             <Suspense
               fallback={
                 <p aria-busy="true" className="p-2 text-xs text-kumo-subtle">
@@ -253,7 +258,7 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
                 disabled={!canEdit}
               />
             </Suspense>
-          ) : rightTab === 'accessibility' ? (
+          ) : shownTab === 'accessibility' ? (
             <AccessibilityDock
               key={activeTab.working.id}
               t={t}
@@ -264,14 +269,14 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
               onGoToPage={goToPage}
               onWritten={actions.results.applyAccessibility}
             />
-          ) : rightTab === 'pdfa' ? (
+          ) : shownTab === 'pdfa' ? (
             <PdfADock
               key={activeTab.working.id}
               t={t}
               read={actions.currentBytes}
               onConvert={() => actions.openDialog('pdfa')}
             />
-          ) : rightTab === 'forms' ? (
+          ) : shownTab === 'forms' ? (
             <FormsPanel
               t={t}
               tab={activeTab}

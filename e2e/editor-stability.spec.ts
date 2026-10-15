@@ -84,6 +84,8 @@ test('a mark moves with its page when the document scrolls', async ({ page }) =>
 
 test('arming any tool and posting a notice leave the document where it is', async ({ page }) => {
   await open(page, 'still.pdf', toolFixturePdf());
+  // The advanced mode: the simple mode's rail leaves out measure and redact.
+  await useAdvancedMode(page);
   const start = await viewerBox(page);
   const labels = await rail(page)
     .getByRole('button')

@@ -16,6 +16,7 @@ import type { MessageKey, Translator } from 'pdf-shared';
 import type { CanvasToolId } from 'pdf-ui/tools';
 import { Tooltip } from 'pdf-ui/ui';
 import { Fragment } from 'react';
+import { SIMPLE_MODE_RAIL_TOOLS } from '../commands';
 import { pickTool, useCore } from '../features/core/core-store';
 import { isMarkupTool } from '../features/core/tools';
 
@@ -86,12 +87,14 @@ const IDLE_CLASS = 'text-kumo-default hover:bg-kumo-recessed hover:text-kumo-str
 export function ToolRail({ t, canEdit }: ToolRailProps) {
   const activeTool = useCore((state) => state.canvasTool);
   const markupTool = useCore((state) => state.markupTool);
+  const mode = useCore((state) => state.mode);
+  const specs = mode === 'simple' ? RAIL.filter((spec) => SIMPLE_MODE_RAIL_TOOLS.includes(spec.id)) : RAIL;
   return (
     <nav
       aria-label={t('tools.all')}
       className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto overscroll-contain border-e border-kumo-line bg-kumo-base py-2 select-none"
     >
-      {RAIL.map((spec) => {
+      {specs.map((spec) => {
         const armed = spec.id === 'markup' ? isMarkupTool(activeTool) : activeTool === spec.id;
         const label = t(spec.labelKey);
         const Glyph = spec.icon;

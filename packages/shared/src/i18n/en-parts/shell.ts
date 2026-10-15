@@ -40,7 +40,7 @@ export const shellPart = {
   'palette.title': 'Command palette',
   'palette.placeholder': 'Search commands or tools…',
   'palette.empty': 'No matching commands.',
-  'palette.modeHidden': '{count} more command(s) are hidden by the simple mode.',
+  'palette.modeHidden': '{count} more matching command(s) are hidden by the simple mode.',
   'setting.mode.simple': 'Simple mode',
   'setting.mode.advanced': 'Advanced mode',
   'setting.mode.simple.hint': 'The features people reach for most',

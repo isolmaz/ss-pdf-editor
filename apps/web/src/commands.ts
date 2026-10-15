@@ -172,6 +172,7 @@ export interface CommandHost {
 const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   // File: the verbs every reader has.
   'file.new',
+  'file.open',
   'file.merge',
   'file.convert',
   'file.create-images',
@@ -180,6 +181,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'file.export',
   'file.print',
   'file.add',
+  'file.close',
   // Edit: undo/redo and selection are table stakes.
   'edit.undo',
   'edit.redo',
@@ -253,6 +255,37 @@ export const SIMPLE_MODE_RAIL_GROUPS: readonly string[] = ['pages', 'export', 's
  * signatures tab lists signature *fields*; signing itself is a tool and stays available.
  */
 export const SIMPLE_MODE_DOCK_TABS: readonly DocumentPanelTab[] = ['pages', 'outline', 'search'];
+
+/**
+ * The right-dock tabs the simple mode keeps.
+ *
+ * Redaction and its audit, comparison, the accessibility check and PDF/A are the tools
+ * `SIMPLE_MODE_COMMANDS` leaves out; their tabs would be the way back in to exactly those.
+ */
+export const SIMPLE_MODE_RIGHT_TABS: readonly string[] = [
+  'tools',
+  'history',
+  'comments',
+  'forms',
+  'properties',
+];
+
+/**
+ * The tool-rail buttons the simple mode keeps (`markup` is the shared text-markup button).
+ * Measurement and redaction are advanced, so their buttons leave the rail; the shortcuts and
+ * the menu items that arm them are unaffected.
+ */
+export const SIMPLE_MODE_RAIL_TOOLS: readonly string[] = [
+  'select',
+  'hand',
+  'text',
+  'freetext',
+  'markup',
+  'ink',
+  'shapes',
+  'note',
+  'link',
+];
 
 /**
  * Commands that start a document instead of acting on the open one: they run with no
@@ -469,7 +502,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
   const view: Command[] = [
     {
       id: 'view.zoom-in',
-      labelKey: 'viewer.zoom',
+      labelKey: 'viewer.zoomIn',
       group: 'view',
       shortcut: shortcutHint('view.zoom-in'),
       disabled: noDocument,
@@ -477,7 +510,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'view.zoom-out',
-      labelKey: 'viewer.zoom',
+      labelKey: 'viewer.zoomOut',
       group: 'view',
       shortcut: shortcutHint('view.zoom-out'),
       disabled: noDocument,
@@ -485,7 +518,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'view.zoom-reset',
-      labelKey: 'viewer.zoom',
+      labelKey: 'viewer.zoomReset',
       group: 'view',
       shortcut: shortcutHint('view.zoom-reset'),
       disabled: noDocument,
@@ -590,26 +623,28 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
   ];
 
+  // No selection is not a reason to disable a page command: the host falls back to the page
+  // on screen (`pageSelection`), and the dialogs open on "current page" the same way.
   const page: Command[] = [
     {
       id: 'page.rotate-left',
       labelKey: 'pages.rotate.left',
       group: 'page',
-      disabled: noSelection,
+      disabled: noEdit,
       run: action({ kind: 'rotate', direction: 'left' }),
     },
     {
       id: 'page.rotate-right',
       labelKey: 'pages.rotate.right',
       group: 'page',
-      disabled: noSelection,
+      disabled: noEdit,
       run: action({ kind: 'rotate', direction: 'right' }),
     },
     {
       id: 'page.duplicate',
       labelKey: 'pages.duplicate',
       group: 'page',
-      disabled: noSelection,
+      disabled: noEdit,
       run: action({ kind: 'duplicate' }),
     },
     {
@@ -617,14 +652,14 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'pages.delete',
       group: 'page',
       danger: true,
-      disabled: noSelection,
+      disabled: noEdit,
       run: action({ kind: 'delete' }),
     },
     {
       id: 'page.extract',
       labelKey: 'pages.extract.title',
       group: 'page',
-      disabled: noSelection,
+      disabled: noEdit,
       run: dialog('extract-pages'),
     },
     { id: 'page.split', labelKey: 'split.title', group: 'page', disabled: noEdit, run: dialog('split') },
@@ -643,7 +678,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       id: 'page.replace',
       labelKey: 'replace.title',
       group: 'page',
-      disabled: noEdit || noSelection,
+      disabled: noEdit,
       run: dialog('replace-pages'),
     },
     {

@@ -170,6 +170,7 @@ test('typing a value into a field on the page is one undo step, not one per keys
 
 test('a redaction box removes the text under it from the exported file', async ({ page }) => {
   await open(page, 'redact.pdf', toolFixturePdf());
+  await useAdvancedMode(page);
   await page.getByRole('button', { name: 'Redact (permanent removal)' }).click();
   const sheet = await page.locator('.pdfViewer[data-active-viewer] .page').first().boundingBox();
   if (sheet === null) throw new Error('no page box');

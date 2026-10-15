@@ -110,7 +110,9 @@ test('in the simple mode a command only the advanced mode has is counted, and th
   await openPdf(page, 'doc.pdf', undefined, { advanced: false });
   await search(page, 'Redaction audit');
   await expect(palette(page).getByText('No matching commands.')).toBeVisible();
-  await expect(palette(page).getByText(/more command\(s\) are hidden by the simple mode\./)).toBeVisible();
+  await expect(
+    palette(page).getByText(/more matching command\(s\) are hidden by the simple mode\./),
+  ).toBeVisible();
   await palette(page).getByRole('button', { name: 'Advanced mode' }).click();
   await expect(palette(page).getByRole('option').first()).toBeVisible();
   await expect(palette(page).getByText('No matching commands.')).toHaveCount(0);

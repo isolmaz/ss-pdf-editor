@@ -404,6 +404,41 @@ describe('RightDock visibility and frame', () => {
     expect(screen.queryByLabelText('dock')).toBeNull();
   });
 
+  it('offers no redaction, audit, comparison, accessibility or PDF/A tab in the simple mode', () => {
+    openTab();
+    coreStore.set({ mode: 'simple' });
+    renderDock('history');
+    expect((seen('dock').tabs as { id: string }[]).map((tab) => tab.id)).toEqual([
+      'tools',
+      'history',
+      'comments',
+      'forms',
+      'properties',
+    ]);
+    expect(screen.queryByRole('button', { name: 'tab redaction' })).toBeNull();
+  });
+
+  it('shows the tools tab instead of a tab the simple mode hides, and the stored one again in the advanced mode', () => {
+    openTab();
+    renderDock('accessibility');
+    expect(screen.getByLabelText('dock').dataset.wide).toBe('true');
+    expect(screen.getByLabelText('accessibility panel')).toBeTruthy();
+    act(() => coreStore.set({ mode: 'simple' }));
+    expect(screen.getByLabelText('dock').dataset.active).toBe('tools');
+    expect(screen.getByLabelText('dock').dataset.wide).toBe('false');
+    expect(screen.getByLabelText('tools panel')).toBeTruthy();
+    expect(screen.queryByLabelText('accessibility panel')).toBeNull();
+    act(() => coreStore.set({ mode: 'advanced' }));
+    expect(screen.getByLabelText('dock').dataset.active).toBe('accessibility');
+  });
+
+  it('keeps a tab the simple mode offers', () => {
+    openTab();
+    coreStore.set({ mode: 'simple' });
+    renderDock('comments');
+    expect(screen.getByLabelText('dock').dataset.active).toBe('comments');
+  });
+
   it('widens the dock for the accessibility panel only', () => {
     openTab();
     renderDock('history');
