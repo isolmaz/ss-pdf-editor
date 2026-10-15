@@ -787,6 +787,11 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
     mayChange: ['pageContent'],
     why: 'the image editor replaces a drawn image',
   },
+  {
+    steps: ['deskew'],
+    mayChange: ['pageContent'],
+    why: 'straightening wraps the page contents in a rotation, so what the page shows is turned; the text, the boxes, the annotations and /Rotate are not touched',
+  },
 
   /* — annotation and outline writers — */
   {

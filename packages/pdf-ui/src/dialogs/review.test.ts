@@ -163,6 +163,8 @@ const PLAIN_CHANGES: ReadonlySet<string> = new Set([
   'boxes.note.set',
   'boxes.note.shift',
   'boxes.note.trimWritten',
+  // Straightening: the tilt taken off a page, as asked; a page it could not turn is a warning.
+  'deskew.note.straightened',
   // Tagging and accessibility repairs: each is one requested fix, applied as described.
   'op.note.a11y.altSet',
   'op.note.a11y.contentRewritten',

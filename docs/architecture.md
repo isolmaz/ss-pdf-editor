@@ -423,8 +423,8 @@ From here on, a path that starts with `ops/` or `engines/` is relative to
 | Adapter | Upstream | Threading | Used for |
 |---|---|---|---|
 | `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/v<digest>/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
-| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction audit, encryption, page boxes (auto-crop), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
-| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
+| `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction audit, encryption, page boxes (auto-crop), straightening (the greyscale render the skew search reads), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
+| `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), straightening (`ops/deskew.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
 | `engines/tesseract.ts` | `tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 | its own Web Worker(s) | OCR only |
 | `engines/ghostscript.ts` (+ `ghostscript-worker.ts`, `ghostscript-run.ts`) | `@bentopdf/gs-wasm` 0.1.1 (Ghostscript 10.06.0, wasm ~14.8 MiB) | one module Web Worker per conversion, terminated after it | PDF/A conversion only (§5.13) |
@@ -1020,6 +1020,8 @@ writer does, and the steps it reports:
   a content transform wraps the page's streams through `wrapPageContent`, auto-crop measures
   on the document it edits instead of opening a second copy, and a page that needs no change
   is counted once in the unchanged-pages note;
+- straightening scanned pages (`ops/deskew.ts`, steps `render` / `deskew` / `save`), which
+  wraps a page's streams in a rotation through `wrapPageContent` and re-encodes nothing (§5.14);
 - the rotation pass, the repeated-page repair and the merge's metadata step after pdf.js
   `extractPages` (`ops/compose.ts`), steps `compose.rotate` / `metadata` / `save`;
   `compose.rotate` is declared to the save verification (it may change `rotation`).
@@ -2236,6 +2238,73 @@ uses transparency into a picture (a 98 KB file became 4.2 MB, its text no longer
 its links gone) and the report says so; a font with ligatures and no `/ToUnicode` loses part of
 its text mapping.
 
+### 5.14 Straightening scanned pages
+
+`ops/deskew.ts` (`deskewPages`, the `deskew` dialog, the Page menu's *Straighten pages*) measures how far
+the text lines of each selected page are tilted and turns the page's content back by that angle,
+without re-encoding the scan. The operation table (`apps/web/src/operations.ts`) declares its step
+`deskew` as one that may change `pageContent` and nothing else; `render` and `save` are the usual
+read-back and serialise steps.
+
+**Measuring.** MuPDF draws the page as the viewer shows it (`/Rotate` and the CropBox applied,
+annotations left out) as a greyscale picture 1400 pixels along its long side, small enough to be quick
+and below the 1650 at which the OCR's search would shrink it again. The search is the one OCR already
+uses (§5.5): Otsu threshold; pictures, rules, frames and slivers left out; at most 60 000 ink points;
+projected across the lines, the angle whose histogram is sharpest wins. Here the window is ±15° (a
+coarse 0.5° step, then 0.05° around the best). The measurement is trusted only when there are at least
+2000 ink points and the best score is at least 2.5 × the mean of the coarse scores; a best angle past
+the window (the fine step reaches half a coarse step beyond it) is not trusted either. Both fall under
+*no clear text lines*, as do a blank page, a photograph, a form of boxes and a lone page number. An
+angle under 0.1° is *level*: a turn that small would not be seen and would only resample the scan on
+screen. The measurement runs on the main thread (the search alone took about 75 ms on a 1000 × 1400
+bitmap, and the whole operation about 115 ms a page on generated scans, drawing and saving included, in
+Node on the development machine), with a yield to the event loop after each page for the progress bar
+and Cancel; no worker was added for it, since MuPDF has none to share.
+
+**Turning, losslessly.** The page's content streams are wrapped as they are between a first stream
+`q a b c d e f cm q` and a last `Q Q` (`wrapPageContent`), where `cm` is a counter-clockwise rotation
+by the angle the lines descend by, about the centre of the visible box (the CropBox clipped to the
+MediaBox) in user space. The scan's picture, an OCR text layer (invisible text) and any vector content
+turn together, and not a byte of the picture changes (`deskew.test.ts` compares the decoded pixels of
+the input and the output). `/Rotate` is a rigid quarter-turn of the whole displayed page, so a
+counter-clockwise turn on screen is counter-clockwise in the page's own space for every `/Rotate`:
+the angle measured on the displayed picture is the angle written, and the centre of the visible box
+is the same point in both spaces.
+
+**Page boxes.** None is touched. The page keeps its MediaBox, CropBox, TrimBox, BleedBox and ArtBox:
+a scan's size is what printing, its signatures and its annotations rely on, and the corners the turn
+carries off the page are scan margin, while the ones it brings in are the page's own background. The
+check that keeps this honest is made on the measuring picture: the ink points are turned back by the
+measured angle about the centre of the frame and, if more than 0.1 % of them would land outside it,
+the page is skipped (*would push text off the page*) instead of being cut. A few specks may leave;
+a line of text may not. This happens when the sheet lay crooked about a point far from the centre
+(in the tests: a sheet turned about a corner by 10°, with a 40 px margin on an 850 × 1200 frame; the
+same tilt about the centre, or 2° about the corner, is turned), and the report says so. Moving the turn's centre to keep such text on the page
+(a translation inside the same `cm`) was left out.
+
+**Annotations.** Not moved. A rectangle turned without its appearance stream would be wrong in a
+new way, and rewriting each kind's appearance (a highlight's quads, a stamp's form matrix) is a
+tool of its own. The turned pages that carry a non-empty `/Annots` are counted in one warning,
+which also makes the result a review before it is applied.
+
+**Report.** One note per selected page, in page order: the tilt removed (`changed`, with the angle as
+`{angle:degrees}`, so `1,8°` in Turkish and `1.8°` in English), already straight (`preserved`), no clear
+text lines (`warning`) or skipped at the edge (`warning`); then, when a file was written, that the scans
+were not re-encoded and the producer line. A run in which no page was turned writes nothing: the core
+returns the input bytes, the dialog returns no file, and applying it records no step in the history.
+The dialog is `changesPageGeometry`, so pending redaction marks hold it, as they hold a content shift.
+
+**Measured.** On generated bitmaps (word-shaped blocks tilted by a known angle) the largest error over
+41 angles from −14.9° to 14.9° was 0.02°, and the tests hold ten angles, and three noisy pages, to
+0.1°. On eleven generated scans (typeset text drawn at 150 dpi and embedded as a picture, tilted from
+−12.43° to 13.12°, half of them with grey noise) the largest error was 0.03°, and measuring the
+straightened pages again with the OCR's own search found 0.00° (it steps by 0.05°). Real scans were not
+benchmarked: paper grain,
+a curled spine, a photographed page or a table-heavy form can lower the confidence (the page is then
+reported, not guessed) and a ruled form whose rules are crooked on their own can still pull the
+estimate. A sheet tilted past 15° may be measured as a different tilt inside the window rather than as
+unclear; the edge check often, not always, catches it.
+
 ---
 
 ## 6. `pdf-text-engine` — the text model
@@ -3315,6 +3384,10 @@ shows.
 - **PDF/A** is checked by a subset of veraPDF's rules, and the conversion rewrites the whole
   file (§5.13): signatures stop validating, form fields are flattened, tags are not kept, and
   PDF/A-1b turns pages that use transparency into pictures.
+- **Straightening** measures text lines: it needs at least two lines' worth of ink and a clear
+  peak, searches ±15°, leaves annotations, links and form fields where they were (the report counts
+  the pages that carry any), keeps the page size and so skips a page whose text a turn would push
+  off it, and does not correct perspective or curl (the camera scan does, §5.9).
 - **`adbe.pkcs7.sha1`** signatures are reported `unchecked`, because their digest relation
   differs from the detached-CMS one this build verifies.
 
@@ -3513,7 +3586,7 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 
 | Layer | Mechanism |
 |---|---|
-| Pure logic (`pdf-model`, `pdf-shared`, `pdf-text-engine`, op planners) | Vitest in a Node environment (`pnpm unit`); the page-range parser, journal, session, drafts, the save plan's byte facts and signature fate (`save-plan.test.ts`), vault policy, trust roots, pdf.js handle, Tesseract adapter, text source, the text model's word segmentation (`model.test.ts`), the typed-text layout and writer with the pinned face (`annotation-freetext.test.ts`), shapes, settled (renamed and retagged) text markup and marker resolution read back through pdf.js (`annotation-shapes.test.ts`), measurement geometry, scale, unit and comment (`measure.test.ts`), the MuPDF writer vocabulary (`mupdf-write.test.ts`), document properties and attachments against real MuPDF bytes, read back through the pdf.js reader (`metadata.test.ts`, `attachments-write.test.ts`), the font inventory over inherited, indirect and descendant-font resources (`pdf-fonts.test.ts`), layer toggles, order, rename and refusals read back through the viewer's layer reader (`layer-write.test.ts`), link add/remove on rotated pages with URI refusal and encoding read back through pdf.js (`link-edit.test.ts`), outline replace/add/rename/remove, counts, orphan objects and refusals read back through the outline reader (`outline-edit.test.ts`), footer, Bates and watermark placement on turned pages, extraction and the no-print group (`stamp.test.ts`), image opacity, listing, sample reads, in-place replacement and EXIF placement for all eight orientations (`image-opacity.test.ts`, `image-edit.test.ts`, `images.test.ts`), every page-box mode rendered back, turned pages included (`page-boxes.test.ts`), composition turns added to the page's own rotation and a merge keeping the base title and XMP through the real `extractPages` (`compose.test.ts`), matched blank and image pages, chosen pages of another document and replacement with the base Info kept (`page-insert.test.ts`), N-up cells, booklet reading order, turned and cropped sources, poster tiles and the duplex back side read back as text (`impose.test.ts`), the structure rewrite with and without Info and the in-place raster page keeping the outline (`compress.test.ts`), form reading, filling, creation, locking, flattening, calculation and data round trips read back through MuPDF's widget API (`forms.test.ts`), the OCR layer's placement on a turned page through pdf.js's own viewport (`ocr.test.ts`), text-edit erase, baseline placement, WinAnsi substitution and justified words (`text-edit.test.ts`), the batch runner resolving `all` per item and failing a locked item alone (`batch.test.ts`), signing verified by the product's own verifier, a tampered byte and an encrypted refusal (`sign.test.ts`), accessibility facts, tagging over real marked content and shared alt text (`accessibility.test.ts`), the font-bytes cache (`noto.test.ts`) and the comment-exchange round trip and space conversion (`annotation-data.test.ts`) all have specs |
+| Pure logic (`pdf-model`, `pdf-shared`, `pdf-text-engine`, op planners) | Vitest in a Node environment (`pnpm unit`); the page-range parser, journal, session, drafts, the save plan's byte facts and signature fate (`save-plan.test.ts`), vault policy, trust roots, pdf.js handle, Tesseract adapter, text source, the text model's word segmentation (`model.test.ts`), the typed-text layout and writer with the pinned face (`annotation-freetext.test.ts`), shapes, settled (renamed and retagged) text markup and marker resolution read back through pdf.js (`annotation-shapes.test.ts`), measurement geometry, scale, unit and comment (`measure.test.ts`), the MuPDF writer vocabulary (`mupdf-write.test.ts`), document properties and attachments against real MuPDF bytes, read back through the pdf.js reader (`metadata.test.ts`, `attachments-write.test.ts`), the font inventory over inherited, indirect and descendant-font resources (`pdf-fonts.test.ts`), layer toggles, order, rename and refusals read back through the viewer's layer reader (`layer-write.test.ts`), link add/remove on rotated pages with URI refusal and encoding read back through pdf.js (`link-edit.test.ts`), outline replace/add/rename/remove, counts, orphan objects and refusals read back through the outline reader (`outline-edit.test.ts`), footer, Bates and watermark placement on turned pages, extraction and the no-print group (`stamp.test.ts`), image opacity, listing, sample reads, in-place replacement and EXIF placement for all eight orientations (`image-opacity.test.ts`, `image-edit.test.ts`, `images.test.ts`), every page-box mode rendered back, turned pages included (`page-boxes.test.ts`), composition turns added to the page's own rotation and a merge keeping the base title and XMP through the real `extractPages` (`compose.test.ts`), matched blank and image pages, chosen pages of another document and replacement with the base Info kept (`page-insert.test.ts`), N-up cells, booklet reading order, turned and cropped sources, poster tiles and the duplex back side read back as text (`impose.test.ts`), the structure rewrite with and without Info and the in-place raster page keeping the outline (`compress.test.ts`), form reading, filling, creation, locking, flattening, calculation and data round trips read back through MuPDF's widget API (`forms.test.ts`), the OCR layer's placement on a turned page through pdf.js's own viewport (`ocr.test.ts`), the skew search on generated bitmaps and the straightened scan measured again, its picture compared pixel for pixel (`deskew.test.ts`), text-edit erase, baseline placement, WinAnsi substitution and justified words (`text-edit.test.ts`), the batch runner resolving `all` per item and failing a locked item alone (`batch.test.ts`), signing verified by the product's own verifier, a tampered byte and an encrypted refusal (`sign.test.ts`), accessibility facts, tagging over real marked content and shared alt text (`accessibility.test.ts`), the font-bytes cache (`noto.test.ts`) and the comment-exchange round trip and space conversion (`annotation-data.test.ts`) all have specs |
 | Model integrity | `tools/audit/typecheck-model.cjs` re-runs the root compiler options over `pdf-model`, `pdf-shared`, `pdf-text-engine` and `apps/web/src/drafts.ts` with paths mapped to source, so a regression that makes the model depend on the app fails even if the bundler would resolve it. The gate runs it as its own step |
 | Mark selection and editing | `mark-interaction.test.ts` (projection, hit tests, identity), `annotation-remove.test.ts` (deletion and refusal), `annotation-transform.test.ts` (geometry and independent MuPDF raster readback), `annotations.test.ts` (recovered engine records), and history/save cases in `apps/web/src/operations.test.ts` |
 | Parity features | One `*.test.ts` beside each module, against bytes re-read by MuPDF or pdf.js: comment replies and review states (`annotation-review`, `annotation-threads`), XFDF/FDF/JSON round trips with Turkish text, font subsets (`mupdf-write`), the locale registry and the Phosphor weight plugin; find and replace, the glyph-less font, Office and text conversion (a damaged part becomes a loss note), Office export and page layout; CRLs, RFC 3161 timestamps and the signature evidence (`signature-revocation.fixtures.ts` builds the PKI); form-field detection and XFA (`xfa-data`, `xfa-form`, `xfa-flatten`); the scan geometry, detector (every turn, antialiased and hard-edged), warp and filters; sanitize per category; one real Ghostscript PDF/A-2b run checked by `checkPdfA`, the PDF/UA rules and the structure editor (`ua.fixtures.ts`); and `useShortcuts.test.ts`, which refuses a chord two rows share |

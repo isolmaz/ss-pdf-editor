@@ -15,6 +15,7 @@ import { commonPart } from './parts/common';
 import { comparePart } from './parts/compare';
 import { contentWritersPart } from './parts/contentwriters';
 import { convertPart } from './parts/convert';
+import { deskewPart } from './parts/deskew';
 import { dialogsPart } from './parts/dialogs';
 import { docopsPart } from './parts/docops';
 import { enginesPart } from './parts/engines';
@@ -62,6 +63,7 @@ export const tr = {
   ...propsPart,
   ...auditPart,
   ...boxesPart,
+  ...deskewPart,
   ...formsPart,
   ...commonPart,
   ...docopsPart,

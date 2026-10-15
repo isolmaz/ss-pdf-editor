@@ -40,6 +40,7 @@ const TOOL_NAMES: readonly ToolName[] = [
   { tr: 'Belgeyi böl', en: 'Split document', keys: ['split.title', 'tools.split'] },
   { tr: 'Belge ekle', en: 'Add document', keys: ['file.add.title', 'tools.combine'] },
   { tr: 'Sayfa kutuları ve boyut', en: 'Page boxes and size', keys: ['boxes.title', 'boxes.dialog.title'] },
+  { tr: 'Eğik sayfaları düzelt', en: 'Straighten pages', keys: ['deskew.title'] },
   {
     tr: 'Sayfa numarası ve üst/alt bilgi',
     en: 'Page numbers and headers/footers',

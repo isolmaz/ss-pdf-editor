@@ -28,6 +28,8 @@ import type { PdfDocumentHandle } from 'pdf-core';
 import { readAnnotations } from 'pdf-core';
 import type { Mupdf } from 'pdf-core/engines/mupdf';
 import { openWithPdfjs } from 'pdf-core/engines/pdfjs-handle';
+import { deskewPages } from 'pdf-core/ops/deskew';
+import { scanDocument, tiltedText } from 'pdf-core/ops/deskew.fixtures';
 import { fieldValueText } from 'pdf-core/ops/form-value';
 import { readFormFields } from 'pdf-core/ops/forms';
 import { scaleForRatio } from 'pdf-core/ops/measure';
@@ -613,6 +615,28 @@ describe('verifyForWrite: the steps a redaction reports', () => {
       reason: 'changed',
       params: { count: 0 },
     });
+  });
+});
+
+/**
+ * Straightening journals the step ids `deskewPages` reports. The table has to know the one that
+ * turns a page, or a straightened scan is an unexplained change instead of the declared one.
+ */
+describe('verifyForWrite: the steps straightening reports', () => {
+  it('declares every step the writer reports, so a turned scan verifies against the scan it came from', async () => {
+    const source = await scanDocument([{ content: tiltedText(3) }, { content: tiltedText(-2) }]);
+    const outcome = await deskewPages(source, { pages: [0, 1] }, SIGNAL);
+    expect(outcome.report.steps).toEqual(['render', 'deskew', 'save']);
+
+    const result = await verify(outcome.bytes, source, {
+      expectedPageCount: 2,
+      steps: outcome.report.steps,
+    });
+    expect(result.operation).toEqual({ kind: 'declared', steps: [] });
+    expect(result.declared).toEqual(['pageContent']);
+    for (const fact of ['pageCount', 'pageOrder', 'rotation', 'cropBox']) {
+      expect(checkFor(result, fact)?.verdict, fact).toBe('verified');
+    }
   });
 });
 
