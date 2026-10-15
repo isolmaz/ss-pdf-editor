@@ -654,10 +654,15 @@ function applyResizePage(
 ): PagePlan {
   const geometry = pageGeometry(page);
   const source = geometry.box;
-  if (source.width <= 0 || source.height <= 0) {
+  // The page's own CropBox, not `geometry.box`: the visible box falls back to the MediaBox for a
+  // CropBox with no area, which would hide exactly the page this request has to refuse.
+  const [cropX0, cropY0, cropX1, cropY1] = readBox(page, 'crop');
+  const cropWidth = cropX1 - cropX0;
+  const cropHeight = cropY1 - cropY0;
+  if (cropWidth <= 0 || cropHeight <= 0) {
     throw new ToolError('range-invalid', {
       engine: 'mupdf',
-      engineMessage: `the page's CropBox is ${source.width}×${source.height} pt`,
+      engineMessage: `the page's CropBox is ${cropWidth}×${cropHeight} pt`,
     });
   }
   const rotated = geometry.rotation === 90 || geometry.rotation === 270;

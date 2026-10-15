@@ -71,11 +71,11 @@ import {
   openForWrite,
   pageObjects,
   producerKeptNote,
-  readNumbers,
   readText,
   resolved,
   saveRewrite,
   text,
+  visibleBox,
 } from '../engines/mupdf-write';
 import { hexToRgb } from './annotations';
 import {
@@ -152,20 +152,14 @@ function quarterTurns(angle: number): PageRotation {
 }
 
 /**
- * The visible box (`/CropBox`, `/MediaBox` as fallback, both inheritable) and the page's
- * inheritable `/Rotate`. A page with neither box is treated as US Letter, the default
- * MuPDF itself applies.
+ * The visible box (`visibleBox`: `/CropBox` clipped to the `/MediaBox`, both inheritable)
+ * and the page's inheritable `/Rotate`.
  */
 function pageGeometry(page: PDFObject): PageGeometry {
   const rotate = resolved(page.getInheritable('Rotate'));
-  const corners = [
-    readNumbers(page.getInheritable('CropBox')),
-    readNumbers(page.getInheritable('MediaBox')),
-  ].find((values) => values.length >= 4) ?? [0, 0, 612, 792];
-  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = corners;
   return {
     rotation: quarterTurns(rotate?.isNumber() === true ? rotate.asNumber() : 0),
-    box: { x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0) },
+    box: visibleBox(page),
   };
 }
 
