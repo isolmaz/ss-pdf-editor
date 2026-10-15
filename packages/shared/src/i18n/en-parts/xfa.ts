@@ -19,7 +19,7 @@ export const xfaPart = {
   'xfa.cmd.remove': 'Remove XFA (keep the form fields)…',
   'xfa.cmd.flatten': 'Flatten XFA form to a normal PDF…',
   'xfa.cmd.data': 'Export or import XFA data…',
-  'home.tool.xfa': 'Fill an XFA form, flatten it to a normal PDF, or remove the XFA.',
+  'home.tool.xfa': 'Fill an old Adobe XFA form, make it plain pages, or remove the XFA part.',
 
   // fill dialog
   'xfa.fill.title': 'Fill XFA form',

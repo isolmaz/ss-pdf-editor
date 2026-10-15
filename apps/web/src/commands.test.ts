@@ -17,6 +17,7 @@ import {
   STANDALONE_COMMAND_IDS,
   visibleCommands,
 } from './commands';
+import { HOME_TOOLS } from './components/HomeToolGrid';
 
 type Call = readonly [string, ...unknown[]];
 
@@ -263,6 +264,28 @@ describe('buildCommands', () => {
         locale === 'tr' ? 'Komut ara' : 'Search commands',
       );
     });
+
+    it.each(['tr', 'en'] as const)(
+      'tells more in a home tile description than its %s title says',
+      (locale) => {
+        const translate = createTranslator(locale);
+        const commands = buildCommands(recordingHost({ t: translate }).host);
+        // A description that only repeats its title says nothing: every long word of the title is
+        // in it, compared by its first four letters so that "çizim" and "çizin" count as one.
+        const stems = (text: string) =>
+          text
+            .toLocaleLowerCase(locale)
+            .split(/[^\p{L}\p{N}]+/u)
+            .filter((word) => word.length > 3)
+            .map((word) => word.slice(0, 4));
+        const repeated = HOME_TOOLS.filter((tool) => {
+          const title = stems(translate(byId(commands, tool.id).labelKey));
+          const description = new Set(stems(translate(tool.descriptionKey)));
+          return title.length > 0 && title.every((stem) => description.has(stem));
+        }).map((tool) => tool.id);
+        expect(repeated).toEqual([]);
+      },
+    );
 
     it('names the three zoom entries by what each one does', () => {
       const labels = (locale: 'tr' | 'en') => {

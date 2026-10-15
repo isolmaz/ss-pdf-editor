@@ -6,7 +6,7 @@ export const scanPart = {
   'home.start.scan.title': 'Scan with camera',
   'home.start.scan.desc': 'Photograph a document: edges found, page straightened, PDF made.',
   'home.tool.scan':
-    'Scan a document with the camera or from photos: edges found, page straightened, filter applied.',
+    'Photograph a document: its edges are found, the page is straightened and a clean PDF results.',
 
   'scan.camera.label': 'Camera preview',
   'scan.camera.select': 'Camera',

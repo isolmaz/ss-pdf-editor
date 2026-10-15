@@ -13,7 +13,7 @@ export const findReplacePart = {
   'findReplace.done': '{count} eşleşme değiştirildi.',
   'findReplace.fromFindBar': 'Değiştir…',
   'cmd.findReplace.label': 'Bul ve değiştir…',
-  'home.tool.findReplace': 'Bir metni belgenin her yerinde değiştirin.',
+  'home.tool.findReplace': 'Eski metin silinir, yenisi aynı yere aynı boyut ve renkte yazılır.',
   'op.progress.findReplace.read': 'Sayfalar okunuyor',
   'op.note.findReplace.replaced': '{count} eşleşme değiştirildi (sayfa {pages}).',
   'op.note.findReplace.shrunk':

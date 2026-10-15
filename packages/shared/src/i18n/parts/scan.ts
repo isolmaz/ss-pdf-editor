@@ -7,8 +7,7 @@ export const scanPart = {
   'scan.command': 'Kamerayla tara',
   'home.start.scan.title': 'Kamerayla tara',
   'home.start.scan.desc': 'Belgeyi çekin; kenarlar bulunur, sayfa düzelir, PDF olur.',
-  'home.tool.scan':
-    'Kamerayla ya da fotoğraflardan belge tarayın: kenarlar bulunur, sayfa düzeltilir, filtre uygulanır.',
+  'home.tool.scan': 'Belgeyi çekin; kenarlar bulunur, sayfa düzeltilir ve temiz bir PDF çıkar.',
 
   'scan.camera.label': 'Kamera önizlemesi',
   'scan.camera.select': 'Kamera',

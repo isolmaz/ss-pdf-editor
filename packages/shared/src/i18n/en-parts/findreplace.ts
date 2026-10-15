@@ -13,7 +13,8 @@ export const findReplacePart = {
   'findReplace.done': '{count} matches replaced.',
   'findReplace.fromFindBar': 'Replace…',
   'cmd.findReplace.label': 'Find and replace…',
-  'home.tool.findReplace': 'Replace a text everywhere in the document.',
+  'home.tool.findReplace':
+    'The old text is removed and the new text is written in its place, at the same size and colour.',
   'op.progress.findReplace.read': 'Reading the pages',
   'op.note.findReplace.replaced': '{count} matches replaced (page {pages}).',
   'op.note.findReplace.shrunk':

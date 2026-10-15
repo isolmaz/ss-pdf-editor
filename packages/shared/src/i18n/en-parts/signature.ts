@@ -49,6 +49,6 @@ export const signaturePart = {
   'op.note.stamp.added': '{kind} added as a stamp annotation.',
   'op.note.stamp.resized': 'The stamp annotation was resized; the image was not re-encoded.',
 
-  'home.tool.signature': 'Add a signature or initials by drawing, typing or from a photo.',
-  'home.tool.imageAdd': 'Add an image to the page; move, turn and resize it.',
+  'home.tool.signature': 'Draw, type or upload a picture of your handwriting; initials work too.',
+  'home.tool.imageAdd': 'Place a PNG or JPEG; move, turn and resize it.',
 } as const;
