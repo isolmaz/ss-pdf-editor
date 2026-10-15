@@ -2511,6 +2511,17 @@ only hides entry points: the shortcuts still arm the tools, and a right-dock tab
 hides but the store still names (the mode changed while it was open) shows the tools tab
 instead, without writing the store, so switching back finds the tab as it was.
 
+The menu bar's layout is `commands.ts` too. `MENU_SECTIONS` lists the commands section by section,
+group after group; `buildCommands` returns them in that order, each carrying its `section`, and
+`MenuBar` draws a rule between two neighbouring entries of a menu whose sections differ, so a
+section that the simple mode hides entirely leaves no rule behind. An entry that is disabled
+because of the state of the document says why: `Command.disabledReason` (no document open, the
+document cannot be edited, no pages or marks selected, nothing to undo) is the entry's native
+tooltip and its `aria-description`, and only while it is disabled. `menuCommands` is what the
+menu bar renders: the commands of the mode, without a command the editor header already has a
+button for when it would be the only entry of its menu (Settings in the simple mode); the command
+stays in the palette.
+
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
 the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.ts` that

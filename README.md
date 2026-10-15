@@ -126,6 +126,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   for it, then opens read-only. "Create unlocked copy" opens an editable copy in a new tab,
   and the password is kept in memory only. A file that only an owner password restricts
   opens without a prompt, is stored like any other and keeps its encryption when saved.
+- **Menus.** Each menu groups its entries into sections with a rule between them. An entry
+  that cannot be used says why when you hover it (for example "Open a document first." or
+  "Select a mark first."), and screen readers read the same text. The simple mode has no
+  Settings menu, since the header already has a Settings button; the palette still lists it.
 - **Shortcut list.** It is available in both languages from Help or `Ctrl+K`, even with no
   document open. The list is the binding table itself, so every chord it prints works.
   `Home`, `End`, `PageUp` and `PageDown` turn the document's page, except while the focus is

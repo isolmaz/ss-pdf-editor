@@ -306,10 +306,96 @@ export function visibleCommands(commands: readonly Command[], mode: InterfaceMod
   return commands.filter((command) => isCommandVisible(command, mode));
 }
 
+/**
+ * The commands that have a button of their own in the editor's header, by the id of the menu
+ * entry they duplicate: their menu has nothing more to offer unless it holds other entries.
+ */
+const HEADER_BUTTON_COMMANDS: ReadonlySet<string> = new Set(['settings.open']);
+
+/**
+ * The commands the menu bar renders in the given mode. A menu whose only entry is a command the
+ * header already has a button for (Settings, in the simple mode) is not drawn at all; the command
+ * stays in the palette.
+ */
+export function menuCommands(commands: readonly Command[], mode: InterfaceMode): readonly Command[] {
+  const shown = visibleCommands(commands, mode);
+  return shown.filter(
+    (command) =>
+      !HEADER_BUTTON_COMMANDS.has(command.id) ||
+      shown.some((other) => other.group === command.group && other !== command),
+  );
+}
+
+/**
+ * The menu layout: each list is one section of a menu, the ids in the order they appear. The
+ * lists follow one another group by group, and a rule is drawn between two sections of a menu.
+ */
+export const MENU_SECTIONS: readonly (readonly string[])[] = [
+  ['file.new', 'file.open', 'file.merge', 'file.convert', 'file.create-images', 'file.scan'],
+  ['file.save', 'file.export'],
+  ['file.add', 'file.batch'],
+  ['file.print', 'file.close'],
+  ['edit.undo', 'edit.redo'],
+  ['edit.select-all-pages', 'edit.clear-selection'],
+  ['edit.select-all-marks', 'edit.delete-mark'],
+  ['edit.find-replace', 'edit.rename'],
+  ['view.zoom-in', 'view.zoom-out', 'view.zoom-reset', 'view.fit-width', 'view.fit-page'],
+  ['view.single', 'view.book'],
+  ['view.fullscreen', 'view.reading', 'view.magnifier', 'view.snapshot'],
+  ['view.layers', 'view.outline', 'view.left-dock', 'view.right-dock'],
+  ['page.rotate-left', 'page.rotate-right'],
+  ['page.duplicate', 'page.delete', 'page.extract', 'page.split'],
+  ['page.insert', 'page.replace'],
+  ['page.boxes', 'page.labels'],
+  ['tools.select', 'tools.hand'],
+  [
+    'tools.highlight',
+    'tools.underline',
+    'tools.strikeout',
+    'tools.squiggly',
+    'tools.ink',
+    'tools.shapes',
+    'tools.note',
+    'tools.text-edit',
+    'tools.image-edit',
+  ],
+  ['tools.measure-distance', 'tools.measure-perimeter', 'tools.measure-area'],
+  ['tools.sign', 'tools.signature-simple', 'tools.image-add', 'tools.link'],
+  ['tools.form-fields', 'tools.form-create', 'tools.form-detect', 'tools.form-data'],
+  ['tools.xfa-fill', 'tools.xfa-remove', 'tools.xfa-flatten', 'tools.xfa-data'],
+  ['tools.numbering', 'tools.watermark', 'tools.optimize', 'tools.impose', 'tools.ocr', 'tools.outline-edit'],
+  ['tools.redact', 'tools.redaction-audit', 'tools.security', 'tools.unlock', 'tools.sanitize'],
+  ['tools.properties', 'tools.compare', 'tools.accessibility', 'tools.pdfa', 'tools.pdfa-check'],
+  ['tools.export-images', 'tools.export-text', 'tools.export-office'],
+  ['settings.open'],
+  ['settings.theme.light', 'settings.theme.dark', 'settings.theme.system'],
+  ['settings.sensitive-session', 'settings.purge-document'],
+  ['help.palette', 'help.shortcuts'],
+  ['help.offline', 'help.prepare-offline'],
+  ['help.source'],
+];
+
+const MENU_ORDER: ReadonlyMap<string, { readonly section: number; readonly position: number }> = new Map(
+  MENU_SECTIONS.flatMap((ids, section) => ids.map((id) => ({ id, section }))).map(
+    ({ id, section }, position) => [id, { section, position }],
+  ),
+);
+
+/** Every command in menu order, each carrying its section; a command missing from the layout is a test failure. */
+function laidOut(commands: readonly Command[]): readonly Command[] {
+  const placed = (command: Command) => MENU_ORDER.get(command.id) as { section: number; position: number };
+  return commands
+    .map((command) => ({ ...command, section: placed(command).section }))
+    .sort((a, b) => placed(a).position - placed(b).position);
+}
+
 export function buildCommands(host: CommandHost): readonly Command[] {
   const noDocument = !host.hasDocument;
   const noEdit = !host.canEdit;
   const noSelection = host.selectedPages.length === 0 || noEdit;
+  // What a disabled entry says about itself: a document is needed first, then the right to edit it.
+  const documentReason = noDocument ? 'cmd.reason.noDocument' : undefined;
+  const editReason = documentReason ?? (noEdit ? 'cmd.reason.cannotEdit' : undefined);
   const dialog = (id: string) => () => host.openDialog(id);
   const action = (kind: PageAction) => () => host.pageAction(kind);
   /**
@@ -386,6 +472,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'file.add.title',
       group: 'file',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('add-document'),
     },
     {
@@ -419,9 +506,17 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'file',
       shortcut: shortcutHint('file.print'),
       disabled: noDocument,
+      disabledReason: documentReason,
       run: host.print,
     },
-    { id: 'file.close', labelKey: 'shell.closeTab', group: 'file', disabled: noDocument, run: host.closeTab },
+    {
+      id: 'file.close',
+      labelKey: 'shell.closeTab',
+      group: 'file',
+      disabled: noDocument,
+      disabledReason: documentReason,
+      run: host.closeTab,
+    },
   ];
 
   const edit: Command[] = [
@@ -431,6 +526,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'edit',
       shortcut: shortcutHint('edit.undo'),
       disabled: !host.canUndo,
+      ...(host.canUndo ? {} : { disabledReason: 'cmd.reason.nothingToUndo' }),
       run: host.undo,
     },
     {
@@ -439,6 +535,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'edit',
       shortcut: shortcutHint('edit.redo'),
       disabled: !host.canRedo,
+      ...(host.canRedo ? {} : { disabledReason: 'cmd.reason.nothingToRedo' }),
       run: host.redo,
     },
     {
@@ -446,6 +543,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'pages.select.all',
       group: 'edit',
       disabled: noDocument,
+      disabledReason: documentReason,
       run: host.selectAllPages,
     },
     {
@@ -453,6 +551,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'pages.select.none',
       group: 'edit',
       disabled: noSelection,
+      disabledReason: editReason ?? 'cmd.reason.noPages',
       run: host.clearSelection,
     },
     {
@@ -463,6 +562,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'edit',
       shortcut: shortcutHint('edit.delete-mark'),
       disabled: noEdit || host.selectedMarkCount === 0,
+      disabledReason: editReason ?? 'cmd.reason.noMarks',
       keywords: ['delete', 'remove', 'mark', 'sil', 'isaret', 'not'],
       run: host.deleteMarkSelection,
     },
@@ -474,6 +574,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'edit',
       shortcut: shortcutHint('edit.select-all-marks'),
       disabled: noDocument || host.activeTool !== 'select',
+      disabledReason: documentReason ?? 'cmd.reason.selectTool',
       keywords: ['select all', 'marks', 'tumunu sec', 'isaret'],
       run: host.selectAllMarks,
     },
@@ -483,6 +584,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'edit',
       shortcut: shortcutHint('edit.find-replace'),
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['find', 'replace', 'search', 'bul', 'degistir', 'ara'],
       run: dialog('find-replace'),
     },
@@ -491,6 +593,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'shell.rename',
       group: 'edit',
       disabled: noDocument,
+      disabledReason: documentReason,
       run: host.rename,
     },
   ];
@@ -502,6 +605,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'view',
       shortcut: shortcutHint('view.zoom-in'),
       disabled: noDocument,
+      disabledReason: documentReason,
       run: () => host.setZoom(nextZoomStop(host.zoom(), 'in')),
     },
     {
@@ -510,6 +614,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'view',
       shortcut: shortcutHint('view.zoom-out'),
       disabled: noDocument,
+      disabledReason: documentReason,
       run: () => host.setZoom(nextZoomStop(host.zoom(), 'out')),
     },
     {
@@ -518,6 +623,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'view',
       shortcut: shortcutHint('view.zoom-reset'),
       disabled: noDocument,
+      disabledReason: documentReason,
       run: () => host.setZoom(1),
     },
     {
@@ -526,6 +632,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'view',
       shortcut: shortcutHint('view.fit-width'),
       disabled: noDocument,
+      disabledReason: documentReason,
       run: () => host.setZoom('page-width'),
     },
     {
@@ -533,6 +640,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'viewer.fitPage',
       group: 'view',
       disabled: noDocument,
+      disabledReason: documentReason,
       run: () => host.setZoom('page-fit'),
     },
     {
@@ -540,6 +648,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'viewer.singlePage',
       group: 'view',
       disabled: noDocument,
+      disabledReason: documentReason,
       run: () => host.setSpread('single'),
     },
     {
@@ -547,6 +656,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'viewer.book',
       group: 'view',
       disabled: noDocument,
+      disabledReason: documentReason,
       run: () => host.setSpread('book'),
     },
     {
@@ -554,6 +664,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'viewer.fullscreen',
       group: 'view',
       disabled: noDocument,
+      disabledReason: documentReason,
       run: host.toggleFullscreen,
     },
     {
@@ -562,6 +673,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'view',
       shortcut: shortcutHint('view.reading'),
       disabled: noDocument,
+      disabledReason: documentReason,
       checked: host.reading,
       run: host.toggleReading,
     },
@@ -570,6 +682,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'tools.magnifier',
       group: 'view',
       disabled: noDocument,
+      disabledReason: documentReason,
       checked: host.magnifier,
       run: host.toggleMagnifier,
     },
@@ -578,6 +691,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'tools.snapshot',
       group: 'view',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['snapshot', 'screenshot', 'capture', 'png', 'goruntu'],
       run: host.openSnapshot,
     },
@@ -586,6 +700,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'panel.layers',
       group: 'view',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['layer', 'ocg', 'katman'],
       // The layer write lives behind a tab, so a command that cannot open that tab is
       // not a way in.
@@ -596,6 +711,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'panel.outline',
       group: 'view',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['outline', 'bookmark', 'icindekiler'],
       run: () => host.openLeftTab('outline'),
     },
@@ -606,6 +722,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       shortcut: shortcutHint('view.left-dock'),
       checked: host.leftDock,
       disabled: noDocument,
+      disabledReason: documentReason,
       run: host.toggleLeftDock,
     },
     {
@@ -615,6 +732,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       shortcut: shortcutHint('view.right-dock'),
       checked: host.rightDock,
       disabled: noDocument,
+      disabledReason: documentReason,
       run: host.toggleRightDock,
     },
   ];
@@ -627,6 +745,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'pages.rotate.left',
       group: 'page',
       disabled: noEdit,
+      disabledReason: editReason,
       run: action({ kind: 'rotate', direction: 'left' }),
     },
     {
@@ -634,6 +753,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'pages.rotate.right',
       group: 'page',
       disabled: noEdit,
+      disabledReason: editReason,
       run: action({ kind: 'rotate', direction: 'right' }),
     },
     {
@@ -641,6 +761,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'pages.duplicate',
       group: 'page',
       disabled: noEdit,
+      disabledReason: editReason,
       run: action({ kind: 'duplicate' }),
     },
     {
@@ -649,6 +770,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'page',
       danger: true,
       disabled: noEdit,
+      disabledReason: editReason,
       run: action({ kind: 'delete' }),
     },
     {
@@ -656,9 +778,17 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'pages.extract.title',
       group: 'page',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('extract-pages'),
     },
-    { id: 'page.split', labelKey: 'split.title', group: 'page', disabled: noEdit, run: dialog('split') },
+    {
+      id: 'page.split',
+      labelKey: 'split.title',
+      group: 'page',
+      disabled: noEdit,
+      disabledReason: editReason,
+      run: dialog('split'),
+    },
   ];
 
   page.push(
@@ -667,6 +797,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'insert.title',
       group: 'page',
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['add', 'blank', 'image'],
       run: dialog('insert-pages'),
     },
@@ -675,6 +806,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'replace.title',
       group: 'page',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('replace-pages'),
     },
     {
@@ -682,6 +814,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'boxes.title',
       group: 'page',
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['crop', 'media', 'trim', 'bleed', 'art', 'resize'],
       run: dialog('page-boxes'),
     },
@@ -690,6 +823,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'labels.dialog.title',
       group: 'page',
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['numbering', 'roman', 'prefix'],
       run: dialog('page-labels'),
     },
@@ -701,6 +835,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'stamp.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('page-numbers'),
     },
     {
@@ -708,6 +843,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'watermark.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('watermark'),
     },
     {
@@ -715,16 +851,32 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'optimize.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('compress'),
     },
-    { id: 'tools.impose', labelKey: 'impose.title', group: 'tools', disabled: noEdit, run: dialog('impose') },
-    { id: 'tools.ocr', labelKey: 'ocr.title', group: 'tools', disabled: noEdit, run: dialog('ocr') },
+    {
+      id: 'tools.impose',
+      labelKey: 'impose.title',
+      group: 'tools',
+      disabled: noEdit,
+      disabledReason: editReason,
+      run: dialog('impose'),
+    },
+    {
+      id: 'tools.ocr',
+      labelKey: 'ocr.title',
+      group: 'tools',
+      disabled: noEdit,
+      disabledReason: editReason,
+      run: dialog('ocr'),
+    },
     {
       id: 'tools.redact',
       labelKey: 'redact.title',
       group: 'tools',
       danger: true,
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('redact'),
     },
     {
@@ -732,6 +884,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'security.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('protect'),
     },
     {
@@ -739,6 +892,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'security.unlock.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('unlock'),
     },
     {
@@ -746,6 +900,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'sanitize.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['sanitize', 'clean', 'metadata', 'javascript', 'attachment', 'temizle', 'ust veri', 'gizli'],
       run: dialog('sanitize'),
     },
@@ -755,6 +910,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       shortcut: shortcutHint('tools.properties'),
       disabled: noDocument,
+      disabledReason: documentReason,
       run: dialog('properties'),
     },
     {
@@ -762,6 +918,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'export.images.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('export-images'),
     },
     {
@@ -769,6 +926,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'export.text.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('export-text'),
     },
     {
@@ -776,6 +934,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'export.office.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['word', 'excel', 'docx', 'xlsx', 'csv', 'office', 'tablo', 'table'],
       run: dialog('export-office'),
     },
@@ -785,6 +944,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       // The converted file opens in a new tab, so the source may be read-only.
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['pdf/a', 'pdfa', 'archive', 'arsiv', 'archival', 'iso 19005', 'verapdf'],
       run: dialog('pdfa'),
     },
@@ -793,6 +953,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'pdfa.command.check',
       group: 'tools',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['pdf/a', 'pdfa', 'check', 'denetim', 'validate', 'dogrula', 'verapdf'],
       run: () => host.showRightTab('pdfa'),
     },
@@ -801,6 +962,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'outline.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['outline', 'bookmark', 'contents', 'icindekiler'],
       run: dialog('outline-edit'),
     },
@@ -813,6 +975,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       shortcut: shortcutHint('tools.select'),
       disabled: noDocument,
+      disabledReason: documentReason,
       checked: host.activeTool === 'select',
       run: tool('select'),
     },
@@ -822,6 +985,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       shortcut: shortcutHint('tools.hand'),
       disabled: noDocument,
+      disabledReason: documentReason,
       checked: host.activeTool === 'hand',
       run: tool('hand'),
     },
@@ -830,6 +994,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'ann.tool.highlight',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'highlight',
       keywords: ['marker', 'markup'],
       run: tool('highlight'),
@@ -840,6 +1005,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       shortcut: shortcutHint('tools.text-edit'),
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'text',
       keywords: ['text', 'paragraph', 'edit', 'metin', 'paragraf', 'duzenle'],
       run: tool('text'),
@@ -849,6 +1015,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'ann.tool.underline',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'underline',
       run: tool('underline'),
     },
@@ -857,6 +1024,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'ann.tool.strikeout',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'strikeout',
       run: tool('strikeout'),
     },
@@ -865,6 +1033,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'ann.tool.squiggly',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'squiggly',
       run: tool('squiggly'),
     },
@@ -874,6 +1043,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       shortcut: shortcutHint('tools.ink'),
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'ink',
       run: tool('ink'),
     },
@@ -883,6 +1053,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       shortcut: shortcutHint('tools.shapes'),
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'shapes',
       run: tool('shapes'),
     },
@@ -892,6 +1063,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       shortcut: shortcutHint('tools.note'),
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'note',
       run: tool('note'),
     },
@@ -900,6 +1072,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'image.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['image', 'resim', 'gorsel', 'replace'],
       run: dialog('image-edit'),
     },
@@ -908,6 +1081,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'tools.measure.distance',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.measureMode === 'distance',
       keywords: ['measure', 'olcum', 'mesafe', 'ruler', 'cetvel'],
       run: () => host.measure('distance'),
@@ -917,6 +1091,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'tools.measure.perimeter',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.measureMode === 'perimeter',
       keywords: ['measure', 'olcum', 'cevre'],
       run: () => host.measure('perimeter'),
@@ -926,6 +1101,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'tools.measure.area',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.measureMode === 'area',
       keywords: ['measure', 'olcum', 'alan'],
       run: () => host.measure('area'),
@@ -936,6 +1112,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       // A comparison reads; it needs a document, not the right to edit one.
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['compare', 'karsilastir', 'diff', 'fark'],
       run: () => host.showRightTab('compare'),
     },
@@ -944,6 +1121,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'panel.a11y',
       group: 'tools',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['accessibility', 'erisilebilirlik', 'tagged', 'etiket', 'alt'],
       run: () => host.showRightTab('accessibility'),
     },
@@ -955,6 +1133,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       // signed copy, and the dialog never writes into the engine's working copy directly —
       // the signed bytes arrive as a session version like any other result.
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['sign', 'imza', 'pades', 'pkcs12', 'p12', 'sertifika'],
       run: dialog('sign'),
     },
@@ -963,6 +1142,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'sig.command',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'stamp',
       keywords: ['signature', 'imza', 'paraf', 'initials', 'ciz', 'draw', 'e-imza'],
       run: host.openSignature,
@@ -972,6 +1152,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'img.add.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['image', 'picture', 'logo', 'gorsel', 'resim', 'fotograf', 'ekle'],
       run: host.addImage,
     },
@@ -981,6 +1162,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       shortcut: shortcutHint('tools.link'),
       disabled: noEdit,
+      disabledReason: editReason,
       checked: host.activeTool === 'link',
       keywords: ['link', 'url', 'baglanti'],
       // A link is a drag, not a mark; arming works exactly like the mark tools, which
@@ -992,6 +1174,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'form.dialog.fields.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('form-fields'),
     },
     {
@@ -999,6 +1182,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'form.dialog.create.title',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       run: dialog('form-create-field'),
     },
     {
@@ -1006,6 +1190,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'cmd.formDetect.label',
       group: 'tools',
       disabled: noEdit || host.detectFormFields === undefined,
+      disabledReason: editReason,
       keywords: ['detect', 'prepare form', 'fields', 'flat form', 'alan', 'algila', 'form hazirla'],
       run: () => host.detectFormFields?.(),
     },
@@ -1014,6 +1199,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'form.dialog.data.title',
       group: 'tools',
       disabled: noDocument,
+      disabledReason: documentReason,
       run: dialog('form-data'),
     },
     {
@@ -1021,6 +1207,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'xfa.cmd.fill',
       group: 'tools',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['xfa', 'dynamic form', 'livecycle', 'dinamik form', 'doldur', 'fill'],
       run: () => host.openXfaForm?.(),
     },
@@ -1029,6 +1216,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'xfa.cmd.remove',
       group: 'tools',
       disabled: noEdit,
+      disabledReason: editReason,
       keywords: ['xfa', 'acroform', 'static form', 'statik form', 'kaldir', 'remove'],
       run: dialog('xfa-remove'),
     },
@@ -1037,6 +1225,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'xfa.cmd.flatten',
       group: 'tools',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['xfa', 'flatten', 'dynamic form', 'duzlestir', 'donustur', 'normal pdf'],
       run: dialog('xfa-flatten'),
     },
@@ -1045,6 +1234,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'xfa.cmd.data',
       group: 'tools',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['xfa', 'data', 'xml', 'datasets', 'import', 'export', 'veri'],
       run: dialog('xfa-data'),
     },
@@ -1053,6 +1243,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'audit.title',
       group: 'tools',
       disabled: noDocument,
+      disabledReason: documentReason,
       run: host.showRedactionAudit,
     },
   );
@@ -1113,6 +1304,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'setting.purgeDocument',
       group: 'settings',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['purge', 'delete', 'draft', 'vault', 'sil', 'temizle', 'taslak', 'gizlilik', 'mahremiyet'],
       run: host.purgeActiveDocument,
     },
@@ -1161,7 +1353,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
   ];
 
-  return [...file, ...edit, ...view, ...page, ...tools, ...settings, ...help];
+  return laidOut([...file, ...edit, ...view, ...page, ...tools, ...settings, ...help]);
 }
 
 /** Palette keywords: search by the Turkish label plus the id's English words. */
