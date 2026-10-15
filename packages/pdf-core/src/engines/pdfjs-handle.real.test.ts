@@ -235,6 +235,7 @@ describe('page reads', () => {
         height: 800,
         rotation: 0,
         viewBox: [0, 0, 300, 400],
+        userUnit: 1,
       });
       const turned = await handle.getPageSize(1, 1);
       expect([turned.width, turned.height, turned.rotation]).toEqual([400, 300, 90]);

@@ -35,6 +35,7 @@ import {
   savePdf,
   topLeftRectToUserSpace,
 } from '../engines/mupdf';
+import { removeXmpPacket } from '../engines/mupdf-write';
 import { PRODUCER_LINE } from './metadata';
 import {
   type AnnotationTally,
@@ -464,13 +465,7 @@ function cleanInfoAndXmp(mupdf: Mupdf, doc: PDFDocument): boolean {
       cleaned = true;
     }
   }
-  const root = doc.getTrailer().get('Root');
-  const xmp = root.get('Metadata');
-  if (!xmp.isNull()) {
-    if (xmp.isIndirect()) doc.deleteObject(xmp.asIndirect());
-    else root.delete('Metadata');
-    cleaned = true;
-  }
+  if (removeXmpPacket(doc)) cleaned = true;
   // Product policy: the producer line is merged back, never stripped.
   doc.setMetaData(Document.META_INFO_PRODUCER, PRODUCER_LINE);
   return cleaned;

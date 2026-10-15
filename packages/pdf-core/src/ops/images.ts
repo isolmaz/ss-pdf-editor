@@ -232,7 +232,9 @@ export async function exportImages(
       });
 
       // The page's own rotation is already in the viewport, so the exported image
-      // is the page as the user sees it.
+      // is the page as the user sees it. The size is in points (1/72 inch): pdf.js has
+      // already multiplied the page's `/UserUnit` in, so the DPI is the physical one and
+      // the megapixel budget counts the pixels the canvas will really have.
       const points = await handle.getPageSize(pageIndex, 1);
       const width = Math.max(1, Math.floor(points.width * scale));
       const height = Math.max(1, Math.floor(points.height * scale));
