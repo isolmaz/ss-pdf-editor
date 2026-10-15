@@ -163,7 +163,7 @@ test('on a phone the tool rail is a toolbar under the document that scrolls side
   // The document has the whole width, and the last tool is one scroll away.
   const pageBox = await page.locator('.pdfViewer[data-active-viewer] .page').first().boundingBox();
   expect(pageBox?.width ?? 0).toBeGreaterThan(375 * 0.85);
-  const redact = rail.getByRole('button', { name: /^Redact/ });
+  const redact = rail.getByRole('button', { name: /^Permanent redaction/ });
   await redact.scrollIntoViewIfNeeded();
   await redact.click();
   await expect(redact).toHaveAttribute('aria-pressed', 'true');

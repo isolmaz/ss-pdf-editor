@@ -124,7 +124,7 @@ test('the page scope is one select: all pages first, a range box only for Custom
   page,
 }) => {
   await openPdf(page, 'doc.pdf', labelledPdf('Doc', 3));
-  const form = await openTool(page, 'Numbering & Watermark', 'Add Watermark', 'Watermark');
+  const form = await openTool(page, 'Numbering and watermark', 'Add watermark', 'Add watermark');
   const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
   await expect(form.getByRole('combobox', { name: 'Page range' })).toHaveText('All pages (3)');
   await expect(range).toHaveCount(0);
