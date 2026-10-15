@@ -4,7 +4,7 @@ import type { SessionStore } from 'pdf-model';
 import type { DeviceTier, Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { lazy, Suspense } from 'react';
-import { visibleCommands } from '../../commands';
+import { isCommandVisible, visibleCommands } from '../../commands';
 import { useCore } from '../core/core-store';
 import type { ShellActions } from './shell-actions';
 import { closePalette, closeSettings, useShell } from './shell-store';
@@ -36,6 +36,7 @@ export function PaletteHost({ t, commands, changeMode }: PaletteHostProps) {
   const mode = useCore((state) => state.mode);
   if (!paletteOpen) return null;
   const visible = mode === 'simple' ? visibleCommands(commands, 'simple') : commands;
+  const hidden = mode === 'simple' ? commands.filter((command) => !isCommandVisible(command, 'simple')) : [];
   return (
     <Suspense fallback={null}>
       <CommandPalette
@@ -47,7 +48,7 @@ export function PaletteHost({ t, commands, changeMode }: PaletteHostProps) {
           closePalette();
           command.run();
         }}
-        hiddenByMode={commands.length - visible.length}
+        hiddenCommands={hidden}
         onUseAdvanced={() => changeMode('advanced')}
       />
     </Suspense>

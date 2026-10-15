@@ -15,9 +15,10 @@
  *    the visible list and the live count come from one predicate instead of two
  *    that could disagree. Filtering here also lets the count be a real number
  *    rather than a DOM query.
- *  - **Turkish case folding.** Matching folds both sides with
- *    `toLocaleLowerCase('tr')`: the default locale mapping turns `I` into `i`, so a
- *    Turkish keyboard's `İ` would never match a command beginning with it.
+ *  - **Turkish case and diacritic folding.** Matching folds both sides with
+ *    `toLocaleLowerCase('tr')` (the default locale mapping turns `I` into `i`, so a
+ *    Turkish keyboard's `İ` would never match a command beginning with it) and then
+ *    drops the diacritics, so `dondur` finds "Sola döndür" and `ac` finds "Aç".
  *  - **`Enter` is handled here.** The primitive's own Enter path selects the
  *    highlighted item into the input, which is a combobox behaviour, not a command
  *    palette's; running the command is what the user asked for.
@@ -37,14 +38,14 @@ export interface CommandPaletteProps {
   /** Runs the chosen command. The palette closes itself first. */
   readonly onRun: (command: Command) => void;
   /**
-   * How many commands the simple mode is hiding from this list, when it is on.
+   * The commands the simple mode is hiding from this list, when it is on.
    *
    * A filter that hides a capability without saying so is indistinguishable from a
-   * missing feature. When this is above zero the empty state offers the way out,
-   * so a user who searches for something the mode hides learns the mode
-   * exists instead of concluding the application cannot do it.
+   * missing feature. While the query matches at least one of them the palette says
+   * how many and offers the way out — also when other commands matched, because a
+   * few fuzzy hits would otherwise bury the tool the user typed the name of.
    */
-  readonly hiddenByMode?: number;
+  readonly hiddenCommands?: readonly Command[];
   /** Leave the simple mode. */
   readonly onUseAdvanced?: () => void;
 }
@@ -74,6 +75,18 @@ function recordRecentCommandId(id: string): void {
   }
 }
 
+/**
+ * The text as the matcher compares it: lower-cased the Turkish way, then without
+ * diacritics (`ç ğ ö ş ü` and any other combining mark) and with the dotless `ı` as `i`,
+ * so a query typed on a keyboard without Turkish letters still finds the command.
+ */
+function fold(text: string): string {
+  return text.toLocaleLowerCase('tr').normalize('NFD').replace(/\p{M}/gu, '').replace(/ı/g, 'i');
+}
+
+/** The shortest prefix of a group's name that lists the group (`ara` lists "Araçlar"). */
+const MIN_GROUP_PREFIX = 3;
+
 /** Fuzzy match check: characters of query appear sequentially in text. */
 function fuzzyMatch(text: string, query: string): boolean {
   let queryIndex = 0;
@@ -90,7 +103,7 @@ function fuzzyMatch(text: string, query: string): boolean {
  * Returns > 0 if it matches, 0 if it doesn't.
  */
 function scoreCommand(command: Command, query: string, t: Translator, recentIds: readonly string[]): number {
-  const needle = query.trim().toLocaleLowerCase('tr');
+  const needle = fold(query.trim());
   const recentIndex = recentIds.indexOf(command.id);
   const recencyBonus = recentIndex >= 0 ? Math.max(0, 25 - recentIndex * 2) : 0;
 
@@ -99,9 +112,9 @@ function scoreCommand(command: Command, query: string, t: Translator, recentIds:
     return recencyBonus > 0 ? 100 + recencyBonus : 1;
   }
 
-  const label = t(command.labelKey).toLocaleLowerCase('tr');
-  const groupName = t(MENU_GROUP_KEYS[command.group]).toLocaleLowerCase('tr');
-  const keywords = (command.keywords ?? []).map((k) => k.toLocaleLowerCase('tr'));
+  const label = fold(t(command.labelKey));
+  const groupName = fold(t(MENU_GROUP_KEYS[command.group]));
+  const keywords = (command.keywords ?? []).map(fold);
 
   let score = 0;
 
@@ -124,9 +137,12 @@ function scoreCommand(command: Command, query: string, t: Translator, recentIds:
     else if (kw.includes(needle)) score = Math.max(score, 40);
   }
 
-  // Check group name
-  if (groupName.startsWith(needle)) score = Math.max(score, 35);
-  else if (groupName.includes(needle)) score = Math.max(score, 25);
+  // The group name lists its whole group only for the full name or a prefix of at least
+  // MIN_GROUP_PREFIX characters. Matching anywhere inside it let every two-letter query that
+  // happens to occur in "Araçlar" (`ac`, `ar`, `la`) list the entire Tools menu.
+  if (groupName === needle || (needle.length >= MIN_GROUP_PREFIX && groupName.startsWith(needle))) {
+    score = Math.max(score, 35);
+  }
 
   if (score > 0) {
     return score + recencyBonus;
@@ -134,13 +150,15 @@ function scoreCommand(command: Command, query: string, t: Translator, recentIds:
   return 0;
 }
 
+const NO_COMMANDS: readonly Command[] = [];
+
 export function CommandPalette({
   t,
   commands,
   open,
   onClose,
   onRun,
-  hiddenByMode,
+  hiddenCommands = NO_COMMANDS,
   onUseAdvanced,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
@@ -159,6 +177,15 @@ export function CommandPalette({
     scored.sort((a, b) => b.score - a.score);
     return scored.map((item) => item.command);
   }, [commands, query, t, recentIds]);
+
+  /** How many of the commands the mode hides the query matches; nothing is said for an empty query. */
+  const hiddenMatches = useMemo(
+    () =>
+      query.trim() === ''
+        ? 0
+        : hiddenCommands.filter((command) => scoreCommand(command, query, t, []) > 0).length,
+    [hiddenCommands, query, t],
+  );
 
   /**
    * One command per opening. Enter reaches both the input's own handler and the
@@ -257,31 +284,29 @@ export function CommandPalette({
         <KumoCommandPalette.Empty>
           <span className="flex flex-col items-center gap-2 text-center">
             <span>{t('palette.empty')}</span>
-            {hiddenByMode !== undefined && hiddenByMode > 0 ? (
-              <>
-                <span className="text-xs text-kumo-subtle">
-                  {t('palette.modeHidden', { count: hiddenByMode })}
-                </span>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    // The button leaves with the empty state, and focus with it: back to
-                    // the input, where Enter and the arrows work. (Kumo's input takes no ref.)
-                    const input = event.currentTarget
-                      .closest('[role="dialog"]')
-                      ?.querySelector<HTMLInputElement>('[role="combobox"]');
-                    onUseAdvanced?.();
-                    input?.focus();
-                  }}
-                  className="rounded-md border border-kumo-line px-2 py-1 text-xs font-medium text-kumo-strong hover:bg-kumo-recessed"
-                >
-                  {t('setting.mode.advanced')}
-                </button>
-              </>
-            ) : null}
           </span>
         </KumoCommandPalette.Empty>
       </KumoCommandPalette.List>
+      {hiddenMatches > 0 ? (
+        <div className="flex items-center justify-between gap-3 bg-kumo-elevated px-4 py-2 text-xs text-kumo-subtle">
+          <span>{t('palette.modeHidden', { count: hiddenMatches })}</span>
+          <button
+            type="button"
+            onClick={(event) => {
+              // The button leaves once the mode is switched, and focus with it: back to
+              // the input, where Enter and the arrows work. (Kumo's input takes no ref.)
+              const input = event.currentTarget
+                .closest('[role="dialog"]')
+                ?.querySelector<HTMLInputElement>('[role="combobox"]');
+              onUseAdvanced?.();
+              input?.focus();
+            }}
+            className="shrink-0 rounded-md border border-kumo-line px-2 py-1 text-xs font-medium text-kumo-strong hover:bg-kumo-recessed"
+          >
+            {t('setting.mode.advanced')}
+          </button>
+        </div>
+      ) : null}
       <KumoCommandPalette.Footer>
         {/* A live region: the count is the answer to every keystroke, and a screen
             reader should hear it without leaving the input. */}

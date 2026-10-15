@@ -2482,8 +2482,17 @@ tool toggle would arm and disarm itself and an operation's second run would be r
 "another operation is running"). Enter runs the highlighted command only while it is still in
 the filtered list (matched by id): the primitive does not clear its highlight when a query
 filters every item out, so Enter on "No matching commands" would otherwise run whatever had
-been highlighted before. The empty state's
-"Advanced mode" button hands focus back to the input, since the button disappears with it.
+been highlighted before.
+
+The palette matches without regard to Turkish letters (`dondur` finds "Sola döndür", `ac`
+finds "Aç"): the query, the labels, the keywords and the group names are lower-cased the
+Turkish way and stripped of diacritics before they are compared. A group name lists its
+whole group only for the full name or a prefix of at least three letters, so a two-letter
+query does not list the Tools menu because "Araçlar" happens to contain it. In the simple
+mode the host hands the palette the commands the mode hides; while the query matches any of
+them, whether or not other commands matched, a line under the list says how many and offers
+the "Advanced mode" button, which hands focus back to the input since the line disappears
+with it. An empty query says nothing.
 
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
