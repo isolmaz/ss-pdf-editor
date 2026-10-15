@@ -469,7 +469,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
   const view: Command[] = [
     {
       id: 'view.zoom-in',
-      labelKey: 'viewer.zoom',
+      labelKey: 'viewer.zoomIn',
       group: 'view',
       shortcut: shortcutHint('view.zoom-in'),
       disabled: noDocument,
@@ -477,7 +477,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'view.zoom-out',
-      labelKey: 'viewer.zoom',
+      labelKey: 'viewer.zoomOut',
       group: 'view',
       shortcut: shortcutHint('view.zoom-out'),
       disabled: noDocument,
@@ -485,7 +485,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
     },
     {
       id: 'view.zoom-reset',
-      labelKey: 'viewer.zoom',
+      labelKey: 'viewer.zoomReset',
       group: 'view',
       shortcut: shortcutHint('view.zoom-reset'),
       disabled: noDocument,

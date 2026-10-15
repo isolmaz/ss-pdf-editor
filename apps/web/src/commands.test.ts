@@ -4,10 +4,10 @@
  * reports, and be filtered by the interface mode the way the palette expects.
  */
 
-import type { Translator } from 'pdf-shared';
+import { createTranslator, loadLocale, type Translator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import type { CanvasToolId } from 'pdf-ui/tools';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   buildCommands,
   type CommandHost,
@@ -229,6 +229,36 @@ describe('buildCommands', () => {
       byId(buildCommands(host), id).run();
       expect(calls, id).toEqual([expected]);
     }
+  });
+
+  describe('in each language', () => {
+    beforeAll(async () => {
+      await loadLocale('tr');
+      await loadLocale('en');
+    });
+
+    it.each(['tr', 'en'] as const)('gives no two commands of a menu the same %s label', (locale) => {
+      const translate = createTranslator(locale);
+      const commands = buildCommands(recordingHost({ t: translate }).host);
+      const seen = new Map<string, string>();
+      for (const command of commands) {
+        const key = `${command.group}/${translate(command.labelKey)}`;
+        expect(seen.get(key), `${command.id} repeats the label of ${seen.get(key)}`).toBeUndefined();
+        seen.set(key, command.id);
+      }
+    });
+
+    it('names the three zoom entries by what each one does', () => {
+      const labels = (locale: 'tr' | 'en') => {
+        const translate = createTranslator(locale);
+        const commands = buildCommands(recordingHost().host);
+        return ['view.zoom-in', 'view.zoom-out', 'view.zoom-reset'].map((id) =>
+          translate(byId(commands, id).labelKey),
+        );
+      };
+      expect(labels('tr')).toEqual(['Yakınlaştır', 'Uzaklaştır', 'Gerçek boyut (%100)']);
+      expect(labels('en')).toEqual(['Zoom in', 'Zoom out', 'Actual size (100%)']);
+    });
   });
 
   it('opens the source repository in a new tab without handing it the opener', () => {
