@@ -1,4 +1,4 @@
-import { type DraftInventory, isRestorable, sortDrafts } from 'pdf-model';
+import { type DraftInventory, isRestorable, lacksHistory, sortDrafts } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import { useEffect } from 'react';
 import { loadRecentDocuments } from '../../recent';
@@ -48,6 +48,7 @@ export function useDraftRecovery({ store, translator, openAndFingerprint }: Reco
           .map((draft) => claimWithPatience(draft.id)),
       );
       let restored = 0;
+      let withoutHistory = 0;
       let failure: ToolError | null = null;
       for (const draft of drafts) {
         if (!isRestorable(draft)) continue;
@@ -59,7 +60,10 @@ export function useDraftRecovery({ store, translator, openAndFingerprint }: Reco
             cancelled: () => disposed,
           });
           if (outcome.kind === 'cancelled') return;
-          if (outcome.kind === 'restored') restored += 1;
+          if (outcome.kind === 'restored') {
+            restored += 1;
+            if (lacksHistory(draft)) withoutHistory += 1;
+          }
         } catch (error) {
           failure =
             error instanceof ToolError ? error : new ToolError('corrupt-document', { engine: 'model' });
@@ -68,7 +72,11 @@ export function useDraftRecovery({ store, translator, openAndFingerprint }: Reco
       if (!disposed && failure !== null) {
         showNotice(`${translator.current(failure.messageKey)} ${translator.current(failure.hintKey)}`);
       } else if (!disposed && restored > 0 && inventory.unreadable.length === 0) {
-        showNotice(translator.current('draft.restored', { count: restored }));
+        showNotice(
+          withoutHistory === 0
+            ? translator.current('draft.restored', { count: restored })
+            : translator.current('draft.restoredNoHistory', { count: restored, withoutHistory }),
+        );
       }
       // Handles whose recent entry is gone are forgotten — after the restore, which reads them.
       if (!disposed) await pruneRecentHandles(new Set(loadRecentDocuments().map((item) => item.id)));

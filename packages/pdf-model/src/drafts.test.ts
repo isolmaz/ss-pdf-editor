@@ -15,6 +15,7 @@ import {
   EMPTY_ENGINE_VALUES,
   encodeEngineValues,
   isRestorable,
+  lacksHistory,
   parseDraft,
   sortDrafts,
   sourceKeyFor,
@@ -426,6 +427,17 @@ describe('draft helpers', () => {
     expect(isRestorable(clean)).toBe(false);
     expect(isRestorable({ ...clean, dirty: true })).toBe(true);
     expect(isRestorable(parseDraft(draft({ dirty: false })) as Draft)).toBe(true);
+  });
+
+  it('lacksHistory is a draft with produced bytes or overlays and no journal, which only the smaller tier writes', () => {
+    const edited = parseDraft(draft()) as Draft;
+    expect(lacksHistory(edited)).toBe(false);
+    const noJournal = { journal: [], journalCursor: 0 };
+    expect(lacksHistory(parseDraft(draft(noJournal)) as Draft)).toBe(true);
+    const overlaysOnly = { ...noJournal, workingId: undefined, snapshots: [], overlays: { marks: [] } };
+    expect(lacksHistory(parseDraft(draft(overlaysOnly)) as Draft)).toBe(true);
+    const nothingApplied = { ...noJournal, workingId: undefined, snapshots: [] };
+    expect(lacksHistory(parseDraft(draft(nothingApplied)) as Draft)).toBe(false);
   });
 
   it('sourceKeyFor falls back to the document id and does not prefix an already-keyed hash twice', () => {

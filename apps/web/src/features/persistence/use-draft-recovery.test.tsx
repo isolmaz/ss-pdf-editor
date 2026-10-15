@@ -6,8 +6,9 @@
  */
 
 import { act, cleanup, render } from '@testing-library/react';
+import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { type Draft, type DraftSnapshot, SessionStore } from 'pdf-model';
-import { createTranslator, ToolError, type Translator } from 'pdf-shared';
+import { createTranslator, type DeviceTier, ToolError, type Translator } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   annotationsStore,
@@ -15,7 +16,8 @@ import {
   initialAnnotationsState,
 } from '../annotations/annotations-store';
 import { coreStore, initialCoreState } from '../core/core-store';
-import { handleFor } from '../core/handles';
+import { adoptHandle, dropHandle, handleFor } from '../core/handles';
+import { persistDraft } from './draft-persist';
 import { persistedKeysFor, persistenceStore, resetPersistence } from './persistence-store';
 import { type RecoveryHost, useDraftRecovery } from './use-draft-recovery';
 import { fakeChannel, type MemoryStorage, manifest, memoryStorage, openTab } from './vault.fixtures';
@@ -358,5 +360,60 @@ describe('useDraftRecovery — one draft never costs the others', () => {
     );
     expect(store.getSnapshot().tabs.map((tab) => tab.id)).toEqual(['mine']);
     expect(notice()).toBe(en('draft.restored', { count: 1 }));
+  });
+});
+
+describe('useDraftRecovery — the history a draft carries', () => {
+  /** A document edited once and written to the vault the way the shell writes it on `tier`. */
+  async function persistEdited(tier: DeviceTier, name: string, sha256: string): Promise<string> {
+    const edited = new SessionStore();
+    const tab = openTab(edited, sha256, name);
+    adoptHandle(tab.id, { raw: {}, destroy: vi.fn(async () => undefined) } as unknown as PdfDocumentHandle);
+    edited.applyOperation({
+      tabId: tab.id,
+      bytes: new Uint8Array([4, 4]),
+      pageCount: 1,
+      labelKey: 'ann.engineEdit',
+      engine: 'mupdf',
+      steps: [],
+      overlays: null,
+    });
+    expect(await persistDraft(edited, tab.id, tier)).toBe('written');
+    dropHandle(tab.id);
+    return tab.id;
+  }
+
+  it('restores the journal of a draft written on the desktop tier, so undo leads back to the original bytes', async () => {
+    const id = await persistEdited('desktop', 'report.pdf', 'desktop');
+    await recover();
+
+    const restored = store.getSnapshot().tabs.find((tab) => tab.id === id);
+    expect(restored?.journal.entries).toHaveLength(1);
+    expect(restored?.journal.canUndo).toBe(true);
+    expect(restored?.dirty).toBe(true);
+    const undo = store.previewHistory(id, 'undo');
+    expect(undo).toMatchObject({ kind: 'done', step: { kind: 'document', produced: null } });
+    expect(notice()).toBe(en('draft.restored', { count: 1 }));
+  });
+
+  it('says that earlier steps cannot be undone for a draft written on the smaller tier', async () => {
+    const id = await persistEdited('mobile', 'phone.pdf', 'mobile');
+    await recover();
+
+    const restored = store.getSnapshot().tabs.find((tab) => tab.id === id);
+    expect(restored?.working.produced?.bytes).toEqual(new Uint8Array([4, 4]));
+    expect(restored?.dirty).toBe(true);
+    expect(restored?.journal.canUndo).toBe(false);
+    expect(notice()).toBe(en('draft.restoredNoHistory', { count: 1, withoutHistory: 1 }));
+    expect(notice()).toContain('earlier steps cannot be undone');
+  });
+
+  it('counts the drafts without a history when others come back with theirs', async () => {
+    await persistEdited('desktop', 'report.pdf', 'desktop');
+    await persistEdited('mobile', 'phone.pdf', 'mobile');
+    await recover();
+
+    expect(store.getSnapshot().tabs).toHaveLength(2);
+    expect(notice()).toBe(en('draft.restoredNoHistory', { count: 2, withoutHistory: 1 }));
   });
 });
