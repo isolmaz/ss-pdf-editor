@@ -55,6 +55,7 @@ function host(overrides: Partial<CommandHost> = {}): CommandHost {
     measureMode: null,
     showRightTab: noop,
     openLeftTab: noop,
+    openOrganize: noop,
     pageAction: noop,
     setZoom: noop,
     setSpread: noop,

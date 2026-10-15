@@ -201,3 +201,50 @@ describe('the tool letters', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 });
+
+describe('a view that selects pages', () => {
+  const withMarks = () => ({
+    ...shortcuts(),
+    deleteSelection: vi.fn(() => true),
+    selectAllMarks: vi.fn(() => true),
+  });
+  const pressIn = (target: Element, key: string, modifiers: KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...modifiers });
+    target.dispatchEvent(event);
+    return event;
+  };
+
+  it('keeps Ctrl+A and Delete from selecting and deleting marks on the page behind it', () => {
+    const actions = withMarks();
+    renderHook(() => useShellShortcuts(actions));
+    const host = document.body.appendChild(document.createElement('div'));
+    host.innerHTML = '<section data-owns-select-keys=""><div id="x" tabindex="0">Page 1</div></section>';
+    const inside = host.querySelector('#x') as Element;
+
+    const selectAll = pressIn(inside, 'a', { ctrlKey: true });
+    const remove = pressIn(inside, 'Delete');
+
+    expect(actions.selectAllMarks).not.toHaveBeenCalled();
+    expect(actions.deleteSelection).not.toHaveBeenCalled();
+    expect(selectAll.defaultPrevented).toBe(false);
+    expect(remove.defaultPrevented).toBe(false);
+    host.remove();
+  });
+
+  it('still answers the same keys anywhere else, and every other chord inside the view', () => {
+    const actions = withMarks();
+    renderHook(() => useShellShortcuts(actions));
+    const host = document.body.appendChild(document.createElement('div'));
+    host.innerHTML = '<section data-owns-select-keys=""><div id="x" tabindex="0">Page 1</div></section>';
+
+    expect(press('a', { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(press('Delete').defaultPrevented).toBe(true);
+    expect(actions.selectAllMarks).toHaveBeenCalledTimes(1);
+    expect(actions.deleteSelection).toHaveBeenCalledTimes(1);
+
+    const undo = pressIn(host.querySelector('#x') as Element, 'z', { ctrlKey: true });
+    expect(actions.undo).toHaveBeenCalledTimes(1);
+    expect(undo.defaultPrevented).toBe(true);
+    host.remove();
+  });
+});

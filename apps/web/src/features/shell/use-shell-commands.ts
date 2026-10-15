@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { buildCommands, STANDALONE_COMMAND_IDS } from '../../commands';
 import {
   openLeftPanel,
+  openOrganize,
   openRightPanel,
   selectTool,
   toggleLeftDock,
@@ -151,6 +152,7 @@ export function useShellCommands(
         clearSelection: clearPageSelection,
         palette: summonPalette,
         openLeftTab: openLeftPanel,
+        openOrganize,
         activeTool: canvasTool,
         armTool: selectTool,
         selectedMarkCount,
