@@ -1,12 +1,18 @@
 /**
  * An engine failure while a measurement is written must come out as a mapped error that names the
  * step, not as the engine's own exception. The real engine writes what it is given, so this test
- * wraps it at its loading seam (the one `forms.faults.test.ts` uses): adding the appearance
- * stream throws once, and everything else is real.
+ * wraps it at its loading seam (the one `forms.faults.test.ts` uses): the call named in `fault`
+ * throws, and everything else is real. Writing a mark fails at adding the appearance stream; a
+ * call with no marks reads the page count back, which is where that path can fail.
  */
 
 import type { PDFDocument } from 'mupdf';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const fault = vi.hoisted(() => ({ method: 'addStream' }));
+afterEach(() => {
+  fault.method = 'addStream';
+});
 
 vi.mock('../engines/mupdf', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../engines/mupdf')>();
@@ -18,7 +24,7 @@ vi.mock('../engines/mupdf', async (importOriginal) => {
         const proxy: PDFDocument = new Proxy(document, {
           get(target, property) {
             if (property === 'asPDF') return () => proxy;
-            if (property === 'addStream') {
+            if (property === fault.method) {
               return () => {
                 throw new Error('engine fault');
               };
@@ -79,6 +85,18 @@ describe('writeMeasureAnnotations when the engine fails', () => {
         ],
         { signal: new AbortController().signal },
       ),
+    ).rejects.toMatchObject({ details: { engine: 'mupdf', engineMessage: 'measure.write: engine fault' } });
+  });
+
+  it('reports the failure of reading the page count back for a call with no marks', async () => {
+    fault.method = 'countPages';
+    const bytes = handPdf({
+      1: '<</Type/Catalog/Pages 2 0 R>>',
+      2: '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+      3: '<</Type/Page/Parent 2 0 R/MediaBox[0 0 400 500]>>',
+    });
+    await expect(
+      writeMeasureAnnotations(bytes, [], { signal: new AbortController().signal }),
     ).rejects.toMatchObject({ details: { engine: 'mupdf', engineMessage: 'measure.write: engine fault' } });
   });
 });

@@ -450,6 +450,14 @@ describe('an area whose edges cross', () => {
       { x: 0, y: 0 },
     ];
     expect(measureChain(closed, 'area')).toMatchObject({ selfIntersecting: false, area: 5000 });
+    // A repeated click is a zero-length edge, not a crossing.
+    const repeated = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 0 },
+      { x: 0, y: 100 },
+    ];
+    expect(measureChain(repeated, 'area')).toMatchObject({ selfIntersecting: false, area: 5000 });
     expect(
       measureChain(
         [

@@ -327,7 +327,7 @@ describe('writeMeasureAnnotations refuses what it cannot write', () => {
     });
   });
 
-  it('refuses an unknown mode, a chain that is too short and an area that is too small', async () => {
+  it('refuses an unknown mode, a scale that is not a positive number, a chain that is too short and an area that is too small', async () => {
     const bytes = await blank();
     await expect(
       writeMeasureAnnotations(bytes, [mark({ mode: 'volume' as never })], run),
@@ -335,6 +335,22 @@ describe('writeMeasureAnnotations refuses what it cannot write', () => {
       code: 'unsupported',
       details: { engineMessage: 'measure.write[m1]: unknown measurement mode volume' },
     });
+    // `/X`'s factor is `userUnit / pointsPerUnit`: none of these may reach the file as a number.
+    for (const pointsPerUnit of [0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(
+        writeMeasureAnnotations(
+          bytes,
+          [mark({ scale: { ...scaleForRatio(100, 'cm'), pointsPerUnit } })],
+          run,
+        ),
+      ).rejects.toMatchObject({
+        code: 'value-out-of-range',
+        details: {
+          pageIndex: 0,
+          engineMessage: `measure.write[m1]: scale converts ${pointsPerUnit} pt per unit, which is not a positive number`,
+        },
+      });
+    }
     const near = [
       { x: 10, y: 10 },
       { x: 10.01, y: 10 },

@@ -59,11 +59,13 @@ export type OfflineCapability = 'core' | 'app' | 'pdfjs' | 'mupdf' | 'tesseract'
 /**
  * The capability path lists as they are shipped, with every engine file at its served,
  * versioned URL — the URLs the adapters request and the build's manifest lists. `app` is
- * empty here: the build lists the editor's own chunks in the manifest it deploys.
+ * empty here: the build lists the editor's own chunks in the manifest it deploys, and
+ * `tools/assemble-dist.mjs` refuses an `app` list in `offline-packages.json`, so there is
+ * nothing to map.
  */
 export const OFFLINE_CAPABILITIES: Readonly<Record<OfflineCapability, readonly string[]>> = {
   core: packages.capabilities.core.map((path) => servedEnginePath(path)),
-  app: packages.capabilities.app.map((path: string) => servedEnginePath(path)),
+  app: [],
   pdfjs: packages.capabilities.pdfjs.map((path) => servedEnginePath(path)),
   mupdf: packages.capabilities.mupdf.map((path) => servedEnginePath(path)),
   tesseract: packages.capabilities.tesseract.map((path) => servedEnginePath(path)),
