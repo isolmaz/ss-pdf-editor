@@ -33,7 +33,7 @@ export const homePart = {
   'home.tool.textEdit': 'Retype text in place.',
   'home.tool.highlight': 'Highlight, underline or strike out text.',
   'home.tool.ink': 'Draw freehand.',
-  'home.tool.shapes': 'Add rectangles, ellipses, lines and arrows.',
+  'home.tool.shapes': 'Add rectangles, ellipses and lines.',
   'home.tool.note': 'Leave a sticky note on the page.',
   'home.tool.link': 'Add a link to the page.',
   'home.tool.imageEdit': 'Replace an image in the document.',

@@ -8,6 +8,7 @@
 
 import { cleanup, render as mount, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createTranslator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -113,4 +114,30 @@ describe('HomeToolGrid', () => {
       { description: 'home.tool.ink', disabled: false },
     ]);
   });
+});
+
+describe('HomeToolGrid shapes tile', () => {
+  // The shape tool draws a square, a circle and a line (`ann.tool.shape.*`); the tile must
+  // not promise a shape it does not have.
+  it.each([
+    ['en', /rectangle.*ellipse.*line/i, /arrow/i],
+    ['tr', /dikdörtgen.*elips.*çizgi/i, /\bok\b/i],
+  ] as const)(
+    'describes the rectangle, ellipse and line the tool draws, and no arrow (%s)',
+    (locale, drawn, arrow) => {
+      const words = createTranslator(locale);
+      mount(
+        <HomeToolGrid
+          t={words}
+          commands={[command('tools.shapes')]}
+          activeDocumentName={null}
+          standalone={new Set()}
+          onRun={() => undefined}
+        />,
+      );
+      const description = screen.getByText(words('home.tool.shapes')).textContent ?? '';
+      expect(description).toMatch(drawn);
+      expect(description).not.toMatch(arrow);
+    },
+  );
 });

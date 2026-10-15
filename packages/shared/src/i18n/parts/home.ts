@@ -38,7 +38,7 @@ export const homePart = {
   'home.tool.textEdit': 'Metni yerinde yeniden yazın.',
   'home.tool.highlight': 'Metni vurgulayın, altını çizin veya üstünü çizin.',
   'home.tool.ink': 'Serbest el ile çizin.',
-  'home.tool.shapes': 'Dikdörtgen, elips, çizgi ve ok ekleyin.',
+  'home.tool.shapes': 'Dikdörtgen, elips ve çizgi ekleyin.',
   'home.tool.note': 'Sayfaya yapışkan not bırakın.',
   'home.tool.link': 'Sayfaya bağlantı ekleyin.',
   'home.tool.imageEdit': 'Belgedeki bir görseli değiştirin.',
