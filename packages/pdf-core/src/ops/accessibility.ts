@@ -32,7 +32,8 @@
  *   1. the page's content stream is decoded and **tokenized** (a real content-stream
  *      scanner: strings, hex strings, arrays, dicts, comments and `BI … ID … EI` inline
  *      images are delimited, so image bytes can never be mistaken for operators);
- *   2. the text model (`pdf-text-engine`, built from `readPageText`'s glyphs) supplies
+ *   2. the text model (`pdf-text-engine`, built from MuPDF's glyphs, read through one
+ *      document: `readDocumentText`) supplies
  *      the blocks; each text-showing operator is located by tracking `q/Q`, `cm`, `BT`,
  *      `Tm`, `Td`, `TD`, `T*`, `TL`, `Tf` and assigned to the block whose rect contains
  *      it (nearest block, within a font-size-relative slack);
@@ -74,7 +75,9 @@ import {
   text,
   visibleBox,
 } from '../engines/mupdf-write';
-import { readPageText } from '../text-source';
+import { readDocumentText, readPageText } from '../text-source';
+import { inlineImageEnd } from './pdfa-content';
+import { NS_DC, parseXmp, xmpList } from './pdfa-xmp';
 import { EDITOR_ROLES } from './struct-roles';
 import {
   note,
@@ -143,6 +146,7 @@ export const A11Y_KEYS = {
   checkInfoTitle: dictKey('op.a11y.check.infoTitle'),
   checkInfoTitleOk: dictKey('op.a11y.check.infoTitleOk'),
   checkXmpMissing: dictKey('op.a11y.check.xmpMissing'),
+  checkXmpMalformed: dictKey('op.a11y.check.xmpMalformed'),
   checkXmpTitle: dictKey('op.a11y.check.xmpTitle'),
   checkXmpTitleOk: dictKey('op.a11y.check.xmpTitleOk'),
   checkImageAlt: dictKey('op.a11y.check.imageAlt'),
@@ -178,7 +182,6 @@ export const A11Y_KEYS = {
   notCheckedAltQuality: dictKey('op.a11y.notChecked.altQuality'),
   notCheckedVisual: dictKey('op.a11y.notChecked.visual'),
   notCheckedRaster: dictKey('op.a11y.notChecked.raster'),
-  notCheckedXmpXml: dictKey('op.a11y.notChecked.xmpXml'),
   notCheckedConformance: dictKey('op.a11y.notChecked.conformance'),
 } as const;
 
@@ -209,7 +212,6 @@ const NOT_CHECKED_KEYS: readonly MessageKey[] = [
   A11Y_KEYS.notCheckedAltQuality,
   A11Y_KEYS.notCheckedVisual,
   A11Y_KEYS.notCheckedRaster,
-  A11Y_KEYS.notCheckedXmpXml,
   A11Y_KEYS.notCheckedConformance,
 ];
 
@@ -247,7 +249,10 @@ export interface AccessibilityImage {
   readonly ref: string;
   /** Every 0-based page whose content stream draws it, in page order. */
   readonly pages: readonly number[];
-  /** The XObject's `/Alt`, trimmed; `null` when it carries none or it is empty. */
+  /**
+   * The alt text a reader gives the image, trimmed: the `/Alt` of the `Figure` element(s) that own it
+   * in a tagged file, otherwise the XObject's `/Alt`; `null` when there is none or it is empty.
+   */
   readonly alt: string | null;
   readonly width: number | null;
   readonly height: number | null;
@@ -289,8 +294,9 @@ export interface AccessibilityReport {
 
 /**
  * The page-text extractor `tagDocument` reads blocks with. The default is
- * `readPageText` — MuPDF's glyph walk through the engine adapter, the same path the
- * text tool uses. The Node probe injects its own reader because the adapter resolves
+ * `readDocumentText` — MuPDF's glyph walk through the engine adapter, the same path the
+ * text tool uses, with the whole document opened once instead of once per page. A reader
+ * given here is called page by page. The Node probe injects its own reader because the adapter resolves
  * MuPDF **by the URL the browser build serves it from** (`engines/mupdf.ts`), which no
  * Node process has; the probe's reader walks the npm `mupdf` package and returns the
  * same `PageTextInput`, so the model under test is unchanged.
@@ -396,6 +402,8 @@ export const FINDING_ROW_LIMIT = 40;
 const TAG_ELEMENT_LIMIT = 5000;
 /** Instructions a page's content stream may hold before the scan is refused as absurd. */
 const INSTRUCTION_LIMIT = 1_000_000;
+/** Pages whose glyphs are read through one MuPDF document before they are reduced to blocks. */
+const PAGE_READ_BATCH = 64;
 
 /* ------------------------------------------------------------------ *
  * Content stream: tokenizer
@@ -460,64 +468,73 @@ function skipLiteralString(buffer: Uint8Array, from: number): number {
   return buffer.length;
 }
 
-/** `<…>` hex strings and `<<…>>` dictionaries; nested `<<>>` inside a dict are counted. */
-function skipAngle(buffer: Uint8Array, from: number): number {
-  if (buffer[from + 1] === 0x3c) {
-    let depth = 0;
-    let cursor = from;
-    while (cursor < buffer.length) {
-      if (buffer[cursor] === 0x3c && buffer[cursor + 1] === 0x3c) {
-        depth += 1;
-        cursor += 2;
-        continue;
-      }
-      if (buffer[cursor] === 0x3e && buffer[cursor + 1] === 0x3e) {
-        depth -= 1;
-        cursor += 2;
-        if (depth === 0) return cursor;
-        continue;
-      }
-      cursor += 1;
-    }
-    return buffer.length;
-  }
+/**
+ * Composite objects nested deeper than this are not a content stream this scanner trusts:
+ * the skippers recurse once per level, and a hostile `[<<[<<…` must end as an unreadable
+ * page, not as a stack overflow.
+ */
+const NESTING_LIMIT = 256;
+
+/** `%` to the end of the line (§7.2.4): a comment inside an array or dictionary can hold any delimiter. */
+function skipComment(buffer: Uint8Array, from: number): number {
+  let cursor = from;
+  while (cursor < buffer.length && buffer[cursor] !== 0x0a && buffer[cursor] !== 0x0d) cursor += 1;
+  return cursor;
+}
+
+/** `<…>` hex string: up to and including the first `>`. */
+function skipHexString(buffer: Uint8Array, from: number): number {
   let cursor = from + 1;
   while (cursor < buffer.length && buffer[cursor] !== 0x3e) cursor += 1;
   return Math.min(cursor + 1, buffer.length);
 }
 
-/** `[…]`: literal strings inside it cannot contain a bare `]` that ends the array. */
-function skipArray(buffer: Uint8Array, from: number): number {
-  let cursor = from + 1;
+/**
+ * `<…>` hex strings and `<<…>>` dictionaries.
+ *
+ * A dictionary is walked as the objects it holds, not as bytes: a literal string inside it
+ * (`(A>>B)`) can carry a `>>`, and a hex string's own closing `>` sits right in front of the
+ * dictionary's (`<</ActualText<FEFF0041>>>`), so counting `>>` pairs ends the dictionary one
+ * byte early and leaves a stray `>` behind that makes the whole page unreadable.
+ */
+function skipAngle(buffer: Uint8Array, from: number, level = 0): number {
+  if (buffer[from + 1] !== 0x3c) return skipHexString(buffer, from);
+  if (level > NESTING_LIMIT) return buffer.length;
+  let depth = 0;
+  let cursor = from;
   while (cursor < buffer.length) {
     const byte = buffer[cursor] as number;
-    if (byte === 0x28) cursor = skipLiteralString(buffer, cursor);
-    else if (byte === 0x3c) cursor = skipAngle(buffer, cursor);
-    else if (byte === 0x5b) cursor = skipArray(buffer, cursor);
-    else if (byte === 0x5d) return cursor + 1;
+    if (byte === 0x3c) {
+      if (buffer[cursor + 1] === 0x3c) {
+        depth += 1;
+        cursor += 2;
+      } else cursor = skipHexString(buffer, cursor);
+    } else if (byte === 0x3e && buffer[cursor + 1] === 0x3e) {
+      depth -= 1;
+      cursor += 2;
+      if (depth === 0) return cursor;
+    } else if (byte === 0x28) cursor = skipLiteralString(buffer, cursor);
+    else if (byte === 0x5b) cursor = skipArray(buffer, cursor, level + 1);
+    else if (byte === 0x25) cursor = skipComment(buffer, cursor);
     else cursor += 1;
   }
   return buffer.length;
 }
 
-/**
- * `BI … ID <binary> EI`: the data of an inline image is not tokenizable and its bytes
- * can spell anything, `Do` included. The terminator is `EI` **surrounded by
- * whitespace** (§8.9.7), which is what keeps `/EI`-shaped names and `(EI)`-shaped
- * strings inside the image dictionary from ending the scan early.
- */
-function skipInlineImage(buffer: Uint8Array, from: number): number | null {
-  let cursor = from;
-  while (cursor + 1 < buffer.length) {
-    if (buffer[cursor] === 0x45 && buffer[cursor + 1] === 0x49) {
-      // `from` is past the `BI` token, so there is a byte before the cursor.
-      const before = buffer[cursor - 1] as number;
-      const after = cursor + 2 >= buffer.length ? 0x20 : (buffer[cursor + 2] as number);
-      if (isWhitespace(before) && (isWhitespace(after) || isDelimiter(after))) return cursor + 2;
-    }
-    cursor += 1;
+/** `[…]`: strings, dictionaries and comments inside it cannot end the array early. */
+function skipArray(buffer: Uint8Array, from: number, level = 0): number {
+  if (level > NESTING_LIMIT) return buffer.length;
+  let cursor = from + 1;
+  while (cursor < buffer.length) {
+    const byte = buffer[cursor] as number;
+    if (byte === 0x28) cursor = skipLiteralString(buffer, cursor);
+    else if (byte === 0x3c) cursor = skipAngle(buffer, cursor, level + 1);
+    else if (byte === 0x5b) cursor = skipArray(buffer, cursor, level + 1);
+    else if (byte === 0x25) cursor = skipComment(buffer, cursor);
+    else if (byte === 0x5d) return cursor + 1;
+    else cursor += 1;
   }
-  return null;
+  return buffer.length;
 }
 
 /** `/Name#20With#28escapes` → `Name With(escapes)` (§7.3.5). */
@@ -598,7 +615,11 @@ export function readInstructions(buffer: Uint8Array): readonly Instruction[] | n
     }
     if (operands.length === 0) start = tokenStart;
     if (token === 'BI') {
-      const end = skipInlineImage(buffer, cursor);
+      // `BI … ID <binary> EI`: the data is not tokenizable and its bytes can spell anything, `Do`
+      // included, so it is ended by the one rule the PDF/A reader ends it by (`inlineImageEnd`),
+      // which also keeps `/EI`-shaped names and `(EI)` strings in the image dictionary from
+      // ending the scan early. `cursor` is past the `BI` token, so a byte precedes every `EI`.
+      const end = inlineImageEnd(buffer, cursor);
       if (end === null) return null;
       instructions.push({ operator: 'BI', operands: [], start, end });
       if (instructions.length > INSTRUCTION_LIMIT) return null;
@@ -1093,12 +1114,14 @@ export interface Claim {
 }
 
 /**
- * Where a marked-content sequence may open and close. Two nesting rules hold for `BDC … EMC`
+ * Where a marked-content sequence may open and close. Three nesting rules hold for `BDC … EMC`
  * (ISO 32000-1 §14.6, and what PDF/UA validators flag): a sequence must not straddle two
- * text objects (`BT … ET`), and must not straddle a graphics-state level (`q … Q`). One
- * sequence *inside* a text object is fine — several blocks often share one. The scan records,
- * for every position (the point before an instruction), which text object it is in and how
- * deep the `q` stack is, so a claim can be widened to the nearest range that opens and
+ * text objects (`BT … ET`), must not straddle a graphics-state level (`q … Q`), and must not
+ * cut across a marked-content sequence the page already has (`BDC … [BDC … EMC] … EMC` nests,
+ * `BDC … [BDC … EMC … ] EMC` does not). One sequence *inside* a text object is fine — several
+ * blocks often share one. The scan records, for every position (the point before an
+ * instruction), which text object it is in and how deep the `q` stack and the stack of open
+ * marked-content sequences are, so a claim can be widened to the nearest range that opens and
  * closes at the same level.
  */
 export interface Nesting {
@@ -1106,14 +1129,18 @@ export interface Nesting {
   readonly object: readonly number[];
   /** `depth[p]`: the `q` depth before instruction `p`. Length `n + 1`. */
   readonly depth: readonly number[];
+  /** `marked[p]`: how many `BMC`/`BDC` sequences are open before instruction `p`. Length `n + 1`. */
+  readonly marked: readonly number[];
 }
 
 export function nestingOf(instructions: readonly Instruction[]): Nesting {
   const object: number[] = [-1];
   const depth: number[] = [0];
+  const marked: number[] = [0];
   let current = -1;
   let next = 0;
   let level = 0;
+  let open = 0;
   for (const instruction of instructions) {
     if (instruction.operator === 'BT') {
       current = next;
@@ -1121,16 +1148,53 @@ export function nestingOf(instructions: readonly Instruction[]): Nesting {
     } else if (instruction.operator === 'ET') current = -1;
     else if (instruction.operator === 'q') level += 1;
     else if (instruction.operator === 'Q' && level > 0) level -= 1;
+    else if (instruction.operator === 'BMC' || instruction.operator === 'BDC') open += 1;
+    else if (instruction.operator === 'EMC' && open > 0) open -= 1;
     object.push(current);
     depth.push(level);
+    marked.push(open);
   }
-  return { object, depth };
+  return { object, depth, marked };
+}
+
+/**
+ * Widen `[a, b]` until `levels` (a stack depth before every instruction) is the same at both
+ * ends and never drops below it in between: everything opened inside the range is closed
+ * inside it, and nothing that was already open outside it is closed inside it. `null` when the
+ * stream never reaches such a range (a level that is opened and never closed).
+ */
+function settleLevels(
+  levels: readonly number[],
+  a: number,
+  b: number,
+  count: number,
+): { readonly a: number; readonly b: number } | null {
+  let first = a;
+  let last = b;
+  let lowest = levels[first] as number;
+  for (let position = first; position <= last + 1; position += 1) {
+    lowest = Math.min(lowest, levels[position] as number);
+  }
+  if ((levels[first] as number) > lowest) {
+    let cursor = first;
+    while (cursor > 0 && (levels[cursor] as number) !== lowest) cursor -= 1;
+    if ((levels[cursor] as number) !== lowest) return null;
+    first = cursor;
+  }
+  if ((levels[last + 1] as number) > (levels[first] as number)) {
+    let cursor = last + 1;
+    while (cursor < count && (levels[cursor + 1] as number) > (levels[first] as number)) cursor += 1;
+    if (cursor >= count) return null;
+    last = cursor;
+  }
+  return { a: first, b: last };
 }
 
 /**
  * The smallest range containing `[first, last]` that a marked-content sequence can wrap
- * without straddling two text objects or a `q` level; `null` when no such range exists in
- * the stream (an unbalanced `q`, a text object that never ends).
+ * without straddling two text objects, a `q` level or a marked-content sequence the stream
+ * already has; `null` when no such range exists in the stream (an unbalanced `q`, a text
+ * object or sequence that never ends).
  */
 export function expandToNesting(
   instructions: readonly Instruction[],
@@ -1160,25 +1224,12 @@ export function expandToNesting(
       }
       changed = true;
     }
-    let lowest = nesting.depth[a] as number;
-    for (let position = a; position <= b + 1; position += 1) {
-      lowest = Math.min(lowest, nesting.depth[position] as number);
-    }
-    if ((nesting.depth[a] as number) > lowest) {
-      let cursor = a;
-      while (cursor > 0 && (nesting.depth[cursor] as number) !== lowest) cursor -= 1;
-      if ((nesting.depth[cursor] as number) !== lowest) return null;
-      a = cursor;
-      changed = true;
-    }
-    if ((nesting.depth[b + 1] as number) > (nesting.depth[a] as number)) {
-      let cursor = b + 1;
-      while (cursor < count && (nesting.depth[cursor + 1] as number) > (nesting.depth[a] as number)) {
-        cursor += 1;
-      }
-      if (cursor >= count) return null;
-      b = cursor;
-      changed = true;
+    for (const levels of [nesting.depth, nesting.marked]) {
+      const settled = settleLevels(levels, a, b, count);
+      if (settled === null) return null;
+      if (settled.a !== a || settled.b !== b) changed = true;
+      a = settled.a;
+      b = settled.b;
     }
     if (!changed) return { first: a, last: b };
   }
@@ -1243,8 +1294,8 @@ interface TaggedPage {
   readonly pageRef: PDFObject;
   /** The elements in tree order (the plan's, or content order). */
   readonly elements: readonly TaggedElement[];
-  /** Marked-content operators the page's stream had before the splice, to verify the delta. */
-  readonly before: { readonly opens: number; readonly closes: number };
+  /** The marked-content operators and nesting faults the page's stream had before the splice, to verify the delta. */
+  readonly before: MarkedContentShape;
   /** Sequences the splice added; `artifacts` of them are `/Artifact BMC`. */
   readonly added: { readonly total: number; readonly artifacts: number };
 }
@@ -1273,6 +1324,10 @@ function writeStructure(doc: PDFDocument, pages: readonly TaggedPage[]): Structu
   const nums = doc.newArray();
   const counts = new Map<string, number>();
   let elements = 0;
+  // The next free key: past the highest one in use. Keys are page indexes, and a page that
+  // was left untagged (an empty cover, a scan) leaves a hole, so the count of tagged pages
+  // is a number some later page already uses (`pdfua.ts` computes it the same way).
+  let nextKey = 0;
 
   for (const page of pages) {
     // The parent-tree entry is indexed by MCID, so it is built in MCID order and is
@@ -1297,10 +1352,11 @@ function writeStructure(doc: PDFDocument, pages: readonly TaggedPage[]): Structu
     nums.push(page.pageIndex);
     nums.push(doc.addObject(entry));
     resolved(page.pageRef)?.put('StructParents', page.pageIndex);
+    nextKey = Math.max(nextKey, page.pageIndex + 1);
   }
 
   root.put('ParentTree', doc.addObject({ Nums: nums }));
-  root.put('ParentTreeNextKey', pages.length);
+  root.put('ParentTreeNextKey', nextKey);
   catalogOf(doc).put('StructTreeRoot', root);
 
   return {
@@ -1549,10 +1605,12 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
       : finding('title-info', 'ok', A11Y_KEYS.checkInfoTitleOk),
   );
   const packet = readXmpPacket(catalog);
-  const xmpTitle = packet === null ? null : hasXmpTitle(packet);
+  const xmpTitle = packet === null ? null : xmpTitleState(packet);
   if (packet === null) {
     findings.push(finding('title-xmp', 'problem', A11Y_KEYS.checkXmpMissing, { where: '/Metadata' }));
-  } else if (!xmpTitle) {
+  } else if (xmpTitle === 'malformed') {
+    findings.push(finding('title-xmp', 'problem', A11Y_KEYS.checkXmpMalformed, { where: '/Metadata' }));
+  } else if (xmpTitle === 'missing') {
     findings.push(finding('title-xmp', 'problem', A11Y_KEYS.checkXmpTitle, { where: 'dc:title' }));
   } else {
     findings.push(finding('title-xmp', 'ok', A11Y_KEYS.checkXmpTitleOk));
@@ -1560,6 +1618,9 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
 
   /* ---- images actually drawn ---- */
   const pageRefs = pageNumbers(pages);
+  // In a tagged file the alt text of a picture is the `/Alt` of the `Figure` that owns it.
+  const figureIndex = readFigureIndex(catalog, pageRefs);
+  const pageFigures = new Map<number, FigureElement[]>();
   const images = new Map<string, { name: string; pages: number[]; dict: PDFObject }>();
   const unreadablePages: number[] = [];
   const tooDeepPages: number[] = [];
@@ -1572,7 +1633,8 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
       total: pageCount + 1,
     });
     const content = pageContent(page);
-    if (content === null || readInstructions(content.bytes) === null) {
+    const instructions = content === null ? null : readInstructions(content.bytes);
+    if (content === null || instructions === null) {
       unreadablePages.push(pageIndex);
       continue;
     }
@@ -1580,6 +1642,9 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
     const drawn: { ref: string; name: string; dict: PDFObject }[] = [];
     const state = { tooDeep: false };
     collectDrawnImages(resources, content.bytes, 1, new Set<string>(), drawn, state);
+    if (figureIndex !== null) {
+      collectPageFigures(page, pageIndex, content.bytes, instructions, figureIndex, pageFigures);
+    }
     if (state.tooDeep) tooDeepPages.push(pageIndex);
     for (const image of drawn) {
       if (images.size >= IMAGE_LIMIT) break;
@@ -1612,7 +1677,8 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
   const listed: AccessibilityImage[] = [];
   let missingAlt = 0;
   for (const [ref, image] of images) {
-    const alt = textOf(image.dict.get('Alt'));
+    const figures = figureIndex === null ? [] : figuresOf(figureIndex, pageFigures, Number.parseInt(ref, 10));
+    const alt = altOf(figures, image.dict);
     listed.push({
       pageIndex: image.pages[0] as number,
       name: image.name,
@@ -1768,13 +1834,19 @@ export function readXmpPacket(catalog: PDFObject): string | null {
 }
 
 /**
- * Whether the packet carries a `dc:title` property. A **textual** test on purpose: this
- * module does not ship an XML parser, and `metadata.ts`'s RDF scanner is private. It can
- * therefore find the property (in either the element or the attribute form) but cannot
- * say anything about the rest of the packet — which `notChecked.xmpXml` states.
+ * What the packet says about `dc:title`, read from the **parsed** packet (the XML reader the
+ * PDF/A checker uses): a title is a non-empty value of the Dublin Core property, in the
+ * element form (including every `rdf:li` of its language alternative) or the attribute form.
+ * A substring test found `dc:title` in a comment and in an empty `<dc:title/>`, neither of
+ * which a reader ever shows as the document's title. A packet that is not well-formed XML is
+ * its own answer: no reader can take a title out of it.
  */
-function hasXmpTitle(packet: string): boolean {
-  return /dc:title[\s=/>]/i.test(packet);
+function xmpTitleState(packet: string): 'present' | 'missing' | 'malformed' {
+  const parsed = parseXmp(new TextEncoder().encode(packet));
+  if (!parsed.wellFormed) return 'malformed';
+  return xmpList(parsed, NS_DC, 'title')?.some((value) => value.trim() !== '') === true
+    ? 'present'
+    : 'missing';
 }
 
 /** Children of a structure element, recursing into the ones that carry a role. */
@@ -1803,6 +1875,278 @@ function walkStructure(
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * Figures: where a tagged file keeps the alt text of a picture
+ * ------------------------------------------------------------------ */
+
+/** A `Figure` structure element: the dictionary that carries `/Alt`, and what it says. */
+interface FigureElement {
+  readonly dict: PDFObject;
+  readonly alt: string | null;
+}
+
+/** The `Figure` elements of a structure tree, by the content they own. */
+interface FigureIndex {
+  /** `pageIndex:mcid` → the figure whose marked content that is. */
+  readonly byContent: ReadonlyMap<string, FigureElement>;
+  /** Object number of an annotation or XObject → the figures that point at it with an `OBJR`. */
+  readonly byObject: ReadonlyMap<number, readonly FigureElement[]>;
+}
+
+/**
+ * The `Figure` elements of the file's structure tree and the content each one owns, or
+ * `null` when the file has no readable tree.
+ *
+ * A reader takes a picture's alternative text from the `/Alt` of the `Figure` that owns it
+ * (ISO 14289-1 §7.3): an `/Alt` on the image XObject is a key no reader looks at. A figure
+ * owns its content through marked-content ids (`/K` integers and `MCR`s, found on the page
+ * by the id of the sequence around the `Do`) or through an `OBJR` to the XObject itself.
+ * `/RoleMap` is followed, so a custom type mapped onto `Figure` is one.
+ */
+function readFigureIndex(catalog: PDFObject, pageRefs: ReadonlyMap<number, number>): FigureIndex | null {
+  const root = dictOf(catalog.get('StructTreeRoot'));
+  if (root === null) return null;
+  const roleMap = dictOf(root.get('RoleMap'));
+  const isFigure = (role: string | null): boolean => {
+    let current = role;
+    for (let hops = 0; current !== null && hops < 8; hops += 1) {
+      if (current === 'Figure') return true;
+      current = roleMap === null ? null : nameOf(roleMap.get(current));
+    }
+    return false;
+  };
+  const pageOf = (value: PDFObject): number | null =>
+    value.isIndirect() ? (pageRefs.get(value.asIndirect()) ?? null) : null;
+  const byContent = new Map<string, FigureElement>();
+  const byObject = new Map<number, FigureElement[]>();
+  const budget = { left: STRUCT_WALK_LIMIT };
+
+  const visit = (element: PDFObject, inherited: number | null, depth: number): void => {
+    if (depth > 64) return;
+    const page = pageOf(element.get('Pg')) ?? inherited;
+    const figure: FigureElement | null = isFigure(nameOf(element.get('S')))
+      ? { dict: element, alt: textOf(element.get('Alt')) }
+      : null;
+    const kids = resolved(element.get('K'));
+    if (kids === null) return;
+    const entries: PDFObject[] = [];
+    if (kids.isArray()) {
+      for (let index = 0; index < kids.length; index += 1) entries.push(kids.get(index));
+    } else entries.push(element.get('K'));
+    for (const entry of entries) {
+      if (budget.left <= 0) return;
+      if (entry.isNumber()) {
+        if (figure !== null && page !== null) byContent.set(`${page}:${entry.asNumber()}`, figure);
+        continue;
+      }
+      const dict = dictOf(entry);
+      if (dict === null) continue;
+      const type = nameOf(dict.get('Type'));
+      if (type === 'MCR') {
+        const mcid = intOf(dict, 'MCID');
+        const at = pageOf(dict.get('Pg')) ?? page;
+        if (figure !== null && mcid !== null && at !== null) byContent.set(`${at}:${mcid}`, figure);
+        continue;
+      }
+      if (type === 'OBJR') {
+        const target = dict.get('Obj');
+        if (figure !== null && target.isIndirect()) {
+          const number = target.asIndirect();
+          byObject.set(number, [...(byObject.get(number) ?? []), figure]);
+        }
+        continue;
+      }
+      budget.left -= 1;
+      visit(dict, page, depth + 1);
+    }
+  };
+  visit(root, null, 0);
+  return { byContent, byObject };
+}
+
+/**
+ * The `/MCID` an inline property list carries (`/P <</MCID 3>> BDC`): the integer behind the
+ * key at the top level of the dictionary. The dictionary is walked as objects, so a
+ * `/MCID` spelled inside a string (`/ActualText (/MCID 9)`) or a nested dictionary is not it.
+ */
+function inlineMcid(buffer: Uint8Array, instruction: Instruction): number | null {
+  let depth = 0;
+  let cursor = instruction.start;
+  while (cursor < instruction.end) {
+    const byte = buffer[cursor] as number;
+    if (byte === 0x3c && buffer[cursor + 1] === 0x3c) {
+      depth += 1;
+      cursor += 2;
+    } else if (byte === 0x3e && buffer[cursor + 1] === 0x3e) {
+      depth -= 1;
+      cursor += 2;
+    } else if (byte === 0x3c) cursor = skipHexString(buffer, cursor);
+    else if (byte === 0x28) cursor = skipLiteralString(buffer, cursor);
+    else if (byte === 0x5b) cursor = skipArray(buffer, cursor);
+    else if (byte === 0x25) cursor = skipComment(buffer, cursor);
+    else if (byte === 0x2f) {
+      let end = cursor + 1;
+      let key = '';
+      while (end < instruction.end && isRegular(buffer[end] as number)) {
+        key += String.fromCharCode(buffer[end] as number);
+        end += 1;
+      }
+      cursor = end;
+      if (depth !== 1 || decodeNameEscapes(key) !== 'MCID') continue;
+      // The value is the integer that follows: a few bytes are all it can take.
+      let tail = '';
+      for (let at = cursor; at < Math.min(instruction.end, cursor + 24); at += 1) {
+        tail += String.fromCharCode(buffer[at] as number);
+      }
+      const value = /^\s*(\d+)/.exec(tail);
+      return value === null ? null : Number(value[1]);
+    } else cursor += 1;
+  }
+  return null;
+}
+
+/**
+ * The marked-content id around each `Do`, by instruction index: that of the innermost open
+ * sequence that has one, whether it is written inline (`<</MCID 3>>`) or named in the page's
+ * `/Properties` (`/MC0 BDC`).
+ */
+function drawMcids(
+  buffer: Uint8Array,
+  instructions: readonly Instruction[],
+  properties: PDFObject | null,
+): ReadonlyMap<number, number> {
+  const found = new Map<number, number>();
+  const open: (number | null)[] = [];
+  for (const [index, instruction] of instructions.entries()) {
+    if (instruction.operator === 'BMC') open.push(null);
+    else if (instruction.operator === 'BDC') {
+      const list = instruction.operands[1];
+      open.push(
+        list?.kind === 'name'
+          ? intOf(dictOf(properties?.get(list.name)), 'MCID')
+          : list?.kind === 'other'
+            ? inlineMcid(buffer, instruction)
+            : null,
+      );
+    } else if (instruction.operator === 'EMC') open.pop();
+    else if (instruction.operator === 'Do') {
+      for (let level = open.length - 1; level >= 0; level -= 1) {
+        const mcid = open[level];
+        if (mcid !== null && mcid !== undefined) {
+          found.set(index, mcid);
+          break;
+        }
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Add to `into` (image XObject number → figures) the figure that owns each image this page
+ * draws directly. An image drawn inside a marked-content sequence no figure owns, or inside
+ * a form XObject, has no figure here, and its alt text stays where it was.
+ */
+function collectPageFigures(
+  page: PDFObject,
+  pageIndex: number,
+  buffer: Uint8Array,
+  instructions: readonly Instruction[],
+  index: FigureIndex,
+  into: Map<number, FigureElement[]>,
+): void {
+  const resources = dictOf(page.getInheritable('Resources'));
+  const xobjects = dictOf(resources?.get('XObject'));
+  if (xobjects === null) return;
+  const { draws } = walkContent(instructions);
+  if (draws.length === 0) return;
+  const mcids = drawMcids(buffer, instructions, dictOf(resources?.get('Properties')));
+  for (const draw of draws) {
+    const entry = xobjects.get(draw.name);
+    if (entry.isNull() || !entry.isStream()) continue;
+    if (nameOf((resolved(entry) as PDFObject).get('Subtype')) !== 'Image') continue;
+    const mcid = mcids.get(draw.index);
+    const figure = mcid === undefined ? undefined : index.byContent.get(`${pageIndex}:${mcid}`);
+    if (figure === undefined) continue;
+    const number = entry.asIndirect();
+    const known = into.get(number) ?? [];
+    if (!known.includes(figure)) into.set(number, [...known, figure]);
+  }
+}
+
+/** The figures of every image the document draws, from every page. */
+function imageFigures(pages: readonly PDFObject[], index: FigureIndex): Map<number, FigureElement[]> {
+  const into = new Map<number, FigureElement[]>();
+  for (const [pageIndex, page] of pages.entries()) {
+    const content = pageContent(page);
+    const instructions = content === null ? null : readInstructions(content.bytes);
+    if (content === null || instructions === null) continue;
+    collectPageFigures(page, pageIndex, content.bytes, instructions, index, into);
+  }
+  return into;
+}
+
+/** The figures that own image `number`: through the marked content that draws it, or an `OBJR`. */
+function figuresOf(
+  index: FigureIndex,
+  drawn: ReadonlyMap<number, readonly FigureElement[]>,
+  number: number,
+): readonly FigureElement[] {
+  return [...new Set([...(drawn.get(number) ?? []), ...(index.byObject.get(number) ?? [])])];
+}
+
+/**
+ * What alt text an image has, as a reader sees it. In a tagged file whose structure tree
+ * owns the image through `Figure` elements, that is their `/Alt` — all of them must have one;
+ * anywhere else it is the XObject's own `/Alt`, the key the untagged flow copies into the
+ * figure when it tags the file.
+ */
+function altOf(figures: readonly FigureElement[], image: PDFObject): string | null {
+  if (figures.length === 0) return textOf(image.get('Alt'));
+  return figures.every((figure) => figure.alt !== null) ? (figures[0] as FigureElement).alt : null;
+}
+
+/**
+ * What an AcroForm node is (§12.7.4.2): a **group** whose `/Kids` are fields of their own
+ * (a kid with a `/T`, or with kids), a **field** — a leaf, or a field whose `/Kids` are all
+ * widget annotations, as in a radio group — or **empty**: `/Kids` that hold nothing to read.
+ * A widget annotation is never a field of its own when it is the kid of a field, so a radio
+ * group is one field with several widgets, not one field per widget.
+ */
+type FieldNode =
+  | { readonly kind: 'group'; readonly kids: PDFObject }
+  | { readonly kind: 'field'; readonly widgets: PDFObject | null }
+  | { readonly kind: 'empty' };
+
+function fieldNode(dict: PDFObject): FieldNode {
+  const kids = resolved(dict.get('Kids'));
+  if (kids?.isArray() !== true) return { kind: 'field', widgets: null };
+  // A merged field/widget (`/Subtype /Widget` with a `/T`) is the field, whatever its kids.
+  if (nameOf(dict.get('Subtype')) === 'Widget') return { kind: 'field', widgets: kids };
+  let widgets = false;
+  for (let index = 0; index < kids.length; index += 1) {
+    const kid = dictOf(kids.get(index));
+    if (kid === null) continue;
+    if (!kid.get('T').isNull() || !kid.get('Kids').isNull()) return { kind: 'group', kids };
+    widgets = true;
+  }
+  return widgets ? { kind: 'field', widgets: kids } : { kind: 'empty' };
+}
+
+/**
+ * Whether a node that is not a group is a field of its own, named `qualified`. An unnamed
+ * leaf under a named group is one of the group's own widgets (a group that mixes widgets with
+ * child fields): it is not a field and not a second copy of the group. `readFields` and
+ * `findField` both ask this, so the field a report lists is the field a fix writes to.
+ */
+function isNamedField(
+  node: FieldNode,
+  own: string | null,
+  qualified: string,
+): node is Extract<FieldNode, { readonly kind: 'field' }> {
+  return node.kind === 'field' && qualified !== '' && !(own === null && node.widgets === null);
+}
+
 /** Every AcroForm field, by fully qualified name, with the page its widget sits on. */
 export function readFields(
   catalog: PDFObject,
@@ -1823,17 +2167,18 @@ export function readFields(
       if (dict === null) continue;
       const own = textOf(dict.get('T'));
       const name = own === null ? prefix : prefix === '' ? own : `${prefix}.${own}`;
-      const kids = resolved(dict.get('Kids'));
-      const isWidget = nameOf(dict.get('Subtype')) === 'Widget';
-      if (kids?.isArray() === true && !isWidget) {
-        walk(kids, name);
+      const node = fieldNode(dict);
+      if (node.kind === 'group') {
+        walk(node.kids, name);
         continue;
       }
-      if (name === '') continue;
+      if (!isNamedField(node, own, name)) continue;
       items.push({
         name,
+        // `/TU` is the field's own (Table 220 does not make it inheritable), and a widget's is
+        // not read: the tooltip is the field's accessible name, kept on the parent of a radio group's widgets.
         tooltip: textOf(dict.get('TU')),
-        pageIndex: widgetPage(dict, kids?.isArray() === true ? kids : null, pageRefs),
+        pageIndex: widgetPage(dict, node.widgets, pageRefs),
       });
     }
   };
@@ -1882,7 +2227,7 @@ export interface PagePlan {
  * Produce a tagged file: a real structure tree over real marked-content sequences, with
  * `/MarkInfo` and `/Lang` where they were missing.
  *
- * Every page is read through the **existing text model** (`readPageText` → `buildTextPage`,
+ * Every page is read through the **existing text model** (`readDocumentText` → `buildTextPage`,
  * the same blocks the text tool edits) and only pages whose text can be related to their
  * content are tagged. The notes name every page that was left alone and why; a document
  * with nothing taggable comes back **unchanged** with an empty step list, which the UI
@@ -1926,7 +2271,7 @@ export async function planPages(
   doc: PDFDocument,
   bytes: Uint8Array,
   context: OperationContext,
-  readPage: PageTextReader,
+  readPage?: PageTextReader,
 ): Promise<PlannedPages> {
   const notes: OperationNote[] = [];
   const pages = pageObjects(doc);
@@ -1936,22 +2281,50 @@ export async function planPages(
   /* ---- pass 1: the text model of every page (no content streams retained) ---- */
   const regions: (readonly BlockRegion[])[] = [];
   const failedPages: number[] = [];
-  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-    throwIfAborted(context.signal);
+  const progress = (pageIndex: number): void =>
     context.onProgress?.({
       phase: 'a11y',
       labelKey: A11Y_KEYS.progressTag,
       done: pageIndex + 1,
       total: span,
     });
+  const readEach = async (reader: PageTextReader): Promise<void> => {
+    regions.length = 0;
+    failedPages.length = 0;
+    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+      throwIfAborted(context.signal);
+      progress(pageIndex);
+      try {
+        regions.push(toRegions(await reader(bytes, pageIndex, context)));
+      } catch (error) {
+        if (isAbort(error)) throw error;
+        // A page whose text cannot be read is left untagged and named. The failure is not
+        // swallowed: it becomes a note the user reads.
+        regions.push([]);
+        failedPages.push(pageIndex);
+      }
+    }
+  };
+  if (readPage !== undefined) await readEach(readPage);
+  else {
+    // The engine's own reader walks pages through **one** MuPDF document per batch. Reading
+    // page by page re-opened (and copied) the file once per page, and went to pdf.js for a text
+    // colour that tagging never looks at. A batch bounds what is held at once: the glyphs of a
+    // batch are reduced to regions before the next one is read, as they were page by page.
     try {
-      regions.push(toRegions(await readPage(bytes, pageIndex, context)));
+      for (let first = 0; first < pageCount; first += PAGE_READ_BATCH) {
+        const batch = Array.from(
+          { length: Math.min(PAGE_READ_BATCH, pageCount - first) },
+          (_, offset) => first + offset,
+        );
+        const inputs = await readDocumentText(bytes, batch, context, (done) => progress(first + done - 1));
+        for (const input of inputs) regions.push(toRegions(input));
+      }
     } catch (error) {
       if (isAbort(error)) throw error;
-      // A page whose text cannot be read is left untagged and named. The failure is not
-      // swallowed: it becomes a note the user reads.
-      regions.push([]);
-      failedPages.push(pageIndex);
+      // One page the engine cannot read must not cost the others their tags: read them one at a
+      // time, so that page alone is named in the notes.
+      await readEach(readPageText);
     }
   }
 
@@ -2042,7 +2415,7 @@ async function tagOpened(
     refuse('the document already has a structure tree; merging two is not implemented', 'bytes');
   }
 
-  const planned = await planPages(doc, bytes, context, options.pageText ?? readPageText);
+  const planned = await planPages(doc, bytes, context, options.pageText);
   const { plans, roles, body } = planned;
   notes.push(...planned.notes);
   const span = pageCount + 2;
@@ -2428,6 +2801,17 @@ async function verifyTagged(
           engineMessage: `page ${page.pageIndex + 1} gained ${opened} marked-content starts and ${closed} ends, expected ${page.added.total}`,
         });
       }
+      // Equal counts are not enough: the new sequences must nest with the text objects, the
+      // `q` levels and the sequences the page already had. What the page was already doing
+      // wrong is not the splice's doing, so only what it *gained* is refused.
+      const crossed = after.crossings - page.before.crossings;
+      const stray = after.strays - page.before.strays;
+      if (crossed > 0 || stray > 0) {
+        throw new ToolError('verification-failed', {
+          engine: 'mupdf',
+          engineMessage: `page ${page.pageIndex + 1} marked content does not nest: ${crossed} sequences cross a text object, a graphics-state level or another sequence and ${stray} closing operators have nothing to close`,
+        });
+      }
       for (const element of page.elements) {
         for (const mcid of element.mcids) {
           if (!found.has(mcid)) {
@@ -2444,18 +2828,81 @@ async function verifyTagged(
   }
 }
 
-/** `BMC`/`BDC` and `EMC` operators of a stream: the counts the splice is verified by. */
-export function markedContentCounts(instructions: readonly Instruction[]): {
+/**
+ * What the splice is verified by: how many marked-content operators a stream has, and whether
+ * the three kinds of scope that must nest — `q … Q`, `BT … ET` and `BMC/BDC … EMC` — do.
+ *
+ * Counting `BDC`s against `EMC`s cannot tell `BDC BDC EMC EMC` from `BDC q EMC Q`: both are
+ * balanced and only the first is a content stream. The scopes are therefore walked as one
+ * stack, the way a reader that rejects crossed sequences walks them.
+ */
+export interface MarkedContentShape {
+  /** `BMC` and `BDC` operators. */
   readonly opens: number;
+  /** `EMC` operators. */
   readonly closes: number;
-} {
+  /** Scopes forced shut by the closer of an enclosing scope before their own closer (`BDC … ET`, `q … EMC`). */
+  readonly crossings: number;
+  /** Closers (`Q`, `ET`, `EMC`) with no open scope of their kind. */
+  readonly strays: number;
+}
+
+export function markedContentCounts(instructions: readonly Instruction[]): MarkedContentShape {
+  const GRAPHICS = 0;
+  const TEXT = 1;
+  const MARKED = 2;
   let opens = 0;
   let closes = 0;
+  let crossings = 0;
+  let strays = 0;
+  const stack: number[] = [];
+  // Per kind, how many scopes of it are on the stack: a closer with none is stray in O(1), so
+  // a stream of a million `Q`s above a deep stack of `BDC`s costs a million steps, not a trillion.
+  const open = [0, 0, 0];
+  const push = (kind: number): void => {
+    stack.push(kind);
+    open[kind] = (open[kind] as number) + 1;
+  };
+  const close = (kind: number): void => {
+    if (open[kind] === 0) {
+      strays += 1;
+      return;
+    }
+    for (;;) {
+      const top = stack.pop() as number;
+      open[top] = (open[top] as number) - 1;
+      if (top === kind) return;
+      crossings += 1;
+    }
+  };
   for (const instruction of instructions) {
-    if (instruction.operator === 'BMC' || instruction.operator === 'BDC') opens += 1;
-    else if (instruction.operator === 'EMC') closes += 1;
+    switch (instruction.operator) {
+      case 'q':
+        push(GRAPHICS);
+        break;
+      case 'Q':
+        close(GRAPHICS);
+        break;
+      case 'BT':
+        push(TEXT);
+        break;
+      case 'ET':
+        close(TEXT);
+        break;
+      case 'BMC':
+      case 'BDC':
+        opens += 1;
+        push(MARKED);
+        break;
+      case 'EMC':
+        closes += 1;
+        close(MARKED);
+        break;
+      default:
+        break;
+    }
   }
-  return { opens, closes };
+  return { opens, closes, crossings, strays };
 }
 
 /** One byte is one character: the notation a content stream is written in (§7.2). */
@@ -2517,6 +2964,10 @@ export async function setImageAlt(
     pageCount = pages.length;
     const catalog = catalogOf(doc);
     let missing = 0;
+    const figureIndex = edits.some((edit) => edit.kind === 'image')
+      ? readFigureIndex(catalog, pageNumbers(pages))
+      : null;
+    const pageFigures = figureIndex === null ? null : imageFigures(pages, figureIndex);
 
     for (const edit of edits) {
       throwIfAborted(context.signal);
@@ -2535,7 +2986,15 @@ export async function setImageAlt(
         missing += 1;
         continue;
       }
-      target.dict.put('Alt', text(doc, edit.alt));
+      // In a tagged file the picture's alt text is its `Figure`'s: that is where a reader looks,
+      // and an `/Alt` on the XObject would change nothing it shows. A file whose tree owns the
+      // image through no figure (an untagged file, an image in an artifact) keeps the XObject's.
+      const figures =
+        figureIndex === null || pageFigures === null
+          ? []
+          : figuresOf(figureIndex, pageFigures, target.number);
+      if (figures.length === 0) target.dict.put('Alt', text(doc, edit.alt));
+      for (const figure of figures) figure.dict.put('Alt', text(doc, edit.alt));
       applied.push({ pageIndex: edit.pageIndex, name: edit.name, alt: edit.alt, number: target.number });
     }
 
@@ -2664,13 +3123,14 @@ export function findField(catalog: PDFObject, name: string): PDFObject | null {
       if (dict === null) continue;
       const own = textOf(dict.get('T'));
       const qualified = own === null ? prefix : prefix === '' ? own : `${prefix}.${own}`;
-      const kids = resolved(dict.get('Kids'));
-      if (kids?.isArray() === true && nameOf(dict.get('Subtype')) !== 'Widget') {
-        const found = walk(kids, qualified, depth + 1);
+      const node = fieldNode(dict);
+      if (node.kind === 'group') {
+        const found = walk(node.kids, qualified, depth + 1);
         if (found !== null) return found;
         continue;
       }
-      if (qualified === name) return dict;
+      // The field's own dictionary — the parent of a radio group's widgets — is what carries `/TU`.
+      if (isNamedField(node, own, qualified) && qualified === name) return dict;
     }
     return null;
   };
@@ -2698,14 +3158,24 @@ async function verifyAlt(
   try {
     const pages = pageObjects(doc);
     const catalog = catalogOf(doc);
+    const figureIndex = images.length === 0 ? null : readFigureIndex(catalog, pageNumbers(pages));
+    const pageFigures = figureIndex === null ? null : imageFigures(pages, figureIndex);
     for (const image of images) {
       const found = findImage(pages, image.pageIndex, image.name);
-      const alt = found === null ? null : textOf(found.dict.get('Alt'));
-      if (alt !== image.alt.trim()) {
-        throw new ToolError('verification-failed', {
-          engine: 'mupdf',
-          engineMessage: `image "${image.name}" reads back "${alt ?? ''}" instead of "${image.alt}"`,
-        });
+      // The text is read back from where it was written: every figure that owns the image, or the XObject.
+      const figures =
+        found === null || figureIndex === null || pageFigures === null
+          ? []
+          : figuresOf(figureIndex, pageFigures, found.number);
+      const carriers = figures.length > 0 ? figures.map((figure) => figure.dict) : [found?.dict ?? null];
+      for (const carrier of carriers) {
+        const alt = carrier === null ? null : textOf(carrier.get('Alt'));
+        if (alt !== image.alt.trim()) {
+          throw new ToolError('verification-failed', {
+            engine: 'mupdf',
+            engineMessage: `image "${image.name}" reads back "${alt ?? ''}" instead of "${image.alt}"`,
+          });
+        }
       }
     }
     for (const field of fields) {

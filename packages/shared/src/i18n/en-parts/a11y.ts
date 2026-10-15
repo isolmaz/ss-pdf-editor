@@ -41,7 +41,8 @@ export const a11yPart = {
   'op.a11y.check.infoTitle': 'No title (/Title) in Info dictionary.',
   'op.a11y.check.infoTitleOk': 'Title present in Info dictionary.',
   'op.a11y.check.xmpMissing': 'No XMP metadata packet (/Metadata).',
-  'op.a11y.check.xmpTitle': 'XMP packet present but missing dc:title.',
+  'op.a11y.check.xmpMalformed': 'XMP packet is not well-formed XML; dc:title cannot be read.',
+  'op.a11y.check.xmpTitle': 'XMP packet present but dc:title is missing or empty.',
   'op.a11y.check.xmpTitleOk': 'dc:title present in XMP packet.',
   'op.a11y.check.imageAlt': 'Figure "{name}" is missing alternative text (page(s) {pages}).',
   'op.a11y.check.imageAltOk': 'All {count} rendered figure(s) have alt text.',
@@ -77,7 +78,6 @@ export const a11yPart = {
   'op.a11y.notChecked.visual':
     'Visual criteria such as color contrast, font size and tap target sizes were not audited.',
   'op.a11y.notChecked.raster': 'Scanned pages were not processed with OCR.',
-  'op.a11y.notChecked.xmpXml': 'XMP packet was not parsed as XML; dc:title is searched as plain text.',
   'op.a11y.notChecked.conformance':
     'This audit is not a compliance certification: PDF/UA or WCAG conformance is not guaranteed.',
   'panel.a11y': 'Accessibility',

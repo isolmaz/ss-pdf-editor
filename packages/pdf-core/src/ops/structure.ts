@@ -479,7 +479,7 @@ export async function readTagCandidates(
   throwIfAborted(context.signal);
   const { doc } = await openForWrite(bytes);
   try {
-    const planned = await planPages(doc, bytes, context, options.pageText ?? readPageText);
+    const planned = await planPages(doc, bytes, context, options.pageText);
     const pageDicts = pageObjects(doc);
     const pages: TagCandidatePage[] = [];
     for (const plan of planned.plans) {
