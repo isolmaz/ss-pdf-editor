@@ -59,7 +59,7 @@ const KIND = {
 /** The selection row's own words: the readout, and the actions next to it. */
 const SELECTION = {
   status: 'Selection',
-  none: 'No marks selected',
+  hint: 'Click or drag to select marks.',
   remove: 'Delete selected',
   rotate: 'Rotate 90°',
   moveGroup: 'Move selection',
@@ -551,10 +551,11 @@ test.describe('saved annotations and the page they sit on', () => {
     await expectSameBaseCanvas(page, canvas);
 
     // An empty click clears the selection again, and the row goes back to being a readout:
-    // with nothing selected there is nothing to delete, turn or move.
+    // with nothing selected there is nothing to delete, turn or move, and only the hint is left.
     await clickPage(page, 20, 830);
     await expect(page.locator('[data-mark-selection]')).toHaveCount(0);
-    await expect(selectionStatus(page)).toHaveText(SELECTION.none);
+    await expect(selectionStatus(page)).toHaveCount(0);
+    await expect(page.getByText(SELECTION.hint, { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: SELECTION.remove, exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: SELECTION.rotate, exact: true })).toHaveCount(0);
 
@@ -730,7 +731,8 @@ test.describe('the marks the tools create', () => {
 
     // The select tool is armed by default and nothing is selected yet: the row is a
     // readout, and every action it could offer is absent rather than disabled.
-    await expect(selectionStatus(page)).toHaveText(SELECTION.none);
+    await expect(selectionStatus(page)).toHaveCount(0);
+    await expect(page.getByText(SELECTION.hint, { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: SELECTION.remove, exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: SELECTION.rotate, exact: true })).toHaveCount(0);
     await expect(moveGroup(page)).toHaveCount(0);

@@ -69,7 +69,6 @@ export const annotationsPart = {
   // colour, a thickness and an opacity, so those three are what a mark tool offers.
   'ann.tool.selection': 'Seçim',
   'ann.tool.selection.count': '{count} işaret seçili',
-  'ann.tool.selection.none': 'Seçili işaret yok',
   'ann.tool.deleteSelection': 'Seçilenleri sil',
   'ann.tool.rotateSelection': '90° döndür',
   'ann.tool.moveSelection': 'Seçimi taşı',

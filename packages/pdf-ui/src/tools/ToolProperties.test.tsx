@@ -48,7 +48,7 @@ const has = (name: string) => inputs(name).length > 0;
 
 describe('the sentence for what the pointer does now', () => {
   it.each<[CanvasToolId, string]>([
-    ['select', 'Click a mark, or drag to select several.'],
+    ['select', 'Click or drag to select marks.'],
     ['hand', 'Drag the page to scroll.'],
     ['text', 'Click the paragraph you want to edit.'],
     ['freetext', 'Click where the text goes; click outside or press Ctrl+Enter when done.'],
@@ -253,9 +253,12 @@ describe('the properties a tool carries', () => {
 });
 
 describe('the selection', () => {
-  it('is the select tool’s own readout, and says when nothing is selected', () => {
+  it('with nothing selected the select tool shows its hint only: no readout, no chip, no action', () => {
     show('select');
-    expect(screen.getByRole('status', { name: 'Selection' }).textContent).toBe('No marks selected');
+    expect(screen.getByRole('group', { name: 'Tool settings' }).textContent).toBe(
+      'Click or drag to select marks.',
+    );
+    expect(screen.queryByRole('status', { name: 'Selection' })).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
   });
 

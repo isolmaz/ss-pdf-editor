@@ -241,10 +241,10 @@ export function ToolProperties({
   onClearSelection,
 }: ToolPropertiesProps) {
   const style = TOOL_STYLES[tool];
-  // The selection row is the select tool's own readout, and it follows the
-  // selection everywhere else: a panel row, a marquee or a canvas click leaves marks
-  // selected, and the count is how the user sees what these actions would take.
-  const showSelection = selectedCount > 0 || tool === 'select';
+  // The selection row appears with a selection, under any tool: a panel row, a marquee or a
+  // canvas click leaves marks selected, and the count is how the user sees what these actions
+  // would take. With nothing selected the select tool shows only its hint.
+  const showSelection = selectedCount > 0;
   const hint = TOOL_HINTS[tool];
   const markup = MARKUP_LOOKS.some((look) => look.tool === tool);
 
@@ -403,9 +403,7 @@ export function ToolProperties({
       {showSelection ? (
         <span className="flex items-center gap-1">
           <output aria-live="polite" aria-label={t('ann.tool.selection')} className={READOUT_CLASS}>
-            {selectedCount > 0
-              ? t('ann.tool.selection.count', { count: selectedCount })
-              : t('ann.tool.selection.none')}
+            {t('ann.tool.selection.count', { count: selectedCount })}
           </output>
           {selectedCount > 0 && onDeleteSelection !== undefined ? (
             <button type="button" onClick={onDeleteSelection} className={BUTTON_CLASS}>

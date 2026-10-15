@@ -88,7 +88,7 @@ export const shellPart = {
   'toolbar.markup': 'Metni İşaretle (vurgu, alt/üst çizgi)',
   'toolbar.measure': 'Ölç',
   'toolbar.redact': 'Karart (kalıcı sil)',
-  'tool.hint.select': 'Bir işarete tıklayın ya da sürükleyerek birden fazlasını seçin.',
+  'tool.hint.select': 'İşaret seçmek için tıklayın veya sürükleyin.',
   'tool.hint.hand': 'Sayfayı sürükleyerek kaydırın.',
   'tool.hint.text': 'Düzenlemek istediğiniz paragrafa tıklayın.',
   'tool.hint.freetext': 'Metnin gideceği yere tıklayın; bitince dışarı tıklayın ya da Ctrl+Enter’a basın.',

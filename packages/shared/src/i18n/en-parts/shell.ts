@@ -83,7 +83,7 @@ export const shellPart = {
   'toolbar.markup': 'Mark Up Text (highlight, underline, strike)',
   'toolbar.measure': 'Measure',
   'toolbar.redact': 'Redact (permanent removal)',
-  'tool.hint.select': 'Click a mark, or drag to select several.',
+  'tool.hint.select': 'Click or drag to select marks.',
   'tool.hint.hand': 'Drag the page to scroll.',
   'tool.hint.text': 'Click the paragraph you want to edit.',
   'tool.hint.freetext': 'Click where the text goes; click outside or press Ctrl+Enter when done.',

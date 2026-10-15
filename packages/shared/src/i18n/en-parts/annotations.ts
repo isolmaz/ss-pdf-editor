@@ -43,7 +43,6 @@ export const annotationsPart = {
   'ann.tool.stop': 'Close tool',
   'ann.tool.selection': 'Selection',
   'ann.tool.selection.count': '{count} mark(s) selected',
-  'ann.tool.selection.none': 'No marks selected',
   'ann.tool.deleteSelection': 'Delete selected',
   'ann.tool.rotateSelection': 'Rotate 90°',
   'ann.tool.moveSelection': 'Move selection',
