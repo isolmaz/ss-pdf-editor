@@ -98,6 +98,13 @@ describe('convertToPdf', () => {
     await expect(convertToPdf(request({ name: 'a.doc' }), run)).rejects.toMatchObject({
       code: 'unsupported-format',
     });
+    // Names that are members of Object.prototype are not extensions either.
+    for (const name of ['x.constructor', 'x.__proto__']) {
+      await expect(convertToPdf(request({ name }), run)).rejects.toMatchObject({
+        code: 'unsupported-format',
+        details: { path: name },
+      });
+    }
     await expect(convertToPdf(request({ pageSize: 'a0' as never }), run)).rejects.toMatchObject({
       code: 'range-invalid',
     });

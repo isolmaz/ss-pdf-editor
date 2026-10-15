@@ -104,10 +104,18 @@ function props(overrides: Partial<ReadingPaneProps> = {}): ReadingPaneProps {
   };
 }
 
+/**
+ * The pane rendered, with its page read and its effects run. `findByText` answers as soon as the text
+ * is in the DOM, which is the commit; the effect that cuts that text into the utterances `Read` speaks
+ * (`useReadAloud`, a passive effect) runs after it, in a later task. A click in between finds no
+ * utterances and speaks nothing, which made a test that clicked right after this flaky on a busy
+ * runner (`speaking` stayed false). `act` flushes the effects, so the click always follows them.
+ */
 async function opened(overrides: Partial<ReadingPaneProps> = {}) {
   const given = props(overrides);
   const view = render(<ReadingPane {...given} />);
   await screen.findByText('Chapter One');
+  await act(async () => {});
   return { given, view };
 }
 

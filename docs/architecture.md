@@ -442,7 +442,15 @@ writer does, and the steps it reports:
   `ops/convert-ooxml.ts` over JSZip and `@xmldom/xmldom` (a part xmldom cannot read, or that is empty, is
   `corrupt-document`; an attribute is read through `attribute()`, which answers `null` when it is
   absent, because xmldom's `getAttribute` answers `''` and no default would ever apply; one it had to repair, such as a sheet cut off mid-row, is converted and
-  named in a `lost` note), text and CSV by `ops/convert-text.ts` (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are. Every part is
+  named in a `lost` note; a boolean attribute is read through `onOff()`, which takes `1`, `true` and `on`
+  as on and `0`, `false` and `off` as off), text and CSV by `ops/convert-text.ts` (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are.
+  The reads are bounded by what actually comes out, not by what a file declares: every ZIP entry is
+  inflated through JSZip's `internalStream`, which counts the bytes chunk by chunk and stops at 64 MiB
+  for one entry or 256 MiB for one package (`file-too-large`; images count too), and a DOCX package is
+  measured that way in full before mammoth, which has no limit of its own, opens it. A sheet's merged
+  ranges are cut to the table that is drawn and may together cover no more cells than it has (the sheet
+  is then reported as damaged); a CSV row of more than 1000 fields, or a table of more than two million
+  cells (the kept rows × the widest row), is refused as `file-too-large`. Every part is
   laid out (`Document.style` adds only the `@page` margin, before `layout`) and run through
   one `DocumentWriter`. The source's outline and links are written afterwards by the
   existing writers (`applyOutlineEdit`, `applyLinkEdit`, schemes other than `http:`,

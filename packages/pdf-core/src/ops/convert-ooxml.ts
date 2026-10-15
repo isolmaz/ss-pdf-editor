@@ -43,8 +43,13 @@ export interface OoxmlResult {
 /** A spreadsheet is cut to this used range; past it the report says what was left out. */
 export const MAX_SHEET_ROWS = 5000;
 export const MAX_SHEET_COLUMNS = 100;
-/** A ZIP entry larger than this is not read (a zip bomb's whole point is the expansion). */
+/**
+ * A ZIP entry that expands past this is not read (a zip bomb's whole point is the expansion).
+ * The size counted is the one actually inflated, never the one the file declares.
+ */
 const MAX_ENTRY_BYTES = 64 * 1024 * 1024;
+/** All the entries read out of one package together: many parts under the limit are a bomb too. */
+const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024;
 /** EMU per point (ECMA-376 §20.1.2.1): 914400 per inch, 72 points per inch. */
 const EMU_PER_POINT = 12700;
 
@@ -95,6 +100,27 @@ function attribute(element: Element | null | undefined, name: string): string | 
   return element.getAttribute(name);
 }
 
+/**
+ * A boolean attribute (`xsd:boolean` / ST_OnOff, ECMA-376 §22.9.2.7): `1`, `true` and `on` are
+ * on, `0`, `false` and `off` are off, and an attribute that is absent or says anything else is
+ * `otherwise`. Producers differ in which spelling they write, so no attribute is compared with
+ * `'1'` alone.
+ */
+function onOff(element: Element | null | undefined, name: string, otherwise = false): boolean {
+  switch (attribute(element, name)?.trim().toLowerCase()) {
+    case '1':
+    case 'true':
+    case 'on':
+      return true;
+    case '0':
+    case 'false':
+    case 'off':
+      return false;
+    default:
+      return otherwise;
+  }
+}
+
 /** Element children whose local name is `name` (namespace prefixes vary between producers). */
 function children(parent: Element | Document | null | undefined, name: string): Element[] {
   const out: Element[] = [];
@@ -138,29 +164,124 @@ function relationshipAttribute(element: Element, name: string): string | null {
   return attribute(element, `r:${name}`);
 }
 
+/** What is left of `MAX_ARCHIVE_BYTES` for the reads of one package. */
+interface ReadBudget {
+  remaining: number;
+}
+
+/**
+ * What is kept of each opened package: the budget every `entryText` / `entryBytes` on it draws from,
+ * and the pictures already read. A picture that several slides show is inflated and charged once,
+ * as the package holds it once; the budget limits what a package expands to, not how often it is read.
+ */
+interface PackageState extends ReadBudget {
+  readonly images: Map<string, string | null>;
+}
+
+const packages = new WeakMap<JSZip, PackageState>();
+
 async function openZip(bytes: Uint8Array, path: string): Promise<JSZip> {
+  let zip: JSZip;
   try {
-    return await JSZip.loadAsync(bytes);
+    zip = await JSZip.loadAsync(bytes);
   } catch (error) {
     throw new ToolError('corrupt-document', { engine: 'model', path, engineMessage: String(error) });
   }
+  packages.set(zip, { remaining: MAX_ARCHIVE_BYTES, images: new Map() });
+  return zip;
+}
+
+/** JSZip documents `internalStream` but its typings leave it out. */
+type StreamingEntry = JSZip.JSZipObject & {
+  internalStream(type: 'uint8array'): JSZip.JSZipStreamHelper<Uint8Array>;
+};
+
+/**
+ * One entry inflated, counting the bytes that actually come out. The sizes in a ZIP's directory
+ * are the writer's claim: JSZip only notices a claim that was false after it has inflated the
+ * whole entry, which is the damage a bomb does. Here the count runs chunk by chunk, so the read
+ * stops at the first chunk past `MAX_ENTRY_BYTES` for the entry or the budget for the package
+ * (the one chunk being inflated when it stops is at most about 16 MiB, whatever the ratio).
+ * `keep` false counts the entry and answers no bytes.
+ *
+ * A stream paused after the limit sends nothing more but the chunks of the compressed block being
+ * inflated at that moment (pako emits those in a loop that `pause` cannot interrupt), which
+ * `exceeded` drops. Should the stream still end, the promise is already rejected and what `end`
+ * joins is empty: `size` and `chunks` are reset with the rejection.
+ */
+function inflate(entry: JSZip.JSZipObject, budget: ReadBudget, keep: boolean): Promise<Uint8Array> {
+  const stream = (entry as StreamingEntry).internalStream('uint8array');
+  return new Promise<Uint8Array>((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    let exceeded = false;
+    stream
+      .on('data', (chunk) => {
+        if (exceeded) return;
+        size += chunk.length;
+        budget.remaining -= chunk.length;
+        if (size > MAX_ENTRY_BYTES || budget.remaining < 0) {
+          exceeded = true;
+          chunks.length = 0;
+          size = 0;
+          stream.pause();
+          reject(new ToolError('file-too-large', { engine: 'model', path: entry.name }));
+          return;
+        }
+        if (keep) chunks.push(chunk);
+      })
+      .on('error', (error) =>
+        reject(
+          new ToolError('corrupt-document', {
+            engine: 'model',
+            path: entry.name,
+            engineMessage: String(error),
+          }),
+        ),
+      )
+      .on('end', () => {
+        if (!keep) {
+          resolve(new Uint8Array(0));
+          return;
+        }
+        if (chunks.length === 1) {
+          resolve(chunks[0] as Uint8Array);
+          return;
+        }
+        const joined = new Uint8Array(size);
+        let at = 0;
+        for (const chunk of chunks) {
+          joined.set(chunk, at);
+          at += chunk.length;
+        }
+        resolve(joined);
+      })
+      .resume();
+  });
 }
 
 /** A ZIP entry as text, or `null` when absent. */
 async function entryText(zip: JSZip, name: string): Promise<string | null> {
-  const entry = zip.file(name);
-  if (entry === null) return null;
-  const size = (entry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize;
-  if (typeof size === 'number' && size > MAX_ENTRY_BYTES) {
-    throw new ToolError('file-too-large', { engine: 'model', path: name });
-  }
-  return entry.async('string');
+  const bytes = await entryBytes(zip, name);
+  // A byte-order mark stays in the text, as it did when JSZip decoded it.
+  return bytes === null ? null : new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);
 }
 
 async function entryBytes(zip: JSZip, name: string): Promise<Uint8Array | null> {
   const entry = zip.file(name);
   if (entry === null) return null;
-  return entry.async('uint8array');
+  return inflate(entry, packages.get(zip) as PackageState, true);
+}
+
+/**
+ * Every entry of a package inflated to its end and dropped, against the same limits. mammoth
+ * opens the package on its own, with no limit at all, so a Word file is measured here first.
+ */
+async function checkExpansion(zip: JSZip): Promise<void> {
+  const budget: ReadBudget = { remaining: MAX_ARCHIVE_BYTES };
+  for (const entry of Object.values(zip.files)) {
+    if (!entry.dir) await inflate(entry, budget, false);
+  }
 }
 
 /** `a/b/../c.xml` → `a/c.xml`; relationship targets are relative to their part's folder. */
@@ -218,12 +339,21 @@ function base64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** An image part as a data URI MuPDF can decode, or `null` for formats it cannot (EMF, WMF, SVG). */
+/**
+ * An image part as a data URI MuPDF can decode, or `null` for formats it cannot (EMF, WMF, SVG).
+ * A picture shown on many slides is read once; the one string is what every slide refers to.
+ */
 async function imageDataUri(zip: JSZip, path: string): Promise<string | null> {
-  const type = IMAGE_TYPES[path.slice(path.lastIndexOf('.') + 1).toLowerCase()];
-  if (type === undefined) return null;
+  const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+  // Own keys only: a picture named `x.constructor` is not one of Object.prototype's types.
+  if (!Object.hasOwn(IMAGE_TYPES, extension)) return null;
+  const { images } = packages.get(zip) as PackageState;
+  const known = images.get(path);
+  if (known !== undefined) return known;
   const bytes = await entryBytes(zip, path);
-  return bytes === null ? null : `data:${type};base64,${base64(bytes)}`;
+  const uri = bytes === null ? null : `data:${IMAGE_TYPES[extension]};base64,${base64(bytes)}`;
+  images.set(path, uri);
+  return uri;
 }
 
 /* ------------------------------------------------------------------ *
@@ -239,6 +369,7 @@ export async function docxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
       engineMessage: 'no word/document.xml',
     });
   }
+  await checkExpansion(zip);
   const mammoth = (await import('mammoth')).default;
   const copy = bytes.slice();
   // Node's mammoth reads `buffer`, the browser build `arrayBuffer`; both see the same bytes.
@@ -271,13 +402,30 @@ function isDateFormat(code: string): boolean {
   return /[dmyhs]/i.test(bare);
 }
 
-/** An Excel serial (1900 system, the 1900-02-29 bug included) as ISO date or date-time. */
+const DAY_MILLIS = 86_400_000;
+
+/**
+ * An Excel serial as ISO date or date-time.
+ *
+ * The 1904 system counts days from 1904-01-01. The 1900 system numbers 1900-01-01 as 1 and
+ * also counts a 1900-02-29 that never existed (Lotus 1-2-3's leap-year bug, which Excel kept):
+ * serial 60 is that day, and 61 is 1900-03-01. So from 1900-03-01 on, serial 0 is 1899-12-30;
+ * but serials 1–59 sit before the phantom day and count from 1899-12-31. Serial 60 is written
+ * as `1900-02-29`, the date Excel shows for it, though no calendar has it. A serial below 1 is
+ * a time with no date; it keeps the 1899-12-30 base, as does anything below zero.
+ */
 function serialDate(serial: number, date1904: boolean): string {
-  const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 30);
-  const millis = Math.round(serial * 86_400_000);
-  const value = new Date(epoch + millis);
-  const iso = value.toISOString();
-  return millis % 86_400_000 === 0 ? iso.slice(0, 10) : `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
+  const millis = Math.round(serial * DAY_MILLIS);
+  const beforePhantomDay = !date1904 && millis >= DAY_MILLIS && millis < 60 * DAY_MILLIS;
+  const phantomDay = !date1904 && millis >= 60 * DAY_MILLIS && millis < 61 * DAY_MILLIS;
+  const epoch = date1904
+    ? Date.UTC(1904, 0, 1)
+    : beforePhantomDay
+      ? Date.UTC(1899, 11, 31)
+      : Date.UTC(1899, 11, 30);
+  const iso = new Date(epoch + millis).toISOString();
+  const date = phantomDay ? '1900-02-29' : iso.slice(0, 10);
+  return millis % DAY_MILLIS === 0 ? date : `${date} ${iso.slice(11, 19)}`;
 }
 
 /** `B12` → `{ column: 1, row: 11 }` (zero-based). */
@@ -305,9 +453,7 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
   }
   const damaged = new Set<string>();
   const workbook = parseXml(workbookText, 'xl/workbook.xml', damaged);
-  const date1904 = ['1', 'true'].includes(
-    descendants(workbook, 'workbookPr')[0]?.getAttribute('date1904') ?? '',
-  );
+  const date1904 = onOff(descendants(workbook, 'workbookPr')[0], 'date1904');
   const rels = await relationships(zip, 'xl/workbook.xml');
 
   const sharedText = await entryText(zip, 'xl/sharedStrings.xml');
@@ -378,21 +524,34 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
       }
     }
 
-    /** Merged ranges: the top-left cell spans, the rest are skipped. */
+    /**
+     * Merged ranges: the top-left cell spans, the rest are skipped. A merge is cut to the table
+     * that is drawn (a range may be written as far as `A1:XFD1048576`, 1.7·10¹⁰ cells, over a
+     * sheet of a dozen), and the merges of a sheet together may cover no more cells than the
+     * table has: Excel keeps merges apart, so a list that asks for more is damaged, and what
+     * comes after the budget is spent is left out and reported as damage to the sheet.
+     */
     const spans = new Map<string, { rows: number; columns: number }>();
     const covered = new Set<string>();
+    let mergeBudget = (maxRow + 1) * (maxColumn + 1);
     for (const merge of descendants(document, 'mergeCell')) {
       const ref = attribute(merge, 'ref') ?? '';
       const colon = ref.indexOf(':');
       const start = cellIndex(colon < 0 ? ref : ref.slice(0, colon));
       const end = cellIndex(colon < 0 ? ref : ref.slice(colon + 1));
-      if (start === null || end === null) continue;
-      spans.set(`${start.row}:${start.column}`, {
-        rows: end.row - start.row + 1,
-        columns: end.column - start.column + 1,
-      });
-      for (let r = start.row; r <= end.row; r += 1) {
-        for (let c = start.column; c <= end.column; c += 1) {
+      if (start === null || end === null || start.row < 0 || end.row < 0) continue;
+      const rows = Math.min(end.row, maxRow) - start.row + 1;
+      const columns = Math.min(end.column, maxColumn) - start.column + 1;
+      // Written backwards, outside the table, or one cell that merges with nothing.
+      if (rows < 1 || columns < 1 || rows * columns === 1) continue;
+      if (rows * columns > mergeBudget) {
+        damaged.add(target);
+        continue;
+      }
+      mergeBudget -= rows * columns;
+      spans.set(`${start.row}:${start.column}`, { rows, columns });
+      for (let r = start.row; r < start.row + rows; r += 1) {
+        for (let c = start.column; c < start.column + columns; c += 1) {
           if (r !== start.row || c !== start.column) covered.add(`${r}:${c}`);
         }
       }
@@ -471,8 +630,8 @@ function runsHtml(paragraph: Element): string {
     if (text === '') continue;
     const props = child(node, 'rPr');
     let piece = text;
-    if (props?.getAttribute('b') === '1') piece = `<b>${piece}</b>`;
-    if (props?.getAttribute('i') === '1') piece = `<i>${piece}</i>`;
+    if (onOff(props, 'b')) piece = `<b>${piece}</b>`;
+    if (onOff(props, 'i')) piece = `<i>${piece}</i>`;
     if ((attribute(props, 'u') ?? 'none') !== 'none') piece = `<u>${piece}</u>`;
     // `sz` is in hundredths of a point (ECMA-376 §21.1.2.3.9).
     const size = Number(attribute(props, 'sz') ?? Number.NaN) / 100;
@@ -513,7 +672,7 @@ function tableHtml(table: Element, width: number | null): string {
   for (const row of children(table, 'tr')) {
     html += '<tr>';
     for (const cell of children(row, 'tc')) {
-      if (cell.getAttribute('hMerge') === '1' || cell.getAttribute('vMerge') === '1') continue;
+      if (onOff(cell, 'hMerge') || onOff(cell, 'vMerge')) continue;
       const span = Number(attribute(cell, 'gridSpan') ?? 1);
       const body = child(cell, 'txBody');
       html += `<td${span > 1 ? ` colspan="${span}"` : ''}>${body === null ? '' : textBodyHtml(body, false)}</td>`;
@@ -607,7 +766,7 @@ export async function pptxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
     const slideText = await entryText(zip, target);
     if (slideText === null) continue;
     const slide = parseXml(slideText, target, damaged);
-    if (slide.documentElement.getAttribute('show') === '0') continue;
+    if (!onOff(slide.documentElement, 'show', true)) continue;
     const context: SlideContext = { zip, rels: await relationships(zip, target), skippedImages: 0 };
     const tree = descendants(slide, 'spTree')[0];
     const html = tree === undefined ? '' : await shapeTreeHtml(tree, context);
