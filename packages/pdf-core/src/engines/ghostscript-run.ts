@@ -260,14 +260,28 @@ export async function runPdfaConversion(
     },
   });
   gs.FS.writeFile(PROFILE_COPY, PROFILE_COPY_SOURCE);
-  gs.callMain([
-    '-dBATCH',
-    '-dNOPAUSE',
-    '-dQUIET',
-    `--permit-file-read=${ROM_PROFILE.replace(/[^/]*$/, '')}`,
-    `--permit-file-write=${PROFILE}`,
-    PROFILE_COPY,
-  ]);
+  let copyStatus: number;
+  try {
+    copyStatus = gs.callMain([
+      '-dBATCH',
+      '-dNOPAUSE',
+      '-dQUIET',
+      `--permit-file-read=${ROM_PROFILE.replace(/[^/]*$/, '')}`,
+      `--permit-file-write=${PROFILE}`,
+      PROFILE_COPY,
+    ]);
+  } catch (error) {
+    // The exit of `main` arrives as a thrown status (see below); anything else is the engine failing.
+    const status = exitStatus(error);
+    if (status === null) throw error;
+    copyStatus = status;
+  }
+  if (copyStatus !== 0) {
+    // Without the profile the output intent would describe a file that is not there.
+    throw new Error(
+      `Ghostscript could not copy its sRGB profile (exit status ${copyStatus}${errors.length > 0 ? `: ${errors.join(' ').trim()}` : ''})`,
+    );
+  }
   gs.FS.writeFile(DEFINITION, pdfaDefinition(request.info));
   gs.FS.writeFile(INPUT, request.input);
 

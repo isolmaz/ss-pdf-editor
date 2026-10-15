@@ -6,8 +6,8 @@
  * exactly the structure, not what a builder would have produced.
  */
 
-import { PDFDocument, type PDFObject } from 'mupdf';
-import { describe, expect, it } from 'vitest';
+import { Buffer as MupdfBuffer, PDFDocument, PDFObject } from 'mupdf';
+import { describe, expect, it, vi } from 'vitest';
 import { handPdf } from '../ops/forms.fixtures';
 import {
   type DocumentFont,
@@ -93,6 +93,21 @@ describe('/ToUnicode of a composite font', () => {
         [point('z'), 0x52],
       ]);
     });
+  });
+
+  it('releases the buffer it read the map from', () => {
+    const read = vi.spyOn(PDFObject.prototype, 'readStream');
+    const destroy = vi.spyOn(MupdfBuffer.prototype, 'destroy');
+    try {
+      withDocument(composite(cmap('1 beginbfchar <0001> <0041> endbfchar')), (_doc, ref) => {
+        expect(readDocumentFont(ref(10))?.codes.get(point('A'))).toBe(1);
+      });
+      expect(read.mock.results).toHaveLength(1);
+      expect(destroy.mock.contexts).toContain(read.mock.results[0]?.value);
+    } finally {
+      read.mockRestore();
+      destroy.mockRestore();
+    }
   });
 
   it('is not a face when the map holds nothing usable or is not a stream', () => {

@@ -82,7 +82,14 @@ async function runInThread(request: PdfaRunRequest, options: GhostscriptRunOptio
 
 function runInWorker(request: PdfaRunRequest, options: GhostscriptRunOptions): Promise<PdfaRunResult> {
   return new Promise<PdfaRunResult>((resolve, reject) => {
-    const worker = new Worker(new URL('./ghostscript-worker.ts', import.meta.url), { type: 'module' });
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL('./ghostscript-worker.ts', import.meta.url), { type: 'module' });
+    } catch (error) {
+      // A browser that refuses to start the worker (a SecurityError, a blocked module worker).
+      reject(ghostscriptFailure('load', error instanceof Error ? error.message : String(error)));
+      return;
+    }
     const onAbort = (): void => finish(() => reject(abortError()));
     const finish = (settle: () => void): void => {
       options.signal.removeEventListener('abort', onAbort);
@@ -102,11 +109,16 @@ function runInWorker(request: PdfaRunRequest, options: GhostscriptRunOptions): P
       finish(() => reject(ghostscriptFailure('load', event.message || 'the worker failed to start')));
     };
 
-    const message: GhostscriptWorkerRequest = {
-      js: new URL(GHOSTSCRIPT_ASSETS.js, self.location.href).href,
-      wasm: new URL(GHOSTSCRIPT_ASSETS.wasm, self.location.href).href,
-      request,
-    };
-    worker.postMessage(message, [request.input.buffer as ArrayBuffer]);
+    try {
+      const message: GhostscriptWorkerRequest = {
+        js: new URL(GHOSTSCRIPT_ASSETS.js, self.location.href).href,
+        wasm: new URL(GHOSTSCRIPT_ASSETS.wasm, self.location.href).href,
+        request,
+      };
+      worker.postMessage(message, [request.input.buffer as ArrayBuffer]);
+    } catch (error) {
+      // A document that cannot be handed over (DataCloneError, a detached buffer).
+      finish(() => reject(ghostscriptFailure('run', error instanceof Error ? error.message : String(error))));
+    }
   });
 }

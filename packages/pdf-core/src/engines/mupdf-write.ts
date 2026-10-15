@@ -515,8 +515,20 @@ export function subsetEmbeddedFaces(mupdf: Mupdf, doc: PDFDocument, faces: reado
       const subsetDescriptor = fontDescriptorOf(grafted);
       const subsetProgram = subsetDescriptor?.get('FontFile2');
       if (subsetDescriptor === null || subsetProgram === undefined || !subsetProgram.isStream()) continue;
-      const bytes = subsetProgram.readStream().asUint8Array().slice();
-      const before = program.readStream().getLength();
+      const subsetBuffer = subsetProgram.readStream();
+      let bytes: Uint8Array;
+      try {
+        bytes = subsetBuffer.asUint8Array().slice();
+      } finally {
+        subsetBuffer.destroy();
+      }
+      const wholeBuffer = program.readStream();
+      let before: number;
+      try {
+        before = wholeBuffer.getLength();
+      } finally {
+        wholeBuffer.destroy();
+      }
       if (bytes.byteLength === 0 || bytes.byteLength >= before) continue;
       descriptor.put('FontFile2', doc.addStream(bytes, { Length1: bytes.byteLength }));
       const tagged = readName(subsetDescriptor.get('FontName'));
