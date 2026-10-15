@@ -478,7 +478,7 @@ export async function readProducedPageTexts(
 ): Promise<readonly string[]> {
   const pdfjsPath = coreRequire.resolve('pdfjs-dist/legacy/build/pdf.mjs');
   const pdfjs = (await import(pathToFileURL(pdfjsPath).href)) as {
-    getDocument(options: Record<string, unknown>): { promise: Promise<PdfJsDocument> };
+    getDocument(options: Record<string, unknown>): PdfJsLoadingTask;
   };
   interface PdfJsTextItem {
     readonly str: string;
@@ -490,31 +490,33 @@ export async function readProducedPageTexts(
     readonly numPages: number;
     getPage(index: number): Promise<PdfJsPage>;
     cleanup(): Promise<void>;
+  }
+  /** The loading task owns the worker side of the document: it, not the document proxy, is destroyed. */
+  interface PdfJsLoadingTask {
+    readonly promise: Promise<PdfJsDocument>;
     destroy(): Promise<void>;
   }
 
-  const document = await pdfjs.getDocument({
+  const task = pdfjs.getDocument({
     data: new Uint8Array(bytes),
     useSystemFonts: false,
     isEvalSupported: false,
     disableFontFace: true,
     // pdf.js wants a URL *prefix*, trailing separator included.
     standardFontDataUrl: STANDARD_FONTS,
-  }).promise;
+  });
   try {
+    const document = await task.promise;
     const pages: string[] = [];
     for (let index = 1; index <= Math.min(document.numPages, firstPages); index += 1) {
       const page = await document.getPage(index);
       const content = await page.getTextContent();
       pages.push(content.items.map((item) => item.str).join(' '));
     }
+    await document.cleanup();
     return pages;
   } finally {
-    try {
-      await document.cleanup();
-    } finally {
-      await document.destroy();
-    }
+    await task.destroy();
   }
 }
 
