@@ -1,7 +1,7 @@
 export const batchPart = {
   'batch.title': 'Batch operations',
   'batch.intro':
-    'Select multiple PDFs, check the steps to run, and execute the ruleset across all files. Steps run in dependency order: compression before stamping, metadata after final write, encryption last. If a file fails, only that file is reported and remaining files continue.',
+    'Pick several PDFs and the steps to run on each. Steps run in a safe order (encryption last); a file that fails is reported and the others carry on.',
   'batch.queue': 'File queue',
   'batch.queue.hint': 'Each file is processed independently; documents never leave this device.',
   'batch.name': 'Ruleset name',

@@ -27,10 +27,10 @@ export const pageopsPart = {
   // composeDocument
   'op.note.compose.storage': 'Açıklamalar ve form değerleri belgenin kendi deposundan taşındı.',
   'op.note.compose.catalog':
-    'Bileşim yeni bir katalog yazar: görünüm tercihleri, dil, çıktı amaçları, katman (OCG) yapılandırması ve açılış eylemi taşınmaz.',
+    'Görünüm tercihleri, dil, çıktı amaçları, katman ayarları ve açılış eylemi yeni dosyaya taşınmaz.',
   'op.note.compose.rotation': '{count} sayfaya döndürme uygulandı (kaynak döndürme + istenen açı).',
   'op.note.compose.outlineCopies':
-    'Bazı yer imlerinin hedefi okunamadığı için çoğaltılan sayfalar bunları en fazla {copies} kez yinelemiş olabilir (extractPages davranışı).',
+    'Bazı yer imlerinin hedefi okunamadığı için çoğaltılan sayfalar bunları en fazla {copies} kez yinelemiş olabilir.',
   'op.note.compose.verified': 'Bileşim doğrulandı: {pages} sayfa.',
 
   // mergeDocuments
@@ -38,7 +38,7 @@ export const pageopsPart = {
   'op.note.merge.encryptionDropped':
     'Birleştirilen belgelerin parola koruması taşınmadı; birleştirilmiş dosya korumasızdır.',
   'op.note.merge.structure':
-    'Motorun birleştirdiği yapı ölçüldü: {outline} yer imi, {labels} sayfa etiketi kaydı, {fields} form alanı.',
+    'Birleşen yapı ölçüldü: {outline} yer imi, {labels} sayfa etiketi kaydı, {fields} form alanı.',
   'op.note.merge.labels':
     'Sayfa etiketleri: her sayfa kendi belgesinin verdiği etiketi korudu; sayfa etiketi olmayan bir belgeden eklenen sayfalar kendi belgesi içinde 1, 2, … diye numaralandı.',
   'op.note.merge.labelsLost':

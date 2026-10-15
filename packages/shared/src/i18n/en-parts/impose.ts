@@ -1,7 +1,7 @@
 export const imposePart = {
   'impose.title': 'Page layout (N-up / booklet)',
   'impose.intro':
-    'Pages are arranged onto new sheets; vector content is preserved. Imposition does not transfer links, annotations, form fields or outline bookmarks to new sheets.',
+    'Pages are arranged onto new sheets; vector content is preserved. Links, annotations, form fields and bookmarks are not carried onto the new sheets.',
   'impose.mode': 'Layout mode',
   'impose.mode.nup': 'N-up',
   'impose.mode.booklet': 'Booklet (imposition)',

@@ -75,9 +75,9 @@ export const propsPart = {
     'Bu dosyadaki sertifikalar hepsini denemeye yetmeyecek kadar çok olası zincir sunuyor; arama sınırında durdu, bu yüzden hiçbir zincir doğrulanmadı ya da elenmedi.',
   'props.sig.revocation.indeterminate': 'Belirlenemedi',
   'props.sig.revocation.note':
-    'İptal kanıtı yalnızca bu cihazda zaten bulunan listelerden okunur: aşağıda içe aktardığınız CRL’ler ile PDF içine gömülü CRL ve OCSP yanıtları. Hiçbir şey ağdan çekilmez; bir yayımcı için liste yoksa sonuç "belirlenemedi" olur.',
+    'İptal kanıtı yalnızca bu cihazdaki listelerden okunur: içe aktardığınız CRL’ler ile PDF’ye gömülü CRL ve OCSP yanıtları. Ağdan hiçbir şey çekilmez; liste yoksa sonuç “belirlenemedi” olur.',
   'props.sig.trust.note':
-    'Sertifika güveni yalnızca kullanıcının içe aktardığı güven kökleriyle denetlenir: zincir, sertifika imzaları WebCrypto ile doğrulanarak köke kadar yürünür. Hiç kök aktarılmadıysa sonuç "denetlenmedi" olur — bu bir hüküm değil, kanıt yokluğudur.',
+    'Sertifika güveni yalnızca sizin içe aktardığınız güven kökleriyle denetlenir. Hiç kök aktarılmadıysa sonuç “denetlenmedi” olur: bu olumsuz bir hüküm değil, kanıt yokluğudur.',
   'props.sig.chain': 'Zincir: {path}',
   'props.sig.roots.title': 'İçe aktarılan güven kökleri',
   'props.sig.roots.empty':

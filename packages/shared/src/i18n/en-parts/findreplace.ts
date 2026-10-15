@@ -3,7 +3,7 @@
 export const findReplacePart = {
   'findReplace.title': 'Find and replace',
   'findReplace.intro':
-    'Find a text in the document and replace it everywhere it occurs. The old text is really removed; the new one is written in its place, at the same size and colour.',
+    'Find a text in the document and replace it everywhere. The old text is really removed; the new one is written in its place at the same size and colour.',
   'findReplace.confirm': 'Replace all',
   'findReplace.find': 'Find',
   'findReplace.replace': 'Replace with',

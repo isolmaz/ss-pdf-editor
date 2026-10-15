@@ -83,7 +83,7 @@ export const shellPart = {
 
   /* A figure the reader released could not be; the session keeps running. */
   'notice.engineReleaseFailed':
-    'Bir belge motoru serbest bırakılamadı; bellek bir sonraki işlemde yeniden kullanılır.',
+    'Bir belgenin belleği serbest bırakılamadı; bellek bir sonraki işlemde yeniden kullanılır.',
   'toolbar.freetext': 'Metin ekle',
   'toolbar.markup': 'Metni işaretle',
   'toolbar.measure': 'Ölç',

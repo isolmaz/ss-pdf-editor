@@ -1,7 +1,7 @@
 export const pageeditPart = {
   'insert.title': 'Insert pages',
   'insert.intro':
-    'Pages from the chosen source are inserted into the current document. Composition writes via the engine document: annotations and form values are preserved. Catalog is rewritten — viewer preferences, language, output intents and layer config are not carried over.',
+    'Source pages are inserted into the document. Annotations and form values are kept; viewer preferences, language, layers and open action are not carried over.',
   'insert.source': 'Source',
   'insert.source.blank': 'Blank page',
   'insert.source.image': 'From images',
@@ -34,7 +34,7 @@ export const pageeditPart = {
   'insert.progress.place': 'Placing pages',
   'insert.note.storage': 'Annotations and form values carried over from document storage.',
   'insert.note.catalog':
-    'Composition writes a new catalog: viewer preferences, language, output intents, layer (OCG) config and open action are not carried over.',
+    'Viewer preferences, language, output intents, layer settings and the open action are not carried over to the new file.',
   'insert.note.info': 'Document metadata (title, author, dates) copied from base document.',
   'insert.note.labels':
     'Page labels: each page kept the label its own document gave it; a page from a document without page labels is numbered by its page number there (a new blank page reads 1).',
@@ -43,7 +43,7 @@ export const pageeditPart = {
 
   'replace.title': 'Replace pages',
   'replace.intro':
-    'Selected pages are replaced in-place by pages produced from source; total page count does not change. Composition writes a new catalog: viewer preferences, language and layer configuration are not carried over.',
+    'Selected pages are replaced in place by source pages; the page count stays. Viewer preferences, language and layer settings are not carried over.',
   'replace.source': 'Source for replacement pages',
   'replace.source.blank': 'Blank page',
   'replace.source.image': 'Image',

@@ -58,12 +58,12 @@ export const contentWritersPart = {
     '{count} earlier signature(s) in the document stay valid: the new signature was appended to the file as a new revision, and the bytes the earlier signatures cover are unchanged.',
   'op.note.sign.earlierLost':
     'The document carries {count} earlier signature(s). The file could not be extended with a new revision (it needed repair), so it was rewritten and the earlier signatures no longer validate.',
-  'op.note.sign.signed': 'PAdES B-B signature applied ({digest}, {bytes} byte CMS).',
+  'op.note.sign.signed': 'PAdES B-B signature applied ({digest}, {bytes} bytes).',
   'op.note.sign.byteRange':
     'Signed byte range: {start}–{end} and {tail} byte tail; intervening bytes are the signature itself.',
   'sign.title': 'Sign document',
   'sign.intro':
-    'Select your PKCS#12 (.p12/.pfx) file and password. Signature is generated 100% locally on this device; nothing is sent over the network. Timestamping (B-T) is not present in this release.',
+    'Select your PKCS#12 (.p12/.pfx) file and password. The signature is made entirely on this device; nothing is sent. Timestamping (B-T) is not available yet.',
   'sign.field.file': 'PKCS#12 certificate file',
   'sign.field.fileHint':
     'A .p12 or .pfx container carrying your certificate and private key. File never leaves device.',
@@ -71,9 +71,9 @@ export const contentWritersPart = {
   'sign.field.passwordHint': 'Password used solely to unlock private key; never stored.',
   'sign.field.name': 'Signature field name (optional)',
   'sign.field.nameHint':
-    'If left blank, fills the first empty signature field in the document where it sits, or creates a new field if there is none. If you give a name, only an empty field with that name is filled; if there is none, a new field is created with this name.',
+    'If blank, the first empty signature field is filled, or a new one created. With a name, only an empty field of that name is filled, or one is created with it.',
   'sign.field.digest': 'Digest algorithm',
-  'sign.field.digestHint': 'SHA-256 is standard for B-B; longer digests produce larger CMS containers.',
+  'sign.field.digestHint': 'SHA-256 is standard for B-B; longer digests produce larger signature data.',
   'sign.digest.sha256': 'SHA-256',
   'sign.digest.sha384': 'SHA-384',
   'sign.digest.sha512': 'SHA-512',

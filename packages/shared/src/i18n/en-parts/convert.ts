@@ -1,7 +1,7 @@
 export const convertPart = {
   'convert.title': 'Convert document to PDF',
   'convert.intro':
-    'Convert a Word, Excel, PowerPoint, HTML, text, CSV, EPUB or FB2 file to PDF in this browser. Several files become one PDF in the order of the list.',
+    'Convert a Word, Excel, PowerPoint, HTML, text, CSV, EPUB or FB2 file to PDF in this browser. Several files become one PDF in list order.',
   'convert.files': 'Files',
   'convert.hint':
     'DOCX, XLSX, PPTX, HTML, TXT, MD, CSV, TSV, EPUB, FB2. The old DOC, XLS and PPT formats are not supported.',

@@ -16,11 +16,11 @@ export const pagesPart = {
   'pages.duplicate.done': '{count} page(s) duplicated.',
   'pages.extract.title': 'Extract pages',
   'pages.extract.intro':
-    'Selected pages form a new document; current document is unchanged. Output writes a new catalog: viewer preferences, language and layer configuration are not carried over.',
+    'Selected pages become a new document; the current one is unchanged. Viewer preferences, language and layer settings are not carried over.',
 
   'split.title': 'Split document',
   'split.intro':
-    'The document is split into separate PDF files according to the chosen rule. Part counts and filenames are calculated upon execution. Each part writes a new catalog: viewer preferences, language and layer configuration are not carried over.',
+    'The document is split into separate PDFs by the chosen rule; part count and names show in the report. Viewer preferences, language and layers are dropped.',
   'split.mode': 'Split method',
   'split.mode.ranges': 'By page ranges',
   'split.mode.everyN': 'Every N pages',

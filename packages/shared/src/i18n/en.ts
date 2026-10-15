@@ -136,7 +136,7 @@ export const en: Record<MessageKey, string> = {
   'setting.purgeDocument': 'Delete Stored Copies of This Document',
   'setting.sweepVault': 'Clean Up Orphaned Vault Copies',
   'vault.purged':
-    '{count} record(s) for this document were removed from browser storage. This is deletion of the entry in the application vault; the bytes already written to disk are not overwritten, and copies you downloaded, the original file you opened, or browser profile backups are outside this application’s reach.',
+    '{count} record(s) of this document were removed from browser storage; bytes already on disk are not overwritten. Downloaded copies, the original file and browser backups are out of this app’s reach.',
   'vault.swept': '{count} record(s) no other document references were removed from the vault.',
   'vault.sweepNothing': 'No orphaned copies in the vault; nothing to remove.',
   'vault.incomplete':
@@ -230,9 +230,9 @@ export const en: Record<MessageKey, string> = {
   'error.conflict.message': 'The file changed after you opened it.',
   'error.conflict.hint':
     'Choose Overwrite to replace the file with your version, Save as to write a new file, or Cancel.',
-  'error.asset-missing.message': 'A required engine package is not downloaded.',
+  'error.asset-missing.message': 'A required package is not downloaded.',
   'error.asset-missing.hint': 'Download it from the offline readiness screen.',
-  'error.asset-hash-mismatch.message': 'An engine package failed verification.',
+  'error.asset-hash-mismatch.message': 'A package failed verification.',
   'error.asset-hash-mismatch.hint': 'Download the package again.',
   'error.asset-offline.message': 'This part of the editor is not on this device yet.',
   'error.asset-offline.hint': 'Connect to the internet and reload the page.',
@@ -298,7 +298,8 @@ export const en: Record<MessageKey, string> = {
   'tools.magnifier': 'Magnifier',
   'close.title': 'Close "{name}"?',
   'close.body': 'You have unsaved changes. Do you want to save before closing?',
-  'close.exportHint': 'This document has no file handle. Export to download a copy, or close without saving.',
+  'close.exportHint':
+    'Export starts a download; we cannot confirm the file reached the disk, and the document stays open. After checking it, Close without saving deletes the draft.',
   'close.discard': 'Close without saving',
   'close.save': 'Save and close',
   'conflict.body':

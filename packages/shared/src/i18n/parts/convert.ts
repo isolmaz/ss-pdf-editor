@@ -6,7 +6,7 @@
 export const convertPart = {
   'convert.title': 'Belgeyi PDF’ye dönüştür',
   'convert.intro':
-    'Word, Excel, PowerPoint, HTML, metin, CSV, EPUB ya da FB2 dosyasını bu tarayıcıda PDF’ye dönüştürün. Birden çok dosya seçerseniz listedeki sırayla tek bir PDF olur.',
+    'Word, Excel, PowerPoint, HTML, metin, CSV, EPUB ya da FB2 dosyasını bu tarayıcıda PDF’ye dönüştürün. Birden çok dosya, listedeki sırayla tek PDF olur.',
   'convert.files': 'Dosyalar',
   'convert.hint':
     'DOCX, XLSX, PPTX, HTML, TXT, MD, CSV, TSV, EPUB, FB2. Eski DOC, XLS ve PPT biçimleri desteklenmez.',

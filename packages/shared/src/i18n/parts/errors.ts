@@ -8,7 +8,7 @@ export const errorsPart = {
   'error.pending-redactions.message':
     'Uygulanmamış karartma işaretleri var; kaydetme, dışa aktarma, yazdırma ve dosya üreten ya da sayfaları taşıyan her araç durduruldu.',
   'error.pending-redactions.hint':
-    'Hiçbir şey yazılmadı. Karartmaları uygulayın veya işaretleri temizleyip yeniden deneyin; işaretler uygulanmadan teslim edilen dosya, kaldırılması istenen içeriği hâlâ taşır.',
+    'Hiçbir şey yazılmadı. Karartmaları uygulayın veya işaretleri temizleyip yeniden deneyin; uygulanmamış işaretli dosya, silinecek içeriği hâlâ taşır.',
   'error.range-invalid.message': 'Sayfa aralığı okunamadı.',
   'error.range-invalid.hint': '1-3, 5 veya 8-10 gibi bir aralık girin.',
   'error.value-out-of-range.message': 'Bir alanın değeri izin verilen aralığın dışında.',
@@ -30,7 +30,7 @@ export const errorsPart = {
     'Formu “XFA formunu doldur” ile açın ya da “XFA formunu normal PDF’ye dönüştür” işlemini kullanın.',
   'error.xfa-static.message': 'Bu statik bir XFA formu: sayfaları zaten PDF’nin içinde.',
   'error.xfa-static.hint':
-    'Alanları “Form alanlarını düzleştir” ile düzleştirin ya da “XFA’yı kaldır” ile yalnızca AcroForm’u bırakın.',
+    'Alanları “Form alanlarını düzleştir” ile düzleştirin ya da “XFA’yı kaldır” ile yalnızca standart form alanlarını bırakın.',
   'error.glyph-missing.message': 'Yazıda hiçbir yazı tipinde bulunmayan karakterler var: {chars}',
   'error.glyph-missing.hint':
     'Bu karakterleri metinden çıkarın ya da yazı tipinde bulunan karakterlerle değiştirin. Hiçbir şey yazılmadı; belgeniz değişmedi.',

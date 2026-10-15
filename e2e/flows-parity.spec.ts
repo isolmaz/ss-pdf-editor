@@ -225,7 +225,9 @@ test('sanitize: the preview report comes first, and applying it takes the author
   expect(await readProducedEntry(before, 'trailer', 'Info', 'Author')).toContain('Ada Lovelace');
 
   const form = await openForm(page, 'Sanitize document', 'Sanitize document');
-  await expect(form.getByRole('checkbox', { name: 'Document metadata' })).toBeChecked();
+  await expect(
+    form.getByRole('checkbox', { name: 'Document metadata (the producer line stays)' }),
+  ).toBeChecked();
   await form.getByRole('button', { name: 'Preview', exact: true }).click();
   const report = form.getByRole('heading', { name: 'Operation report' });
   const goOn = form.getByRole('button', { name: 'Continue', exact: true });

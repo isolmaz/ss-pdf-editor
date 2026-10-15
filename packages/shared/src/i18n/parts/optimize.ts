@@ -5,7 +5,7 @@
 export const optimizePart = {
   'optimize.title': 'Dosyayı küçült',
   'optimize.intro':
-    'Görüntüye çevirme, seçilen sayfalarda metin katmanını, bağlantıları, açıklamaları ve içindekileri kaybeder; arama çalışmaz. Yapıyı koru içeriği değiştirmez. Sonuç dosya özgün dosyadan büyük çıkabilir.',
+    'Görüntüye çevirme metni, bağlantıları, açıklamaları ve içindekileri kaldırır; arama çalışmaz. Yapıyı koru içeriğe dokunmaz. Sonuç büyüyebilir.',
   'optimize.mode': 'Yöntem',
   'optimize.mode.structure': 'Yapıyı koru (kayıpsız)',
   'optimize.mode.rasterize': 'Sayfaları görüntüye çevir (kayıplı)',

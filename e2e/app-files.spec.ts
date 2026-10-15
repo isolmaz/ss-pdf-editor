@@ -227,7 +227,7 @@ test('closing an edited document: cancel keeps it, export saves a copy, discard 
   await page.getByRole('button', { name: 'Close tab' }).click();
   const dialog = page.getByRole('dialog', { name: /Close "close.pdf"/ });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByText('This document has no file handle')).toBeVisible();
+  await expect(dialog.getByText(/Export starts a download/)).toBeVisible();
 
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();

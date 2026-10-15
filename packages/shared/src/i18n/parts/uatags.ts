@@ -73,7 +73,7 @@ export const uatagsPart = {
   'ua.declared.yes': 'Dosya PDF/UA-{part} bildiriyor.',
   'ua.declared.no': 'Dosya PDF/UA uygunluğu bildirmiyor.',
   'ua.disclaimer':
-    'Matterhorn Protokolü örnek alınarak yapılmış otomatik bir denetimdir. Uygunluğu kanıtlayamaz: okuma sırası, açıklamaların kalitesi ve dil değişiklikleri bir kişinin gözünden geçmelidir; renk karşıtlığı ise hiç ölçülmez.',
+    'Matterhorn Protokolü’ne dayanan otomatik bir denetimdir; uygunluğu kanıtlayamaz. Okuma sırası, açıklamaların kalitesi ve dil değişiklikleri insan gözüyle bakılmalı; renk karşıtlığı ölçülmez.',
   'ua.state.pass': 'Geçti',
   'ua.state.fail': 'Başarısız',
   'ua.state.manual': 'Elle denetle',
@@ -148,7 +148,7 @@ export const uatagsPart = {
   'ua.rule.lang.why':
     'Ekran okuyucu telaffuzunu dile göre seçer. Etiket eksik ya da geçersizse tahmin yürütür.',
   'ua.rule.lang.fix': 'Aşağıya tr-TR veya en-US gibi bir dil etiketi girin.',
-  'ua.rule.lang.detail.missing': 'Katalogda /Lang girdisi yok.',
+  'ua.rule.lang.detail.missing': 'Belgede dil girdisi (/Lang) yok.',
   'ua.rule.lang.detail.invalid': '"{lang}" geçerli bir dil etiketi değil.',
   'ua.rule.lang.ok': 'Dil: {lang}.',
 

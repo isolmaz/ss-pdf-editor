@@ -1,7 +1,7 @@
 export const filePart = {
   'file.add.title': 'Add document',
   'file.add.intro':
-    'The added document is appended to the current document and the result replaces the current document. Metadata (Info/XMP) from the added document is not carried over; the result retains metadata from the current document.',
+    'The added document is appended to the current one and the result replaces it. Its metadata (Info/XMP) is not carried over; the current document’s is kept.',
   'file.add.insertAt': 'Insert position',
   'file.add.atEnd': 'At end of document',
   'file.add.atStart': 'At start of document',

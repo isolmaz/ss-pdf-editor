@@ -12,7 +12,7 @@
 export const pdfaPart = {
   'pdfa.title': 'PDF/A olarak kaydet',
   'pdfa.intro':
-    'Belgeyi uzun süreli arşivleme standardı PDF/A’ya dönüştürür: tüm yazı tipleri gömülür, renkler sRGB’ye çevrilir ve üst veri standart biçimde yazılır. Her şey bu tarayıcıda yapılır; dönüştürme motoru yalnızca bu araç kullanılınca yüklenir. Çıktı, dönüştürmeden hemen sonra kendi denetleyicimizle kontrol edilir; kuralı ihlal eden bir dosya sunulmaz. Bu kontrol veraPDF’nin tam doğrulaması değildir.',
+    'Belgeyi arşiv biçimi PDF/A’ya dönüştürür: yazı tipleri gömülür, renkler sRGB olur. Çıktı kontrol edilir (veraPDF’nin tam doğrulaması değildir).',
   'pdfa.level': 'Düzey',
   'pdfa.level.2b': 'PDF/A-2b (önerilen)',
   'pdfa.level.2bHint': 'PDF 1.7 tabanlı. Saydamlık serbesttir, bu yüzden sayfalar görünüş olarak değişmez.',
@@ -32,11 +32,11 @@ export const pdfaPart = {
   'op.progress.pdfa.convert': 'PDF/A’ya dönüştürülüyor',
   'op.progress.pdfa.verify': 'Çıktı PDF/A kurallarına karşı denetleniyor',
 
-  'op.note.pdfa.converted': 'Belge {level} biçimine dönüştürüldü (Ghostscript).',
+  'op.note.pdfa.converted': 'Belge {level} biçimine dönüştürüldü.',
   'op.note.pdfa.colour':
     'Renkler sRGB’ye çevrildi ve sRGB çıktı niyeti (OutputIntent) eklendi; tüm yazı tipleri gömüldü.',
   'op.note.pdfa.fontsSubstituted':
-    '{count} yazı tipi dosyada gömülü değildi; Ghostscript bunların yerine benzer yazı tipleri gömdü, harf biçimleri özgün yazı tipinden farklı olabilir.',
+    '{count} yazı tipi dosyada gömülü değildi; dönüştürme bunların yerine benzer yazı tipleri gömdü, harf biçimleri özgün yazı tipinden farklı olabilir.',
   'op.note.pdfa.transparencyFlattened':
     'PDF/A-1 saydamlığa izin vermez: saydamlık kullanan sayfalar düzleştirildi; bu sayfalardaki metin ve bağlantılar görüntüye dönüşmüş olabilir.',
   'op.note.pdfa.formsFlattened': '{count} form alanı sayfaya işlendi; artık doldurulabilir değiller.',
@@ -54,7 +54,7 @@ export const pdfaPart = {
   'op.note.pdfa.annotationsRemoved':
     '{count} ek açıklama kaldırıldı ({types}): düzeyin izin vermediği türler ya da çizilemeyen görünümler.',
   'op.note.pdfa.annotationsDropped':
-    '{count} ek açıklama çıktıda yok ({types}): Ghostscript gizli ya da görüntülenmeyen ek açıklamaları taşımaz.',
+    '{count} ek açıklama çıktıda yok ({types}): dönüştürme gizli ya da görüntülenmeyen ek açıklamaları taşımaz.',
   'op.note.pdfa.printFlagged': '{count} ek açıklamaya PDF/A’nın istediği Print bayrağı eklendi.',
   'op.note.pdfa.appearancesDrawn': '{count} ek açıklama için eksik görünüm akışı çizildi.',
   'op.note.pdfa.encryptionRemoved': 'Şifreleme kaldırıldı; PDF/A şifrelenmiş dosyaya izin vermez.',
@@ -64,7 +64,7 @@ export const pdfaPart = {
   'op.note.pdfa.lost.labels': 'Sayfa etiketleri (numaralandırma) çıktıda yok.',
   'op.note.pdfa.lost.layers': 'Katmanlar (isteğe bağlı içerik) çıktıda yok.',
   'op.note.pdfa.producer':
-    'Üretici (Producer) alanı artık “{producer}”: Ghostscript bu alanı kendisi yazar, değiştirilemez.',
+    'Üretici (Producer) alanı artık “{producer}”: dönüştürme bu alanı kendisi yazar, değiştirilemez.',
   'op.note.pdfa.textKept':
     'Örneklenen {pages} sayfada, özgün metnin {percent} kadarı çıktıda aynen çıkarılabiliyor.',
   'op.note.pdfa.textLoss':
@@ -77,7 +77,7 @@ export const pdfaPart = {
   'op.note.pdfa.alreadyCompliant':
     'Dosya zaten {level} olduğunu belirtiyor ve denetlenen kuralların hiçbirini ihlal etmiyor; yeniden yazılmadı.',
   'op.note.pdfa.limits':
-    'Bu denetim veraPDF’nin tam doğrulaması değildir: yalnızca nesne yapısından ve içerik akışlarından karar verilebilen kurallar bakılır (PDF/A panelinde “bakılmayanlar” listesine bakın).',
+    'Bu denetim veraPDF’nin tam doğrulaması değildir; yalnızca belge yapısından karar verilebilen kurallara bakar (ayrıntı: PDF/A panelindeki “bakılmayanlar” listesi).',
 
   'panel.pdfa': 'PDF/A',
   'pdfa.panel.check': 'Denetle',
@@ -92,7 +92,7 @@ export const pdfaPart = {
   'pdfa.panel.more': 've {count} tane daha',
   'pdfa.panel.notChecked': 'Bu denetimin bakmadıkları',
   'pdfa.panel.disclaimer':
-    'Bu, veraPDF’nin tam doğrulaması değildir. veraPDF’nin yüzlerce kuralından yalnızca nesne yapısından ve içerik akışlarından karar verilebilenler denetlenir; temiz bir sonuç sertifika yerine geçmez.',
+    'Bu, veraPDF’nin tam doğrulaması değildir: yalnızca nesne yapısından ve içerik akışlarından karar verilebilen kurallar denetlenir. Temiz sonuç sertifika yerine geçmez.',
   'pdfa.group.fail': 'İhlal edilen kurallar',
   'pdfa.group.unchecked': 'Denetlenemeyen kurallar',
   'pdfa.group.pass': 'Geçen kurallar',

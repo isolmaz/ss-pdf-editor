@@ -5,7 +5,7 @@
 export const filePart = {
   'file.add.title': 'Belge ekle',
   'file.add.intro':
-    'Eklenen belge geçerli belgeye katılır ve sonuç geçerli belgenin yerini alır. Eklenen belgenin üst verisi (Info/XMP) taşınmaz; sonuç, üst verisini geçerli belgeden alır.',
+    'Eklenen belge geçerli belgeye katılır ve sonuç geçerli belgenin yerini alır. Eklenen belgenin üst verisi taşınmaz; sonuç üst verisini geçerli belgeden alır.',
   'file.add.insertAt': 'Ekleme yeri',
   'file.add.atEnd': 'Belgenin sonuna',
   'file.add.atStart': 'Belgenin başına',

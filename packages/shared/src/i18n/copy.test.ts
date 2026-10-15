@@ -199,3 +199,37 @@ describe('the ellipsis', () => {
     expect(wrong).toEqual([]);
   });
 });
+
+describe('the copy people read before they decide', () => {
+  const entries = (Object.keys(tr) as Key[]).flatMap((key) => [
+    ['tr', key, tr[key]] as const,
+    ['en', key, en[key]] as const,
+  ]);
+
+  it('keeps a dialog intro or hint to 160 characters and every message to 200', () => {
+    const short = /(\.intro|[hH]int)$/;
+    const tooLong = entries
+      .filter(([, key, text]) => text.length > (short.test(key) ? 160 : 200))
+      .map(([locale, key, text]) => `${locale} ${key}: ${text.length}`);
+    expect(tooLong).toEqual([]);
+  });
+
+  it('does not name the libraries or the storage behind a feature', () => {
+    // The settings dialog's own text is being rewritten by another change.
+    const named = entries
+      .filter(([, key]) => !/^settings?\./.test(key))
+      .filter(([, , text]) =>
+        /Ghostscript|MuPDF|pdf\.js|pdfjs|\bmotor|\bengine|katalog|\bcatalog|\bOCG\b|\bOPFS\b/i.test(text),
+      )
+      .map(([locale, key, text]) => `${locale} ${key}: ${text}`);
+    expect(named).toEqual([]);
+  });
+
+  it('leaves the CMS container to the signature details that are about it', () => {
+    const named = entries
+      .filter(([, , text]) => /\bCMS\b/.test(text))
+      .map(([, key]) => key)
+      .filter((key) => !key.startsWith('props.sig.'));
+    expect(named).toEqual([]);
+  });
+});

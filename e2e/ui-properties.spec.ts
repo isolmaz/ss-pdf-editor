@@ -481,7 +481,7 @@ test('an authority that chains to no imported root has its time shown but not re
   );
   await expect(fact(row, 'Timestamp')).toHaveText('Valid');
   await expect(row).toContainText(
-    'The time-stamping authority does not chain to an imported root, one of its certificates is revoked, or no list on this device clears one of them: the time is shown but not relied on, since anyone can run a timestamp server.',
+    'The time-stamping authority does not chain to an imported root, or a certificate is revoked or not cleared: the time is shown but not relied on, since anyone can run a timestamp server.',
   );
   await expect(row).toContainText(`Judged at: ${utc(issued)} — untrusted timestamp.`);
 });

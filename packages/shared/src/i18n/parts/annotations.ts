@@ -38,7 +38,7 @@ export const annotationsPart = {
   'ann.comment': 'Yorum metni',
   'ann.remove': 'Sil',
   'ann.clear': 'Tümünü sil',
-  'ann.captured': '{count} not motordan devralındı; kaydettiğinizde dosyaya yazılacak.',
+  'ann.captured': '{count} not belgeden alındı; kaydettiğinizde dosyaya yazılacak.',
 
   // Data interchange (`annotation-data.ts`): the review as a file of its own, so a
   // review can move between machines without the PDF carrying it.
@@ -97,7 +97,7 @@ export const annotationsPart = {
   // `writeShapeAnnotations`).
   'op.progress.annotate': 'Notlar yazılıyor',
   'op.progress.annotate.retag': 'Altı çizili ve üstü çizili biçimler düzeltiliyor',
-  'op.note.annotate.engine': '{count} not motorun kendi yazıcısıyla eklendi (artımlı güncelleme).',
+  'op.note.annotate.engine': '{count} not, dosyanın sonuna eklenen artımlı bir güncellemeyle yazıldı.',
   'op.note.annotate.incremental': 'Dosya biçimi artımlı kaldı: yalnızca yeni nesneler yazıldı.',
   'op.note.annotate.retagged':
     '{count} notun türü gerçek biçimine çevrildi (altı çizili / üstü çizili / dalgalı).',

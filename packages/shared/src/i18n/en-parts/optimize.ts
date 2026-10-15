@@ -1,7 +1,7 @@
 export const optimizePart = {
   'optimize.title': 'Reduce file size',
   'optimize.intro':
-    'Rasterizing pages loses text layers, links, annotations and bookmarks; search will not work. Preserving structure leaves content unchanged. Result file may be larger than original.',
+    'Rasterizing removes text, links, annotations and bookmarks, so search stops working. Keeping the structure leaves content unchanged. The file can grow.',
   'optimize.mode': 'Method',
   'optimize.mode.structure': 'Preserve structure (lossless)',
   'optimize.mode.rasterize': 'Convert pages to image (lossy)',

@@ -78,7 +78,7 @@ export const shellPart = {
 
   /* A figure the reader released could not be; the session keeps running. */
   'notice.engineReleaseFailed':
-    'A document engine could not be released; the memory is reused on the next operation.',
+    'A document’s memory could not be released; it is reused on the next operation.',
   'toolbar.freetext': 'Add text',
   'toolbar.markup': 'Mark up text',
   'toolbar.measure': 'Measure',
@@ -135,6 +135,6 @@ export const shellPart = {
      half-loaded shell says, and the one thing that gets out of it. */
   'recovery.title': 'The editor stopped',
   'recovery.drafts':
-    'Your open documents are kept on this device as drafts and come back when the page reloads; a document in a sensitive session (for example one opened with a password) is not kept and has to be opened again.',
+    'Open documents are kept on this device as drafts and return when the page reloads; a document in a sensitive session (for example one opened with a password) is not kept.',
   'recovery.reload': 'Reload',
 } as const;

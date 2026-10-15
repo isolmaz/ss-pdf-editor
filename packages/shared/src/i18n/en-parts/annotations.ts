@@ -22,7 +22,7 @@ export const annotationsPart = {
   'ann.comment': 'Comment text',
   'ann.remove': 'Delete',
   'ann.clear': 'Clear all',
-  'ann.captured': '{count} comment(s) captured from engine; will be written on save.',
+  'ann.captured': '{count} comment(s) taken from the document; will be written on save.',
   'ann.data.exportJson': 'Export comments as JSON',
   'ann.data.exportFdf': 'Export comments as FDF',
   'ann.data.import': 'Import comments',
@@ -64,7 +64,7 @@ export const annotationsPart = {
   'ann.transform': 'Edit marks',
   'op.progress.annotate': 'Writing comments',
   'op.progress.annotate.retag': 'Correcting underline and strikeout formats',
-  'op.note.annotate.engine': '{count} comment(s) added with engine writer (incremental update).',
+  'op.note.annotate.engine': '{count} comment(s) written as an incremental update at the end of the file.',
   'op.note.annotate.incremental': 'File format remained incremental: only new objects written.',
   'op.note.annotate.retagged':
     '{count} comment(s) retagged to native format (underline / strikeout / squiggly).',

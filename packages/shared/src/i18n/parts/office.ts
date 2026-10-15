@@ -3,7 +3,7 @@
 export const officePart = {
   'export.office.title': 'Word, Excel ya da CSV olarak dışa aktar',
   'export.office.intro':
-    'Sayfaların metnini, tablolarını ve görsellerini düzenlenebilir bir Word belgesine ya da tablolarını bir Excel çalışma kitabına veya CSV dosyasına aktarın. Her şey bu tarayıcıda yapılır.',
+    'Metin, tablo ve görselleri düzenlenebilir bir Word belgesine, tabloları bir Excel çalışma kitabına ya da CSV dosyasına aktarın. Her şey bu tarayıcıda yapılır.',
   'export.office.format': 'Biçim',
   'export.office.format.docx': 'Word (DOCX)',
   'export.office.format.docxHint':
@@ -43,7 +43,7 @@ export const officePart = {
   'op.note.exportOffice.done':
     '{pages} sayfa {format} dosyasına aktarıldı ve dosya yeniden okunarak doğrulandı.',
   'op.note.exportOffice.docxApproximate':
-    'Metin akan paragraflar olarak aktarıldı: sayfadaki birebir konumlar, çok sütunlu akış, çizimler, form alanları ve açıklamalar aktarılmaz. Yazı tipleri adlarıyla aktarılır; bilgisayarda yoksa Word benzerini kullanır.',
+    'Metin akan paragraflar olarak aktarıldı; sayfadaki birebir konum, çok sütun, çizim, form alanı ve açıklamalar aktarılmaz. Yazı tipleri adıyla yazılır; yoksa Word benzerini kullanır.',
   'op.note.exportOffice.layout':
     'Sayfa düzeni yeniden kuruldu: {boxes} metin kutusu, {shapes} şekil ve {pictures} resim yerlerinde duruyor; metin düzenlenebilir.',
   'op.note.exportOffice.hiddenText':

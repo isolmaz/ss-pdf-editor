@@ -100,7 +100,7 @@ export const tr = {
   'close.body':
     'Kaydet ve kapat yalnızca dosyaya yazma tamamlandığında belgeyi kapatır. Vazgeç belgeyi ve taslağı korur.',
   'close.exportHint':
-    'Dışa aktar indirmeyi başlatır; dosyanın diske kaydedildiğini doğrulayamayız. Belge açık kalır. Dosyayı kontrol ettikten sonra Kaydetmeden kapat ile taslağı silebilirsiniz.',
+    'Dışa aktar indirmeyi başlatır; dosyanın diske yazıldığını doğrulayamayız, belge açık kalır. Kontrol ettikten sonra Kaydetmeden kapat ile taslağı silebilirsiniz.',
   'close.discard': 'Kaydetmeden kapat',
   'close.save': 'Kaydet ve kapat',
   'conflict.body':
@@ -151,7 +151,7 @@ export const tr = {
   'setting.purgeDocument': 'Bu Belgenin Kayıtlı Kopyalarını Sil',
   'setting.sweepVault': 'Depodaki Artık Kopyaları Temizle',
   'vault.purged':
-    'Bu belge için tarayıcı deposundan {count} kayıt silindi. Bu, uygulama deposundaki kaydın kaldırılmasıdır; diske yazılmış baytların üzerine yazılmaz ve indirdiğiniz kopyalar, açtığınız özgün dosya ya da tarayıcı yedekleri bu uygulamanın erişimi dışındadır.',
+    'Bu belgenin {count} kaydı tarayıcı deposundan silindi; diskteki baytların üzerine yazılmaz. İndirdiğiniz kopyalar, özgün dosya ve tarayıcı yedekleri uygulamanın erişimi dışındadır.',
   'vault.swept': 'Başka hiçbir belgenin başvurmadığı {count} kayıt depodan silindi.',
   'vault.sweepNothing': 'Depoda artık kopya yok; silinecek bir şey bulunamadı.',
   'vault.incomplete':
@@ -245,9 +245,9 @@ export const tr = {
   'error.conflict.message': 'Dosya siz açtıktan sonra değişmiş.',
   'error.conflict.hint':
     'Dosyayı sizin sürümünüzle değiştirmek için Üzerine yaz’ı, yeni bir dosyaya yazmak için Farklı kaydet’i seçin ya da Vazgeç’e basın.',
-  'error.asset-missing.message': 'Gerekli motor paketi indirilmemiş.',
+  'error.asset-missing.message': 'Gerekli paket indirilmemiş.',
   'error.asset-missing.hint': 'Çevrimdışı hazırlık ekranından paketi indirin.',
-  'error.asset-hash-mismatch.message': 'Motor paketi doğrulanamadı.',
+  'error.asset-hash-mismatch.message': 'Paket doğrulanamadı.',
   'error.asset-hash-mismatch.hint': 'Paketi yeniden indirin.',
   'error.asset-offline.message': 'Düzenleyicinin bu parçası henüz bu cihazda yok.',
   'error.asset-offline.hint': 'İnternete bağlanıp sayfayı yenileyin.',

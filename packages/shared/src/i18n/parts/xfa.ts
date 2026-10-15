@@ -8,7 +8,7 @@ export const xfaPart = {
     'Dinamik XFA formu. Görünen sayfa yalnızca “Lütfen bekleyin…” yer tutucusudur; formu “XFA formunu doldur” ile açın.',
   'xfa.banner.more': 'Neler destekleniyor?',
   'xfa.banner.supported':
-    'Desteklenen: statik formu doldurma ve XFA verisini eşitleme, dinamik formu görüntüleme–doldurma–kaydetme, XFA verisini dışa/içe aktarma, düzleştirme. Desteklenmeyen: XFA betikleri (FormCalc, JavaScript), doğrulama, hesaplama, dinamik göster/gizle.',
+    'Desteklenen: formu doldurma, görüntüleme, kaydetme, XFA verisini dışa/içe aktarma, düzleştirme. Desteklenmeyen: XFA betikleri (FormCalc, JavaScript), doğrulama, hesaplama, dinamik göster/gizle.',
   'xfa.banner.fill': 'XFA formunu doldur',
   'xfa.banner.remove': 'XFA’yı kaldır',
   'xfa.banner.flatten': 'Normal PDF’ye dönüştür',
@@ -16,7 +16,7 @@ export const xfaPart = {
 
   // commands
   'xfa.cmd.fill': 'XFA formunu doldur…',
-  'xfa.cmd.remove': 'XFA’yı kaldır (AcroForm kalsın)…',
+  'xfa.cmd.remove': 'XFA’yı kaldır (form alanları kalsın)…',
   'xfa.cmd.flatten': 'XFA formunu normal PDF’ye dönüştür…',
   'xfa.cmd.data': 'XFA verisini dışa/içe aktar…',
   'home.tool.xfa': 'XFA formunu doldurun, normal PDF’ye dönüştürün ya da XFA’yı kaldırın.',
@@ -24,7 +24,7 @@ export const xfaPart = {
   // fill dialog
   'xfa.fill.title': 'XFA formunu doldur',
   'xfa.fill.intro':
-    'Form, pdf.js’in XFA işleyicisiyle çizilir. Yazdıklarınız belgenin XFA verisine kaydedilir; belgedeki sayfa yine yer tutucu olarak kalır.',
+    'Form tarayıcıda çizilir. Yazdıklarınız belgenin XFA verisine kaydedilir; belgedeki sayfa yine yer tutucu olarak kalır.',
   'xfa.fill.loading': 'Form hazırlanıyor…',
   'xfa.fill.limits':
     'XFA betikleri (FormCalc, JavaScript), doğrulamalar, hesaplamalar ve dinamik göster/gizle çalışmaz; böyle bir alan yalnızca saklı değerini gösterir.',
@@ -40,7 +40,7 @@ export const xfaPart = {
   // remove
   'xfa.remove.title': 'XFA’yı kaldır',
   'xfa.remove.intro':
-    'Statik bir formda XFA’yı kaldırır; alanlar ve değerleri (AcroForm) olduğu gibi kalır ve okuyucular yalnızca onları kullanır. XFA betikleri, hesaplamalar ve doğrulamalar kaybolur.',
+    'Statik formda XFA’yı kaldırır; form alanları ve değerleri kalır, okuyucular yalnızca onları kullanır. XFA betikleri, hesaplamalar, doğrulamalar kaybolur.',
   'xfa.remove.confirm': 'XFA’yı kaldır',
   'xfa.remove.done': 'XFA kaldırıldı; form alanları korundu.',
 
@@ -53,7 +53,7 @@ export const xfaPart = {
   // flatten
   'xfa.flatten.title': 'XFA formunu normal PDF’ye dönüştür',
   'xfa.flatten.intro':
-    'Dinamik formun sayfaları tarayıcıda çizilir ve yeni bir PDF’ye resim olarak yazılır; üzerine arama ve kopyalama için görünmez bir metin katmanı eklenir. Önce formu doldurup belgeye kaydedin: yazdıklarınız da dönüşür. Sonuç yeni sekmede açılır.',
+    'Formun sayfaları resme çevrilip yeni bir PDF’ye yazılır; arama için görünmez metin eklenir. Önce formu doldurup kaydedin; sonuç yeni sekmede açılır.',
   'xfa.flatten.resolution': 'Çözünürlük',
   'xfa.flatten.resolution.1.5': '108 dpi (küçük dosya)',
   'xfa.flatten.resolution.2': '144 dpi (önerilen)',
@@ -65,7 +65,7 @@ export const xfaPart = {
   'xfa.note.synced': '{count} alanın değeri XFA verisine de yazıldı.',
   'xfa.note.notSynced':
     '{count} alan XFA verisine yazılamadı (biçim kalıbı olan tarih/sayı alanı ya da bağlanamayan alan); bunlar XFA’da eski değerini korur.',
-  'xfa.note.removed': 'XFA kaldırıldı; belgede yalnızca AcroForm kaldı.',
+  'xfa.note.removed': 'XFA kaldırıldı; belgede yalnızca standart form alanları kaldı.',
   'xfa.note.fieldsKept': '{count} form alanı ve değerleri olduğu gibi korundu.',
   'xfa.note.scriptsLost': 'XFA betikleri, hesaplamalar, doğrulamalar ve (varsa) kullanım hakları artık yok.',
   'xfa.note.imported': '{count} veri değeri formun XFA verisine aktarıldı.',

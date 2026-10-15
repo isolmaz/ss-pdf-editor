@@ -25,7 +25,7 @@ export const boxesPart = {
   /* page boxes & size dialog */
   'boxes.dialog.title': 'Sayfa kutuları ve boyut',
   'boxes.dialog.intro':
-    'Sayfa kutuları PDF’nin kendi ölçüleridir: MediaBox kâğıdı, CropBox görünen alanı, Trim/Bleed/Art ise baskı ve içerik sınırlarını tanımlar. Otomatik kırpma sayfayı tarayıp gerçekten basılmış içeriği ölçer; beyaz kenarlar kırpılır. Kutu değişiklikleri var olan açıklamaları taşımaz, içerik kaydırma/açı işlemleri ise sayfanın kendi mekanizmasıyla yapılır ve rapor hangisini kullandığını yazar.',
+    'MediaBox kâğıdı, CropBox görünen alanı belirler. Otomatik kırpma, basılı içeriğe göre beyaz kenarları keser; kutu değişiklikleri açıklamaları kaydırmaz.',
   'boxes.dialog.done': '{count} sayfa güncellendi.',
   'boxes.dialog.mode': 'İşlem',
   'boxes.dialog.mode.set': 'Kutu değerini ayarla',
@@ -88,7 +88,7 @@ export const boxesPart = {
   'boxes.note.boxChangeAnnots':
     'Var olan açıklamalar ve bağlantılar taşınmadı; yeni kutunun dışında kalanlar görünmez olabilir.',
   'boxes.note.contentMovedAnnots':
-    'Var olan açıklamalar ve bağlantılar içerikle birlikte taşınmadı (motor taşıma yapmıyor); içerik üzerindeki işaretler kayabilir.',
+    'Var olan açıklamalar ve bağlantılar içerikle birlikte taşınmadı; içerik üzerindeki işaretler kayabilir.',
   'boxes.note.clamped': '{count} kutu MediaBox sınırına kırpıldı.',
   'boxes.note.minCrop':
     'İçerik çok küçük olduğu için {count} sayfada kırpma en az {points} noktaya genişletildi.',
@@ -100,7 +100,7 @@ export const boxesPart = {
   /* page labels dialog */
   'labels.dialog.title': 'Sayfa etiketleri',
   'labels.dialog.intro':
-    'Etiketler, okuyucunun ve yazdırma penceresinin sayfa numarası yerine gösterdiği metindir (ör. “Önsöz iii”, “Ek-A”). Bu pencere belgenin bütün etiket planını değiştirir: önceki plan silinir, kural aralığın ilk sayfasından belgenin sonuna kadar uygulanır ve önceki sayfalar varsayılan numarayı korur. Yazılan etiketler geri okunup raporda gösterilir.',
+    'Etiketler, sayfa numarası yerine görünen metindir (“iii”, “Ek-A”). Önceki etiket planı silinir; kural seçilen sayfadan sona uygulanır, öncesi varsayılan kalır.',
   'labels.dialog.range': 'Kuralın başladığı sayfa',
   'labels.dialog.rangeHint':
     '1 tabanlı sayfa numaraları; aralığın ilk sayfası kuralın başlangıcı olur (ör. 1-3,7 → 1. sayfa).',
