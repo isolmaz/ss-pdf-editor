@@ -2461,11 +2461,13 @@ its tools panel for **every** operation, so there is one runner with one destruc
 of "Close". The button reads *Apply* (`op.apply`) and runs the operation. What follows is
 `resultNeedsReview` (`dialogs/review.ts`): a result with no file, a `lost` or `warning` note,
 or one of the few `changed` notes that say the output differs from what was asked (a text
-that had to be shrunk or reflowed, an approximate conversion, a generated owner password) is
-shown as a report first, and only its own action (`RESULT_ACTIONS[resultKind]`: apply to the
+that had to be shrunk or reflowed, an approximate conversion, a generated owner password, pages
+scaled to fit Word, a protection removed for PDF/A) is shown as a report first, and only its own action (`RESULT_ACTIONS[resultKind]`: apply to the
 document / open in a new tab / download) changes anything, while "Close" discards. Every
 other result is handed to the host at once — the document keeps an undo step for it, so a
-report screen in front of that step would be a second button and nothing more. The form
+report screen in front of that step would be a second button and nothing more. Every `changed`
+note the sources write is classified, in `REVIEW_CHANGES` or in the plain list of `review.test.ts`,
+and the test fails for a note that is in neither. The form
 shows "Processing…" meanwhile; if the host's promise ends and the form is still mounted
 (another operation held the document, the write failed), the report and its button appear,
 so the result is never lost. A result that has to be read is headed "Review the result" (`dialog.review`); the form has no step indicator. A delivered result's notice carries *Ctrl+Z* as its undo hint and a *Details* action

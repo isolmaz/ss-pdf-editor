@@ -24,9 +24,15 @@ import type { OpRunResult } from './types';
 /**
  * The `changed` notes that mean the output is not what was asked for, or is not fully verified:
  * a replacement text that did not fit and was shrunk, moved or reflowed, a justified line the
- * check cannot measure, a conversion that is approximate, form fields that now share a value.
+ * check cannot measure, a conversion that is approximate, form fields that now share a value,
+ * pages scaled or regions turned into pictures to fit a Word file, a text layer that was not
+ * trusted, a page size changed by a baked-in rotation, a protection, a form definition or an
+ * attachment dropped on the way, spreadsheet cells rewritten so they cannot run as formulas.
+ *
+ * `review.test.ts` reads every `changed` note the sources can write and requires each to be here
+ * or on its list of plain changes, so a new note forces that decision.
  */
-const REVIEW_CHANGES: ReadonlySet<MessageKey> = new Set<MessageKey>([
+export const REVIEW_CHANGES: ReadonlySet<MessageKey> = new Set<MessageKey>([
   'op.note.findReplace.shrunk',
   'op.note.findReplace.moved',
   'op.note.findReplace.reflowed',
@@ -42,6 +48,14 @@ const REVIEW_CHANGES: ReadonlySet<MessageKey> = new Set<MessageKey>([
   'boxes.note.clamped',
   'boxes.note.minCrop',
   'form.note.flattenHidden',
+  'op.note.exportOffice.pageScaled',
+  'op.note.exportOffice.layoutRasters',
+  'op.note.exportOffice.ocrLayerRejected',
+  'op.note.exportOffice.csvFormulas',
+  'op.note.compress.rotationBaked',
+  'op.note.pdfa.encryptionRemoved',
+  'op.note.sanitize.xfaDropped',
+  'op.note.attach.replaced',
 ]);
 
 export function resultNeedsReview(result: OpRunResult): boolean {
