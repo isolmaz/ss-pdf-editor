@@ -19,7 +19,7 @@ export const xfaPart = {
   'xfa.cmd.remove': 'XFA’yı kaldır (form alanları kalsın)…',
   'xfa.cmd.flatten': 'XFA formunu normal PDF’ye dönüştür…',
   'xfa.cmd.data': 'XFA verisini dışa/içe aktar…',
-  'home.tool.xfa': 'Adobe’un eski XFA formunu doldurun, düz sayfa haline getirin ya da XFA kısmını silin.',
+  'home.tool.xfa': 'Adobe’nin eski XFA formunu doldurun, düz sayfa hâline getirin ya da XFA kısmını silin.',
 
   // fill dialog
   'xfa.fill.title': 'XFA formunu doldur',

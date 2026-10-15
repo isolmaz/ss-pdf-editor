@@ -256,3 +256,13 @@ describe('a reason that names a tool', () => {
     expect(tr['cmd.reason.selectTool']).toContain(tr['toolbar.select'].replace(/ı$/, ''));
   });
 });
+
+describe('Turkish spelling the catalogue has settled on', () => {
+  it('inflects Adobe after its vowel and writes hâl with a circumflex', () => {
+    const texts = Object.values(tr);
+    expect(texts.filter((text) => /Adobe’(un|ın|in|ün)\b/.test(text))).toEqual([]);
+    expect(texts.filter((text) => /\bhaline\b/.test(text))).toEqual([]);
+    expect(tr['home.tool.xfa']).toContain('Adobe’nin');
+    expect(tr['home.tool.xfa']).toContain('hâline');
+  });
+});
