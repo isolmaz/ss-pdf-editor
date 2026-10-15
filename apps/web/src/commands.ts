@@ -204,6 +204,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'view.left-dock',
   'view.right-dock',
   // Page: rotate, duplicate, delete and extract cover organising a document.
+  'page.organize',
   'page.rotate-left',
   'page.rotate-right',
   'page.duplicate',
@@ -626,6 +627,14 @@ export function buildCommands(host: CommandHost): readonly Command[] {
   // No selection is not a reason to disable a page command: the host falls back to the page
   // on screen (`pageSelection`), and the dialogs open on "current page" the same way.
   const page: Command[] = [
+    {
+      id: 'page.organize',
+      labelKey: 'tools.group.pages',
+      group: 'page',
+      disabled: noDocument,
+      keywords: ['organize', 'reorder', 'thumbnails', 'duzenle', 'sirala', 'kucuk resim'],
+      run: () => host.openLeftTab('pages'),
+    },
     {
       id: 'page.rotate-left',
       labelKey: 'pages.rotate.left',

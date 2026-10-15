@@ -39,7 +39,8 @@ describe('ToolsRailPanel: the rail', () => {
     show();
     const state = (title: string) =>
       screen.getByRole('button', { name: title }).getAttribute('aria-expanded');
-    expect(screen.getByRole('heading', { name: 'All tools' })).toBeTruthy();
+    // The dock tab above is already called Tools; a second heading would only repeat it.
+    expect(screen.queryByRole('heading', { name: 'All tools' })).toBeNull();
     expect(state('Organize pages')).toBe('true');
     expect(state('Convert and export')).toBe('true');
     expect(state('Fill and sign')).toBe('true');
@@ -82,7 +83,7 @@ describe('ToolsRailPanel: the rail', () => {
       'Add document',
     ]);
     expect(titles('Convert and export')).toEqual([
-      'Export optionsNEW',
+      'Export options',
       'Reduce file size',
       'Export pages as images',
       'Export text',
@@ -200,7 +201,7 @@ describe('ToolsRailPanel: the inline runner', () => {
         'Text and graphics in marked areas are permanently deleted from the document.',
       ),
     ).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'All tools' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Organize pages' })).toBeNull();
 
     await user.click(within(runner).getByRole('button', { name: 'Back to all tools' }));
     expect(onBackToTools).toHaveBeenCalledOnce();
@@ -219,9 +220,9 @@ describe('ToolsRailPanel: the inline runner', () => {
 
   it('shows the rail when there is a tool but no document to run it on, or a document but no tool', () => {
     const first = render(<ToolsRailPanel t={t} activeSpec={SPEC} context={null} />);
-    expect(screen.getByRole('heading', { name: 'All tools' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Organize pages' })).toBeTruthy();
     first.unmount();
     render(<ToolsRailPanel t={t} activeSpec={null} context={CONTEXT} />);
-    expect(screen.getByRole('heading', { name: 'All tools' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Organize pages' })).toBeTruthy();
   });
 });

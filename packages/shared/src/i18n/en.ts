@@ -352,7 +352,6 @@ export const en: Record<MessageKey, string> = {
   'tools.watermark': 'Add watermark',
   'tools.watermarkDesc': 'Overlay text watermark across pages',
   'tools.searchCommands': 'Search all commands (Ctrl+K)',
-  'tools.badgeNew': 'NEW',
 
   // Export Dialog
   'export.title': 'Export options',

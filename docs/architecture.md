@@ -2676,7 +2676,8 @@ document that is open in a tab or has a draft in the vault, and prunes nothing w
 inventory cannot be read completely). *All tools*
 (`components/HomeToolGrid.tsx`, a chunk the tab fetches when the pointer or focus reaches it, with a "Loading tools…" status in the panel until it arrives) lays the command registry out by task:
 each tile is a command id, its title is the command's label and pressing it runs the
-command, so the grid cannot drift from the menus or the palette. It lists
+command, so the grid cannot drift from the menus or the palette. *Organize pages*
+(`page.organize`) opens the page panel, and merge and batch are tiles of their own. It lists
 every tool in either interface mode — the simple mode filters menus and the palette, it never
 disables. With no document open, a tool that needs one records its command id
 (`pendingHomeCommand`), asks for the file, and runs once the document's viewer is ready; a

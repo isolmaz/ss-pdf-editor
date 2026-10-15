@@ -142,6 +142,7 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'page.rotate-right': ['pageAction', { kind: 'rotate', direction: 'right' }],
   'page.duplicate': ['pageAction', { kind: 'duplicate' }],
   'page.delete': ['pageAction', { kind: 'delete' }],
+  'page.organize': ['openLeftTab', 'pages'],
   'page.extract': dialog('extract-pages'),
   'page.insert': dialog('insert-pages'),
   'page.replace': dialog('replace-pages'),
@@ -287,6 +288,17 @@ describe('buildCommands', () => {
       },
     );
 
+    it('lays out the page panel, merge and batch as home tiles that run their own command', () => {
+      const { host, calls } = recordingHost();
+      const commands = buildCommands(host);
+      const tiles = HOME_TOOLS.filter((tool) =>
+        ['page.organize', 'file.merge', 'file.batch'].includes(tool.id),
+      );
+      expect(tiles.map((tool) => tool.id)).toEqual(['page.organize', 'file.merge', 'file.batch']);
+      for (const tool of tiles) byId(commands, tool.id).run();
+      expect(calls).toEqual([['openLeftTab', 'pages'], ['openDialog', 'merge-files'], ['openBatch']]);
+    });
+
     it('names the three zoom entries by what each one does', () => {
       const labels = (locale: 'tr' | 'en') => {
         const translate = createTranslator(locale);
@@ -345,7 +357,14 @@ describe('buildCommands', () => {
 
   it('disables document commands without a document, and edits when editing is not allowed', () => {
     const none = buildCommands(recordingHost({ hasDocument: false, canEdit: false }).host);
-    for (const id of ['file.close', 'view.zoom-in', 'view.outline', 'tools.pdfa-check', 'tools.xfa-fill']) {
+    for (const id of [
+      'file.close',
+      'view.zoom-in',
+      'view.outline',
+      'page.organize',
+      'tools.pdfa-check',
+      'tools.xfa-fill',
+    ]) {
       expect(byId(none, id).disabled, id).toBe(true);
     }
     for (const id of ['page.split', 'tools.ocr', 'tools.impose', 'tools.measure-area']) {

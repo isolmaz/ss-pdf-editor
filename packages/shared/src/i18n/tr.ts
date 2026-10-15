@@ -356,7 +356,6 @@ export const tr = {
   'tools.watermark': 'Filigran ekle',
   'tools.watermarkDesc': 'Sayfaların arkasına veya üstüne metin filigranı bas',
   'tools.searchCommands': 'Tüm komutları ara (Ctrl+K)',
-  'tools.badgeNew': 'YENİ',
 
   // Export Dialog
   'export.title': 'Dışa aktarma seçenekleri',

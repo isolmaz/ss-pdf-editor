@@ -179,6 +179,32 @@ test('All tools with a document open: its name is shown and a tool runs on it', 
   await expect(page.getByRole('region', { name: /Document properties/ })).toBeVisible({ timeout: 30_000 });
 });
 
+test('All tools lists the page panel, merge and batch, and each tile starts its tool', async ({ page }) => {
+  await openApp(page, 'grid.pdf', labelledPdf('Grid', 2));
+  await page.getByRole('tab', { name: 'Outline', exact: true }).click();
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByRole('tab', { name: 'All tools' }).click();
+  const tile = (name: string) => page.getByRole('list').getByRole('button', { name, exact: false });
+
+  await tile('Organize pages').click();
+  await expect(page.getByRole('tab', { name: 'Pages', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByRole('tab', { name: 'All tools' }).click();
+  await tile('Merge PDFs').click();
+  const dialog = page.getByRole('dialog', { name: 'Merge PDFs' });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole('tab', { name: 'All tools' }).click();
+  await tile('Batch operations').click();
+  await expect(page.getByRole('dialog', { name: 'Batch operations' })).toBeVisible();
+});
+
 test('the start cards: a blank document, a picked file and the command palette from the home header', async ({
   page,
 }) => {

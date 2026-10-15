@@ -103,6 +103,7 @@ describe('the simple mode keeps what a free reader carries', () => {
     'edit.redo',
     'view.fit-page',
     'view.reading',
+    'page.organize',
     'page.rotate-right',
     'page.delete',
     'page.extract',

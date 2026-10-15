@@ -58,7 +58,6 @@ interface ToolItem {
   readonly description?: string;
   readonly icon: React.ElementType;
   readonly onClick: () => void;
-  readonly badge?: string;
 }
 
 /** The groups the rail offers, in order; the expanded state has an entry for each. */
@@ -215,7 +214,6 @@ export function ToolsRailPanel({
           title: t('tools.exportOptions'),
           description: t('tools.exportOptionsDesc'),
           icon: FileText,
-          badge: t('tools.badgeNew'),
           onClick: () => onExportModal?.(),
         },
         {
@@ -348,13 +346,6 @@ export function ToolsRailPanel({
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-kumo-base p-2 select-none">
-      {/* Header */}
-      <div className="mb-2 flex items-center justify-between border-b border-kumo-line/60 pb-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-kumo-subtle">
-          {t('tools.all')}
-        </h3>
-      </div>
-
       {/* Content */}
       <div className="flex flex-col gap-2">
         {groups.map((group) => {
@@ -391,11 +382,6 @@ export function ToolsRailPanel({
                       >
                         <Icon size={15} className="shrink-0 text-kumo-subtle group-hover:text-pdf-accent" />
                         <span className="flex-1 truncate text-xs font-medium">{item.title}</span>
-                        {item.badge ? (
-                          <span className="rounded bg-pdf-accent/15 px-1 py-0.2 text-[11px] font-bold text-pdf-accent">
-                            {item.badge}
-                          </span>
-                        ) : null}
                       </button>
                     );
                   })}
