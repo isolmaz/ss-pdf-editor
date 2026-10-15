@@ -13,7 +13,47 @@ import {
   wordDocumentXml,
   wordPageScale,
   xml,
+  xmlSafe,
 } from './docx-drawing';
+
+/** The `Char` production of XML 1.0 (§2.2), which a text node may hold: no lone surrogate, no U+FFFE/U+FFFF. */
+const XML_CHARS = /^[\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]*$/u;
+
+describe('xmlSafe', () => {
+  it('replaces a surrogate without its partner with U+FFFD, wherever it stands', () => {
+    expect(xmlSafe('a\uD800b')).toBe('a\uFFFDb');
+    expect(xmlSafe('a\uDC00b')).toBe('a\uFFFDb');
+    expect(xmlSafe('\uD83D')).toBe('\uFFFD');
+    expect(xmlSafe('end\uDE00')).toBe('end\uFFFD');
+    // A pair in the wrong order is two lone surrogates.
+    expect(xmlSafe('\uDE00\uD83D')).toBe('\uFFFD\uFFFD');
+  });
+
+  it('keeps every valid pair, and replaces only the stray unit beside it', () => {
+    expect(xmlSafe('😀')).toBe('😀');
+    expect(xmlSafe('𝐀 \u{10000} \u{10FFFF}')).toBe('𝐀 \u{10000} \u{10FFFF}');
+    expect(xmlSafe('\uD83D😀')).toBe('\uFFFD😀');
+    expect(xmlSafe('😀\uDE00')).toBe('😀\uFFFD');
+    expect(xmlSafe('\uD83D\uD83D\uDE00')).toBe('\uFFFD😀');
+  });
+
+  it('still drops the control characters and U+FFFE/U+FFFF, and leaves tab, newline and letters', () => {
+    expect(xmlSafe('a\u0000b\u0008c\u000Bd\u000Ce\u001Ff\uFFFEg\uFFFFh')).toBe('abcdefgh');
+    expect(xmlSafe('a\tb\nc\rd Şişli ığ')).toBe('a\tb\nc\rd Şişli ığ');
+  });
+
+  it('gives text that is valid XML 1.0 for strings that were not', () => {
+    const mixed = ['a\uD800b', '\uDC00', '😀\uD83D', '𝐀\uDE00𝐀', '\uD800\uD800\uDC00', 'x\u0000\uFFFEy'];
+    for (const value of mixed) {
+      expect(XML_CHARS.test(value)).toBe(false);
+      expect(XML_CHARS.test(xmlSafe(value))).toBe(true);
+    }
+  });
+
+  it('is what `xml` escapes after: the entities, with the astral characters kept', () => {
+    expect(xml('a\uD800<😀>&')).toBe('a\uFFFD&lt;😀&gt;&amp;');
+  });
+});
 
 describe('wordPageScale', () => {
   it('leaves a page that fits, even one exactly 22 inches wide, as it is', () => {

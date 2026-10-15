@@ -223,8 +223,8 @@
         },
         {
           "path": "engines/mupdf/mupdf.js",
-          "bytes": 103250,
-          "sha256": "5d237eadcb9640584e0050f6f958e547887b7a54d80a04043e12be9420931076"
+          "bytes": 103415,
+          "sha256": "542ee4f7d53bf4b6d6868060bd88852ddaf4f12178f052a85408e39db3f7edd5"
         }
       ]
     },

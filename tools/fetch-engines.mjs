@@ -136,6 +136,14 @@ const ENGINES = [
     id: 'mupdf',
     package: 'mupdf',
     target: 'engines/mupdf',
+    // `dist/mupdf.js` is the build `pnpm install` makes with `patches/mupdf@1.28.1.patch`
+    // (root `package.json` > `pnpm.patchedDependencies`): the walker read every character with
+    // `String.fromCharCode`, which keeps 16 bits of a code point, so an emoji or a mathematical
+    // letter came back as another character. The patched package sits in the store as
+    // `mupdf@1.28.1_patch_hash=<hash>`, which `resolvePackage` finds by its prefix, so the file the
+    // browser loads and the file the unit suite imports are the same bytes, and the pin below is
+    // theirs. After a change to the patch, `pnpm install` and `pnpm fetch:engines --update` renew
+    // it. The patch file stays in the repository: MuPDF is AGPL-3.0-or-later and this is our change.
     entries: [
       { from: 'dist/mupdf.js', to: 'mupdf.js' },
       { from: 'dist/mupdf-wasm.wasm', to: 'mupdf-wasm.wasm' },

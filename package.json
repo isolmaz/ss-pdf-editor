@@ -97,5 +97,10 @@
     "typescript": "6.0.3",
     "vitest": "5.0.0"
   },
+  "pnpm": {
+    "patchedDependencies": {
+      "mupdf@1.28.1": "patches/mupdf@1.28.1.patch"
+    }
+  },
   "author": "isolmaz <info@isolmaz.com>"
 }

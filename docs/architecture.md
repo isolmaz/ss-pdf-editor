@@ -943,7 +943,18 @@ writer does, and the steps it reports:
     garbage collection the engine asserted (`remove non-existent hash entry`) and the next
     render failed (`Unexpected mesh type 0`). `borrowed()` takes those wrappers off the
     finalizer. Paths, stroke states and text are kept by the binding and need nothing, and
-    the walker's fonts and images were measured sound;
+    the walker's fonts and images were measured sound.
+  - **mupdf.js 1.28.1 defect: characters above U+FFFF.** The walker read every character as
+    `String.fromCharCode(rune)`, which keeps 16 bits of a code point: U+1F600 came back as
+    U+F600, U+10000 as U+0000 (then dropped by `xmlSafe` as a control character), U+1D800 as a
+    lone surrogate. The text model (`text-source.ts`, so editing and find-and-replace) and the
+    Word export both read their characters that way. The fix is
+    `patches/mupdf@1.28.1.patch` (`String.fromCodePoint`), applied by pnpm
+    (`pnpm.patchedDependencies` in the root `package.json`) and so present in the copy
+    `fetch-engines` serves as well as in the one the unit suite imports (§13.1); the patch file
+    stays in the repository, as the AGPL asks of a changed MuPDF. `xmlSafe` also replaces a
+    surrogate with no partner by U+FFFD, since JSZip in a browser writes one as invalid UTF-8
+    (`ED A0 80`) where Node writes U+FFFD;
 - images → PDF (`ops/images.ts`, steps `images.create` / `images.embed` / `save`): every EXIF
   orientation is one unit-square matrix, so an upright phone photo stays upright and
   `contain`/`cover` use the turned photo's aspect ratio, and the embedded JPEG's own tag is
@@ -3122,6 +3133,13 @@ touches the network. It hashes each file (SHA-256, 1 MiB chunks) into
 `tools/asset-pins.json` and reads each package's own version and licence rather than
 hardcoding them. Modes: default = verify, `--update` = copy and rewrite the pins,
 `--sync` = copy then verify against the committed pins (what the gate runs, rewriting nothing).
+
+One engine is not the registry's bytes: `mupdf.js` carries `patches/mupdf@1.28.1.patch`
+(root `package.json` > `pnpm.patchedDependencies`, hash recorded in `pnpm-lock.yaml`), which pnpm
+applies at install. The patched package sits in the store as `mupdf@1.28.1_patch_hash=<hash>`, and
+`fetch-engines` finds it by its name prefix, so the file the browser loads, the file the unit
+suite imports and the pin are one set of bytes. Changing the patch means `pnpm install`, then
+`pnpm fetch:engines --update`.
 
 Inventory: 308 pinned files across seventeen groups — `mupdf` (3), `pdfjs` (211: worker,
 cmaps, standard fonts, wasm), `tesseract` (33: module, worker, core `.wasm.js` + `.wasm`,
