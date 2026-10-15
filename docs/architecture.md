@@ -2861,7 +2861,10 @@ skipped while the rest are still restored, and a document the user opens while r
 for a draft's stored file handle keeps the front: the document in front is read after the
 last `await` before the restored tab goes in, with nothing awaited in between, so a restored
 tab never takes the place of a document that is in front (`e2e/ui-recovery-race.spec.ts`
-holds the handle store open with `e2e/recent-handles-gate.ts` to prove it). What a restored tab
+holds the handle store open with `e2e/recent-handles-gate.ts` to prove it). A restored tab that
+is the one in front — nothing was open before it, so the newest draft — also takes the start
+screen out of the way (`hideStartScreen`, called by `use-draft-recovery.ts`); with a document of
+the user's in front the start screen is the user's, and recovery leaves it alone. What a restored tab
 can undo depends on the tier that wrote its draft (§4.5): the desktop tier brings the journal back, so
 undo leads back to the original bytes, and the smaller tier brings the document back with no steps and
 says so (`e2e/shell-restore.spec.ts` drives both through a reload). Discarding a tab

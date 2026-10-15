@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { loadRecentDocuments } from '../../recent';
 import { pruneRecentHandles } from '../../recent-handles';
 import { showNotice } from '../core/core-store';
+import { hideStartScreen } from '../open/open-store';
 import { claimWithPatience, type RestoreHost, restoreDraft } from './draft-restore';
 import { draftStorage } from './persistence-store';
 
@@ -63,6 +64,11 @@ export function useDraftRecovery({ store, translator, openAndFingerprint }: Reco
           if (outcome.kind === 'restored') {
             restored += 1;
             if (lacksHistory(draft)) withoutHistory += 1;
+            // A restored tab is in front only when nothing was open before it (`activate: false`),
+            // and then the start screen, which covers the editor until a document is shown, steps
+            // aside. A document the user opened meanwhile is in front instead and the screen is
+            // theirs: they may have gone back to it.
+            if (store.getSnapshot().activeId === outcome.tab.id) hideStartScreen();
           }
         } catch (error) {
           failure =

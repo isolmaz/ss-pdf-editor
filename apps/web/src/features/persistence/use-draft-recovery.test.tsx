@@ -17,6 +17,7 @@ import {
 } from '../annotations/annotations-store';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { adoptHandle, dropHandle, handleFor } from '../core/handles';
+import { initialOpenState, openStore, showStartScreen } from '../open/open-store';
 import { persistDraft } from './draft-persist';
 import { persistedKeysFor, persistenceStore, resetPersistence } from './persistence-store';
 import { type RecoveryHost, useDraftRecovery } from './use-draft-recovery';
@@ -69,6 +70,7 @@ function stored(draft: Draft, bytes: Uint8Array = source): void {
 beforeEach(() => {
   coreStore.set(initialCoreState());
   annotationsStore.set(initialAnnotationsState());
+  openStore.set(initialOpenState());
   resetPersistence();
   for (const mock of Object.values(outside)) mock.mockReset();
   outside.openWithPdfjs.mockImplementation(async () => ({ destroy: vi.fn(async () => undefined) }));
@@ -106,6 +108,32 @@ describe('useDraftRecovery', () => {
     await recover();
     expect(store.getSnapshot().tabs.map((tab) => tab.id)).toEqual([open.id, 'draft']);
     expect(store.getSnapshot().activeId).toBe(open.id);
+  });
+
+  it('shows the restored document directly, with the start screen out of the way', async () => {
+    stored(manifest('draft'));
+    expect(openStore.get().showHomeScreen).toBe(true);
+    await recover();
+    expect(store.getSnapshot().activeId).toBe('draft');
+    expect(openStore.get().showHomeScreen).toBe(false);
+  });
+
+  it('puts the newest of several restored drafts in front', async () => {
+    stored(manifest('older', { updatedAt: 1 }));
+    stored(manifest('newer', { updatedAt: 2 }));
+    await recover();
+    expect(store.getSnapshot().tabs.map((tab) => tab.id)).toEqual(['newer', 'older']);
+    expect(store.getSnapshot().activeId).toBe('newer');
+    expect(openStore.get().showHomeScreen).toBe(false);
+  });
+
+  it('leaves the start screen to a user who has a document open and went back to it', async () => {
+    const open = openTab(store, 'open', 'open.pdf');
+    showStartScreen();
+    stored(manifest('draft'));
+    await recover();
+    expect(store.getSnapshot().activeId).toBe(open.id);
+    expect(openStore.get().showHomeScreen).toBe(true);
   });
 
   it('reopens the file handle that was kept for the document', async () => {
@@ -169,6 +197,7 @@ describe('useDraftRecovery', () => {
     stored(manifest('clean', { dirty: false }));
     await recover();
     expect(store.getSnapshot().tabs).toEqual([]);
+    expect(openStore.get().showHomeScreen).toBe(true);
     expect(notice()).toBeNull();
   });
 
