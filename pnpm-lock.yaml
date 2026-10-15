@@ -129,13 +129,13 @@ importers:
         specifier: 1.0.0
         version: 1.0.0
       '@testing-library/dom':
-        specifier: ^10.4.2
+        specifier: 10.4.2
         version: 10.4.2
       '@testing-library/react':
-        specifier: ^16.3.3
+        specifier: 16.3.3
         version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@testing-library/user-event':
-        specifier: ^14.6.7
+        specifier: 14.6.7
         version: 14.6.7(@testing-library/dom@10.4.2)
       '@types/node':
         specifier: 26.5.1
@@ -150,7 +150,7 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(vitest@5.0.0)
       asn1js:
-        specifier: '3'
+        specifier: 3.0.10
         version: 3.0.10
       ast-v8-to-istanbul:
         specifier: 1.0.7
@@ -159,16 +159,16 @@ importers:
         specifier: ^4.13.0
         version: 4.13.0
       happy-dom:
-        specifier: ^20.14.6
+        specifier: 20.14.6
         version: 20.14.6
       monocart-coverage-reports:
         specifier: 2.13.2
         version: 2.13.2
       pkijs:
-        specifier: '3'
+        specifier: 3.4.0
         version: 3.4.0
       playwright:
-        specifier: ^1.63.0
+        specifier: 1.63.0
         version: 1.63.0
       tesseract.js:
         specifier: 6.0.1
@@ -260,7 +260,7 @@ importers:
         specifier: 0.8.15
         version: 0.8.15
       asn1js:
-        specifier: '3'
+        specifier: 3.0.10
         version: 3.0.10
       jszip:
         specifier: 3.10.1
@@ -281,7 +281,7 @@ importers:
         specifier: 6.3.289
         version: 6.3.289
       pkijs:
-        specifier: '3'
+        specifier: 3.4.0
         version: 3.4.0
       tesseract.js:
         specifier: 6.0.1
@@ -333,7 +333,7 @@ importers:
         specifier: 5.3.0
         version: 5.3.0
       '@fontsource/dm-sans':
-        specifier: ^5.3.0
+        specifier: 5.3.0
         version: 5.3.0
       '@fontsource/great-vibes':
         specifier: 5.3.0

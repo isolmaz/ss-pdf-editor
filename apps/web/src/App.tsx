@@ -156,10 +156,7 @@ export function App({ store }: AppProps) {
     if (!refuseUnappliedRedactions()) openSnapshot();
   }, [refuseUnappliedRedactions]);
 
-  /**
-   * The persistence callbacks the audit pins (`tools/audit/regressions.cjs`): the work is in
-   * `features/persistence`, and these bind it to the shell's session and device tier.
-   */
+  /** The persistence callbacks: the work is in `features/persistence`, and these bind it to the shell's session and device tier. */
   const forgetTabDraft = useCallback((tabId: string) => forgetDraft(store, tabId), [store]);
   const persistTabDraft = useCallback((tabId: string) => persistDraft(store, tabId, tier), [store, tier]);
   const opfsSave = useCallback(() => saveDraft(store, persistTabDraft, t), [store, persistTabDraft, t]);

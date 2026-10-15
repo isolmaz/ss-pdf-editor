@@ -12,7 +12,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import JSZip from 'jszip';
 import type { Font, PDFDocument } from 'mupdf';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadMupdf, type Mupdf, openPdf } from '../engines/mupdf';
 import type { OcrWord } from '../engines/tesseract';
 import { embedFonts, obfuscateFont, provideStandardMetrics } from './docx-fonts';
@@ -28,6 +28,7 @@ import {
 } from './docx-ocr-font';
 import { exportOffice } from './export-office';
 import type { TextBox, TextRun } from './layout-scene';
+import { OPEN_FAMILIES } from './ocr-font-catalog';
 import { renderScan, type Scan, SENTENCES } from './ocr-font-match.fixtures';
 import type { MeasuredWord } from './ocr-scene';
 import type { OperationContext } from './types';
@@ -72,6 +73,18 @@ function nameRecord(bytes: Uint8Array, id: number): string {
   return '';
 }
 
+/** `public/fonts` is fetched, not committed: say so once, before a test reads a file that is not there. */
+beforeAll(() => {
+  const missing = OPEN_FAMILIES.flatMap((family) => Object.values(family.files)).filter(
+    (path) => path !== undefined && !existsSync(new URL(`../../../../public${path}`, import.meta.url)),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `${missing.length} font file(s) of public/fonts are missing, the first is public${missing[0]}: run \`pnpm fetch:engines --sync\``,
+    );
+  }
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -98,9 +111,12 @@ describe('the open family of a scan', () => {
     const { mupdf, scan, measured } = await scanIn('Inter');
     const open = (await chooseOpenFont(mupdf, scan.image, measured, openFontsFor(new Set()))) as OpenFont;
     expect(open.name).toBe('Inter');
-    expect(open.bold).toBeDefined();
-    expect(open.italic).toBeDefined();
-    expect(open.boldItalic).toBeDefined();
+    expect(open.family).toBe('Inter');
+    // each face is the program of its own file: not another weight of the family, not a stand-in
+    expect(open.regular.bytes).toEqual(publicFile('/fonts/inter/Inter-Regular.ttf'));
+    expect(open.bold?.bytes).toEqual(publicFile('/fonts/inter/Inter-Bold.ttf'));
+    expect(open.italic?.bytes).toEqual(publicFile('/fonts/inter/Inter-Italic.ttf'));
+    expect(open.boldItalic?.bytes).toEqual(publicFile('/fonts/inter/Inter-BoldItalic.ttf'));
   });
 
   it('settles the reading of a word in the face the page is set in: the stand-in, or the open family', async () => {

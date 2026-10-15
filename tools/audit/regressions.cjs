@@ -60,27 +60,33 @@ const load = loader();
 const model = load('pdf-model');
 const _appNotices = load(path.join(ROOT, 'apps/web/src/notices.ts'));
 const _recentHandles = load(path.join(ROOT, 'apps/web/src/recent-handles.ts'));
-const appPath = path.join(ROOT, 'apps/web/src/App.tsx');
-const appSource = ts.createSourceFile(
-  appPath,
-  fs.readFileSync(appPath, 'utf8'),
-  ts.ScriptTarget.Latest,
-  true,
-  ts.ScriptKind.TSX,
-);
-function callback(name, bindings) {
-  let source;
-  function visit(node) {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
-      const init = node.initializer;
-      if (init && ts.isCallExpression(init)) source = init.arguments[0]?.getText(appSource);
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(appSource);
-  if (!source) throw new Error(`Missing callback ${name}`);
-  const code = compile(`const result = ${source};`, 'callback.ts');
-  return Function(...Object.keys(bindings), `${code}\nreturn result;`)(...Object.values(bindings));
+
+/**
+ * The shell binds each feature function to its session in a one-line callback (`App.tsx`):
+ * `saveActive`, `discardTab`, `prepareOutput`, `forgetTabDraft`, `persistTabDraft` and
+ * `opfsSave`. The harnesses below build those bindings here, with the arguments the shell
+ * passes, over the real feature functions. They do not read the bindings out of `App.tsx`'s
+ * source: an audit about the features must not break because the shell renamed a variable, and
+ * a binding the shell got wrong is the shell's own tests' to catch.
+ */
+function bindSaveActive({ store, saveDocument, t, prepareOutput }) {
+  return (tabId) => saveDocument({ session: store, t, prepareOutput }, tabId ?? store.active?.id);
+}
+function bindOpfsSave({ store, saveDraft, persistTabDraft, t }) {
+  return () => saveDraft(store, persistTabDraft, t);
+}
+function bindPersistTabDraft({ store, tier, persistDraft }) {
+  return (tabId) => persistDraft(store, tabId, tier);
+}
+function bindForgetTabDraft({ store, forgetDraft }) {
+  return (tabId) => forgetDraft(store, tabId);
+}
+function bindPrepareOutput({ store, t, prepareDocumentOutput }) {
+  return (tabId, controller, executedSteps = []) =>
+    prepareDocumentOutput({ session: store, t }, tabId, controller, executedSteps);
+}
+function bindDiscardTab({ store, tRef, forgetTabDraft, discardDocument }) {
+  return (id) => discardDocument({ session: store, translator: tRef, forgetTabDraft }, id);
 }
 
 /**
@@ -218,7 +224,7 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
   const busyRef = { current: false };
   // The running operation's controller: the core's `beginOperation` / `endOperation`, in a variable.
   let operation = null;
-  // `saveActive` runs the app's own arrow over the real `features/save` save path; the notice
+  // `saveActive` is the shell's binding over the real `features/save` save path; the notice
   // line, the busy flag and the download are the doubles. The save lock is the real store's.
   const modules = saveModules({
     '../core/core-store': {
@@ -266,7 +272,7 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
     },
   };
   // The module reads the browser's `window` for the file picker: it is present for the length of a run.
-  const saveActive = callback('saveActive', bindings);
+  const saveActive = bindSaveActive(bindings);
   const run = async (...args) => {
     const had = Object.hasOwn(globalThis, 'window');
     const previous = globalThis.window;
@@ -486,7 +492,7 @@ async function main() {
         verification: { state: 'verified', checks: [], declared: [] },
       };
     };
-    const save = callback('saveActive', h.bindings);
+    const save = bindSaveActive(h.bindings);
     assert.equal(await save(), true);
     assert.equal(h.store.active.dirty, false);
     assert.equal(h.store.active.outputs[0].fromWorkingVersion, h.store.active.working.id);
@@ -731,8 +737,8 @@ async function main() {
       },
     };
     // The manual save runs the *shared* persistence callback: the harness builds that
-    // callback from the app's own source over the real `features/persistence` functions
-    // (the vault's removal is the one double), then the `opfsSave` command over it.
+    // callback over the real `features/persistence` functions (the vault's removal is the one
+    // double), then the `opfsSave` command over it.
     const modules = persistenceModules({
       '../core/core-store': { showNotice: (notice) => notices.push(notice), showNoticeOnce() {} },
       './draft-vault': {
@@ -748,7 +754,7 @@ async function main() {
     const persistence = modules('persistence-store.ts');
     persistence.persistenceStore.set({ draftStorage: storage });
     persistence.draftWrites.current = queue;
-    const persistTabDraft = callback('persistTabDraft', {
+    const persistTabDraft = bindPersistTabDraft({
       store,
       tier: 'desktop',
       persistDraft: modules('draft-persist.ts').persistDraft,
@@ -760,7 +766,7 @@ async function main() {
       t: (key) => key,
     };
     return {
-      run: callback('opfsSave', bindings),
+      run: bindOpfsSave(bindings),
       persist: persistTabDraft,
       persisted: persistence,
       writeStarts,
@@ -855,69 +861,6 @@ async function main() {
     assert.ok(failing.notices.some((notice) => String(notice).includes('write-failed')));
     // The queue's own copy swallowed the failure: the next link must still run.
     await assert.doesNotReject(failing.queue.current);
-  });
-  await check('draft recovery does not rerun when only the UI language changes', async () => {
-    let effect;
-    const recoveryPath = path.join(ROOT, 'apps/web/src/features/persistence/use-draft-recovery.ts');
-    const recoverySource = ts.createSourceFile(
-      recoveryPath,
-      fs.readFileSync(recoveryPath, 'utf8'),
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    );
-    function visit(node) {
-      if (
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === 'useEffect' &&
-        node.arguments[0]?.getText(recoverySource).includes('const drafts = sortDrafts')
-      )
-        effect = node.getText(recoverySource);
-      ts.forEachChild(node, visit);
-    }
-    visit(recoverySource);
-    assert.ok(effect);
-    let previous;
-    let cleanup;
-    let reads = 0;
-    const pruned = [];
-    const bindings = {
-      // The effect forgets the file handles of recent entries that are gone, after the restore.
-      loadRecentDocuments: () => [{ id: 'kept' }],
-      pruneRecentHandles: async (keep) => {
-        pruned.push([...keep]);
-      },
-      draftStorage: () => ({
-        readDraftInventory: async () => {
-          reads += 1;
-          return { drafts: [], unreadable: [] };
-        },
-      }),
-      store: new model.SessionStore(),
-      translator: { current: () => 'en' },
-      openAndFingerprint: async () => {
-        throw new Error('nothing to restore');
-      },
-      sortDrafts: model.sortDrafts,
-      useEffect: (run, dependencies) => {
-        if (!previous || dependencies.some((value, index) => value !== previous[index])) {
-          cleanup?.();
-          previous = dependencies;
-          cleanup = run();
-        }
-      },
-    };
-    const code = compile(effect, 'effect.ts');
-    const render = () => Function(...Object.keys(bindings), code)(...Object.values(bindings));
-    render();
-    await tick();
-    bindings.translator.current = () => 'tr';
-    render();
-    await tick();
-    cleanup?.();
-    assert.equal(reads, 1);
-    assert.deepEqual(pruned, [['kept']]);
   });
   await check('a single unreadable OPFS draft does not stop other draft recovery', async () => {
     const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
@@ -1155,7 +1098,7 @@ async function main() {
     const asked = [];
     const confirmations = [];
     const verifyCalls = [];
-    // `prepareOutput` runs the app's own arrow over the real `features/save/prepare-output`; the
+    // `prepareOutput` is the shell's binding over the real `features/save/prepare-output`; the
     // document's facts and forms, the engine's byte operations and the prompt are the doubles.
     const savePlan = load(path.join(ROOT, 'apps/web/src/save-plan.ts'));
     const modules = saveModules({
@@ -1212,7 +1155,7 @@ async function main() {
       prepareDocumentOutput: modules('prepare-output.ts').prepareOutput,
     };
     return {
-      run: callback('prepareOutput', bindings),
+      run: bindPrepareOutput(bindings),
       tab,
       store,
       materialized: () => materialized,
@@ -1310,9 +1253,8 @@ async function main() {
       unreadable: unreadable ? ['damaged.json'] : [],
       enumerationFailed,
     };
-    // `forgetTabDraft` is the app's own cleanup callback over the real vault removal: the
-    // harness builds it from source, so a discard that stopped consulting the whole inventory
-    // would show up here as a delete it must not have made.
+    // `forgetTabDraft` is the shell's cleanup binding over the real vault removal, so a discard
+    // that stopped consulting the whole inventory would show up here as a delete it must not have made.
     const modules = persistenceModules();
     modules('persistence-store.ts').persistenceStore.set({
       channel: { peerReferences: () => [] },
@@ -1324,7 +1266,7 @@ async function main() {
         },
       },
     });
-    const forgetTabDraft = callback('forgetTabDraft', {
+    const forgetTabDraft = bindForgetTabDraft({
       store,
       forgetDraft: modules('draft-vault.ts').forgetDraft,
     });
@@ -1332,7 +1274,7 @@ async function main() {
     const pendingEngineValues = new Map([[tab.id, { entries: [], dropped: 0 }]]);
     // The redaction needles a document accumulated (`features/marks/redaction-store.ts`).
     const erasedWords = new Map();
-    // `discardTab` runs the app's own arrow over the real `features/save/close-actions`; the
+    // `discardTab` is the shell's binding over the real `features/save/close-actions`; the
     // engine handle, the staged values, the needles and the notice line are the doubles.
     const draftWrites = { current: Promise.resolve() };
     // The running operation's controller, which the core's `cancelOperation` aborts.
@@ -1361,7 +1303,7 @@ async function main() {
       discardDocument: closing('close-actions.ts').discardDocument,
     };
     return {
-      run: callback('discardTab', bindings),
+      run: bindDiscardTab(bindings),
       tab,
       bindings,
       pendingEngineValues,

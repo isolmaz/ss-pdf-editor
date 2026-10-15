@@ -16,8 +16,6 @@ export default defineConfig({
     testTimeout: 120_000,
     // One worker: the numbers are about the code, not about how many cores the machine
     // has, and a parallel worker competing for the CPU makes them unreproducible.
-    // One worker: the numbers are about the code, not about how many cores the machine
-    // has, and a parallel worker competing for the CPU makes them unreproducible.
     pool: 'forks',
     maxWorkers: 1,
     fileParallelism: false,

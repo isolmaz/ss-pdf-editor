@@ -23,6 +23,14 @@ const distEntry = fileURLToPath(new URL('./dist/editor/index.html', import.meta.
 // without one testing the other's build (a running server on the port is reused locally).
 const PORT = Number(process.env.E2E_PORT ?? 4178);
 
+// Both projects run the same browser. No extra launch flags. Cross-origin isolation comes from the
+// response headers (`Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy:
+// require-corp` on `/editor/*` in `public/_headers`), which the preview server sends — a flag such
+// as `--disable-web-security` would test a different, more permissive browser than the one users
+// run. The full Chromium build rather than the separate headless shell: it is the same engine the
+// PWA targets, and `playwright install chromium` fetches just this one.
+const chromiumUse = { ...devices['Desktop Chrome'], channel: 'chromium' };
+
 export default defineConfig({
   testDir: './e2e',
   // OCR recognises rendered pages with a WASM engine; the spec narrows its own scope so
@@ -54,17 +62,7 @@ export default defineConfig({
       // in tens of seconds beside four workers rendering and recognising pages: those tests
       // run on their own, after this project.
       grepInvert: /@service-worker/,
-      use: {
-        // No extra launch flags. Cross-origin isolation comes from the response headers
-        // (`Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy:
-        // require-corp` on `/editor/*` in `public/_headers`), which the preview server
-        // sends — a flag such as `--disable-web-security` would test a different, more
-        // permissive browser than the one users run.
-        ...devices['Desktop Chrome'],
-        // The full Chromium build rather than the separate headless shell: it is the same
-        // engine the PWA targets, and `playwright install chromium` fetches just this one.
-        channel: 'chromium',
-      },
+      use: chromiumUse,
     },
     {
       name: 'service-worker',
@@ -72,17 +70,7 @@ export default defineConfig({
       // Runs once the rest has passed. A targeted run of these tests alone takes `--no-deps`,
       // or the whole chromium project runs first.
       dependencies: ['chromium'],
-      use: {
-        // No extra launch flags. Cross-origin isolation comes from the response headers
-        // (`Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy:
-        // require-corp` on `/editor/*` in `public/_headers`), which the preview server
-        // sends — a flag such as `--disable-web-security` would test a different, more
-        // permissive browser than the one users run.
-        ...devices['Desktop Chrome'],
-        // The full Chromium build rather than the separate headless shell: it is the same
-        // engine the PWA targets, and `playwright install chromium` fetches just this one.
-        channel: 'chromium',
-      },
+      use: chromiumUse,
     },
   ],
   webServer: existsSync(distEntry)

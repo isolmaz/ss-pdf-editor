@@ -885,13 +885,16 @@ docs/               architecture.md and ocr-evaluation.md; media/ holds the READ
 GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every push to
 `main` and on manual dispatch. Its jobs:
 
-- **`verify`** runs the steps listed below, then `wrangler deploy --dry-run`.
-- **`e2e`** (after `verify`) runs the whole Playwright suite in four shards. Each shard builds
-  `dist/` itself, installs Playwright Chromium (cached) and runs
+- **`verify`** runs the steps listed below, then `wrangler deploy --dry-run`, then uploads the
+  assembled `dist/` as the `dist` artifact. It is the only job that builds the production site;
+  the browser jobs and `deploy` download that artifact, so the bytes that were tested are the
+  bytes that are deployed.
+- **`e2e`** (after `verify`) runs the whole Playwright suite in four shards. Each shard downloads
+  the `dist/` that `verify` built, installs Playwright Chromium (cached) and runs
   `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`. The HTML report and
   the traces of a failure are uploaded for 7 days.
 - **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker --no-deps`.
-- **`behavior`** (after `verify`) runs `pnpm ci:behavior`: the browser behaviour checks and the OpenSSL signing round trip.
+- **`behavior`** (after `verify`) runs `pnpm ci:behavior` against the downloaded `dist/`: the browser behaviour checks and the OpenSSL signing round trip.
 - **`coverage-unit`** (after `verify`) runs `pnpm coverage --unit-only`, and **`coverage-e2e`**
   (after `verify`, four shards) runs `pnpm coverage --e2e-shard=N/4`: each builds the unminified
   editor, runs its quarter of the Playwright suite (the last shard also the service-worker tests)
@@ -908,9 +911,10 @@ its `fidelity` job) was removed because LibreOffice is no longer used (its headl
 `.github/workflows/nightly.yml` runs daily and on manual dispatch: the same three coverage jobs,
 whose `coverage` fails when any total is under 100 % and uploads the report, and the
 Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`.
-`.github/workflows/revert-proof.yml` runs on manual dispatch and on a pull request labelled
-`revert-proof`: for every fix on the list that `tools/review/revert-proof.mjs` reads, the
-fix's own test must fail on the fix commit's parent and pass on the fix commit.
+`.github/workflows/revert-proof.yml` runs on manual dispatch and when the `revert-proof` label is
+added to a pull request (no other label starts it or cancels a run): for every fix on the list that
+`tools/review/revert-proof.mjs` reads, the fix's own test must fail on the fix commit's parent and
+pass on the fix commit.
 
 Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
 `e2e-service-worker`, `behavior` and `coverage` must pass, the branch must be up to date with `main`, review
@@ -919,7 +923,8 @@ are merged with a merge commit. [`CONTRIBUTING.md`](CONTRIBUTING.md#how-a-change
 how changes land.
 
 - **`pnpm ci:verify`** runs the checks of the `verify` job on your machine, in order (the job
-  also ends with `wrangler deploy --dry-run`, which is `pnpm worker:deploy:dry`):
+  also ends with `wrangler deploy --dry-run`, which is `pnpm worker:deploy:dry`, and the upload of
+  `dist/`):
   1. `install --frozen-lockfile`
   2. `typecheck`
   3. `check`
@@ -978,18 +983,23 @@ Deployment is a Cloudflare Worker that serves `dist/` as static assets
 ([`wrangler.jsonc`](wrangler.jsonc)). There are no Functions, no SSR and no database.
 
 A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` runs only
-after `verify`, `e2e`, `e2e-service-worker`, `behavior` and `coverage` have passed. It runs `wrangler
-deploy` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
-`tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
-runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.
-Only one deploy runs at a time and a running one is never cancelled; a commit that is not
-`main`'s head when its deploy starts deploys nothing.
+after `verify`, `e2e`, `e2e-service-worker`, `behavior` and `coverage` have passed. It builds
+nothing: it downloads the `dist` artifact of `verify`, the files those jobs tested, and runs
+`wrangler deploy` (`pnpm dlx wrangler@4.135.0`, a pinned version, not a dependency of the repository) with the
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then `tools/deploy/smoke.mjs`
+against `https://pdf.isolmaz.com`. If the smoke check fails or runs past its time limit, the job
+runs `wrangler rollback` to the previous version and fails. Only one deploy runs at a time and a
+running one is never cancelled; a commit that is not `main`'s head when its deploy starts deploys
+nothing, and a head that cannot be read fails the job rather than skipping the deploy.
+
+GitHub Actions is the only deploy path: Workers Builds' automatic deploy for this Worker, in the
+Cloudflare dashboard, must be switched off.
 
 To build and deploy by hand:
 
 ```bash
 pnpm build && pnpm assemble:dist
-pnpm worker:deploy          # npx --yes wrangler@4.135.0 deploy
+pnpm worker:deploy          # pnpm dlx wrangler@4.135.0 deploy
 pnpm worker:deploy:dry      # same, with --dry-run
 ```
 

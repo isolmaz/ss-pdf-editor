@@ -4,23 +4,27 @@ name: Revert proof
 # (the manifest is empty otherwise, and the run then passes at once). For every listed fix, the
 # fix's own test must fail on the fix commit's parent (on an assertion) and pass on the fix
 # commit. Slow: each entry checks out two commits and the browser ones build `dist/` twice. It
-# runs on demand, and on a pull request labelled `revert-proof`.
+# runs on demand, and when the `revert-proof` label is added to a pull request (to run it again
+# after a push, remove and add the label, or dispatch it).
 on:
   workflow_dispatch:
   pull_request:
-    types: [labeled, synchronize]
+    types: [labeled]
 
 permissions:
   contents: read
 
+# GitHub starts a run for every label added to the pull request, and a run that is skipped still
+# takes its concurrency group and would cancel the proof in progress. A label other than
+# `revert-proof` therefore gets a group of its own, which nothing else shares.
 concurrency:
-  group: revert-proof-${{ github.ref }}
+  group: revert-proof-${{ github.ref }}-${{ github.event.action == 'labeled' && github.event.label.name != 'revert-proof' && github.run_id || 'proof' }}
   cancel-in-progress: true
 
 jobs:
   revert-proof:
     name: revert-proof (${{ matrix.shard }}/6)
-    if: contains(github.event.pull_request.labels.*.name, 'revert-proof') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'revert-proof'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     strategy:

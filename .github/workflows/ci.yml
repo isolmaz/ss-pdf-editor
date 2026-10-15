@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# The one place the wrangler version is written for this workflow. `wrangler` is not a dependency of
+# the repository (it would pull in a library under a licence the project does not accept), so it is
+# run with `pnpm dlx`; the `worker:deploy*` scripts of package.json name the same version.
+env:
+  WRANGLER_VERSION: 4.135.0
+
 # A new push to a pull request cancels the superseded run. Pushes to `main` and manual runs
 # get a group of their own: each one must finish, because a skipped run is a commit nobody checked.
 concurrency:
@@ -17,7 +23,9 @@ concurrency:
 
 jobs:
   # Everything that needs no browser: the steps of `pnpm ci:verify` (see package.json), split so a
-  # failure is easy to locate, plus a dry run of the deployment.
+  # failure is easy to locate, plus a dry run of the deployment. It is also the only job that builds
+  # the production site: it uploads the assembled `dist/` as the `dist` artifact, the browser jobs
+  # serve exactly those files and `deploy` publishes exactly those files.
   verify:
     name: verify
     runs-on: ubuntu-24.04
@@ -49,11 +57,24 @@ jobs:
       - run: pnpm check:licenses
       - run: pnpm assemble:dist
       # Validates wrangler.jsonc and bundles dist/ exactly as the deploy job will, without credentials.
-      - run: npx --yes wrangler@4.135.0 deploy --dry-run
+      - run: pnpm dlx "wrangler@$WRANGLER_VERSION" deploy --dry-run
 
-  # The Playwright suite in four shards. Each shard builds its own dist/ (`playwright.config.ts`
-  # starts `pnpm preview` only when dist/editor/index.html exists) and runs a quarter of the tests.
-  # The service-worker project is left to its own job below.
+      # The one production build of the run: no job below builds it again, so the bytes the browser
+      # jobs test are the bytes `deploy` uploads. `download-artifact` fails a download whose digest
+      # differs from the one recorded here. (`coverage-e2e` and `coverage` build the unminified
+      # editor themselves: they need its source maps, and that build never leaves its job.)
+      - name: Upload the assembled dist/
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # The Playwright suite in four shards. Each shard downloads the `dist/` that `verify` built
+  # (`playwright.config.ts` starts `pnpm preview` only when dist/editor/index.html exists) and runs
+  # a quarter of the tests. The service-worker project is left to its own job below.
   e2e:
     name: e2e (${{ matrix.shard }}/4)
     needs: verify
@@ -93,9 +114,15 @@ jobs:
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm exec playwright install-deps chromium
 
+      # Fonts and engines are not committed; the specs' fixtures read them from `public/`.
       - run: pnpm fetch:engines --sync
-      - run: pnpm build
-      - run: pnpm assemble:dist
+
+      # The site as `verify` built and checked it: `playwright.config.ts` serves it from `dist/`.
+      - name: Download the assembled dist/
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
 
       - run: pnpm exec playwright test --project=chromium --shard=${{ matrix.shard }}/4
 
@@ -145,9 +172,15 @@ jobs:
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm exec playwright install-deps chromium
 
+      # Fonts and engines are not committed; the specs' fixtures read them from `public/`.
       - run: pnpm fetch:engines --sync
-      - run: pnpm build
-      - run: pnpm assemble:dist
+
+      # The site as `verify` built and checked it: `playwright.config.ts` serves it from `dist/`.
+      - name: Download the assembled dist/
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
 
       # --no-deps: the chromium project it depends on has just run, in the shards above.
       - run: pnpm exec playwright test --project=service-worker --no-deps
@@ -197,9 +230,16 @@ jobs:
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm exec playwright install-deps chromium
 
+      # Fonts and engines are not committed; the specs' fixtures read them from `public/`.
       - run: pnpm fetch:engines --sync
-      - run: pnpm build
-      - run: pnpm assemble:dist
+
+      # The site as `verify` built and checked it: `playwright.config.ts` serves it from `dist/`.
+      - name: Download the assembled dist/
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
       - run: openssl version
       - run: pnpm ci:behavior
 
@@ -347,10 +387,14 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # Only a push to `main` deploys, and only once every check above passed. Deploys run one at a time
-  # and are never cancelled half way; a run whose commit is no longer main's head deploys nothing, so
-  # an older push whose checks finished late cannot replace a newer build. The job needs nothing beyond the read-only token of the
-  # workflow: the Cloudflare credentials are repository secrets, passed only to the wrangler steps.
+  # Only a push to `main` deploys, and only once every check above passed. What it deploys is the
+  # `dist` artifact `verify` uploaded, the very files the browser jobs tested; it builds nothing.
+  # Deploys run one at a time and are never cancelled half way; a run whose commit is no longer
+  # main's head deploys nothing, so an older push whose checks finished late cannot replace a newer
+  # build. The job needs nothing beyond the read-only token of the workflow: the Cloudflare
+  # credentials are repository secrets, passed only to the wrangler steps. This is the only way the
+  # site is deployed: the Workers Builds auto-deploy of the Cloudflare dashboard must stay off
+  # (CONTRIBUTING.md, "Continuous integration").
   deploy:
     name: deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -377,27 +421,38 @@ jobs:
 
       # The newest push to main is the one that deploys. A newer push queues its own deploy behind
       # this one (same concurrency group), so checking here is enough.
+      #
+      # The shell is strict: when `git ls-remote` fails (a network error, a rate limit) or names no
+      # head, the step and the job are red. Only a head that was read and differs from this commit
+      # skips the deploy.
       - name: Check this commit is still main's head
         id: head
         env:
           REPOSITORY: ${{ github.repository }}
         run: |
-          head=$(git ls-remote "https://github.com/$REPOSITORY" refs/heads/main | cut -f1)
+          set -euo pipefail
+          remote=$(git ls-remote "https://github.com/$REPOSITORY" refs/heads/main)
+          head=${remote%%[[:space:]]*}
+          if [ -z "$head" ]; then
+            echo "::error::could not read the head of main from https://github.com/$REPOSITORY"
+            exit 1
+          fi
           if [ "$head" = "$GITHUB_SHA" ]; then
             echo "current=true" >> "$GITHUB_OUTPUT"
           else
             echo "current=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::main has moved on to ${head:-an unknown commit}; $GITHUB_SHA is not deployed"
+            echo "::notice::main has moved on to $head; $GITHUB_SHA is not deployed"
           fi
 
-      - if: steps.head.outputs.current == 'true'
-        run: pnpm install --frozen-lockfile
-      - if: steps.head.outputs.current == 'true'
-        run: pnpm fetch:engines --sync
-      - if: steps.head.outputs.current == 'true'
-        run: pnpm build
-      - if: steps.head.outputs.current == 'true'
-        run: pnpm assemble:dist
+      # Nothing is built here: the `dist/` that `verify` assembled, and every browser job tested, is
+      # downloaded and deployed as it is. Nothing is installed either: `wrangler` runs
+      # through `pnpm dlx` and the smoke check uses Node built-ins only.
+      - name: Download the assembled dist/
+        if: steps.head.outputs.current == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
 
       # `wrangler deployments list --json` is sorted oldest first, so the last entry is the live
       # one; the version taking most of its traffic is what a rollback returns to. An empty answer
@@ -410,7 +465,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           previous=""
-          if json=$(npx --yes wrangler@4.135.0 deployments list --json); then
+          if json=$(pnpm dlx "wrangler@$WRANGLER_VERSION" deployments list --json); then
             previous=$(printf '%s' "$json" | node -e '
               let text = "";
               process.stdin.on("data", (chunk) => { text += chunk; }).on("end", () => {
@@ -431,7 +486,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4.135.0 deploy
+        run: pnpm dlx "wrangler@$WRANGLER_VERSION" deploy
 
       # The check caps itself at about eight minutes; the step timeout makes a hang a failure the
       # rollback below reacts to, rather than a cancelled job that leaves the new build live.
@@ -454,5 +509,5 @@ jobs:
             echo "::error::the smoke check failed and no previous version was recorded; roll back by hand"
             exit 1
           fi
-          npx --yes wrangler@4.135.0 rollback "$PREVIOUS_VERSION" --yes --message "Automatic rollback: smoke check failed for ${GITHUB_SHA}"
+          pnpm dlx "wrangler@$WRANGLER_VERSION" rollback "$PREVIOUS_VERSION" --yes --message "Automatic rollback: smoke check failed for ${GITHUB_SHA}"
           echo "::error::the smoke check failed; rolled back to version $PREVIOUS_VERSION"
