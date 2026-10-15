@@ -342,7 +342,9 @@ function layoutItems(
     .map((paint) => ({
       index: paint.index,
       x: paint.origin.x,
-      y: 2 * box.y + box.height - paint.origin.y,
+      // The model's `y` (`text-source.ts`, "Space"): the distance below the box's top edge,
+      // which is what the glyphs below are compared with.
+      y: box.y + box.height - paint.origin.y,
       size: paint.fontSize,
       mcid: mcidOf(marks, paint),
       origin: paint.origin,
@@ -382,11 +384,13 @@ function layoutItems(
     touch(mcid);
     rects.set(
       mcid,
+      // The model's `x` is user-space and its `y` already counts down from the box's top
+      // edge, so only `x` has the box origin to take off to become page-relative.
       unionRect(rects.get(mcid) ?? null, [
         glyph.rect[0] - box.x,
-        glyph.rect[1] - box.y,
+        glyph.rect[1],
         glyph.rect[2] - box.x,
-        glyph.rect[3] - box.y,
+        glyph.rect[3],
       ]),
     );
     const parts = texts.get(mcid) as string[];
@@ -500,12 +504,8 @@ export async function readTagCandidates(
             role: claim.role,
             text: region.text,
             alt: null,
-            rect: [
-              region.rect[0] - box.x,
-              region.rect[1] - box.y,
-              region.rect[2] - box.x,
-              region.rect[3] - box.y,
-            ],
+            // User-space x, top-edge-relative y: see `layoutItems`.
+            rect: [region.rect[0] - box.x, region.rect[1], region.rect[2] - box.x, region.rect[3]],
           });
           continue;
         }

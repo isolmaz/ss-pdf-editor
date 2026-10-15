@@ -896,7 +896,10 @@ export function scanPage(page: PDFObject): PageScan {
  */
 export interface BlockRegion {
   readonly id: string;
-  /** Model space (`pdf-text-engine/src/types.ts`): user-space x, y down from the box top. */
+  /**
+   * Model space (`pdf-core/src/text-source.ts`, "Space"): user-space x, `y` the distance
+   * below the box's top edge (`box.y + box.height − userY`).
+   */
   readonly rect: Rect;
   readonly fontSize: number;
   readonly bold: boolean;
@@ -918,7 +921,7 @@ export function toRegions(input: PageTextInput): readonly BlockRegion[] {
   }));
 }
 
-/** The page box the model's coordinates are relative to (`CropBox`, per `readPageText`). */
+/** The page box the model's `y` is measured from the top of (`CropBox`, per `readPageText`). */
 export interface Box {
   readonly x: number;
   readonly y: number;
@@ -970,7 +973,8 @@ export function matchBlocks(
   let ambiguous = 0;
 
   for (const show of shows) {
-    const point = { x: show.x, y: 2 * box.y + box.height - show.y };
+    // The show's user-space `y` into the model's: the distance below the box's top edge.
+    const point = { x: show.x, y: box.y + box.height - show.y };
     let best = -1;
     let bestDistance = Number.POSITIVE_INFINITY;
     let ties = 0;

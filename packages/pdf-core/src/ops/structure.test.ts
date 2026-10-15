@@ -366,6 +366,40 @@ describe('readPageLayout', () => {
     expect(layout.items[1]?.rect?.[0]).toBeGreaterThan(140);
   });
 
+  it('boxes the text of a page whose box starts away from the origin page-relative, from a model that counts y down from the box top', async () => {
+    const built = await buildTagged({
+      pages: [{ fonts: HELV, box: [10, 20, 210, 220], content: tagged('P', 0, shown(50, 150, 'Hi')) }],
+      tree: [{ s: 'Document', k: [{ s: 'P', pg: 0, k: [0] }] }],
+    });
+    // The text model's coordinates for the baseline at user-space (50, 150): x as it is, y
+    // 220 (the box's top edge) − 150 = 70 below the top edge.
+    const reader = async (): Promise<PageTextInput> => lineOf('Hi', 50, 70, 12, 200, 200);
+    const item = (await readPageLayout(built.bytes, 0, run, { pageText: reader })).items[0];
+    expect(item?.text).toBe('Hi');
+    // Page-relative: the glyphs span x 50..62 → 40..52, and y stays as the model has it (the
+    // glyph boxes run 9.6 above the baseline to 2.4 below it).
+    expect(item?.rect?.[0]).toBeCloseTo(40, 1);
+    expect(item?.rect?.[1]).toBeCloseTo(60.4, 1);
+    expect(item?.rect?.[2]).toBeCloseTo(52, 1);
+    expect(item?.rect?.[3]).toBeCloseTo(72.4, 1);
+  });
+
+  it('boxes the text of such a page the same way from the real text model', async () => {
+    const built = await buildTagged({
+      pages: [{ fonts: HELV, box: [10, 20, 210, 220], content: tagged('P', 0, shown(50, 150, 'Hi')) }],
+      tree: [{ s: 'Document', k: [{ s: 'P', pg: 0, k: [0] }] }],
+    });
+    const layout = await readPageLayout(built.bytes, 0, run);
+    expect(layout.items.map((item) => [item.mcid, item.text])).toEqual([[0, 'Hi']]);
+    // Baseline 70 below the top edge: the line's box straddles it, and starts at x = 50 − 10.
+    const rect = layout.items[0]?.rect ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
+    expect(rect[0]).toBeCloseTo(40, 0);
+    expect(rect[1]).toBeGreaterThan(55);
+    expect(rect[1]).toBeLessThan(70);
+    expect(rect[3]).toBeGreaterThan(70);
+    expect(rect[3]).toBeLessThan(80);
+  });
+
   it('clips a long label to 120 characters with an ellipsis', async () => {
     const long = 'abcdefghij'.repeat(15);
     const built = await buildTagged({

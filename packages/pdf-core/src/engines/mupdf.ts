@@ -98,6 +98,10 @@ export function readPageRotation(page: PDFPage): 0 | 90 | 180 | 270 {
  *
  * The flip line is the box's top edge, which is what the viewer's own pointer
  * conversion uses (`PdfViewerPane.pointToPage`: `top = viewBox[3]`, `y = top − pdfY`).
+ * `x` is already user-space and passes through. A `y` therefore carries no `box.y`:
+ * the text model's reader (`text-source.ts > toUserY`) produces `box.y + box.height −
+ * userY` and the verifier (`ops/text-edit.ts`) inverts it with this same function, so
+ * a page whose box does not start at `y = 0` round-trips through all three.
  */
 export function topLeftToUserPoint(
   box: UserBox,

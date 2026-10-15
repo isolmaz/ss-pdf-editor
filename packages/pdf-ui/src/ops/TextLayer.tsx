@@ -74,6 +74,10 @@ interface PaintedBlock {
  * A model rect → the same rect on the page as displayed (`u` right, `v` down from the
  * turned page's top-left corner, points): the forward turn of the one `toUserX` /
  * `toUserY` in `pdf-core/text-source.ts` undo, against the same unrotated page box.
+ *
+ * The model's `x` is user-space (`box.x` included) and its `y` is the distance below the
+ * box's top edge (`box.y` is already taken out of it), so only `x` has the box origin
+ * to subtract; `y` is used as it comes.
  */
 export function displayedBox(
   rect: readonly [number, number, number, number],
@@ -83,13 +87,13 @@ export function displayedBox(
   const corner = (x: number, y: number): readonly [number, number] => {
     switch (rotation) {
       case 90:
-        return [box.y + box.height - y, x - box.x];
+        return [box.height - y, x - box.x];
       case 180:
-        return [box.x + box.width - x, box.y + box.height - y];
+        return [box.x + box.width - x, box.height - y];
       case 270:
-        return [y - box.y, box.x + box.width - x];
+        return [y, box.x + box.width - x];
       default:
-        return [x - box.x, y - box.y];
+        return [x - box.x, y];
     }
   };
   const [u0, v0] = corner(rect[0], rect[1]);

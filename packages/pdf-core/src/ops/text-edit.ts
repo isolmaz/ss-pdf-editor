@@ -928,10 +928,16 @@ async function verifyPages(
        */
       // A justified line is drawn word by word, and a reader may report each word as
       // an item of its own: every word placement is ours too.
-      const ours = work.lines.flatMap((line) => [
-        { text: searchableText(line.text), x: line.x, y: line.y },
-        ...(line.words ?? []).map((word) => ({ text: searchableText(word.text), x: word.x, y: line.y })),
-      ]);
+      // `y` here is the *user-space* baseline pdf.js reports (`item.y`): the line's page-space
+      // `y` through the same flip the writer drew it with, so a box that does not start at
+      // `y = 0` is accounted for in one place.
+      const ours = work.lines.flatMap((line) => {
+        const y = topLeftToUserPoint(box, line.x, line.y).y;
+        return [
+          { text: searchableText(line.text), x: line.x, y },
+          ...(line.words ?? []).map((word) => ({ text: searchableText(word.text), x: word.x, y })),
+        ];
+      });
       for (const item of content.items) {
         if (item.text.trim() === '') continue;
         if (!userRects.some((rect) => insideRect(item.x, item.y, rect))) continue;
@@ -942,7 +948,7 @@ async function verifyPages(
             line.text.length > 0 &&
             (line.text.includes(text) || text.includes(line.text)) &&
             Math.abs(line.x - item.x) <= INSERTED_MATCH_TOLERANCE_PT &&
-            Math.abs(box.height - line.y - item.y) <= INSERTED_MATCH_TOLERANCE_PT,
+            Math.abs(line.y - item.y) <= INSERTED_MATCH_TOLERANCE_PT,
         );
         if (isOurs) continue;
         failures.push(
