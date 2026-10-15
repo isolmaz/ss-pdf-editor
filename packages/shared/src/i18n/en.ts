@@ -7,6 +7,7 @@ import { commonPart } from './en-parts/common';
 import { comparePart } from './en-parts/compare';
 import { contentWritersPart } from './en-parts/contentwriters';
 import { convertPart } from './en-parts/convert';
+import { deskewPart } from './en-parts/deskew';
 import { dialogsPart } from './en-parts/dialogs';
 import { docopsPart } from './en-parts/docops';
 import { enginesPart } from './en-parts/engines';
@@ -60,6 +61,7 @@ export const en: Record<MessageKey, string> = {
   ...propsPart,
   ...auditPart,
   ...boxesPart,
+  ...deskewPart,
   ...formsPart,
   ...commonPart,
   ...docopsPart,

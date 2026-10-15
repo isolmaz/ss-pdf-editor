@@ -1,6 +1,6 @@
 /**
  * Numbers the interface writes the way its language does: Turkish puts the percent sign first
- * and the decimal mark is a comma (`%140`, `1,5 KB`), English keeps `140%` and `1.5 KB`.
+ * and the decimal mark is a comma (`%140`, `1,5 KB`, `1,8°`), English keeps `140%`, `1.5 KB` and `1.8°`.
  */
 
 const FORMATS = new Map<string, Intl.NumberFormat>();
@@ -36,4 +36,9 @@ export function formatBytes(bytes: number, locale: string): string {
  */
 export function formatPercent(fraction: number, locale: string, digits = 0): string {
   return numberFormat(locale, 'percent', digits).format(fraction);
+}
+
+/** An angle in degrees to one decimal, with the locale's decimal mark: `1,8°` in Turkish, `1.8°` in English. */
+export function formatDegrees(degrees: number, locale: string): string {
+  return `${numberFormat(locale, 'oneDecimal').format(degrees)}°`;
 }

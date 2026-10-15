@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatPercent } from './format';
+import { formatBytes, formatDegrees, formatPercent } from './format';
 
 describe('formatBytes', () => {
   it('writes bytes, kilobytes and megabytes with one decimal', () => {
@@ -30,5 +30,14 @@ describe('formatPercent', () => {
     expect(formatPercent(0.0037, 'tr', 2)).toBe('%0,37');
     expect(formatPercent(0.125, 'tr', 2)).toBe('%12,50');
     expect(formatPercent(0.0037, 'tr')).toBe('%0');
+  });
+});
+
+describe('formatDegrees', () => {
+  it('writes an angle to one decimal, with the decimal mark of the locale', () => {
+    expect(formatDegrees(1.84, 'en')).toBe('1.8°');
+    expect(formatDegrees(1.84, 'tr')).toBe('1,8°');
+    expect(formatDegrees(12, 'tr')).toBe('12,0°');
+    expect(formatDegrees(0.1, 'en')).toBe('0.1°');
   });
 });
