@@ -14,11 +14,74 @@ const state: {
   mammoth: 'real' | 'throw' | 'throw-text' | 'short';
   csvRows: number | null;
   dropPng: boolean;
+  /** What the XML reader is handed instead of a worksheet or workbook part: the part as written, or one damaged. */
+  xlsx:
+    | 'real'
+    | 'drop-cell'
+    | 'shift-cell'
+    | 'wrong-number'
+    | 'no-number'
+    | 'other-text'
+    | 'broken'
+    | 'renamed'
+    | 'merge-added'
+    | 'merge-changed';
+  /** What the XLSX package is written as: as it is, or without a part, with an empty one, or not a ZIP at all. */
+  workbook: 'real' | 'garbage' | 'no-workbook' | 'no-sheet' | 'empty-part';
 } = {
   mammoth: 'real',
   csvRows: null,
   dropPng: false,
+  xlsx: 'real',
+  workbook: 'real',
 };
+
+vi.mock('@xmldom/xmldom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@xmldom/xmldom')>();
+  class DOMParser extends actual.DOMParser {
+    override parseFromString(source: string, mimeType?: string) {
+      let text = source;
+      if (text.includes('<sheetData>')) {
+        if (state.xlsx === 'drop-cell') text = text.replace(/<c [^>]*>.*?<\/c>/, '');
+        else if (state.xlsx === 'shift-cell') text = text.replace('r="A1"', 'r="B1"');
+        else if (state.xlsx === 'wrong-number') text = text.replace(/<v>[^<]*<\/v>/, '<v>999</v>');
+        else if (state.xlsx === 'no-number') text = text.replace(/<v>[^<]*<\/v>/, '');
+        else if (state.xlsx === 'other-text') text = text.replace('two words', 'two other');
+        else if (state.xlsx === 'broken') text = text.replace('</sheetData>', '</sheetDat>');
+        else if (state.xlsx === 'merge-added') {
+          text = text.replace(
+            '</worksheet>',
+            '<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells></worksheet>',
+          );
+        } else if (state.xlsx === 'merge-changed') text = text.replace('A1:B1', 'A1:C1');
+      } else if (text.includes('<sheets>') && state.xlsx === 'renamed') {
+        text = text.replace(/ name="[^"]*"/, ' name="Other"');
+      }
+      return super.parseFromString(text, mimeType);
+    }
+  }
+  return { ...actual, DOMParser };
+});
+
+/** The parts a damaged package leaves out. */
+const LEFT_OUT = { 'no-workbook': 'xl/workbook.xml', 'no-sheet': 'xl/worksheets/sheet1.xml' } as const;
+
+vi.mock('./docx-drawing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./docx-drawing')>();
+  return {
+    ...actual,
+    zipped: (files: Readonly<Record<string, string | Uint8Array>>) => {
+      if (state.workbook === 'garbage') return Promise.resolve(new Uint8Array([1, 2, 3]));
+      const kept = Object.entries(files)
+        .filter(([name]) => name !== LEFT_OUT[state.workbook as keyof typeof LEFT_OUT])
+        .map(([name, data]): [string, string | Uint8Array] => [
+          name,
+          state.workbook === 'empty-part' && name === 'docProps/core.xml' ? ' ' : data,
+        ]);
+      return actual.zipped(Object.fromEntries(kept));
+    },
+  };
+});
 
 vi.mock('mammoth', async (importOriginal) => {
   const actual = await importOriginal<{ default: typeof import('mammoth') }>();
@@ -64,6 +127,8 @@ afterEach(() => {
   state.mammoth = 'real';
   state.csvRows = null;
   state.dropPng = false;
+  state.xlsx = 'real';
+  state.workbook = 'real';
 });
 
 const page = () => officeDocument([{ content: line('courier', 10, 50, 470, 'two words') }]);
@@ -102,6 +167,101 @@ describe('exportOffice read-back and picture faults', () => {
     ).rejects.toMatchObject({
       code: 'verification-failed',
       message: expect.stringContaining('csv read-back found 0 rows, 1 were written'),
+    });
+  });
+
+  it('reads an XLSX back before offering it: the real reader agrees, so the step is reported', async () => {
+    const { steps, file } = await exportOffice(
+      await page(),
+      { pages: [0], baseName: 'a.pdf', format: 'xlsx' },
+      run,
+    );
+    expect(steps).toEqual(['office.read', 'office.tables', 'office.write', 'verify']);
+    expect(file.name).toBe('a.xlsx');
+  });
+
+  it.each([
+    ['drop-cell', 'xlsx read-back found 0 cells in sheet 1, 1 were written'],
+    ['shift-cell', 'xlsx read-back found cell B1 in sheet 1 where A1 was written'],
+    ['broken', 'xlsx read-back could not read xl/worksheets/sheet1.xml'],
+    ['other-text', 'xlsx read-back found other text in A1 of sheet 1 than was written'],
+    ['renamed', 'xlsx read-back found the sheets [Other], [Page 1] were written'],
+    ['merge-added', 'xlsx read-back found the merged ranges [A1:B1] in sheet 1, [] were written'],
+  ] as const)('refuses an XLSX whose reader finds a damaged sheet (%s)', async (damage, message) => {
+    state.xlsx = damage;
+    await expect(
+      exportOffice(await page(), { pages: [0], baseName: 'a.pdf', format: 'xlsx' }, run),
+    ).rejects.toMatchObject({ code: 'verification-failed', message: expect.stringContaining(message) });
+  });
+
+  it.each([
+    ['garbage', 'xlsx read-back could not open the package: Error: '],
+    ['no-workbook', 'xlsx read-back found no xl/workbook.xml'],
+    ['no-sheet', 'xlsx read-back found no xl/worksheets/sheet1.xml'],
+    ['empty-part', 'xlsx read-back could not read docProps/core.xml: empty XML'],
+  ] as const)('refuses an XLSX package that is damaged as a package (%s)', async (damage, message) => {
+    state.workbook = damage;
+    await expect(
+      exportOffice(await page(), { pages: [0], baseName: 'a.pdf', format: 'xlsx' }, run),
+    ).rejects.toMatchObject({ code: 'verification-failed', message: expect.stringContaining(message) });
+  });
+
+  it('refuses an XLSX whose reader finds a number cell with no value, and one with other merged ranges', async () => {
+    state.xlsx = 'no-number';
+    const numbers = await officeDocument([{ content: line('courier', 10, 50, 470, '12,5') }]);
+    await expect(
+      exportOffice(numbers, { pages: [0], baseName: 'a.pdf', format: 'xlsx' }, run),
+    ).rejects.toMatchObject({
+      code: 'verification-failed',
+      message: expect.stringContaining('xlsx read-back found no number in A1 of sheet 1, 12.5 was written'),
+    });
+    // A ruled table of 3 × 3 cells with two merges, A1:B1 and C2:C3 (the first table of `twoTablesPage`).
+    const rules = [
+      '0.5 w 0 G',
+      '50 450 m 350 450 l S',
+      '50 420 m 350 420 l S',
+      '50 390 m 250 390 l S',
+      '50 360 m 350 360 l S',
+      '50 450 m 50 360 l S',
+      '150 420 m 150 360 l S',
+      '250 450 m 250 360 l S',
+      '350 450 m 350 360 l S',
+    ].join('\n');
+    const merged = await officeDocument([
+      {
+        content: [
+          line('courier', 10, 58, 430, 'Toplam'),
+          line('courier', 10, 258, 430, 'Fiyat'),
+          line('courier', 10, 58, 400, 'Elma'),
+          line('courier', 10, 158, 400, '3'),
+          line('courier', 10, 258, 400, '12,5'),
+          line('courier', 10, 58, 370, 'Cay'),
+          rules,
+        ].join('\n'),
+      },
+    ]);
+    state.xlsx = 'real';
+    const real = await exportOffice(merged, { pages: [0], baseName: 'a.pdf', format: 'xlsx' }, run);
+    expect(real.steps).toContain('verify');
+    state.xlsx = 'merge-changed';
+    await expect(
+      exportOffice(merged, { pages: [0], baseName: 'a.pdf', format: 'xlsx' }, run),
+    ).rejects.toMatchObject({
+      code: 'verification-failed',
+      message: expect.stringContaining(
+        'xlsx read-back found the merged ranges [A1:C1, C2:C3] in sheet 1, [A1:B1, C2:C3] were written',
+      ),
+    });
+  });
+
+  it('refuses an XLSX whose reader finds another number than was written', async () => {
+    state.xlsx = 'wrong-number';
+    const bytes = await officeDocument([{ content: line('courier', 10, 50, 470, '12,5') }]);
+    await expect(
+      exportOffice(bytes, { pages: [0], baseName: 'a.pdf', format: 'xlsx' }, run),
+    ).rejects.toMatchObject({
+      code: 'verification-failed',
+      message: expect.stringContaining('xlsx read-back found 999 in A1 of sheet 1, 12.5 was written'),
     });
   });
 

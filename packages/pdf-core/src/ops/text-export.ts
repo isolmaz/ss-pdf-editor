@@ -12,10 +12,16 @@
  * `pageToParagraphs`. The heuristic assumes upright text — a page of sideways
  * text still exports its characters, but its line grouping is content order, and
  * the report says so.
+ *
+ * A line with right-to-left text (Hebrew, Arabic) is joined in reading order, not
+ * left to right: pdf.js turns each item's text into reading order and says which way
+ * it runs (`dir`), and `readingPieces` puts the items of the line in the order the
+ * bidirectional algorithm reads them (`ops/bidi.ts`).
  */
 
 import { ToolError, toToolError } from 'pdf-shared';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
+import { type Direction, letterCounts, readingOrder } from './bidi';
 import { type OperationContext, type OutputFile, throwIfAborted } from './types';
 
 export type TextExportFormat = 'text' | 'markdown';
@@ -46,6 +52,8 @@ interface TextPiece {
   readonly y: number;
   readonly size: number;
   readonly width: number;
+  /** pdf.js marks an item right-to-left when its text holds a right-to-left letter; a space or a number has no direction. */
+  readonly direction: Direction;
 }
 
 /** A line is only a paragraph partner of the previous one when it follows closely. */
@@ -87,18 +95,45 @@ function pageToParagraphs(pieces: readonly TextPiece[]): string[][] {
   return paragraphs;
 }
 
-/** Left-to-right join; a real word gap becomes a space, a kerning gap does not. */
+/**
+ * The pieces of a line in the order they are read. They stand left to right on the page, which is
+ * the reading order unless the line holds right-to-left text: there the first word is the
+ * rightmost, so the pieces are put back by the bidirectional algorithm (`readingOrder`). Each
+ * piece keeps its own text, which pdf.js has already turned into reading order.
+ */
+function readingPieces(onPage: readonly TextPiece[]): readonly TextPiece[] {
+  if (!onPage.some((piece) => piece.direction === 'rtl')) return onPage;
+  let rtl = 0;
+  let ltr = 0;
+  for (const piece of onPage) {
+    const counts = letterCounts(piece.text);
+    rtl += counts.rtl;
+    ltr += counts.ltr;
+  }
+  const order = readingOrder(
+    onPage.map((piece) => piece.direction),
+    rtl > ltr,
+  );
+  return order.map((at) => onPage[at] as TextPiece);
+}
+
+/**
+ * Join in reading order (left to right, or right to left in right-to-left text); a real word gap
+ * between neighbours becomes a space, a kerning gap does not.
+ */
 function joinLine(pieces: readonly TextPiece[]): string {
-  const ordered = [...pieces].sort((a, b) => a.x - b.x);
+  const ordered = readingPieces([...pieces].sort((a, b) => a.x - b.x));
   let result = '';
-  let previousEnd: number | undefined;
-  let previousSize = 0;
+  let previous: TextPiece | undefined;
   for (const piece of ordered) {
-    const needsSpace =
-      previousEnd !== undefined && piece.x - previousEnd > WORD_GAP * Math.max(previousSize, piece.size);
+    // The gap between the pieces' near edges, whichever side the next one lies on.
+    const gap =
+      previous === undefined
+        ? 0
+        : Math.max(piece.x - (previous.x + previous.width), previous.x - (piece.x + piece.width));
+    const needsSpace = previous !== undefined && gap > WORD_GAP * Math.max(previous.size, piece.size);
     result += `${needsSpace ? ' ' : ''}${piece.text}`;
-    previousEnd = piece.x + piece.width;
-    previousSize = piece.size;
+    previous = piece;
   }
   return result.replace(/\s+/g, ' ').trim();
 }
@@ -171,6 +206,7 @@ export async function exportText(
             y: item.transform[5],
             size: Math.hypot(item.transform[1], item.transform[3]) || item.height || 1,
             width: item.width,
+            direction: item.dir === 'rtl' ? 'rtl' : letterCounts(item.str).ltr > 0 ? 'ltr' : null,
           });
         }
         text = formatPage(pageToParagraphs(pieces), options.format);

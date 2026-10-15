@@ -458,8 +458,13 @@ writer does, and the steps it reports:
   count compared. `ops/convert-formats.ts` holds the extension table with no dependencies,
   so the shell can recognise a convertible file without loading the converters;
 - PDF → Word, Excel and CSV (`ops/export-office.ts`, steps `office.read` / `office.tables` /
-  `office.write` / `verify`; `verify` is reported for Word, read back with mammoth, and for
-  CSV, read back with the RFC 4180 parser). A download: nothing is written to the document.
+  `office.write` / `verify`; `verify` is reported for Word, read back with mammoth, for Excel, read
+  back with an XML parser (`verifyXlsx`), and for CSV, read back with the RFC 4180 parser). A
+  download: nothing is written to the document. The pages are read one at a time and each is
+  reduced to what the format needs (its items for Word, its sheets for Excel and CSV) before the
+  next is read, so the layout of a long document is not held whole. Right-to-left lines are put in
+  reading order by the bidirectional algorithm (`ops/bidi.ts`: the order of pdf.js items in the
+  text export, of MuPDF's runs in the Word paragraphs, which then carry `w:bidi`).
   The ideas are pdf2docx's (MIT; none of its code), the table modes Tabula's.
   `ops/page-layout.ts` reads a page as layout. Characters with font, size, weight and colour come from the
   structured-text walker. Pictures are drawn through their own transform into a transparent
@@ -942,7 +947,10 @@ writer does, and the steps it reports:
          of its own with a `note`, written as a comment and listed in `ocrLowConfidence`; the
          pages read are listed in `ocrPages`.
   - **Excel.** A cell is a number only when it reads one way (`cellNumber`). The workbook
-    is not read back (the XLSX path reports no `verify` step; only Word and CSV do). CSV rows are read back through `parseCsv`. A CSV text
+    is read back with an XML parser (`verifyXlsx`: every part well-formed, the sheet names, each
+    cell's reference and value, the merged ranges). The pictures of the pages are counted from
+    the page's own drawing (`ReadLayout.pictures`) and reported as left out (`sheetPicturesLost`).
+    CSV rows are read back through `parseCsv`. A CSV text
     cell that a spreadsheet would evaluate (`csvFormulaLike`: a leading `=`, `+`, `-`, `@`,
     tab or carriage return, and not a number by `cellNumber`) is written with a leading `'`
     (CWE-1236); XLSX needs no such guard, since its text cells are `inlineStr`.

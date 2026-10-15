@@ -413,9 +413,14 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     expects in your region. A text cell that starts with `=`, `+`, `-` or `@` would run as a
     formula when the file is opened, so it is written with a leading `'` (negative numbers
     are left alone), and the report counts them.
-  - A Word file (any layout) is read back with mammoth (an independent reader) and a CSV file with a CSV
-    parser before it is offered; an Excel file is not read back. The report says what was
-    approximated.
+  - A Word file (any layout) is read back with mammoth (an independent reader), an Excel file with
+    an XML parser (every part well-formed, the sheets, cells, numbers and merged ranges as
+    written) and a CSV file with a CSV parser before it is offered. The report says what was
+    approximated, and how many pictures an Excel or CSV file left out, since it holds cells
+    only.
+  - Right-to-left text (Hebrew, Arabic) is exported in reading order, whatever order the PDF
+    showed its words in: a line comes out from its rightmost word, and a Word paragraph of
+    right-to-left text is written as one (`w:bidi`), with its alignment and indents kept.
 
 ### Scanning with the camera
 
