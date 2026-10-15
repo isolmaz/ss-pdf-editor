@@ -8,7 +8,13 @@ import { reviewHeading, runForm } from './ui-helpers';
  * copy that opens in a new tab, and a file that cannot be opened at all points to the tool.
  */
 
-test.use({ viewport: { width: 1440, height: 900 } });
+// MuPDF reports a repair on the console while it rebuilds the table; that is the repair working.
+test.use({
+  viewport: { width: 1440, height: 900 },
+  allowedErrors: [
+    /console: (format error: cannot find startxref|warning: (trying to repair broken xref|repairing PDF document))/,
+  ],
+});
 
 /** `labelledPdf` cut off right before its cross-reference table: the objects are all there, the table is gone. */
 function cutOff(): Uint8Array {
