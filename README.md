@@ -114,9 +114,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **The document never moves under you.** Marks, selections, measurements and staged
   redactions scroll and zoom with their page. Tools, progress and notices never shift
   the page.
-- **Password-protected files.** The editor asks for the password and opens the file
-  read-only. "Create unlocked copy" opens an editable copy in a new tab, and the password
-  is kept in memory only.
+- **Password-protected files.** A file that needs a password to open makes the editor ask
+  for it, then opens read-only. "Create unlocked copy" opens an editable copy in a new tab,
+  and the password is kept in memory only. A file that only an owner password restricts
+  opens without a prompt, is stored like any other and keeps its encryption when saved.
 - **Shortcut list.** It is available in both languages from Help or `Ctrl+K`, even with no
   document open. The list is the binding table itself, so every chord it prints works.
   `Home`, `End`, `PageUp` and `PageDown` turn the document's page, except while the focus is
@@ -157,10 +158,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   JSON (this app's lossless form).
   - XFDF carries the comments already in the file as well as the unsaved ones, with their
     replies and statuses. JSON and FDF carry the unsaved ones.
-  - The FDF export is that Acrobat format itself: `%FDF-1.2`, then `/FDF /Annots` listing
-    one annotation object per comment (highlight, underline, strike-out, squiggly, ink, square,
-    circle, line, note, typed text) with its `/Page`, `/Rect`, colour, text, author and date,
-    a popup, and each reply and review status as an annotation that answers it (`/IRT`).
+  - The FDF export is Acrobat's own comment format: one annotation per comment (highlight, underline, strike-out, squiggly, ink, square, circle, line, note, typed text) with its page, position, colour, text, author and date, and each reply and review status as an annotation that answers it.
     Acrobat's own comment files are read the same way, and so are the FDF files this app wrote
     before (`ann.N.*` records). A comment's quarter turn stays in JSON, and a stroke drawn with
     the marker (a highlight painted as a path) leaves FDF and XFDF as ink.
@@ -218,7 +216,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 - **Measurement.** Measure distance, perimeter and area with a scale, units, a grid and
   snapping. The results are written as real PDF annotations. `Esc` clears the chain being
   measured, and a second `Esc` returns to the select tool.
-- **Small screens.** Below 1024 px both docks start collapsed and reopen as overlays.
+- **Small screens and touch.** Below 1024 px both docks start collapsed and reopen as
+  overlays. With the pen, marker, a shape, the link region or redaction armed, a finger drag
+  draws instead of scrolling the page; a gesture the browser cancels adds nothing.
 
 ### Pages and structure
 
@@ -228,8 +228,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     orientation.
   - Merging several files builds a new document in the order you set; its metadata comes
     from the first file, and the report says so.
-  - Composition goes through pdf.js `extractPages`, so outlines, form fields and page
-    labels travel with the pages.
+  - Outlines, form fields and page labels travel with the pages.
   - The Pages panel selects by click, `Ctrl`, `Shift` or the keyboard. It moves the
     selection with `Alt` or `Ctrl` plus the arrow keys, the up and down buttons, the *Move
     to* field or drag and drop, and its toolbar rotates, duplicates, deletes and extracts.
@@ -294,143 +293,38 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     or 256 MiB in all) and a CSV with more than 1000 columns or two million cells are refused
     rather than opened.
 - **PDF to Word, Excel and CSV.** **Export → Word, Excel or CSV** (also in the tools panel,
-  the palette and the home screen) rebuilds the pages in the browser as an editable file.
-  - **Word (DOCX):** paragraphs that reflow, with their fonts, sizes, bold, italic and
-    colour. A line that starts with a bullet, or with one or two digits and a full stop or
-    bracket, starts a new paragraph. Larger type becomes Heading 1–3, so Word's navigation
-    pane and table of contents see it. Alignment, indents and spacing are measured from the
-    page, each page keeps its size and orientation, and two-column text is read column by
-    column. Ruled tables become Word tables with their merged cells. Tables without rules
-    are recognised from the spacing of the text and become borderless tables. Pictures keep
-    their transparency; charts and drawings made of vector graphics are carried as pictures, their labels staying text over them.
-    A picture that cannot be read, or one inside a table cell, is left out, and the report
-    says how many. Text the PDF itself hides (invisible text) is not exported and the report
-    says how many characters were left out, except the invisible OCR text layer over the picture
-    of a scanned page, which is the only text that page has. Form fields and annotations are
-    not carried, and the report says so.
-  - **Word layout.** Word has three layouts, chosen in the Export dialog and in the form: *Text
-    and pictures, exact layout* (the default; "Metin + resim, tam düzen" in Turkish), *Flowing
-    text* (described above, the one to edit at length) and *One picture per page*. Word's pages
-    stop at 22 inches (55.88 cm) a side, so in the exact layout and in the picture layout a
-    larger page is shrunk in proportion to fit, text sizes and offsets with it, and the report
-    says which pages and by how much.
-    - **Exact layout.** Each page keeps the geometry it has in the PDF: a section of the page's
-      size with no margins, the drawing behind in paint order and the text boxes above it.
-      - **Fonts.** The fonts the page's visible text uses are embedded in the DOCX, so Word
-        draws the glyphs the PDF draws. TrueType and CFF programs (`FontFile2`, `FontFile3`)
-        are the PDF's own subsets, rebuilt as small TrueType files with a Unicode map of the
-        glyphs the pages show and a name table Word can use, and stored obfuscated as the
-        Word format asks (`.odttf`); a ligature glyph (such as "fi") is mapped only as the ligature, never
-        as its first letter. The licence flag is kept as the PDF has it: a font whose
-        embedding permission is "restricted" is not embedded, and neither is a Type 1 font or
-        one that cannot be rebuilt. Such a font is named by its kind, so Word draws a close
-        one: a family Windows ships (Calibri, Cambria, Segoe UI…) keeps its name, sans faces
-        become Arial, serif faces Times New Roman and monospaced faces Courier New (by name,
-        else by the font's own serif and monospace flags). The report says how many fonts were
-        embedded.
-      - **Text.** Lines are grouped into paragraphs (same size, regular line pitch, one
-        alignment; a bullet starts a new one) and paragraphs that stack evenly into one editable
-        text box, placed so that the first baseline lands on the PDF's, with exact line spacing
-        and no insets. Text turned a quarter turn is a vertical text box. Word sets sizes in
-        half-points and draws letters at the font's own advances, so every word carries a
-        character spacing (and a width scale where the face differs) that puts each letter, and
-        each space, where the PDF has it. A justified paragraph is written left-aligned: the
-        words are already fitted to their places, and Word's own justification would stretch
-        the fitted spaces a second time. The trade-off is that text you type into such a
-        paragraph is not justified again. Centred and right-aligned paragraphs keep their
-        alignment.
-      - **Shapes, pictures, links.** Lines, rectangles, curves, fills and strokes (colour,
-        transparency, dashes, caps, joins) are Word shapes (an upright rectangle is a Word
-        rectangle). Pictures are anchored where they sit, with their transform, soft mask and
-        clip applied (JPEG for an opaque photograph, PNG otherwise), each as a rectangle filled
-        with the picture, so that it stacks with the shapes in paint order. `http:`, `https:` and
-        `mailto:` links are links on the text. What Word cannot draw is placed as a picture
-        instead, rendered without the text so the text stays editable: gradients, patterns,
-        soft masks, blend modes and clips that are curves, text or image masks (a clip with
-        straight edges is kept as shapes when the content lies inside it), and a page of more
-        than 1500 drawings as one picture. The report counts the text boxes, shapes,
-        pictures and those regions.
-      - **Scanned pages (OCR).** A page that shows pictures covering at least half of it and
-        no visible text (see below for a page with some) is read with Tesseract, in the browser, with the best model, in the
-        languages ticked in the form (default Turkish and English; the 27 OCR languages are
-        offered). The page is rendered at the scan's own resolution (150–300 dpi). The words
-        become editable text boxes with the size and colour measured from the scan, bold per
-        word (from the width of its strokes), italic per line (from whether the ink stands
-        straighter when it is sheared back), underline where a rule lies under the word (a
-        link), and the family (Arial, Times New Roman or Courier New) whose letter widths fit
-        the words best, each word at its scanned place. Paragraphs are put in reading order
-        column by column, and a grid of cards row by row. What OCR did not read (photos, logos,
-        cards, shading) is cut out as pictures behind the text, over a page-sized rectangle of
-        the page colour, and the words are erased from them, with their accents and dots and
-        the faint ripples a JPEG leaves around letters. Icons, link-icon corners, bars between
-        items and bullets that OCR made into symbols, the dot of an İ read as a word of its own,
-        a word read twice and the specks along a scanner's edge are not text.
-      - **Reading a scan twice.** A page with underlined words is read a second time with the
-        underlines erased, because a link's rule makes OCR misread the letters above it. Every
-        word OCR is less than 95 % sure of is then read again alone, enlarged up to three
-        times, with the ticked languages together; the new reading is kept only if it is surer
-        and changes letters into letters, never dropping or adding a character. A run of
-        capitals ("SQL") is read again with English alone, which has no word "sol" to pull it
-        astray. A word with a gap wider than a space inside it (a phone number run together) is
-        split at the gap and each piece read alone. At most 150 such reads are made per page
-        (words with a gap first, then the least sure); if one cannot run, the first reading
-        stands.
-      - **Text next to a scan, text inside a picture.** A page with real text (a typed header,
-        a stamp, page numbers) over pictures that cover at least half of it keeps that text as
-        Word text; the text is painted over in the picture OCR reads, with the colour around it
-        (not white), the words OCR still finds on it are dropped, and the rest of the picture
-        becomes text boxes, with the background built from the page without those words. A
-        diagonal watermark is painted over character by character, so the scan under it stays.
-        On a page of real text, a picture of at least 2 % of the page is judged from its own
-        pixels first (ink in at least three bands of rows: not a logo, a photograph or a blank);
-        only then the page is read, and the words of a picture become text boxes over it, with
-        the words erased from the picture, when the picture holds at least 8 words on 2 lines,
-        read with 80 % confidence on average, over 15 % of its ink. A chart's labels, a diagram
-        or a logo with its name stay a picture. A word is written once even where pictures
-        overlap, a picture with see-through pixels keeps its glyphs (its text is added above
-        them), and a JPEG stays a JPEG. OCR reads the page as a viewer shows it, annotations
-        included, so text under an opaque box is not exported.
-      - **Scan details.** When the PDF already has an invisible OCR text layer (this app's OCR
-        leaves one) and the layer is reliable, its words are used and OCR is not run: fewer
-        than 10 % of its characters are the replacement character or on a line turned away from
-        the layer's main direction, and a word whose box shows no ink in the page (a patch lies
-        over it) is dropped. Otherwise the page is read with OCR as if it had no layer (the
-        layer is kept when OCR cannot run). A word read with less than 90 %
-        confidence is marked with a Word comment, and the report lists those words by page.
-        With no language ticked, or when the engine cannot start, a scan stays a picture and
-        the report says so. How the engine and the 90 % threshold were chosen:
-        [docs/ocr-evaluation.md](docs/ocr-evaluation.md).
-      - **Form fields and annotations.** A filled form field is carried as text where the field
-        is, as the page shows it, and so is the text of an annotation (a FreeText note, a
-        stamp); a checked box or radio button is drawn as the shape or mark the PDF draws
-        (a ZapfDingbats check mark becomes ✔). Text an appearance draws without showing it is
-        left out. A field whose value the PDF does not draw is not in the document, and the
-        report lists how many under Losses.
-    - **Flowing text** is described above.
-    - **One picture per page** draws every page exactly as a viewer shows it (annotations and
-      form fields included, on white paper) and puts it in its own section as one picture
-      anchored behind the text. The page is drawn at 200 dpi from its corner, at one scale on
-      both axes (fewer dpi only when a page would pass 40 megapixels), and the section and the
-      picture are the page's size to the twip, so the picture is the page pixel for pixel and a
-      scan is not resampled. It is JPEG (quality 92) for a page that is at least half pictures
-      (a photograph or scan), PNG otherwise. The look is exact, but the text cannot be edited in
-      Word.
-  - **Excel (XLSX):** one sheet per table, with merged cells and the column widths of the
-    rules. A page without any table becomes one sheet of its rows. A value becomes a number
-    only when it reads one way: `1.234,56` and `1,234.56` do, but `1.234` stays text (a
-    thousand, or one point two three four?), and so does `007`.
-  - **CSV:** the same tables in one UTF-8 file, with the comma or semicolon that Excel
-    expects in your region. A text cell that starts with `=`, `+`, `-` or `@` would run as a
-    formula when the file is opened, so it is written with a leading `'` (negative numbers
-    are left alone), and the report counts them.
-  - A Word file (any layout) is read back with mammoth (an independent reader), an Excel file with
-    an XML parser (every part well-formed, the sheets, cells, numbers and merged ranges as
-    written) and a CSV file with a CSV parser before it is offered. The report says what was
-    approximated, and how many pictures an Excel or CSV file left out, since it holds cells
-    only.
-  - Right-to-left text (Hebrew, Arabic) is exported in reading order, whatever order the PDF
-    showed its words in: a line comes out from its rightmost word, and a Word paragraph of
-    right-to-left text is written as one (`w:bidi`), with its alignment and indents kept.
+  the palette and the home screen) rebuilds the pages in the browser as an editable file. The
+  file is read back and checked before it is offered (Word with an independent reader, Excel
+  with an XML parser, CSV with a CSV parser), and the report says what was approximated or
+  left out.
+  - **Word (DOCX)** has three layouts, chosen in the Export dialog: *Text and pictures, exact
+    layout* (the default; "Metin + resim, tam düzen" in Turkish) keeps each page's geometry,
+    with editable text boxes, shapes and pictures where they sit and the PDF's own fonts
+    embedded where their licence allows; *Flowing text* rebuilds paragraphs, headings, tables
+    and columns and is the one to edit at length; *One picture per page* draws every page
+    exactly as a viewer shows it, but its text cannot be edited in Word. Word's pages stop at
+    22 inches a side, so in the exact and picture layouts a larger page is shrunk in
+    proportion and the report says which pages and by how much.
+  - **Scanned pages.** In the exact layout a scanned page is read with OCR, in the languages
+    ticked in the form (default Turkish and English; the 27 OCR languages are offered), and
+    becomes editable text over its pictures. Words OCR was less than 90 % sure of get a Word
+    comment and are listed in the report. A page that already carries this app's invisible
+    OCR layer uses it instead. With no language ticked, or when the engine cannot start, a
+    scan stays a picture and the report says so. Why Tesseract and the 90 % threshold:
+    [docs/ocr-evaluation.md](docs/ocr-evaluation.md).
+  - **Form fields and annotations** are carried in the exact layout as the text or mark the
+    page shows; the flowing layout does not carry them, and the report says so. Text the PDF
+    itself hides is not exported (the report counts it), except the invisible OCR layer of a
+    scanned page.
+  - **Excel (XLSX):** one sheet per table, with merged cells; a page without a table becomes
+    one sheet of its rows. A value becomes a number only when it reads one way: `1.234,56` and
+    `1,234.56` do, but `1.234` and `007` stay text.
+  - **CSV:** the same tables in one UTF-8 file, with the separator Excel expects in your
+    region. A text cell that starts with `=`, `+`, `-` or `@` would run as a formula when the
+    file is opened, so it is written with a leading `'`, and the report counts them.
+  - Right-to-left text (Hebrew, Arabic) is exported in reading order, and a Word paragraph of
+    right-to-left text is marked as one.
+  - How the layouts are built: [`docs/architecture.md`](docs/architecture.md) §5.1.
 
 ### Scanning with the camera
 
@@ -457,7 +351,7 @@ nothing leaving the browser.
   colour kept).
 - **Several pages.** Thumbnails to reorder, rotate, delete, retake and re-edit the corners
   of (re-editing the corners of a page ends with **Apply**), then A4, Letter or
-  fit-to-image pages and a JPEG quality. A photo that cannot be opened is reported, and the
+  fit-to-image pages and a JPEG quality (low, medium or high). A scan holds at most 40 pages. A photo that cannot be opened is reported, and the
   notice stays while the next photo opens. The PDF opens as a new tab; you are offered the
   OCR tool on it, which makes it searchable. If the PDF cannot be opened (another operation
   is still running, it is over a size or page limit, or opening fails), the scan dialog says
@@ -469,36 +363,29 @@ nothing leaving the browser.
 ### Redaction, security, signing
 
 - **True redaction.**
-  - Marks become MuPDF redaction annotations, and `applyRedactions` removes the glyphs.
-  - MuPDF leaves form fields and annotations alone, so the writer removes every one whose
-    rectangle meets a mark: a field's widget (and the field itself, with its value), a note
-    or other markup with its popup and replies (a mark over a popup window removes its note),
-    a link. Their objects are deleted, so neither a value nor a note's text stays in the file.
-    A hybrid XFA form also keeps each value in its XFA data, so its XFA is dropped when a
-    field goes and the form falls back to its AcroForm fields. The report counts the fields
-    (each once, however many widgets it has) and annotations that went, and says when the
-    XFA was dropped.
-  - The file is then rewritten with `garbage=compact,compress,clean`, and the output is
-    re-checked glyph by glyph and for any annotation or field still under a mark.
-  - An object-level audit reports any remaining terms, earlier revisions and leftover
-    structure.
+  - Marked text and the line art under it are removed from the page content, not painted
+    over.
+  - Form fields and annotations are not removed by the engine, so the writer deletes every
+    one whose rectangle meets a mark: a field with its value, a note or other markup with its
+    popup and replies, a link. Neither a value nor a note's text stays in the file. A hybrid
+    XFA form also keeps each value in its XFA data, so its XFA is dropped when a field goes and
+    the form falls back to its AcroForm fields. The report counts the fields and annotations
+    that went, and says when the XFA was dropped.
+  - The file is rewritten as a single revision, and the output is re-checked glyph by glyph
+    and for any annotation or field still under a mark. An object-level audit reports any
+    remaining terms, earlier revisions and leftover structure.
   - The verification covers the marked areas only. Document properties and bookmark titles
     are not checked; the metadata option clears the title, author, subject, keywords and
     creator fields and the XMP packet, and the notices say exactly that.
   - The attachments option removes every attached file of the document, wherever it lives, not
-    only the ones the Attachments list shows: the name tree, every `/AF` list (the document's
-    and each page's) and every file-attachment annotation with its popup, with the file
-    objects behind them. A document whose only attachment is an annotation is cleaned too.
-    The report counts each file once and counts only a file that was there.
-  - Each page that carried a mark also loses its thumbnail, and the text its tags repeat: the
-    `/Alt`, `/ActualText` and `/E` of the structure elements that belong to the page, and the
-    same entries in the marked-content properties of its content stream, in its resources and in
-    the forms it draws (a form is cleaned as a copy that only that page uses). The report counts
-    them.
+    only the ones the Attachments list shows (a file attached only as an annotation is
+    cleaned too). The report counts each file once and counts only a file that was there.
+  - Each page that carried a mark also loses its thumbnail and the alternative text,
+    replacement text and expansions its tags carry; the report counts them.
   - A staged mark stays an intent until you apply it. While marks are still staged, saving
     is refused, and so is every tool whose result leaves the tab (Word, text, split,
     PDF/A, a protected copy), every tool that moves pages, and printing and Snapshot: each
-    would carry the content the marks were meant to remove (a staged redaction is never written into the pages they show).
+    would carry the content the marks were meant to remove.
 - **Sanitize.** One dialog removes what the pages do not show.
   - Categories: scripts and code-running actions, attached files, metadata, private
     application data, thumbnails and hidden layers (on by default); external links, comments
@@ -520,7 +407,8 @@ nothing leaving the browser.
 - **Encryption.** AES-256 with permission bits; the output is re-opened and verified. The
   open password and the owner password may be the same; an empty owner password is replaced
   by a random one that is never shown (the report says so), so the permissions bind anyone
-  who only has the open password. The encrypted copy is downloaded, not applied to the open
+  who only has the open password. A password that contains `=` or `,` is refused (the
+  engine's option list cannot carry it). The encrypted copy is downloaded, not applied to the open
   document. Encrypting or removing a password rewrites the file, so a digital signature
   does not survive; the report says so.
 - **Simple signatures and images.** Draw a signature, type your name in one of two
@@ -546,13 +434,9 @@ nothing leaving the browser.
     refused). Without one, the first empty signature field is filled where it sits. Either
     way the field gets a drawn appearance; the stamp position you pick applies to a new
     field, or to an existing one that has no area of its own.
-  - The signer is the certificate that matches the private key in the PKCS#12 file, not the
-    first one it lists. The signature carries no `signingTime` attribute (PAdES B-B forbids
-    it); its time is the signature dictionary's `/M`.
+  - The signer is the certificate that matches the private key in the PKCS#12 file, not the first one it lists.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
-  - Signatures of files larger than 16 MiB are checked against the exact byte ranges stored
-    in the file (MuPDF reports them rounded above that size); a range that cannot be paired
-    with the stored one leaves the signature unchecked.
+  - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
   - Trust is checked only against certificates you imported. A certificate that is not yet
     valid is reported with the date it becomes valid; any other shows its expiry date.
   - What you import is stored on this device, and a change is applied only once the write
@@ -561,14 +445,13 @@ nothing leaving the browser.
     instead of showing an empty list.
   - Revocation is read from lists already on your device, never fetched: CRLs you import in
     the signature panel (DER or PEM, kept in the app's own storage until you remove them) and
-    the CRLs and OCSP responses stored in the PDF (the `/DSS` and the signature's own
-    revocation archive). Each certificate in the chain is reported not revoked, revoked (with
+    the CRLs and OCSP responses stored in the PDF (its validation data and the signature's own). Each certificate in the chain is reported not revoked, revoked (with
     date and reason, and whether that is before or after the signature) or unknown. A list
     issued before the signature, or one past its next-update date when no trusted timestamp
     fixes the signing time, cannot rule out a revocation: the summary then says the lists are
     too old instead of "not revoked".
   - RFC 3161 timestamps are verified offline, both a signature's own timestamp and
-    document timestamps (`ETSI.RFC3161`): the hash it covers, its signature, the authority's
+    document timestamps: the hash it covers, its signature, the authority's
     time-stamping certificate and, with a root you imported, its chain. A timestamp from an
     authority you trust is the time the signature is judged at, once a revocation list on your
     device shows none of the authority's certificates revoked; with no such list its time is
@@ -602,7 +485,8 @@ nothing leaving the browser.
     fail, needs-a-person, not applicable or not checked, with a Turkish or English explanation, how to
     fix it, and a link to the page or the element. It covers the tagged-PDF flag, the
     structure tree, title and `DisplayDocTitle`, `/Lang`, content marking, figure alt text,
-    tables, headings, lists, links (`OBJR`), annotations, form tooltips, fonts (embedded,
+    tables, headings, lists, links (`OBJR`), annotations, form tooltips (the field's own `/TU`,
+    which is not inherited: the parent of a radio group's widgets carries it), fonts (embedded,
     `/ToUnicode`, characters that map to Unicode), `/Tabs /S`, the `pdfuaid` identifier in
     the XMP packet and bookmarks for long documents. Colour contrast is **not measured**,
     and the report says so. Quick fixes write the title, language (its field starts as the
@@ -649,8 +533,8 @@ nothing leaving the browser.
   (the report says when it is).
 - **Batch.** Run one ordered set of steps over up to 256 files at a time, with a report for
   each file. The files are sized before any is read and then read one at a time; a file over
-  300 MB is reported as failed without being read, and a queue of more than 1 GB in total is
-  refused before the run starts. *Cancel* stops the run and leaves the dialog open on the
+  the 300 MiB document limit is reported as failed without being read, and a queue of more
+  than 1 GiB in total (1024 MB in the notice) is refused before the run starts. *Cancel* stops the run and leaves the dialog open on the
   report of what finished. The steps are extract pages, compress, OCR, page labels, header/footer and page
   numbering, document properties, text export and security (password and permissions).
   - A set of steps can be saved as a JSON ruleset and loaded again. A loaded ruleset runs as
@@ -752,27 +636,10 @@ The limits are defined once, in
   is disabled and the UI says why.
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
   newest versions are always kept, and an evicted step is shown as **unavailable**.
-- **Build budgets.** `BUILD_BUDGETS` in `packages/shared/src/limits.ts` holds the numbers.
-  `pnpm check:budgets` (a step of `pnpm ci:verify`, after `pnpm build`) measures the first-paint
-  JavaScript against the first one and fails when it is over. The other two are measured by
-  hand; `pnpm assemble:dist` only prints the sizes of what it assembles.
-  - ≤ 250 KiB gzip for the first-paint JavaScript: the entry chunk plus every
-    `<link rel="modulepreload">` script that `apps/web/dist/index.html` names, which is what the
-    browser fetches before the home screen renders. It is about 248 KiB: the entry chunk is about
-    187 KiB (the React Compiler's memo caches for `App` and the status bar are about 5 KiB of
-    it; compiling the whole first paint would take it to 262.8 KiB and fail this budget, so
-    `apps/web/vite.config.ts` compiles the editor chunk and, of the first paint, `App`, the
-    status bar and the hosts that hand them props) and the 11 preloaded
-    chunks (the React runtime, Kumo's shared dialog chunk, the
-    `mupdf-write` vocabulary and a few `pdf-core` modules the shell and the editor share) the
-    rest. The editor layout (docks, canvas, tool strip) is not part of it: it is its own chunk,
-    fetched on idle and as soon as a document is opening (`docs/architecture.md` §2). (Sizes:
-    the gzip of each file at Node's default level, which `pnpm check:budgets` prints one line
-    per file.)
-  - ≤ 60 KiB for the landing page: about 15 KiB of HTML and 11 KiB of CSS, gzipped.
-  - ≤ 25 MiB per asset.
-
----
+- **Build budgets.** `BUILD_BUDGETS` in `packages/shared/src/limits.ts` holds them: at most
+  250 KiB gzip of first-paint JavaScript, 60 KiB for the landing page and 25 MiB per asset.
+  `pnpm check:budgets` (a step of `pnpm ci:verify`, after `pnpm build`) enforces the first; the
+  other two are measured by hand. How the first-paint budget is met: `docs/architecture.md` §2.
 
 ## Honest limits
 
@@ -784,6 +651,9 @@ The limits are defined once, in
   - The old binary DOC, XLS and PPT formats, OpenDocument and RTF are not converted, and the
     app says so.
   - An HTML page's stylesheets and images on the internet are not loaded.
+  - A file over 100 MiB is refused and a layout that passes 3000 pages is stopped. A
+    spreadsheet is cut to its first 5000 rows and 100 columns and a CSV to 20 000 rows; the
+    report says what was left out.
 - **Converting from PDF.** A PDF records where each glyph goes, not paragraphs, tables or
   columns, so the export reconstructs them and can be wrong.
   - Exact positions, text boxes, headers and footers, form fields and annotations are not
@@ -865,7 +735,7 @@ The limits are defined once, in
   the file and can be undone. It is not a forensic scrub.
 - **Typed text.** A reader that ignores `/AP` falls back to Helvetica.
 - **Embedded fonts.** Typed text, headers and footers, the OCR text layer and edited text
-  embed only the glyphs they draw (about 40 KB of Noto Sans instead of 629 KB). The
+  embed only the glyphs they draw. The
   document's own fonts are left as they are. The font that form fields type with is
   embedded whole, so a reader can type any character into a field later.
 - **XFDF.** Appearance streams and rich-text styling do not travel: rich text is read as
@@ -879,7 +749,9 @@ The limits are defined once, in
 - **Protected documents.** These are read-only. To edit one, make an explicit unlocked copy.
 - **Text editing.** Only horizontal text is editable. Vertical text, skewed baselines and
   Type3 text are not. Unknown fonts are re-rendered in a substitute font, and the UI says
-  so.
+  so. A line with a character that no available face can draw is refused, naming the
+  characters, instead of being written with empty boxes. Lines break at spaces, between
+  Chinese and Japanese characters and between the words of Thai, Lao, Khmer and Burmese.
 - **Detect fields.** A heuristic: it proposes, you confirm.
   - It reads vector drawings and text. On a scan that already has OCR text it finds only
     horizontal rules, so boxes, checkboxes and circles are missed; a picture-only scan is
@@ -905,14 +777,10 @@ The limits are defined once, in
     never run, in the viewer or anywhere else; a field that depends on one shows its stored
     value. Rows cannot be added to a repeating section.
   - A static form's fields are mirrored into its XFA data by the template's own binding.
-    A date or number field with a display picture (other than a plain date picture), a field
-    with `bind match="none"`, a global or explicit data reference, and a radio group read
-    back on import, are not mirrored; the report counts them, and they keep their old value
-    in the XFA.
+    Fields whose binding is not a plain one (a number or non-date display picture, no binding, a data reference) and a radio group read back on import are not mirrored; the report counts them, and they keep their old value in the XFA.
   - Removing the XFA drops its scripts and any usage rights the file carried. Every other
     form write that rewrites the file (fill, create fields, flags, calculations, flatten,
-    XFA data import) also drops the Reader Extensions signature (`/Perms /UR3`, `/UR`),
-    which a rewrite would invalidate anyway; a `/DocMDP` certification is left alone.
+    XFA data import) also drops the Reader Extensions (usage rights) signature, which a rewrite would invalidate anyway; a certification signature is left alone.
   - A flattened dynamic form is pictures plus an invisible text layer, drawn with the
     browser's fonts rather than the form's, at the resolution picked when it was drawn.
   - The XFA renderer is pdf.js's: a form that relies on features it does not implement
@@ -986,43 +854,14 @@ docs/               architecture.md and ocr-evaluation.md; media/ holds the READ
 ## Quality gates
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every push to
-`main` and on manual dispatch. Its jobs:
-
-- **`verify`** runs the steps listed below, then `wrangler deploy --dry-run`, then uploads the
-  assembled `dist/` as the `dist` artifact. It is the only job that builds the production site;
-  the browser jobs and `deploy` download that artifact, so the bytes that were tested are the
-  bytes that are deployed.
-- **`e2e`** (after `verify`) runs the whole Playwright suite in four shards. Each shard downloads
-  the `dist/` that `verify` built, installs Playwright Chromium (cached) and runs
-  `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`. The HTML report and
-  the traces of a failure are uploaded for 7 days.
-- **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker --no-deps`.
-- **`behavior`** (after `verify`) runs `pnpm ci:behavior` against the downloaded `dist/`: the browser behaviour checks and the OpenSSL signing round trip.
-- **`coverage-unit`** (after `verify`) runs `pnpm coverage --unit-only`, and **`coverage-e2e`**
-  (after `verify`, four shards) runs `pnpm coverage --e2e-shard=N/4`: each builds the unminified
-  editor, runs its quarter of the Playwright suite (the last shard also the service-worker tests)
-  and uploads the V8 coverage its pages wrote, so no runner holds the whole browser run.
-- **`coverage`** (after both) downloads what they uploaded and runs `pnpm coverage
-  --merge=coverage-parts --min=100`: unit and browser coverage added together must be 100 % on
-  lines, statements, branches and functions; the report is the `coverage-report` artifact.
-- **`deploy`** runs only on a push to `main`, after every job above has passed; see
-  [Build and deploy](#build-and-deploy).
+`main` and on manual dispatch: `verify` (the only job that builds the production site),
+`e2e` in four shards, `e2e-service-worker`, `behavior`, the coverage jobs, which together
+must reach 100 % of lines, statements, branches and functions, and, on a push to `main`
+only, `deploy`. [`CONTRIBUTING.md`](CONTRIBUTING.md#continuous-integration) describes each
+job, the nightly and revert-proof workflows and the protection of `main`;
+[`CONTRIBUTING.md`](CONTRIBUTING.md#how-a-change-lands) describes how changes land.
 
 The PDF → Word export is not measured round trip in CI; its unit tests and the Playwright specs cover it.
-
-`.github/workflows/nightly.yml` runs daily and on manual dispatch: the same three coverage jobs,
-whose `coverage` fails when any total is under 100 % and uploads the report, and the
-Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`.
-`.github/workflows/revert-proof.yml` runs on manual dispatch and when the `revert-proof` label is
-added to a pull request (no other label starts it or cancels a run): for every fix on the list that
-`tools/review/revert-proof.mjs` reads, the fix's own test must fail on the fix commit's parent and
-pass on the fix commit.
-
-Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
-`e2e-service-worker`, `behavior` and `coverage` must pass, the branch must be up to date with `main`, review
-conversations must be resolved, and force-pushes and deletion are blocked. Pull requests
-are merged with a merge commit. [`CONTRIBUTING.md`](CONTRIBUTING.md#how-a-change-lands) describes
-how changes land.
 
 - **`pnpm ci:verify`** runs the checks of the `verify` job on your machine, in order (the job
   also ends with `wrangler deploy --dry-run`, which is `pnpm worker:deploy:dry`, and the upload of
@@ -1084,15 +923,10 @@ A missing licence or version placeholder stops the build.
 Deployment is a Cloudflare Worker that serves `dist/` as static assets
 ([`wrangler.jsonc`](wrangler.jsonc)). There are no Functions, no SSR and no database.
 
-A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` runs only
-after `verify`, `e2e`, `e2e-service-worker`, `behavior` and `coverage` have passed. It builds
-nothing: it downloads the `dist` artifact of `verify`, the files those jobs tested, and runs
-`wrangler deploy` (`pnpm dlx wrangler@4.135.0`, a pinned version, not a dependency of the repository) with the
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then `tools/deploy/smoke.mjs`
-against `https://pdf.isolmaz.com`. If the smoke check fails or runs past its time limit, the job
-runs `wrangler rollback` to the previous version and fails. Only one deploy runs at a time and a
-running one is never cancelled; a commit that is not `main`'s head when its deploy starts deploys
-nothing, and a head that cannot be read fails the job rather than skipping the deploy.
+A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` builds
+nothing, publishes the `dist` artifact that `verify` built and the browser jobs tested, runs
+`tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com` and rolls back if the check fails
+([`CONTRIBUTING.md`](CONTRIBUTING.md#continuous-integration) has the details).
 
 GitHub Actions is the only deploy path: Workers Builds' automatic deploy for this Worker, in the
 Cloudflare dashboard, must be switched off.
@@ -1128,11 +962,9 @@ pnpm worker:deploy:dry      # same, with --dry-run
   pack is reported as `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release never
   reads an older cache.
-- **Engine versions.** Every engine is served from a version directory
-  (`/engines/<engine>/v<digest>/…`, the digest taken over the engine's pins), because the
-  browser keeps `/engines/*` for a year: a rebuilt engine is a new URL, never old bytes under
-  the new editor. Readiness compares those URLs, so a cached engine of another version counts
-  as `missing`.
+- **Engine versions.** Every engine is served from a versioned URL, so a rebuilt engine is
+  never answered with old cached bytes under the new editor. Readiness compares those URLs, so
+  a cached engine of another version counts as `missing`.
 - **After an app update.** The release identity covers the pinned assets and the editor build,
   so an app-only deploy changes the service worker too: the browser installs it and offers the
   update. The old worker, still serving, reports nothing ready and refuses to Prepare against

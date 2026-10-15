@@ -292,8 +292,8 @@ data therefore cannot be wired in at all.
 
 ### 4.4 Saving a version
 
-There is no save-time router and no chain of engines run "just in case". Every capability
-ran when the user applied it: its result became the working version (§4.1) and a
+Every capability runs when the user applies it, and nothing runs again at save time: its
+result becomes the working version (§4.1) and a
 `document.change` entry (§4.2), in the order the user applied them. Save and Export
 therefore do not replay anything; they write the bytes of the **current version** after one
 preparation (`features/save/prepare-output.ts`), then record what was written
@@ -1082,7 +1082,11 @@ writer does, and the steps it reports:
   the glyphs drawn before the save (`subsetEmbeddedFaces`, below), a
   standard-14 face is drawn through WinAnsiEncoding (`standardFace`) only when WinAnsi can
   spell the line, and a `doc:<name>` face is the page's own font (`engines/doc-fonts.ts`,
-  §5.8); and the page geometry of the text source (`text-source.ts`);
+  §5.8), used only when it has a code for every character of the line. Noto Sans is the last
+  face: a line with a character it has no glyph for is refused as `glyph-missing`, naming the
+  characters, before anything is drawn, because glyph 0 would be a box or unextractable text;
+  and the page geometry of the text source (`text-source.ts`, whose `y` is measured from the
+  top edge of the page box, so a box that does not start at `y = 0` round-trips);
 - the batch runner's page count (`ops/batch.ts`), measured through `openForWrite`, so a
   password-locked item fails on its own with `encrypted-unsupported`;
 - signing and signature verification (`ops/sign.ts`, `ops/signature-status.ts`); the Node
@@ -1635,6 +1639,10 @@ result, with the writer's real step ids.
 and both `protectDocument()` and `unlockDocument()` **re-open their own output and
 verify** (cipher and permissions for protect; page count plus a text sample for unlock),
 because a mis-authenticated MuPDF save writes undecryptable garbage instead of failing.
+An empty owner password is replaced by 256 random bits that nobody sees (`op.note.security.ownerPasswordGenerated`),
+so the permissions bind every reader who only has the open password; an input that is already
+password-locked is authenticated with `oldPassword` first; and a password containing `=` or `,`
+is refused as `password-policy`, because MuPDF splits its option list on both.
 Encrypting or unlocking rewrites the file, so a signed input (counted by
 `collectSignatureFields`, the collector `verifySignatures` uses: the `/AcroForm /Fields` tree plus
 signature widgets only a page's `/Annots` reach, once the password has opened the file) gets a
@@ -2041,6 +2049,7 @@ rewrite and the report says so; an XFA form carrying `<script` is dropped whole,
 dynamic one (no AcroForm fields besides signatures): its page is only the placeholder, so a
 run that would drop its XFA is refused with `xfa-dynamic` before anything is written, as
 removing or flattening one is.
+
 ### 5.12 Form field detection
 
 `ops/form-detect.ts` finds the places a flat page asks to be written in and offers them as
@@ -2107,6 +2116,7 @@ precision and 67 % recall. Documents that are not forms (an article, a résumé,
 Word, PowerPoint, HTML, EPUB and text, a 100-page book) gave no candidates, except a
 "Notes:" colon, a spreadsheet's TRUE cell, and the signature captions of a certificate and
 an invoice.
+
 ### 5.13 PDF/A: conversion and checker
 
 `ops/pdfa.ts` (`convertToPdfA`) converts to PDF/A-1b, 2b or 3b; `ops/pdfa-check.ts`
@@ -2247,7 +2257,7 @@ The pieces, in the order the text-edit pipeline uses them:
    programme this package does not ship → **substituted**; a shipped face matching on
    family, weight and italic → **editable**.
 3. **Reflow (`reflow.ts`)** — block-local reflow with `measureLineWidth()` and a font
-   metric table: greedy line breaking inside the block's own box, left/centre/right/justify
+   metric table: greedy line breaking inside the block's own box (at spaces; for text written without them, between ideographic characters — Han, kana — with the line-start and line-end prohibitions of CJK typesetting, and between the words of Thai, Lao, Khmer and Burmese, which the runtime's `Intl.Segmenter` dictionary finds; such a break adds no space and no hyphen), left/centre/right/justify
    alignment, first-line indent, leading and paragraph spacing, hyphenation only when asked
    (at a code-point boundary with at least two characters on each side of the break; a word
    that still does not fit is placed whole and shows as an overflow) and an auto-shrink walk
@@ -2440,7 +2450,7 @@ runs the operation and shows the report; only the result's own action
 anything, and "Close" discards. Modals remain for decisions that block: password, unsaved
 changes, signature warning, export choice, print, settings and the shortcut list.
 
-The host (`handleDialogResult`) applies a result and closes the form itself once the result
+The host (`dialogResult`, built by `createDialogRuns` in `features/dialogs/dialog-actions.ts`) applies a result and closes the form itself once the result
 has landed; the panel must not also go "back". Going back cancels the operation in flight,
 so a panel that did so right after handing over its result would abort every result before
 it reached the document (`e2e/editor-stability.spec.ts` guards this).
@@ -2458,7 +2468,7 @@ converted to PDF (`convert-to-pdf`, several files converted one by one and merge
 document open, their context carries no bytes, and their one result opens in a new tab. A
 tab's tools panel is frozen against that tab and dismissed when it changes, so these get a
 modal host instead (`dialogs/StartDialog.tsx`, the same `OperationForm` body) and their own
-result path (`handleStartResult`); `openDialog` returns without a tab, so routing a
+result path (`startResult`, from the same `createDialogRuns`); `openDialog` returns without a tab, so routing a
 standalone operation through it would leave a command that is enabled with no document and
 does nothing.
 
@@ -2929,15 +2939,15 @@ Two rules make that list trustworthy:
 Ids crossing into session state are **reminted**: the readers (`ops/annotation-data.ts`,
 `annotation-xfdf.ts`) give every mark a fresh id, and the importer still gives a fresh UUID to
 an id already in use, because a name a file carries is not unique across documents. The import
-result also states its geometry space: this app's JSON and the `ann.N.*` FDF records it used to
-write are in app space, while Acrobat's comment FDF and XFDF are PDF user space and are mirrored
+result also states its geometry space: this app's JSON and the older `ann.N.*` FDF records
+are in app space, while Acrobat's comment FDF and XFDF are PDF user space and are mirrored
 into app space with each page's top edge (`toAppSpace`) — read as app space, every Acrobat
 comment would land mirrored about the page's middle. The JSON records carry `rect` and
 `fontSize` as well, because a note's place is its `rect` alone. Before a result becomes session state, `keepMarksOnPages()`
 drops the marks on pages the document does not have and counts them as skipped, and the record
 reader settles what a later save would refuse: a colour that is not `#rrggbb` becomes the
 default, and a shape this app cannot draw or a page that is not a whole number from 0 makes
-the record skipped — one bad record used to make every save after the import fail
+the record skipped, so a bad record never makes a later save fail
 (`hexToRgb`, the page range check and the shape subtype all throw on write). The comments panel shows a saved
 mark's words through `commentText()`, never the `pdf-editor-ann:<id>` marker itself — which is only
 the head of the text (`markerId()`): the same words in the middle of a comment are the reader's
@@ -3009,8 +3019,8 @@ behind the `\376\377` BOM (`form-data.ts`): escaping only the non-ASCII characte
 units inside a single-byte string would read back `gö` as `g\0ö`, which breaks Turkish form
 values and comments in every reader.
 
-The tokenizer advances on every character, so a lone `<`, `>` or `)` can no longer keep it in
-place (a hex `/ID [<0123ABCD><4567EF01>]`, as Acrobat writes it, used to hang the page).
+The tokenizer advances on every character, so a lone `<`, `>` or `)` cannot keep it in
+place (a hex `/ID [<0123ABCD><4567EF01>]`, as Acrobat writes it, is read like any other string).
 A hex string (`<FEFF00C7>`) reads like a literal one; a string without a BOM is PDFDocEncoding
 (`0x9A` is `ı`, `0xA0` is `€`) when `parseFdf` reads a file's bytes. `parseFdf` then reads the
 tokens as dictionaries: `/T` and `/V` in either order, `/Kids` as `parent.child`, a field written
@@ -3398,46 +3408,18 @@ The release path is a pull request, then GitHub Actions, then a deploy that only
 `verify`, `e2e` (4 shards), `e2e-service-worker`, `behavior` and `coverage`, force-pushes are blocked, and
 merges are merge commits.
 
-- `.github/workflows/ci.yml` runs on `pull_request`, `push` to `main` and `workflow_dispatch`.
-  `verify` installs with the frozen lockfile and runs `pnpm typecheck`, `pnpm check`,
-  `pnpm check:docs` (the documentation sync check), `pnpm fetch:engines --sync`, `pnpm unit`,
-  `pnpm audit:model-types`, `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`,
-  `pnpm assemble:dist` and `wrangler deploy --dry-run`, then uploads the assembled `dist/` as the
-  `dist` artifact: it is the only job that builds the production site. `e2e` needs `verify`: four
-  shards, each downloads that `dist/`, installs Playwright Chromium (cached) and runs
-  `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`, uploading, on failure,
-  the HTML report and the traces (7 days). `e2e-service-worker` needs `e2e` and runs
-  `playwright test --project=service-worker --no-deps`. `behavior` needs `verify` and runs
-  `pnpm ci:behavior` (the OpenSSL signing round trip) against the downloaded `dist/`. The PDF → Word export is not measured round
-  trip in CI (the LibreOffice layout notes elsewhere in this file are recorded measurements, not a
-  dependency). Coverage runs
-  as three kinds of job, so that no runner holds the whole browser run: `coverage-unit` (needs
-  `verify`) runs `pnpm coverage --unit-only`; `coverage-e2e` (needs `verify`) runs `pnpm coverage
-  --e2e-shard=N/4` in four shards; and `coverage` needs both, downloads what they uploaded and runs
-  `pnpm coverage --merge=coverage-parts --min=100` (every total at 100 %, the report uploaded as
-  `coverage-report`).
-- `deploy` runs only on a push to `main` and needs every job above. It builds nothing: it downloads the
-  `dist` artifact of `verify`, the files the browser jobs tested, and `pnpm dlx wrangler@4.135.0 deploy`
-  with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets publishes
-  <https://pdf.isolmaz.com/>, then `tools/deploy/smoke.mjs` checks the live site against the built
-  `dist/` (an HTML page the zone's bot protection challenges from the runner's network, 403 with
-  `cf-mitigated: challenge`, is reported rather than failed; this build's content-hashed editor
-  scripts, the security headers on the first of them and `/sw.js` are checked either way); if
-  the smoke check fails or runs past its time limit, `wrangler rollback` returns the Worker to
-  the previous version and the job fails. One deploy runs at a time (a concurrency
-  group; a running deploy is never cancelled), and a commit that is no longer `main`'s head when
-  its deploy starts deploys nothing (a head that cannot be read fails the job). This job is the
-  only deploy path: the Workers Builds auto-deploy of the Cloudflare dashboard must stay off.
-  `pnpm run worker:deploy` is the same publish by hand.
-- `.github/workflows/nightly.yml` (daily and on demand) runs the same three coverage jobs as
-  `ci.yml` (`coverage-unit`, `coverage-e2e` in four shards, and `coverage`, whose `pnpm coverage
-  --merge=coverage-parts --min=100` fails when any total is under 100 % and uploads the report for
-  14 days) and `flaky`, which runs the `chromium` project in four shards with `--repeat-each=2
-  --retries=0 --fail-on-flaky-tests`.
-- `.github/workflows/revert-proof.yml` (on demand, and when the `revert-proof` label is added to a
-  pull request, no other label starting it or cancelling a run; six shards) takes every fix a pull request lists in the manifest
-  `tools/review/revert-proof.json` (empty by default) and checks that the fix's own test fails
-  on the fix commit's parent and passes on the fix commit.
+- **One build, one deploy path.** `verify` in `.github/workflows/ci.yml` is the only job that
+  builds the production site; the browser jobs download its `dist` artifact and `deploy`
+  (a push to `main`, after every other job) publishes exactly those files with
+  `pnpm dlx wrangler@4.135.0`, then `tools/deploy/smoke.mjs` checks the live site against the
+  built `dist/` (an HTML page the zone's bot protection challenges from the runner's network,
+  403 with `cf-mitigated: challenge`, is reported rather than failed; this build's
+  content-hashed editor scripts, the security headers on the first of them and `/sw.js` are
+  checked either way). The Workers Builds auto-deploy of the Cloudflare dashboard must stay
+  off, and `pnpm run worker:deploy` is the same publish by hand. Every job, the nightly and
+  revert-proof workflows and the protection of `main` are described in `CONTRIBUTING.md`
+  ("Continuous integration"); the PDF → Word export is not measured round trip in CI (the
+  LibreOffice layout notes in this file are recorded measurements, not a dependency).
 
 The `dist/_headers` file is part of the upload, so the CSP and the COOP/COEP pair are
 host-enforced rather than dashboard settings. A green pipeline is not evidence that the deployed
@@ -3462,10 +3444,8 @@ Each layer is tested by the mechanism that would actually catch a regression in 
 | Cross-engine acceptance | `pnpm ci:behavior`: the annotate–fill–save acceptance sentence end to end in a real browser, the text-edit round trip that re-reads the produced bytes, and signing with an OpenSSL identity through the product's own import/sign/verify path including a one-byte tamper case |
 | Coverage | `pnpm coverage` (`tools/coverage/report.mjs`): the unit suite under V8 coverage with every source file of `packages/*/src` and `apps/*/src` counted, then the Playwright suite against an unminified build without the React Compiler (`COVERAGE_BUILD=1`) with `E2E_COVERAGE` set, so every page of a test's browser context records V8 coverage of `/editor/assets/*.js` and writes it to its own gzipped file when the page is collected (`e2e/test.ts`), a worker keeping nothing between tests; the records are merged a batch at a time, mapped to the sources through the build's maps with `ast-v8-to-istanbul` (the unit provider's converter), and their counts are added to the unit result's statements, functions and branches, met by where each starts (the two source maps agree on starts, rarely on ends), or, for an item no browser item starts at (a declaration starts at its initialiser on one side and at its name on the other), by the one browser item over the same lines when each side has exactly one item there; a browser item with no unit counterpart is dropped, never counted. The production build is restored before the script exits. With no mode flag one process does all of this; the hosted workflows split it: `--unit-only` runs the unit suite and leaves `coverage/unit/coverage-final.json`, `--e2e-shard=N/M` builds, runs the chromium project's shard N of M (shard M also the service-worker tests) and leaves its records in `coverage/e2e-v8/`, and `--merge=<dir>[,<dir>...]` takes those files from the directories, builds the editor again for its source maps (the build is deterministic), restores the production build and writes the report. `--skip-e2e` reports the unit suite alone; `--min=<percent>` fails a run that prints a report when the total lines, statements, branches or functions are under it, and names the files that miss (the CI and nightly `coverage` jobs pass `--merge=coverage-parts --min=100`). `E2E_WORKERS` caps the browsers and Vitest's own `VITEST_MAX_WORKERS` the unit workers. Ghostscript's worker and the service worker are not recorded by a page |
 | Engine and hostile-input guards | A guard against a misbehaving engine or a hostile file is tested by fault injection. In Node, a `*.faults.test.ts` beside the operation (for example `structure.faults.test.ts`) wraps `loadMupdf` in a proxy that damages the document just before it is saved or makes one call fail, while the bytes that come out and the second reader stay real. In the browser, `e2e/engine-faults.ts` serves the real MuPDF module through a wrapper and wraps pdf.js's worker, so a spec can make one named engine call fail (`failNext`, optionally letting the first matching calls through) or hold it (`holdNext`) to stage a race, without touching product code; the `faults16*` specs assert the notice, that the exported file is unchanged and that the retry works. `e2e/recent-handles-gate.ts` does the same for the handle store that draft recovery waits on (`e2e/ui-recovery-race.spec.ts`) |
-| Hosted CI | `.github/workflows/ci.yml`: `verify` (frozen install, `pnpm typecheck`, `pnpm check`, `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`, `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`, `wrangler deploy --dry-run`); `e2e` in 4 shards (each downloads the `dist/` `verify` built and uploads, runs `playwright test --project=chromium --shard=N/4` with `E2E_WORKERS=2`; HTML report, and traces on failure, kept 7 days); `e2e-service-worker` (`--project=service-worker --no-deps`); `behavior` (`pnpm ci:behavior`); `coverage-unit` (`pnpm coverage --unit-only`), `coverage-e2e` in 4 shards (`pnpm coverage --e2e-shard=N/4`, each building the unminified editor and uploading its pages' V8 records) and `coverage`, which needs both and runs `pnpm coverage --merge=coverage-parts --min=100` on the artifacts they uploaded; then, on a push to `main` only, `deploy` with the live smoke check `tools/deploy/smoke.mjs` and `wrangler rollback` when it fails (§13.4) |
-| Nightly | `.github/workflows/nightly.yml`: the three coverage jobs of `ci.yml`, whose `coverage` runs `pnpm coverage --merge=coverage-parts --min=100` (fails when any total is under 100 %, uploads the report), and the Playwright suite in 4 shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`, which finds a flaky test the retry of the pull-request run would hide |
-| Revert proof | `.github/workflows/revert-proof.yml` (on demand, or a pull request labelled `revert-proof`): for every fix a pull request lists in `tools/review/revert-proof.json`, the fix's own test fails on the fix commit's parent and passes on the fix commit |
-| Documentation sync | `pnpm check:docs`, a step of `verify`, fails when the documentation and the code disagree |
+| Hosted CI, nightly, revert proof | `.github/workflows/ci.yml`, `nightly.yml` and `revert-proof.yml`; every job is described once, in `CONTRIBUTING.md` ("Continuous integration"), and the deploy in §13.4 |
+| Documentation sync | `pnpm check:docs` (`tools/audit/docs-sync.mjs`), a step of `verify`, fails when a file path, `pnpm` script or command the documentation names does not exist, when a Turkish site page and its English page differ in structure, or when a site link does not resolve; whether the prose is true is a reviewer's check |
 | Numbers rather than assertions | `pnpm measure:model` reports journal append/undo/redo timings at depth 100/1k/10k, snapshot retention at 8/40/130 MiB versions, and engine-value encode/decode/drop counts. It is deliberately outside `pnpm unit` so a measurement can never become a build gate |
 
 `tools/behavior/` holds the three `ci:behavior` checks
