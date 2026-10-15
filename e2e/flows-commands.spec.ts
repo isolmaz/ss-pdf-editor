@@ -639,8 +639,14 @@ test('home "All tools" tile: a tool whose file cannot be opened does not run on 
     .setInputFiles(pdfFile('later.pdf', toolFixturePdf()));
   await expect(page.locator(CANVAS).first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Opening the document…')).toHaveCount(0, { timeout: 30_000 });
-  // A tool still waiting would run as soon as the open settles.
-  await page.waitForTimeout(2_000);
+  // A tool still waiting would run as soon as the open settles, and it holds the shell while
+  // it opens its form: a page action is refused until then. Rotating the page is accepted only
+  // once nothing is running, so the "Applied" line is the signal that a waiting tool would have
+  // come up by now; the press is repeated while the shell still refuses it.
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Rotate Page (90°)', exact: true }).click();
+    await expect(notice(page, 'Applied')).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(page.getByRole('region', { name: 'Save as PDF/A' })).toHaveCount(0);
   // The control: asked for on purpose, the same form does show in that place.
   await useAdvancedMode(page);

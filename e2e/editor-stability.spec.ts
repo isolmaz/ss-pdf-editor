@@ -175,14 +175,19 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   await useAdvancedMode(page);
   const redactForm = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
   const redactLayer = page.getByRole('application', { name: 'Draw rectangle', exact: true });
+  // The form is a lazy chunk behind an operation that holds the strip's button off while it
+  // runs (opening the form is one). Selected by text, not role: a modal palette hides the
+  // strip from the accessibility tree. Enabled again means that whatever an attempt started
+  // has ended, with its form up or its failure shown, so an absence asserted after it is
+  // conclusive without a guessed delay.
+  const unlockCopy = page.locator('button', { hasText: 'Create unlocked copy' });
 
   // (a) The command palette lists the command but disabled; choosing it opens nothing.
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill('Redaction (Permanent Erase)');
   await expect.soft(page.getByRole('option', { name: /Redaction \(Permanent Erase\)/ })).toBeDisabled();
   await page.keyboard.press('Enter');
-  // The form is a lazy chunk: give an opening one the time it needs before asserting absence.
-  await page.waitForTimeout(2_000);
+  await expect(unlockCopy).toBeEnabled();
   await expect.soft(redactForm).toHaveCount(0);
   await page.keyboard.press('Escape');
 
@@ -197,7 +202,7 @@ test('a protected PDF asks for its password, refuses a wrong one and opens read-
   const permanent = tools.getByRole('button', { name: /^Permanent Redaction/ });
   await expect(permanent).toBeVisible();
   await permanent.click();
-  await page.waitForTimeout(2_000);
+  await expect(unlockCopy).toBeEnabled();
   await expect(redactForm).toHaveCount(0);
   await expect(redactLayer).toHaveCount(0);
 });

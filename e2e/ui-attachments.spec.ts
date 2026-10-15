@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import type { Locator, Page } from 'playwright/test';
 import { mutate } from '../packages/pdf-core/src/ops/tagged.fixtures';
 import { notice } from './app-helpers';
+import { injectEngineFaults, replyCount } from './engine-faults';
 import { expect, test } from './test';
 import { readProducedPdf, toolFixturePdf } from './tool-fixture';
 import { exportBytes, openDockTab, openPdf } from './ui-helpers';
@@ -269,10 +270,12 @@ test('leaving the view as soon as the list shows drops the size reads that follo
 });
 
 test('a name tree the engine cannot walk, left before it answers, stays silent', async ({ page }) => {
+  await injectEngineFaults(page);
   await openPdf(page, 'cycle.pdf', await cyclicTree(toolFixturePdf()));
   await clickTabsTogether(page, ['Attachments', 'Pages']);
   await expect(pagesTab(page)).toHaveAttribute('aria-selected', 'true');
-  // Give the engine's rejection time to arrive; nothing may be reported for a view that is gone.
-  await page.waitForTimeout(1500);
+  // The engine's rejection has to arrive before silence means anything: nothing may be reported
+  // for a view that is gone once the answer the view asked for has come.
+  await expect.poll(() => replyCount(page, 'GetAttachments')).toBeGreaterThan(0);
   await expect(notice(page, 'Something unexpected went wrong.')).toHaveCount(0);
 });
