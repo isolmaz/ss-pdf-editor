@@ -269,7 +269,11 @@ describe('trimmedPng', () => {
   it('fails with a sentence when the trimmed picture cannot be encoded', async () => {
     makeElement.failEncode = true;
     const source = canvasOf(30, 30, (context) => context.fillRect(5, 5, 10, 10));
-    await expect(trimmedPng(source, 'signature')).rejects.toThrow('the canvas could not be encoded');
+    await expect(trimmedPng(source, 'signature')).rejects.toMatchObject({
+      name: 'ToolError',
+      code: 'internal',
+      details: { engine: 'ui', engineMessage: 'the canvas could not be encoded' },
+    });
   });
 });
 

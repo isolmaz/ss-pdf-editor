@@ -12,7 +12,7 @@
 
 import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createTranslator } from 'pdf-shared';
+import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SavedSignature, StampSource } from '../ops/stamp-source';
 import { skia, skiaImageBitmap } from '../skia-canvas.fixtures';
@@ -211,6 +211,27 @@ describe('SignatureDialog drawing', () => {
     expect(source.pixelWidth).toBeLessThanOrEqual(440);
     expect(source.pixelHeight).toBeGreaterThanOrEqual(24);
     expect(source.pixelHeight).toBeLessThanOrEqual(40);
+  });
+
+  it('says so in the dialog, stays open and can be asked again when the picture cannot be placed', async () => {
+    const onPlace = vi.fn().mockImplementationOnce(() => {
+      throw new ToolError('internal', { engine: 'ui', engineMessage: 'the canvas could not be encoded' });
+    });
+    show({ onPlace });
+    stroke([
+      [100, 50],
+      [200, 50],
+    ]);
+    await user.click(place());
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Something unexpected went wrong. Try again; report it if it keeps happening.',
+    );
+    expect(place().disabled).toBe(false);
+
+    await user.click(place());
+    await waitFor(() => expect(onPlace).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('draws a single press as a dot', async () => {

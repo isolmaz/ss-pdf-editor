@@ -36,7 +36,7 @@ import type {
 } from 'pdf-core/ops/compare';
 import { compareText, compareVisual } from 'pdf-core/ops/compare';
 import type { OperationProgress } from 'pdf-core/ops/types';
-import { type MessageKey, type Translator, toToolError } from 'pdf-shared';
+import { type MessageKey, progressLine, type Translator, toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PanelMessage } from './PanelParts';
@@ -333,13 +333,7 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
         </div>
         {/* The live region exists before it has anything to say (`DESIGN.md`). */}
         <p aria-live="polite" className="min-h-[1.1rem] text-[11px] tabular-nums text-kumo-subtle">
-          {running && run.progress !== null
-            ? t('op.progress', {
-                label: t(run.progress.labelKey),
-                done: run.progress.done ?? 0,
-                total: run.progress.total ?? 0,
-              })
-            : ''}
+          {running && run.progress !== null ? progressLine(t, run.progress) : ''}
         </p>
       </div>
 

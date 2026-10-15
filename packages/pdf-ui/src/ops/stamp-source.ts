@@ -8,6 +8,8 @@
  * `pdf-core/ops/image-stamp.ts` needs.
  */
 
+import { ToolError } from 'pdf-shared';
+
 /** What a stamp is made of, ready for `addImageStamp`. */
 export interface StampSource {
   readonly role: 'signature' | 'initials' | 'image';
@@ -116,7 +118,9 @@ function inkBounds(
 
 async function canvasBytes(canvas: HTMLCanvasElement, type: 'image/png' | 'image/jpeg'): Promise<Uint8Array> {
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.92));
-  if (blob === null) throw new Error('the canvas could not be encoded');
+  if (blob === null) {
+    throw new ToolError('internal', { engine: 'ui', engineMessage: 'the canvas could not be encoded' });
+  }
   return new Uint8Array(await blob.arrayBuffer());
 }
 

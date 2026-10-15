@@ -25,7 +25,19 @@ type OpenWithPdfjs = typeof import('pdf-core/engines/pdfjs-handle').openWithPdfj
 
 const seam = vi.hoisted(() => ({
   open: null as null | ((...args: Parameters<OpenWithPdfjs>) => Promise<unknown>),
+  /** The signal each save's verification was given. */
+  signals: [] as AbortSignal[],
 }));
+vi.mock('pdf-core/ops/xfa-form', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('pdf-core/ops/xfa-form')>();
+  return {
+    ...actual,
+    finishXfaFill: (...args: Parameters<typeof actual.finishXfaFill>) => {
+      if (args[2]?.signal !== undefined) seam.signals.push(args[2].signal);
+      return actual.finishXfaFill(...args);
+    },
+  };
+});
 vi.mock('pdf-core/engines/pdfjs-handle', async (importOriginal) => {
   const actual = await importOriginal<typeof import('pdf-core/engines/pdfjs-handle')>();
   return {
@@ -84,6 +96,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   seam.open = null;
+  seam.signals.length = 0;
   vi.unstubAllGlobals();
   for (const [name, descriptor] of originals) {
     if (descriptor === undefined) Reflect.deleteProperty(HTMLElement.prototype, name);
@@ -193,6 +206,37 @@ describe('XfaFormDialog on a dynamic form', () => {
     await userEvent.click(button('Close'));
     expect(given.onClose).toHaveBeenCalledTimes(1);
   }, 30000);
+
+  it('stops a save in flight when the dialog is closed, and tells nobody it failed', async () => {
+    const held = Promise.withResolvers<undefined>();
+    const { given } = await opened({ onSave: vi.fn(() => held.promise) });
+    await userEvent.type(screen.getAllByRole('textbox')[0] as HTMLInputElement, 'Q');
+    await waitFor(() => expect(button('Save to document').disabled).toBe(false));
+
+    await userEvent.click(button('Save to document'));
+    await waitFor(() => expect(given.onSave).toHaveBeenCalledTimes(1));
+    const [signal] = seam.signals;
+    expect(signal?.aborted).toBe(false);
+
+    await userEvent.click(button('Close'));
+    await userEvent.click(button('Close without saving'));
+    expect(given.onClose).toHaveBeenCalledTimes(1);
+    expect(signal?.aborted).toBe(true);
+    held.resolve(undefined);
+  }, 40000);
+
+  it('stops a save in flight when the dialog goes away', async () => {
+    const held = Promise.withResolvers<undefined>();
+    const { given, view } = await opened({ onSave: vi.fn(() => held.promise) });
+    await userEvent.type(screen.getAllByRole('textbox')[0] as HTMLInputElement, 'Q');
+    await waitFor(() => expect(button('Save to document').disabled).toBe(false));
+    await userEvent.click(button('Save to document'));
+    await waitFor(() => expect(given.onSave).toHaveBeenCalledTimes(1));
+
+    view.unmount();
+    expect(seam.signals[0]?.aborted).toBe(true);
+    held.resolve(undefined);
+  }, 40000);
 
   it('asks once before it discards typed values, then closes', async () => {
     const { given } = await opened();

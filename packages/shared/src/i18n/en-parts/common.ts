@@ -31,6 +31,7 @@ export const commonPart = {
   'op.result.download': 'Download',
   'op.result.applied': 'Applied to document: {label} (Undo with Ctrl+Z)',
   'op.result.noChangePages': 'Nothing changed: no page to apply the action to.',
+  'op.result.nothing': 'Nothing changed: the operation produced no file to write.',
   'op.result.opened': 'Opened in new tab: {name}',
   'op.result.downloaded': 'Downloaded: {name}',
   'op.result.confirmDestructive': 'This operation may permanently delete content. Continue?',

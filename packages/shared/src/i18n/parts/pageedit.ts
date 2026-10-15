@@ -75,6 +75,8 @@ export const pageeditPart = {
   'replace.sizeHint':
     '“Geçerli sayfayla aynı” seçeneği her yedek sayfayı, yerine geçtiği sayfanın boyutunda üretir.',
   'replace.progress.prepare': 'Yedek sayfalar hazırlanıyor',
+  /** What a blank-page replacement names as its source in the replace step. */
+  'replace.sourceName.blank': 'boş yedek sayfalar',
   'replace.progress.replace': 'Sayfalar değiştiriliyor',
   'replace.note.replaced': '{count} sayfa değiştirildi.',
 

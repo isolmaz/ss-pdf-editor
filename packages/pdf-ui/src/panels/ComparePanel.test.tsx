@@ -443,13 +443,20 @@ describe('ComparePanel while comparing', () => {
     await vi.waitFor(() => expect(onProgress).toBeDefined());
     act(() => onProgress?.({ phase: 'text', labelKey: 'compare.running', done: 2, total: 5 }));
     expect(screen.getByText('Comparing… (2/5)')).toBeTruthy();
+    act(() => onProgress?.({ phase: 'text', labelKey: 'compare.running', done: 2.6, total: 5 }));
+    expect(screen.getByText('Comparing… (2/5)')).toBeTruthy();
+    // A report without a step count is the sentence alone (beside the panel's own message), not "(0/0)".
     act(() => onProgress?.({ phase: 'text', labelKey: 'compare.running' }));
-    expect(screen.getByText('Comparing… (0/0)')).toBeTruthy();
+    expect(screen.getAllByText('Comparing…')).toHaveLength(2);
+    expect(screen.queryByText(/\(0\/0\)/)).toBeNull();
+    // A label with counters of its own is filled with whole numbers, the count after it.
+    act(() => onProgress?.({ phase: 'ocr', labelKey: 'ocr.running', done: 2.4, total: 10 }));
+    expect(screen.getByText('Recognizing page 3/10 (2/10)')).toBeTruthy();
 
     await act(async () => pending.resolve(textResult([textPage(0)])));
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Compare text' }).hasAttribute('disabled')).toBe(false);
-    expect(screen.queryByText('Comparing… (0/0)')).toBeNull();
+    expect(screen.queryByText('Recognizing page 3/10 (2/10)')).toBeNull();
   });
 
   it('keeps the earlier table while a second comparison runs', async () => {
