@@ -747,6 +747,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'tools.group.pages',
       group: 'page',
       disabled: noDocument,
+      disabledReason: documentReason,
       keywords: ['organize', 'reorder', 'thumbnails', 'duzenle', 'sirala', 'kucuk resim'],
       run: () => host.openLeftTab('pages'),
     },

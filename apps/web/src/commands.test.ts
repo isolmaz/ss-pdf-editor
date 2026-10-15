@@ -456,7 +456,13 @@ describe('buildCommands', () => {
   it('says why a command is unavailable: no document, no right to edit, nothing selected', () => {
     const reason = (commands: readonly Command[], id: string) => byId(commands, id).disabledReason;
     const none = buildCommands(recordingHost({ hasDocument: false, canEdit: false }).host);
-    for (const id of ['page.rotate-left', 'edit.rename', 'edit.find-replace', 'edit.select-all-pages']) {
+    for (const id of [
+      'page.organize',
+      'page.rotate-left',
+      'edit.rename',
+      'edit.find-replace',
+      'edit.select-all-pages',
+    ]) {
       expect(reason(none, id), id).toBe('cmd.reason.noDocument');
     }
     const viewing = buildCommands(recordingHost({ canEdit: false }).host);
