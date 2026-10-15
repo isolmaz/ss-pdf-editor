@@ -154,6 +154,15 @@ describe('findBlankPages', () => {
     expect(await findBlankPages(bytes, run)).toEqual([0]);
   });
 
+  it('takes a light-grey mark on white paper for content, and the same grey filling the page for tinted paper', async () => {
+    const bytes = await build([
+      { content: '0.8 g 20 20 80 40 re f' },
+      { content: '0.8 G 1 w 20 50 m 180 50 l S 20 80 m 180 80 l S' },
+      { content: '0.8 g 0 0 2000 2000 re f' },
+    ]);
+    expect(await findBlankPages(bytes, run)).toEqual([2]);
+  });
+
   it('draws a poster-sized page at a bounded size and still finds its ink', async () => {
     const bytes = await build([
       { size: [14400, 14400] },

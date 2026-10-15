@@ -1023,8 +1023,9 @@ writer does, and the steps it reports:
 - page tidy-up (`ops/page-tidy.ts`, steps `load` / `split-two-up` / `save`). `findBlankPages`
   judges a page blank only when it has no annotation (a widget is one), no letter or digit of
   structured text (invisible text counts, punctuation alone does not) and at most 0.01 % of
-  its pixels darker than grey 200 when drawn in grey at 50 dpi (longest side capped at 2000
-  px). It judges the render, not the content stream, so an image of an empty sheet or a white
+  its pixels count as ink when drawn in grey at 50 dpi (longest side capped at 2000 px): darker
+  than grey 200, or more than 25 levels darker than the page's paper (its median grey), so a
+  light-grey logo or gridline on white paper is content and a tinted or noisy sheet is not. It judges the render, not the content stream, so an image of an empty sheet or a white
   rectangle is blank and a scan's noise does not hold the page. `splitTwoUpPages` copies the
   page dictionary of each landscape page (every entry shared by reference, so the content
   streams and images exist once; inherited `/Resources` and `/Rotate` are made the page's own

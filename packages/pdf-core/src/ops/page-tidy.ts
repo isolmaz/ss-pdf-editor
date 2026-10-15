@@ -52,8 +52,16 @@ const BLANK_DPI = 50;
 /** No side of the judged bitmap is longer than this, so a poster-sized page stays a modest bitmap. */
 const BLANK_MAX_SIDE_PX = 2000;
 
-/** A grey level below this is ink; paper, tinted paper and a noisy scan of paper are above it. */
+/** A grey level below this is always ink; paper, tinted paper and a noisy scan of paper are above it. */
 const INK_BELOW = 200;
+
+/**
+ * How much darker than the page's own paper (its median grey) a pixel may be and still be paper.
+ * On white paper this makes a light-grey logo or gridline ink (grey 204, and a thin line of it
+ * drawn lighter still at this resolution), which `INK_BELOW` alone would take for paper; it never
+ * makes the test less strict than `INK_BELOW`.
+ */
+const PAPER_MARGIN = 25;
 
 /** The share of the pixels that may be ink on a blank page: scanner dust, not content. */
 const INK_TOLERANCE = 0.0001;
@@ -73,13 +81,22 @@ function isBlankPixmap(pixmap: Pixmap): boolean {
   const height = pixmap.getHeight();
   const stride = pixmap.getStride();
   const pixels = pixmap.getPixels();
-  let ink = 0;
+  const histogram = new Uint32Array(256);
   for (let y = 0; y < height; y += 1) {
     const row = y * stride;
     for (let x = 0; x < width; x += 1) {
-      if ((pixels[row + x] as number) < INK_BELOW) ink += 1;
+      const grey = pixels[row + x] as number;
+      histogram[grey] = (histogram[grey] as number) + 1;
     }
   }
+  let paper = 0;
+  for (let seen = 0; paper < 255; paper += 1) {
+    seen += histogram[paper] as number;
+    if (seen * 2 >= width * height) break;
+  }
+  const inkBelow = Math.max(INK_BELOW, paper - PAPER_MARGIN);
+  let ink = 0;
+  for (let grey = 0; grey < inkBelow; grey += 1) ink += histogram[grey] as number;
   return ink <= Math.floor(width * height * INK_TOLERANCE);
 }
 
