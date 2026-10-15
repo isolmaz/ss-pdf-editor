@@ -23,6 +23,9 @@ export const errorsPart = {
   'error.xfa-dynamic.hint': 'Open it with “Fill XFA form”, or use “Flatten XFA form to a normal PDF”.',
   'error.xfa-static.message': 'This is a static XFA form: its pages are already in the PDF.',
   'error.xfa-static.hint': 'Use “Flatten form fields”, or “Remove XFA” to keep only the AcroForm.',
+  'error.glyph-missing.message': 'The text has characters that none of the available fonts contain: {chars}',
+  'error.glyph-missing.hint':
+    'Remove these characters from the text or replace them with ones the font has. Nothing was written; your document is unchanged.',
   'error.password-policy.message': 'Operation halted by password policy.',
   'error.password-policy.hint': 'Cannot encrypt without an open password.',
 } as const;

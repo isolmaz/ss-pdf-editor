@@ -121,8 +121,8 @@ export function useOperationRun(): OperationRunState {
           progress: null,
           result: null,
           error: {
-            message: context.t(failure.messageKey),
-            hint: context.t(failure.hintKey),
+            message: context.t(failure.messageKey, failure.details.params),
+            hint: context.t(failure.hintKey, failure.details.params),
             diagnostic: failure.details.engineMessage ?? null,
           },
         });
