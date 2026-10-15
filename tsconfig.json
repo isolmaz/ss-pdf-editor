@@ -12,6 +12,7 @@
     "noFallthroughCasesInSwitch": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowJs": true,
@@ -19,6 +20,17 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx", "e2e/**/*.ts"],
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "packages/**/*.tsx",
+    "e2e/**/*.ts",
+    "tools/**/*.test.ts",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "vitest.measure.config.ts",
+    "vitest.setup.ts"
+  ],
   "exclude": ["**/dist/**", "**/node_modules/**"]
 }

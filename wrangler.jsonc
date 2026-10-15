@@ -8,9 +8,12 @@
   // `dist/_headers` travels with it, so the CSP and the COOP/COEP pair for `/editor/*`
   // are enforced by the host and never depend on a dashboard setting.
   //
-  // Cloudflare Builds validates with `pnpm ci:verify`; its configured Deploy command
-  // runs `pnpm run worker:deploy`, also available manually. The same command's
-  // `routes` entry below claims `pdf.isolmaz.com` for **this** Worker only.
+  // GitHub Actions is the only thing that deploys: the `deploy` job of `.github/workflows/ci.yml`
+  // publishes the `dist/` that its `verify` job assembled, once every check has passed.
+  // `pnpm worker:deploy` is the same publish by hand. The Workers Builds integration of the
+  // Cloudflare dashboard must not deploy this Worker on a push: a second deploy path would
+  // publish builds the checks never saw. The `routes` entry below claims `pdf.isolmaz.com` for
+  // **this** Worker only.
   "name": "pdf-editor",
   "compatibility_date": "2026-09-15",
   "assets": {

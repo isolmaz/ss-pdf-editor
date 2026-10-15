@@ -340,6 +340,7 @@ export async function inkWithin(
     getHeight(): number;
     getNumberOfComponents(): number;
     getPixels(): Uint8ClampedArray;
+    destroy(): void;
   }
   interface RenderModule {
     readonly Matrix: { readonly identity: unknown };
@@ -363,22 +364,30 @@ export async function inkWithin(
     const pixmap = doc
       .loadPage(pageIndex)
       .toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, true);
-    const width = pixmap.getWidth();
-    const height = pixmap.getHeight();
-    const stride = pixmap.getNumberOfComponents();
-    const pixels = pixmap.getPixels();
-    const [x0, y0, x1, y1] = rect;
-    let inked = 0;
-    let total = 0;
-    for (let y = Math.max(0, Math.floor(height - y1)); y < Math.min(height, Math.ceil(height - y0)); y += 1) {
-      for (let x = Math.max(0, Math.floor(x0)); x < Math.min(width, Math.ceil(x1)); x += 1) {
-        const at = (y * width + x) * stride;
-        total += 1;
-        if ((pixels[at] ?? 255) < 235 || (pixels[at + 1] ?? 255) < 235 || (pixels[at + 2] ?? 255) < 235)
-          inked += 1;
+    try {
+      const width = pixmap.getWidth();
+      const height = pixmap.getHeight();
+      const stride = pixmap.getNumberOfComponents();
+      const pixels = pixmap.getPixels();
+      const [x0, y0, x1, y1] = rect;
+      let inked = 0;
+      let total = 0;
+      for (
+        let y = Math.max(0, Math.floor(height - y1));
+        y < Math.min(height, Math.ceil(height - y0));
+        y += 1
+      ) {
+        for (let x = Math.max(0, Math.floor(x0)); x < Math.min(width, Math.ceil(x1)); x += 1) {
+          const at = (y * width + x) * stride;
+          total += 1;
+          if ((pixels[at] ?? 255) < 235 || (pixels[at + 1] ?? 255) < 235 || (pixels[at + 2] ?? 255) < 235)
+            inked += 1;
+        }
       }
+      return total === 0 ? 0 : inked / total;
+    } finally {
+      pixmap.destroy();
     }
-    return total === 0 ? 0 : inked / total;
   } finally {
     doc.destroy();
   }
@@ -469,7 +478,7 @@ export async function readProducedPageTexts(
 ): Promise<readonly string[]> {
   const pdfjsPath = coreRequire.resolve('pdfjs-dist/legacy/build/pdf.mjs');
   const pdfjs = (await import(pathToFileURL(pdfjsPath).href)) as {
-    getDocument(options: Record<string, unknown>): { promise: Promise<PdfJsDocument> };
+    getDocument(options: Record<string, unknown>): PdfJsLoadingTask;
   };
   interface PdfJsTextItem {
     readonly str: string;
@@ -482,23 +491,33 @@ export async function readProducedPageTexts(
     getPage(index: number): Promise<PdfJsPage>;
     cleanup(): Promise<void>;
   }
+  /** The loading task owns the worker side of the document: it, not the document proxy, is destroyed. */
+  interface PdfJsLoadingTask {
+    readonly promise: Promise<PdfJsDocument>;
+    destroy(): Promise<void>;
+  }
 
-  const document = await pdfjs.getDocument({
+  const task = pdfjs.getDocument({
     data: new Uint8Array(bytes),
     useSystemFonts: false,
     isEvalSupported: false,
     disableFontFace: true,
     // pdf.js wants a URL *prefix*, trailing separator included.
     standardFontDataUrl: STANDARD_FONTS,
-  }).promise;
-  const pages: string[] = [];
-  for (let index = 1; index <= Math.min(document.numPages, firstPages); index += 1) {
-    const page = await document.getPage(index);
-    const content = await page.getTextContent();
-    pages.push(content.items.map((item) => item.str).join(' '));
+  });
+  try {
+    const document = await task.promise;
+    const pages: string[] = [];
+    for (let index = 1; index <= Math.min(document.numPages, firstPages); index += 1) {
+      const page = await document.getPage(index);
+      const content = await page.getTextContent();
+      pages.push(content.items.map((item) => item.str).join(' '));
+    }
+    await document.cleanup();
+    return pages;
+  } finally {
+    await task.destroy();
   }
-  await document.cleanup();
-  return pages;
 }
 
 /**
@@ -519,18 +538,22 @@ export async function encryptedPdf(
       openDocument(
         bytes: Uint8Array,
         magic: string,
-      ): { asPDF(): { saveToBuffer(options: string): MupdfBuffer } };
+      ): { asPDF(): { saveToBuffer(options: string): MupdfBuffer; destroy(): void } };
     };
   }
   const mupdf = (await import(pathToFileURL(coreRequire.resolve('mupdf')).href)) as MupdfModule;
   const pdf = mupdf.Document.openDocument(bytes, 'application/pdf').asPDF();
-  const buffer = pdf.saveToBuffer(
-    `encrypt=aes-256,user-password=${openPassword},owner-password=${password}-owner`,
-  );
   try {
-    return new Uint8Array(buffer.asUint8Array());
+    const buffer = pdf.saveToBuffer(
+      `encrypt=aes-256,user-password=${openPassword},owner-password=${password}-owner`,
+    );
+    try {
+      return new Uint8Array(buffer.asUint8Array());
+    } finally {
+      buffer.destroy();
+    }
   } finally {
-    buffer.destroy();
+    pdf.destroy();
   }
 }
 
@@ -557,19 +580,24 @@ export async function authoredToolFixturePdf(author: string, subject: string): P
         asPDF(): {
           setMetaData(key: string, value: string): void;
           saveToBuffer(options: string): MupdfBuffer;
+          destroy(): void;
         };
       };
     };
   }
   const mupdf = (await import(pathToFileURL(coreRequire.resolve('mupdf')).href)) as MupdfModule;
   const pdf = mupdf.Document.openDocument(toolFixturePdf(), 'application/pdf').asPDF();
-  pdf.setMetaData('info:Author', author);
-  pdf.setMetaData('info:Subject', subject);
-  const buffer = pdf.saveToBuffer('');
   try {
-    return new Uint8Array(buffer.asUint8Array());
+    pdf.setMetaData('info:Author', author);
+    pdf.setMetaData('info:Subject', subject);
+    const buffer = pdf.saveToBuffer('');
+    try {
+      return new Uint8Array(buffer.asUint8Array());
+    } finally {
+      buffer.destroy();
+    }
   } finally {
-    buffer.destroy();
+    pdf.destroy();
   }
 }
 
@@ -768,8 +796,12 @@ export async function scannedPdf(pageLines: readonly (readonly string[])[]): Pro
       const pixmap = text
         .loadPage(index)
         .toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceGray, false, false);
-      const image = scan.addImage(new mupdf.Image(pixmap.asPNG()));
-      pixmap.destroy();
+      let image: MupdfObject;
+      try {
+        image = scan.addImage(new mupdf.Image(pixmap.asPNG()));
+      } finally {
+        pixmap.destroy();
+      }
       const page = scan.addPage(
         [0, 0, width, height],
         0,
