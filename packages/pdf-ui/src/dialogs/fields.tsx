@@ -353,35 +353,52 @@ export function FieldList({
         const value = typeof raw === 'string' ? raw : 'all';
         const mode: KeywordScope | 'custom' = isKeywordScope(value) ? value : 'custom';
         const text = rangeDrafts[field.id] ?? scopeText(value);
-        // The range box is the group's sibling, not its child: inside the radio group it
-        // was rebuilt on every keystroke, and each key replaced what the reader had typed.
+        const scopes = [
+          { value: 'all', label: t('op.scope.all', { count: pageCount }), disabled: false },
+          ...(currentPage === undefined
+            ? []
+            : [
+                {
+                  value: 'current',
+                  label: t('op.scope.current', { page: currentPage + 1 }),
+                  disabled: false,
+                },
+              ]),
+          {
+            value: 'selection',
+            label: t('op.scope.selection', { count: selectedCount }),
+            disabled: selectedCount === 0,
+          },
+          { value: 'custom', label: t('op.scope.custom'), disabled: false },
+        ];
+        // The range box sits beside the select, not inside it: it only exists for "custom" and
+        // owns that choice's error, while the select owns the empty selection's.
         return (
           <div key={field.id} className="flex flex-col gap-1.5">
-            <Radio.Group<string>
-              legend={label}
+            <Select<string>
+              size="sm"
+              label={label}
+              description={hint}
+              error={mode === 'custom' ? undefined : error}
               value={mode}
-              description={hint ?? (selectedCount === 0 ? t('op.scope.empty') : undefined)}
+              // Kumo's trigger prints the raw value unless it is told the label.
+              renderValue={(next) => scopes.find((scope) => scope.value === next)?.label ?? next}
               onValueChange={(next) => {
-                set(field.id, next === 'custom' ? `${RANGE_PREFIX}${text}` : next);
+                set(field.id, next === 'custom' ? `${RANGE_PREFIX}${text}` : (next as string));
               }}
             >
-              <Radio.Item label={t('op.scope.all', { count: pageCount })} value="all" />
-              {currentPage === undefined ? null : (
-                <Radio.Item label={t('op.scope.current', { page: currentPage + 1 })} value="current" />
-              )}
-              <Radio.Item
-                label={t('op.scope.selection', { count: selectedCount })}
-                value="selection"
-                disabled={selectedCount === 0}
-              />
-              <Radio.Item label={t('op.scope.custom')} value="custom" />
-            </Radio.Group>
+              {scopes.map((scope) => (
+                <Select.Option key={scope.value} value={scope.value} disabled={scope.disabled}>
+                  {scope.label}
+                </Select.Option>
+              ))}
+            </Select>
             {mode === 'custom' ? (
               <Input
                 size="sm"
                 autoFocus
                 value={text}
-                // The legend names the field; the placeholder is an example, never
+                // The select names the field; the placeholder is an example, never
                 // a label, so the input is named after what it asks for.
                 aria-label={t('op.scope.custom')}
                 placeholder={t('op.scope.placeholder')}
@@ -777,7 +794,7 @@ export function FieldList({
 
   /**
    * One grid for every dialog: a field spans the full width, except the short controls
-   * (a number, a colour, a select), which share a row two by two once the container is
+   * (a number, a colour, a select, a page scope), which share a row two by two once the container is
    * wide enough. The container query — not the viewport — decides, because the same list
    * renders in a modal and in the narrow tools panel.
    */
@@ -789,7 +806,8 @@ export function FieldList({
           field.kind === 'number' ||
           field.kind === 'color' ||
           field.kind === 'select' ||
-          field.kind === 'choice'
+          field.kind === 'choice' ||
+          field.kind === 'pageScope'
             ? 'col-span-2 @md:col-span-1'
             : 'col-span-2'
         }

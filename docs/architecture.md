@@ -2444,11 +2444,14 @@ when the document's list really is empty. A run's `noticeKey` is the sentence th
 shows whatever the result kind (replace, new tab, download); without one it says what
 happened to the file. A field marked `advanced` is rendered in one closed "advanced
 options" section after the essential fields (it opens itself while one of its fields is
-invalid); short controls — number, colour, select — share a row two by two
+invalid); short controls — number, colour, select, page scope — share a row two by two
 once the form's container is wider than 28 rem (a container query, because the same list
 renders in the panel and in a modal). A select shows its option's **label** in the trigger
 (`renderValue`): Kumo's trigger prints the raw value otherwise, and a stamp position read
-"bottom-right". A file field is a labelled button over a hidden input that lists what was
+"bottom-right". The `pageScope` field is such a select too — all pages, the current page, the
+selected pages (disabled while none are selected) or a custom range — and the range box exists only
+while "Custom range" is the choice; "No pages selected." is said only when the selection itself is
+the choice. A file field is a labelled button over a hidden input that lists what was
 picked, in the product's words rather than the browser's "Choose File".
 
 **One host.** `OperationForm` (`dialogs/OperationForm.tsx`) is the whole of an operation's

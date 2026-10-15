@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts } from './tool-fixture';
-import { applyForm, exportBytes, openDockTab, openPdf, pdfFile } from './ui-helpers';
+import { applyForm, chooseScope, exportBytes, openDockTab, openPdf, pdfFile } from './ui-helpers';
 
 const panel = (page: Page): Locator => page.getByRole('tabpanel');
 
@@ -99,7 +99,7 @@ test('a page range that cannot be read is explained under the field and keeps th
 }) => {
   await openPdf(page, 'doc.pdf', labelledPdf('Doc', 2));
   const form = await openTool(page, 'Organize Pages', 'Extract Pages', 'Extract Pages');
-  await form.getByRole('radio', { name: 'Custom range' }).check();
+  await chooseScope(form, 'Custom range');
   const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
   await range.fill('abc');
   const run = form.locator('button').last();
@@ -112,6 +112,28 @@ test('a page range that cannot be read is explained under the field and keeps th
   await expect(run).toBeDisabled();
   await range.fill('2');
   await expect(run).toBeEnabled();
+});
+
+test('the page scope is one select: all pages first, a range box only for Custom range, and no empty-selection note', async ({
+  page,
+}) => {
+  await openPdf(page, 'doc.pdf', labelledPdf('Doc', 3));
+  const form = await openTool(page, 'Numbering & Watermark', 'Add Watermark', 'Watermark');
+  const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
+  await expect(form.getByRole('combobox', { name: 'Page range' })).toHaveText('All pages (3)');
+  await expect(range).toHaveCount(0);
+  await expect(form.getByText('No pages selected.')).toHaveCount(0);
+
+  await form.getByRole('combobox', { name: 'Page range' }).click();
+  await expect(page.getByRole('option', { name: 'Selected pages (0)' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await page.getByRole('option', { name: 'Custom range' }).click();
+  await expect(range).toBeVisible();
+
+  await chooseScope(form, 'All pages (3)');
+  await expect(range).toHaveCount(0);
 });
 
 test('the passwords typed into the protect form are what encrypts the file', async ({ page }) => {

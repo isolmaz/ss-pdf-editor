@@ -90,6 +90,12 @@ export async function applyForm(form: Locator, run: string | RegExp = 'Apply'): 
   await expect(form).toBeHidden({ timeout: 90_000 });
 }
 
+/** Pick an option of the page-scope select of an operation form, in either interface language. */
+export async function chooseScope(form: Locator, option: string | RegExp): Promise<void> {
+  await form.getByRole('combobox', { name: /^(Page range|Sayfa aralığı)$/ }).click();
+  await form.page().getByRole('option', { name: option }).click();
+}
+
 /** The "Details" button of the notice a delivered result ends in, in either interface language. */
 export const detailsButton = (page: Page): Locator =>
   page.getByRole('button', { name: /^(Ayrıntılar|Details)$/ });

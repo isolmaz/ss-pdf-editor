@@ -3,7 +3,7 @@ import type { Page } from 'playwright/test';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts, scannedPdf } from './tool-fixture';
-import { detailsButton, finishRun } from './ui-helpers';
+import { chooseScope, detailsButton, finishRun } from './ui-helpers';
 
 /**
  * Real OCR, on both kinds of document it has to handle. Both inputs are generated in the
@@ -71,8 +71,7 @@ async function openOcrDialog(page: Page): Promise<void> {
 async function scopeTo(page: Page, range: string): Promise<void> {
   const form = ocrForm(page);
   // Both controls must exist: a silent skip here would run the whole document.
-  const rangeRadio = form.getByRole('radio', { name: /Aralık|Range/i }).first();
-  await rangeRadio.check();
+  await chooseScope(form, /Aralık|Range/i);
   const box = form.getByRole('textbox').first();
   await box.fill(range);
   await expect(box).toHaveValue(range);

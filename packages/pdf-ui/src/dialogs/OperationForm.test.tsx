@@ -126,14 +126,12 @@ describe('OperationForm settings step', () => {
       fields: [{ kind: 'pageScope', id: 'scope', labelKey: 'op.scope', default: 'selection' }],
     });
     show(probe.spec, { currentPage: 1, selectedPages: [] });
-    expect(screen.getByRole('radio', { name: 'Current page (2)' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('combobox', { name: 'Page range' }).textContent).toBe('Current page (2)');
     await click('Apply');
     expect(probe.runs[0]?.params.scope).toBe('current');
     cleanup();
     show(probe.spec, { currentPage: 1, selectedPages: [0, 2] });
-    expect(screen.getByRole('radio', { name: 'Selected pages (2)' }).getAttribute('aria-checked')).toBe(
-      'true',
-    );
+    expect(screen.getByRole('combobox', { name: 'Page range' }).textContent).toBe('Selected pages (2)');
   });
 
   it('runs with the values the user typed and the frozen context', async () => {

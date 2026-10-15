@@ -3,7 +3,7 @@ import type { Download, Page } from 'playwright/test';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { labelledPdf, readProducedEntry, readProducedPageTexts } from './tool-fixture';
-import { applyForm } from './ui-helpers';
+import { applyForm, chooseScope } from './ui-helpers';
 
 /**
  * Page and file flows end to end: insert, merge, extract, split, the two exports, print,
@@ -119,7 +119,7 @@ test('extract: a custom range typed key by key is the range extracted', async ({
   await open(page, 'ranged.pdf', labelledPdf('Page', 4));
   await thumbs(page).nth(1).click();
   const form = await openForm(page, 'Extract Pages', 'Extract Pages');
-  await form.getByRole('radio', { name: 'Custom range' }).check();
+  await chooseScope(form, 'Custom range');
   const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
   // Switching from the selection does not put the word "selection" in the box.
   await expect(range).toHaveValue('');

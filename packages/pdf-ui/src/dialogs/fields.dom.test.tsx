@@ -117,47 +117,78 @@ describe('initialParams', () => {
 
 describe('FieldList page scope', () => {
   const scope: FieldSpec = { kind: 'pageScope', id: 'scope', labelKey: 'op.scope' };
+  const trigger = () => screen.getByRole('combobox', { name: 'Page range' });
+  const pick = async (name: string) => {
+    await userEvent.click(trigger());
+    await userEvent.click(await screen.findByRole('option', { name }));
+  };
 
-  it('offers all pages, the current page and the selection, and disables a selection that is empty', () => {
+  it('is one select that opens on all pages, with no range box and no empty-selection note', () => {
     show([scope], { currentPage: 1, selectedCount: 0 });
-    expect(screen.getByRole('radio', { name: 'All pages (10)' })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'Current page (2)' })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'Selected pages (0)' }).getAttribute('aria-disabled')).toBe(
-      'true',
-    );
+    expect(trigger().textContent).toBe('All pages (10)');
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.queryByPlaceholderText('e.g. 1-3, 5, 8-10')).toBeNull();
+    expect(screen.queryByText('No pages selected.')).toBeNull();
+  });
+
+  it('offers all pages, the current page, the selection and a range, and disables a selection that is empty', async () => {
+    show([scope], { currentPage: 1, selectedCount: 0 });
+    await userEvent.click(trigger());
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual([
+      'All pages (10)',
+      'Current page (2)',
+      'Selected pages (0)',
+      'Custom range',
+    ]);
+    expect(options[2]?.getAttribute('aria-disabled')).toBe('true');
+    expect(options[1]?.getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('says that no pages are selected only once the selection is the choice', () => {
+    show([scope], { selectedCount: 0, initial: { scope: 'selection' } });
+    expect(trigger().textContent).toBe('Selected pages (0)');
     expect(screen.getByText('No pages selected.')).toBeTruthy();
   });
 
   it('leaves out "current page" when there is none, and selects pages when some are selected', async () => {
     const { onChange } = show([scope], { selectedCount: 3 });
-    expect(screen.queryByRole('radio', { name: /Current page/ })).toBeNull();
-    await userEvent.click(screen.getByRole('radio', { name: 'Selected pages (3)' }));
+    await userEvent.click(trigger());
+    expect(screen.queryByRole('option', { name: /Current page/ })).toBeNull();
+    await userEvent.click(await screen.findByRole('option', { name: 'Selected pages (3)' }));
     expect(onChange).toHaveBeenLastCalledWith('scope', 'selection');
+    expect(trigger().textContent).toBe('Selected pages (3)');
     expect(screen.queryByText('No pages selected.')).toBeNull();
   });
 
   it('types a custom range, says when it cannot be read, and remembers it when the choice moves away and back', async () => {
     const { onChange } = show([scope], { selectedCount: 1 });
-    await userEvent.click(screen.getByRole('radio', { name: 'Custom range' }));
+    await pick('Custom range');
     expect(onChange).toHaveBeenLastCalledWith('scope', 'range:');
     const box = screen.getByPlaceholderText('e.g. 1-3, 5, 8-10');
     await userEvent.type(box, '2-4');
     expect(onChange).toHaveBeenLastCalledWith('scope', 'range:2-4');
 
-    await userEvent.click(screen.getByRole('radio', { name: 'All pages (10)' }));
+    await pick('All pages (10)');
     expect(onChange).toHaveBeenLastCalledWith('scope', 'all');
-    await userEvent.click(screen.getByRole('radio', { name: 'Custom range' }));
+    expect(screen.queryByPlaceholderText('e.g. 1-3, 5, 8-10')).toBeNull();
+    await pick('Custom range');
     expect(onChange).toHaveBeenLastCalledWith('scope', 'range:2-4');
 
     await userEvent.clear(screen.getByPlaceholderText('e.g. 1-3, 5, 8-10'));
     await userEvent.type(screen.getByPlaceholderText('e.g. 1-3, 5, 8-10'), 'zz');
-    expect(screen.getByText(/Page range could not be parsed\./)).toBeTruthy();
+    expect(screen.getByText(/Page range could not be parsed./)).toBeTruthy();
   });
 
-  it('shows a hint instead of the empty-selection note when the field has one', () => {
+  it('shows the hint of a field that has one', () => {
     show([{ ...scope, hintKey: 'op.cancelled' }], { selectedCount: 0 });
     expect(screen.getByText('Operation cancelled.')).toBeTruthy();
     expect(screen.queryByText('No pages selected.')).toBeNull();
+  });
+
+  it('shows the value itself when it names a current page the dialog cannot offer', () => {
+    show([scope], { initial: { scope: 'current' } });
+    expect(trigger().textContent).toBe('current');
   });
 });
 
@@ -602,13 +633,8 @@ describe('FieldList with no value held yet', () => {
       />,
     );
     const radios = screen.getAllByRole('radio');
-    expect(radios.map((radio) => radio.getAttribute('aria-checked'))).toEqual([
-      'true',
-      'false',
-      'false',
-      'false',
-      'true',
-    ]);
+    expect(radios.map((radio) => radio.getAttribute('aria-checked'))).toEqual(['false', 'true']);
+    expect(screen.getByRole('combobox', { name: 'Page range' }).textContent).toBe('All pages (3)');
     expect(screen.getByRole('combobox', { name: t('op.cancel') }).textContent).toBe('Cancel');
     expect(screen.getByRole('combobox', { name: t('op.running') }).textContent).toBe('Ex');
     expect((screen.getByRole('spinbutton', { name: t('op.scope.custom') }) as HTMLInputElement).value).toBe(
