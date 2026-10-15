@@ -25,7 +25,7 @@ export const commonPart = {
   'op.result.incremental': 'Written incrementally',
   'op.result.fullRewrite': 'Fully rewritten (not incremental)',
   'op.result.technical': 'Technical details',
-  'op.result.losses': 'Removed',
+  'op.result.losses': 'Lost',
   'op.result.preserved': 'Preserved',
   'op.result.apply': 'Apply to document',
   'op.result.newTab': 'Open in new tab',

@@ -1205,7 +1205,7 @@ PageRect          { pageIndex; rect: [x0,y0,x1,y1] }
 `steps` is not decoration: the step ids an operation reports are the vocabulary the save
 verification uses to decide what the operation was allowed to change (§10). Notes carry
 `kind: 'lost'` for anything the user must be told about, and the report panel renders lost
-notes first, under the heading "Removed" and ahead of the page count and size. What only a
+notes first, under the heading "Lost" and ahead of the page count and size. What only a
 developer reads — whether the file was rewritten, the step ids, the producer lines in
 `TECHNICAL_NOTES` (`dialogs/ReportPanel.tsx`) — sits in one closed "Technical details"
 section. Only `changed` and `preserved` notes can be folded into it; a loss or a warning is

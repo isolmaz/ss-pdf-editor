@@ -109,7 +109,7 @@ describe('OperationReportPanel', () => {
       />,
     );
     expect(screen.getByText('Producer string preserved: LOST-PRODUCER').closest('details')).toBeNull();
-    expect(screen.getByRole('heading', { level: 4, name: 'Removed' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 4, name: 'Lost' })).toBeTruthy();
     expect(screen.getByRole('heading', { level: 4, name: 'Warnings' })).toBeTruthy();
   });
 
@@ -131,7 +131,7 @@ describe('OperationReportPanel', () => {
       .filter((element) => element.closest('details') === null)
       .map((element) => element.textContent);
     expect(lines).toEqual([
-      'Removed',
+      'Lost',
       'Custom range',
       'Warnings',
       'Selected pages (3)',
@@ -154,7 +154,7 @@ describe('OperationReportPanel', () => {
       />,
     );
     const headings = screen.getAllByRole('heading', { level: 4 }).map((heading) => heading.textContent);
-    expect(headings).toEqual(['Removed', 'Preserved']);
+    expect(headings).toEqual(['Lost', 'Preserved']);
   });
 
   it('adds the caller notes after the report notes of the same group', () => {

@@ -34,7 +34,7 @@ export const commonPart = {
   'op.result.incremental': 'Artımlı yazıldı',
   'op.result.fullRewrite': 'Yeniden yazıldı (artımlı değil)',
   'op.result.technical': 'Teknik ayrıntılar',
-  'op.result.losses': 'Kaldırılanlar',
+  'op.result.losses': 'Kaybolanlar',
   'op.result.preserved': 'Korunanlar',
   'op.result.apply': 'Belgeye uygula',
   'op.result.newTab': 'Yeni sekmede aç',
