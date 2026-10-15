@@ -22,6 +22,7 @@ vi.mock('pdf-ui/printing', async () => {
   return {
     PrintDialog: (props: {
       viewer: unknown;
+      read: unknown;
       open: boolean;
       onClose: () => void;
       onNotice: (message: string) => void;
@@ -33,6 +34,7 @@ vi.mock('pdf-ui/printing', async () => {
           'aria-label': 'print dialog',
           'data-open': String(props.open),
           'data-viewer': String(props.viewer),
+          'data-read': String(props.read === printReader),
         },
         createElement('button', { type: 'button', onClick: props.onClose }, 'close print'),
         createElement(
@@ -120,6 +122,7 @@ vi.mock('pdf-ui/panels', async () => {
 });
 
 const t = createTranslator('en');
+const printReader = vi.fn(async () => new Uint8Array([1]));
 
 // The dialogs and panels are dynamic chunks (mocked here): resolve them once up front so no test races the first import.
 beforeAll(async () => {
@@ -133,7 +136,7 @@ afterEach(cleanup);
 
 describe('PrintDialogHost', () => {
   it('shows the print dialog exactly while the store says it is open', async () => {
-    render(<PrintDialogHost t={t} viewer={null} onProduced={vi.fn()} />);
+    render(<PrintDialogHost t={t} viewer={null} read={printReader} onProduced={vi.fn()} />);
     expect(screen.queryByRole('region', { name: 'print dialog' })).toBeNull();
 
     act(() => openPrintDialog());
@@ -143,11 +146,13 @@ describe('PrintDialogHost', () => {
   it('hands the dialog the viewer on screen and writes its close and notices back', async () => {
     const user = userEvent.setup();
     const viewer = { goToPage: vi.fn() } as unknown as ViewerApi;
-    render(<PrintDialogHost t={t} viewer={viewer} onProduced={vi.fn()} />);
+    render(<PrintDialogHost t={t} viewer={viewer} read={printReader} onProduced={vi.fn()} />);
     act(() => openPrintDialog());
     const dialog = await screen.findByRole('region', { name: 'print dialog' });
     expect(dialog.getAttribute('data-open')).toBe('true');
     expect(dialog.getAttribute('data-viewer')).toBe(String(viewer));
+    // What is printed is the working bytes the shell reads, not the engine document the viewer holds.
+    expect(dialog.getAttribute('data-read')).toBe('true');
 
     await user.click(screen.getByRole('button', { name: 'notify print' }));
     expect(coreStore.get().notice).toBe('print said');
@@ -160,7 +165,7 @@ describe('PrintDialogHost', () => {
   it('passes the imposed file to the shell', async () => {
     const user = userEvent.setup();
     const onProduced = vi.fn(() => Promise.resolve());
-    render(<PrintDialogHost t={t} viewer={null} onProduced={onProduced} />);
+    render(<PrintDialogHost t={t} viewer={null} read={printReader} onProduced={onProduced} />);
     act(() => openPrintDialog());
 
     await user.click(await screen.findByRole('button', { name: 'produce print' }));

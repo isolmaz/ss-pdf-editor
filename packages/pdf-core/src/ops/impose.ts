@@ -14,7 +14,9 @@
  *    form is drawn at `formTurn(rotation)`; adding the two directly turned every 90°
  *    and 270° page upside down on the sheet.
  *  - a Form XObject carries no `/Annots` (links, annotations, form widgets), no
- *    outline and no page labels; that is reported as a loss.
+ *    outline and no page labels; that is reported as a loss. The print layout
+ *    (`buildPrintDocument`) is the exception for annotations and form fields: it bakes them
+ *    into the page content before embedding, so they print.
  *  - fonts and images are copied, so the content stays vector: text in the
  *    imposed sheets remains selectable and searchable, nothing is rasterised.
  *
@@ -907,7 +909,9 @@ function cellCropMarks(rectangle: {
 
 /**
  * Produce the document to print: the pages placed on the sheets the layout asks
- * for, in the sheet order `planPrintSheets` resolved. Print settings the browser
+ * for, in the sheet order `planPrintSheets` resolved. Annotations and form fields are
+ * baked into the page content first (`PDFDocument.bake`), so what a reader shows on the
+ * source page is what the sheet carries; links and bookmarks are not. Print settings the browser
  * dialog owns — which tray, duplex on the printer, quality — are not PDF data;
  * this file carries the *layout* and states in the report which flip axis the
  * printer has to be set to.
@@ -942,10 +946,15 @@ function printOpened(
   options: PrintImpositionOptions,
   context: OperationContext,
 ): OperationOutcome {
+  // A page placed as a form XObject carries no `/Annots`, so a highlight, a note, a stamp or a
+  // filled field would stay behind on the source page: drawn into the content first, they print.
+  // `source` is only read from here on (it is never saved), so the bake touches nothing but this
+  // in-memory copy.
+  source.bake(true, true);
   const plan = planPrintSheets(source.countPages(), options);
   const size = sheetSize(options.paper, plan.orientation);
   const cell = cellSize(size, plan.columns, plan.rows, options.marginMm, 0);
-  const steps: string[] = ['load', 'sheets'];
+  const steps: string[] = ['load', 'annotations.bake', 'sheets'];
   const notes: OperationNote[] = [];
   const embed = sourceEmbedder(source, out, context);
   const sheet = new SheetWriter(out);
@@ -1011,6 +1020,7 @@ function printOpened(
   if (clipped > 0) notes.push(note('warning', 'print.note.actual', { count: clipped }));
   if (options.cropMarks) notes.push(note('changed', 'print.note.cropMarks'));
   notes.push(note('preserved', 'print.note.vector'));
+  notes.push(note('preserved', 'print.note.annotations'));
   notes.push(note('lost', 'print.note.lost'));
   notes.push(note('preserved', 'print.note.info'));
 

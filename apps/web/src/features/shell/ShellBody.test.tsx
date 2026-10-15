@@ -182,6 +182,7 @@ vi.mock('./ViewerArea', async () => {
 const t = createTranslator('en');
 const handle = { id: 'handle' } as unknown as PdfDocumentHandle;
 const COMMANDS = [{ id: 'file.new' }, { id: 'file.open' }] as unknown as readonly Command[];
+const currentBytes = vi.fn(async () => new Uint8Array([1]));
 let loadedEditor: EditorSurfaces;
 let session: SessionStore;
 let tabIds: string[];
@@ -249,7 +250,7 @@ beforeEach(() => {
     },
     dock: { marker: 'dock' },
     viewer: { marker: 'viewer' },
-    right: { marker: 'right' },
+    right: { marker: 'right', currentBytes },
     results: { printProduced: vi.fn(async () => undefined), scanDocument: vi.fn(async () => undefined) },
     startResult: vi.fn(async () => undefined),
   };
@@ -364,6 +365,9 @@ describe('ShellBody editor', () => {
     expect(seen('reading').viewer).toBe(viewer);
     expect(seen('reading').viewerRef).toBe(viewerRef);
     expect(seen('printHost').viewer).toBe(viewer);
+    // Print and Snapshot show the working bytes with the unsaved marks written in, the route a Save reads.
+    expect(seen('printHost').read).toBe(currentBytes);
+    expect(seen('reading').read).toBe(currentBytes);
   });
 
   it('hands the print and scan results to the shell', async () => {

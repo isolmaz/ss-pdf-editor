@@ -1,6 +1,8 @@
 import { buildPrintDocument, type PrintImpositionOptions } from 'pdf-core/ops/impose';
+import { type ToolError, toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
+import { openWorkingPages, type WorkingBytesReader, type WorkingPages } from '../viewer/workingPages';
 import { type PrintPageSize, resolvePrintSource } from './printSource';
 import './print.css';
 
@@ -10,12 +12,11 @@ import './print.css';
  *
  * Two actions share one hook:
  *
- *  - `start` rasterises the selected pages through the engine document behind the
- *    viewer, one page at a time, into a container that is hidden on screen and is
- *    the only thing the print stylesheet lets through. A 500-page job therefore
- *    allocates one canvas, not 500; it reports progress as it goes, stops on an
- *    `AbortSignal`, and takes its container and object URLs away again after
- *    `afterprint`.
+ *  - `start` rasterises the selected pages, one page at a time, into a container that
+ *    is hidden on screen and is the only thing the print stylesheet lets through. A
+ *    500-page job therefore allocates one canvas, not 500; it reports progress as it
+ *    goes, stops on an `AbortSignal`, and takes its container and object URLs away
+ *    again after `afterprint`.
  *  - `produce` builds the file that goes with those settings: the pages imposed on
  *    sheets (`buildPrintDocument`) — N-up, a saddle-stitch signature, duplex
  *    sides, margins, crop marks — and hands the bytes back instead of printing
@@ -24,9 +25,14 @@ import './print.css';
  *    write a signature order, and treats a duplex job as a printer setting rather
  *    than as a file.
  *
- * The two are deliberately separate: `start` keeps printing exactly what the
- * viewer shows (the verified path), and
- * the imposition settings belong to the produced file, which the dialog says.
+ * The two are deliberately separate: `start` prints one page per sheet, as the browser
+ * would, and the imposition settings belong to the produced file, which the dialog says.
+ *
+ * Both work from **the document as a Save would write it**, not from the viewer's engine
+ * document: a mark the reader has drawn but not saved is the shell's overlay and the engine
+ * knows nothing of it, so rendering (or imposing) the engine document prints every such mark
+ * away. `UsePrintingOptions.read` is the shell's route to those bytes (`viewer/workingPages.ts`);
+ * what it hands back is a copy — the tab, its working version and its marks stay as they are.
  */
 
 /**
@@ -57,12 +63,25 @@ export interface PrintProducedFile {
 
 export type PrintPhase = 'idle' | 'preparing' | 'printing' | 'producing';
 
-export interface PrintFailure {
-  /** 1-based page whose rasterisation failed. */
-  readonly page: number;
-}
+/**
+ * Why a job stopped before the browser's dialog: one page that could not be drawn, or the
+ * document the pages come from that could not be read (a mark that could not be written into
+ * it, a copy that would not open).
+ */
+export type PrintFailure =
+  | {
+      readonly kind: 'page';
+      /** 1-based page whose rasterisation failed. */
+      readonly page: number;
+    }
+  | { readonly kind: 'document'; readonly error: ToolError };
 
 export interface UsePrintingOptions {
+  /**
+   * The open document with its unsaved marks written in — the shell's route to the working
+   * bytes. A function, never a captured copy: a job reads the version on screen when it starts.
+   */
+  readonly read: WorkingBytesReader;
   /** The shell's own cancellation, on top of {@link PrintController.cancel}. */
   readonly signal?: AbortSignal;
   /** After the browser's print dialog closed and the sheets are gone. */
@@ -152,8 +171,8 @@ function impositionOf(request: PrintRequest): PrintImpositionOptions {
   };
 }
 
-export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOptions = {}): PrintController {
-  const { signal, onFinished } = options;
+export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOptions): PrintController {
+  const { read, signal, onFinished } = options;
   const [state, setState] = useState<PrintState>(IDLE);
   const jobRef = useRef<ActiveJob | null>(null);
   const produceRef = useRef<AbortController | null>(null);
@@ -224,15 +243,33 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
       setState({ phase: 'preparing', done: 0, total: request.pages.length, failure: null });
 
       void (async () => {
+        // The pages come from the document as a Save would write it: the engine document
+        // behind the viewer does not have the reader's unsaved marks.
+        let pages: WorkingPages;
+        try {
+          pages = await openWorkingPages(read, source, controller.signal);
+        } catch (cause) {
+          // An abort is control flow, not a failure (see below).
+          if (controller.signal.aborted) return;
+          teardown();
+          setState({
+            phase: 'idle',
+            done: 0,
+            total: request.pages.length,
+            failure: { kind: 'document', error: toToolError(cause, 'ui') },
+          });
+          return;
+        }
         // One canvas for the whole job: sequential `await`, so a 500-page print
         // never holds 500 backing stores.
         const canvas = document.createElement('canvas');
         let rendered = 0;
         try {
           for (const pageNumber of request.pages) {
-            const size = await source.getPageSize(pageNumber - 1, 1);
+            if (controller.signal.aborted) return;
+            const size = await pages.source.getPageSize(pageNumber - 1, 1);
             const scale = sheetScale(request.scale, size);
-            await source.renderPage(pageNumber - 1, canvas, {
+            await pages.source.renderPage(pageNumber - 1, canvas, {
               scale,
               devicePixelRatio: PRINT_PIXEL_RATIO,
               signal: controller.signal,
@@ -264,23 +301,30 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
           // decode failed). A job always has a page.
           const page = request.pages[rendered] ?? (request.pages[request.pages.length - 1] as number);
           teardown();
-          setState({ phase: 'idle', done: rendered, total: request.pages.length, failure: { page } });
+          setState({
+            phase: 'idle',
+            done: rendered,
+            total: request.pages.length,
+            failure: { kind: 'page', page },
+          });
+        } finally {
+          // Every sheet is an image by now (or the job is over): the copy is not needed again.
+          await pages.release();
         }
       })();
     },
-    [cancel, onFinished, signal, viewer],
+    [cancel, onFinished, read, signal, viewer],
   );
 
   /**
-   * Build the imposed file instead of printing it. The
-   * document bytes come from the engine document behind the viewer — the same
-   * bytes `start` rasterises — so what the user asked to print is what gets
-   * imposed, unsaved annotations and form values included.
+   * Build the imposed file instead of printing it. The document bytes are the working
+   * bytes the shell reads (`UsePrintingOptions.read`) — the same document `start`
+   * rasterises — so what the user asked to print is what gets imposed, unsaved marks
+   * and form values included.
    */
   const produce = useCallback(
     async (request: PrintRequest): Promise<Uint8Array | null> => {
-      const source = resolvePrintSource(viewer);
-      if (source === null || viewer === null || request.pages.length === 0) return null;
+      if (resolvePrintSource(viewer) === null || request.pages.length === 0) return null;
 
       // A second job must not run beside the first — neither sheets nor an
       // imposition of the same pages.
@@ -289,11 +333,9 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
       produceRef.current = controller;
       setState({ phase: 'producing', done: 0, total: request.pages.length, failure: null });
       try {
-        // The bytes come from the engine document itself (`ViewerApi.document` is
-        // the `PdfDocumentHandle` the raster loop above draws with; `printSource.ts`
-        // explains why the handle *is* the page source), so unsaved annotations and
-        // form values are part of what gets imposed.
-        const bytes = await viewer.document.saveDocument();
+        // Not `viewer.document.saveDocument()`: that is the engine's own storage (form
+        // values) and has none of the marks the shell has not written yet.
+        const bytes = await read({ signal: controller.signal });
         if (controller.signal.aborted) return null;
         const outcome = await buildPrintDocument(bytes, impositionOf(request), {
           signal: controller.signal,
@@ -312,7 +354,7 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
         setState(IDLE);
       }
     },
-    [cancel, viewer],
+    [cancel, read, viewer],
   );
 
   return { ...state, start, produce, cancel };

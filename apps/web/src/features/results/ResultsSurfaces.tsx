@@ -52,12 +52,14 @@ function PanelFallback({ label }: { readonly label: string }) {
 export interface PrintDialogHostProps {
   readonly t: Translator;
   readonly viewer: ViewerApi | null;
+  /** The working bytes with the unsaved marks written in (`createCurrentBytes`): what is printed. */
+  readonly read: (operation: OperationContext) => Promise<Uint8Array>;
   /** The file the dialog imposed, to open as a new tab. */
   readonly onProduced: (file: PrintedFile) => Promise<void>;
 }
 
 /** Mounted only while the store says the print dialog is open. */
-export function PrintDialogHost({ t, viewer, onProduced }: PrintDialogHostProps) {
+export function PrintDialogHost({ t, viewer, read, onProduced }: PrintDialogHostProps) {
   const printOpen = useResults((state) => state.printOpen);
   if (!printOpen) return null;
   return (
@@ -65,6 +67,7 @@ export function PrintDialogHost({ t, viewer, onProduced }: PrintDialogHostProps)
       <PrintDialog
         t={t}
         viewer={viewer}
+        read={read}
         open={printOpen}
         onClose={closePrintDialog}
         onNotice={showNotice}

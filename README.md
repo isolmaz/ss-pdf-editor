@@ -96,7 +96,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   the open document and its unsaved changes stay where they are.
 - **View modes.** You get single-page, book and full-screen presentation modes, a
   magnifier lens, and a snapshot tool (**View → Snapshot**, or the palette) that combines the
-  pages in view into one PNG to copy or download.
+  pages in view into one PNG to copy or download; marks you have not saved yet are in it.
   - Presentation starts on the page at the top of the viewer and fits it to the screen width.
     Space, `→` and `PageDown` turn to the next page, `←` and `PageUp` to the previous one,
     `Home` and `End` go to the first and last page. `Esc` ends it, and so does the browser
@@ -219,7 +219,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     data cannot be read.
   - Layers (OCG).
   - Header and footer, Bates numbering and watermarks.
-- **Printing.** N-up, booklet and poster imposition, plus a duplex print-sheet builder.
+- **Printing.** N-up, booklet and poster imposition, plus a duplex print-sheet builder. Both the browser print and the printable PDF include marks you have not saved yet; the printable PDF draws annotations and form fields into the sheets.
 - **Compression.** There are two modes: a structural re-save (lossless), or turning the
   selected pages into images (lossy: their text layer, links and annotations are lost; the
   outline still leads to them).
@@ -452,7 +452,7 @@ nothing leaving the browser.
   - A staged mark stays an intent until you apply it. While marks are still staged, saving
     is refused, and so is every tool whose result leaves the tab (Word, text, split,
     PDF/A, a protected copy), every tool that moves pages, and printing and Snapshot: each
-    would carry the content the marks were meant to remove.
+    would carry the content the marks were meant to remove (a staged redaction is never written into the pages they show).
 - **Sanitize.** One dialog removes what the pages do not show.
   - Categories: scripts and code-running actions, attached files, metadata, private
     application data, thumbnails and hidden layers (on by default); external links, comments

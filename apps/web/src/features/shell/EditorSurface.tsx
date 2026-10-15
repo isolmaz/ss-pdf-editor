@@ -52,8 +52,15 @@ export function EditorSurface({
         <ViewerArea session={session} tier={tier} t={t} actions={viewer} />
       </div>
       <RightDock session={session} tier={tier} t={t} dialogContext={dialogContext} actions={right} />
-      <ReadingLayers t={t} locale={locale} viewer={handle} viewerRef={viewerRef} pageNumber={currentPage} />
-      <PrintDialogHost t={t} viewer={handle} onProduced={results.printProduced} />
+      <ReadingLayers
+        t={t}
+        locale={locale}
+        viewer={handle}
+        viewerRef={viewerRef}
+        pageNumber={currentPage}
+        read={right.currentBytes}
+      />
+      <PrintDialogHost t={t} viewer={handle} read={right.currentBytes} onProduced={results.printProduced} />
     </div>
   );
 }

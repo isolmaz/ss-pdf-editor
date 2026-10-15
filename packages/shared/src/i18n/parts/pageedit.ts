@@ -99,6 +99,7 @@ export const pageeditPart = {
     'Sayfa başına, kitapçık, çift yönlü ve kenar boşluğu ayarları üretilen PDF’e uygulanır; “Yazdır” sayfaları olduğu gibi tarar.',
   'print.producing': 'Yapraklar hazırlanıyor: {done}/{total}',
   'print.produced': 'Yazdırma dosyası hazır: {name}',
+  'print.pageFailed': '{page}. sayfa yazdırmaya hazırlanamadı.',
   'print.progress.sheets': 'Yapraklar oluşturuluyor',
   'print.note.sheets': '{sheets} yaprak, {sides} yüz üretildi.',
   'print.note.simplex': 'Tek yüz: arka yüzler üretilmedi, yazıcıda çift yönlü baskı gerekmez.',
@@ -113,6 +114,7 @@ export const pageeditPart = {
     'Gerçek boyut: hücresinden büyük {count} sayfa, komşu hücreye taşmaması için hücre sınırında kırpıldı.',
   'print.note.cropMarks': 'Her hücrenin kesim köşelerine kesim işaretleri eklendi.',
   'print.note.vector': 'Sayfa içeriği vektör kaldı: metin seçilebilir ve aranabilir.',
-  'print.note.lost': 'Yerleştirme bağlantıları, açıklamaları, form alanlarını ve içindekileri taşımaz.',
+  'print.note.annotations': 'Açıklamalar ve form alanları sayfalara çizildi.',
+  'print.note.lost': 'Yerleştirme bağlantıları ve içindekileri taşımaz.',
   'print.note.info': 'Belge bilgisi (başlık, yazar) kaynak belgeden kopyalandı.',
 } as const;

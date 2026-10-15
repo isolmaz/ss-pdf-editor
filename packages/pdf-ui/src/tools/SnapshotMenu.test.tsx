@@ -8,13 +8,28 @@
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createTranslator } from 'pdf-shared';
+import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
 import { SnapshotMenu, type SnapshotMenuProps } from './SnapshotMenu';
 
+const engine = vi.hoisted(() => ({ open: vi.fn() }));
+// The copy of the working bytes the capture renders from.
+vi.mock('pdf-core/engines/pdfjs-handle', () => ({ openWithPdfjs: engine.open }));
+
 const t = createTranslator('en');
-const viewer = {} as ViewerApi;
+const WORKING = new Uint8Array([7, 7]);
+interface FakePages {
+  readonly getPageSize: Mock;
+  readonly renderPage: Mock;
+  readonly destroy: Mock;
+}
+let viewer: ViewerApi;
+/** The document on screen: the capture must not draw from it (it has none of the unsaved marks). */
+let live: FakePages;
+/** The copy of the working bytes. */
+let working: FakePages;
+let read: Mock;
 const PNG = new Blob(['png'], { type: 'image/png' });
 
 interface PageSpec {
@@ -72,16 +87,26 @@ function installCanvas() {
   return {
     drawing,
     toBlob,
-    finish: (blob: Blob | null = PNG) => {
+    // The encoder is reached after the working bytes are read and the pages rendered: let that settle.
+    finish: async (blob: Blob | null = PNG) => {
+      await act(async () => {
+        for (let turn = 0; turn < 200 && pending.length === 0; turn += 1) await Promise.resolve();
+      });
       act(() => pending.shift()?.(blob));
     },
   };
 }
 
+/** `installCanvas()` and `show()` in one: the pieces a test about the capture itself reads. */
+function show_with_canvas() {
+  const canvas = installCanvas();
+  return { ...canvas, ...show() };
+}
+
 function show(overrides: Partial<SnapshotMenuProps> = {}) {
   const onClose = vi.fn();
   const onNotice = vi.fn();
-  const props: SnapshotMenuProps = { viewer, open: true, onClose, t, onNotice, ...overrides };
+  const props: SnapshotMenuProps = { viewer, read, open: true, onClose, t, onNotice, ...overrides };
   const view = render(<SnapshotMenu {...props} />);
   return {
     onClose,
@@ -94,6 +119,16 @@ function show(overrides: Partial<SnapshotMenuProps> = {}) {
 const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
 
 beforeEach(() => {
+  const fake = (): FakePages => ({
+    getPageSize: vi.fn(async () => ({ width: 300, height: 400 })),
+    renderPage: vi.fn(async () => undefined),
+    destroy: vi.fn(async () => undefined),
+  });
+  live = fake();
+  working = fake();
+  read = vi.fn(async () => WORKING);
+  engine.open.mockReset().mockResolvedValue(working);
+  viewer = { document: live } as unknown as ViewerApi;
   mountViewer();
   document.documentElement.style.setProperty('--color-pdf-paper', 'rgb(250, 249, 240)');
 });
@@ -108,7 +143,7 @@ afterEach(() => {
 });
 
 describe('what is composed', () => {
-  it('shows nothing while closed or without a viewer', () => {
+  it('shows nothing while closed or without a viewer', async () => {
     installCanvas();
     show({ open: false });
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -121,26 +156,38 @@ describe('what is composed', () => {
     const canvases = mountViewer();
     const { drawing, finish } = installCanvas();
     const { container } = show();
-    finish();
+    await finish();
     const preview = container.querySelector('canvas') as HTMLCanvasElement;
     expect([preview.width, preview.height]).toEqual([300, 810]);
     expect(drawing.fillStyle).toBe('rgb(250, 249, 240)');
     expect(drawing.fillRect).toHaveBeenCalledExactlyOnceWith(0, 0, 300, 810);
+    // Each page is rendered from the working bytes at the scale it has on screen, into one scratch canvas.
+    const scratch = working.renderPage.mock.calls[0]?.[1];
+    expect(scratch).toBeInstanceOf(HTMLCanvasElement);
+    expect(canvases).not.toContain(scratch);
+    expect(
+      working.renderPage.mock.calls.map((call) => [call[0], call[1] === scratch, call[2].scale]),
+    ).toEqual([
+      [0, true, 1],
+      [1, true, 1],
+    ]);
+    expect(working.renderPage.mock.calls[0]?.[2]).toMatchObject({ devicePixelRatio: 1 });
     expect(drawing.drawImage.mock.calls).toEqual([
-      [canvases[0], 0, 0, 300, 400],
-      [canvases[1], 0, 410, 300, 400],
+      [scratch, 0, 0, 300, 400],
+      [scratch, 0, 410, 300, 400],
     ]);
   });
 
   it('scales the composite to the device resolution the viewer painted at', async () => {
-    const canvases = mountViewer();
+    mountViewer();
     vi.stubGlobal('devicePixelRatio', 2);
     const { drawing, finish } = installCanvas();
     const { container } = show();
-    finish();
+    await finish();
     const preview = container.querySelector('canvas') as HTMLCanvasElement;
     expect([preview.width, preview.height]).toEqual([600, 1620]);
-    expect(drawing.drawImage.mock.calls[1]).toEqual([canvases[1], 0, 820, 600, 800]);
+    expect(drawing.drawImage.mock.calls[1]?.slice(1)).toEqual([0, 820, 600, 800]);
+    expect(working.renderPage.mock.calls[1]?.[2]).toMatchObject({ scale: 1, devicePixelRatio: 2 });
   });
 
   it('falls back to one device pixel per pixel when the window reports no ratio', async () => {
@@ -148,7 +195,7 @@ describe('what is composed', () => {
     vi.stubGlobal('devicePixelRatio', 0);
     const { finish } = installCanvas();
     const { container } = show();
-    finish();
+    await finish();
     const preview = container.querySelector('canvas') as HTMLCanvasElement;
     expect([preview.width, preview.height]).toEqual([300, 810]);
   });
@@ -159,7 +206,7 @@ describe('what is composed', () => {
     vi.setSystemTime(new Date(2026, 2, 4, 5, 6, 7));
     const { finish } = installCanvas();
     show();
-    finish();
+    await finish();
     const anchors: HTMLAnchorElement[] = [];
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:snapshot');
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
@@ -172,7 +219,7 @@ describe('what is composed', () => {
   it('composes once per opening, not on every render of the shell', async () => {
     const { toBlob, finish } = installCanvas();
     const { update } = show();
-    finish();
+    await finish();
     update({ onNotice: vi.fn(), onClose: vi.fn() });
     expect(toBlob).toHaveBeenCalledOnce();
   });
@@ -180,7 +227,7 @@ describe('what is composed', () => {
   it('lets go of the bitmap memory when the panel closes', async () => {
     const { finish } = installCanvas();
     const { container, update } = show();
-    finish();
+    await finish();
     const preview = container.querySelector('canvas') as HTMLCanvasElement;
     update({ open: false });
     expect([preview.width, preview.height]).toEqual([0, 0]);
@@ -191,15 +238,65 @@ describe('what is composed', () => {
     show();
     expect(screen.getByRole('dialog', { name: 'Snapshot' })).toBeTruthy();
     expect(button('Download PNG').disabled).toBe(true);
-    finish();
+    await finish();
     expect(button('Download PNG').disabled).toBe(false);
   });
 
   it('shows nothing from a capture the reader closed before the encoder finished', async () => {
+    const { toBlob, finish } = installCanvas();
+    const { onNotice, onClose, update } = show();
+    await vi.waitFor(() => expect(toBlob).toHaveBeenCalledOnce()); // the encoder is running
+    update({ open: false });
+    await finish();
+    expect(toBlob).toHaveBeenCalledOnce();
+    expect(onNotice).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('draws the marks the reader has not saved: the pages come from the working bytes, not from the screen', async () => {
     const { finish } = installCanvas();
+    show();
+    await finish();
+    expect(read).toHaveBeenCalledExactlyOnceWith({ signal: expect.any(AbortSignal) });
+    expect(engine.open).toHaveBeenCalledExactlyOnceWith(WORKING, { signal: expect.any(AbortSignal) });
+    expect(live.renderPage).not.toHaveBeenCalled();
+    expect(working.renderPage).toHaveBeenCalledTimes(2);
+    // The copy is freed once the picture is composed.
+    expect(working.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('captures a protected document from the document on screen, which holds no unsaved mark', async () => {
+    engine.open.mockRejectedValue(new ToolError('password-required', { engine: 'pdfjs' }));
+    const { finish } = installCanvas();
+    show();
+    await finish();
+    expect(live.renderPage).toHaveBeenCalledTimes(2);
+    expect(working.renderPage).not.toHaveBeenCalled();
+  });
+
+  it('draws nothing and frees the copy when the reader closed the panel while the pages rendered', async () => {
+    const gate = Promise.withResolvers<void>();
+    working.renderPage.mockImplementationOnce(() => gate.promise);
+    const { toBlob, drawing, onNotice, update } = show_with_canvas();
+    await vi.waitFor(() => expect(working.renderPage).toHaveBeenCalledTimes(1));
+    update({ open: false });
+    await act(async () => {
+      gate.resolve();
+    });
+    await vi.waitFor(() => expect(working.destroy).toHaveBeenCalledOnce());
+    expect(drawing.drawImage).not.toHaveBeenCalled();
+    expect(toBlob).not.toHaveBeenCalled();
+    expect(onNotice).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet when the working bytes fail to read because the reader closed the panel', async () => {
+    const gate = Promise.withResolvers<Uint8Array>();
+    read.mockImplementationOnce(() => gate.promise);
     const { onNotice, onClose, update } = show();
     update({ open: false });
-    finish();
+    await act(async () => {
+      gate.reject(new Error('aborted'));
+    });
     expect(onNotice).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -214,7 +311,7 @@ describe('when there is nothing to capture', () => {
         document.body.innerHTML = '';
       },
     ],
-  ])('reports an unexpected failure and closes when %s', (_name, arrange) => {
+  ])('reports an unexpected failure and closes when %s', async (_name, arrange) => {
     installCanvas();
     arrange();
     const { onNotice, onClose } = show();
@@ -222,10 +319,11 @@ describe('when there is nothing to capture', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('reports it when the browser gives no 2D context', () => {
+  it('reports it when the browser gives no 2D context', async () => {
     installCanvas();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
     const { onNotice, onClose } = show();
+    await vi.waitFor(() => expect(onNotice).toHaveBeenCalled());
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Something unexpected went wrong.');
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -233,25 +331,36 @@ describe('when there is nothing to capture', () => {
   it('reports it when the encoder produced no image', async () => {
     const { finish } = installCanvas();
     const { onNotice, onClose } = show();
-    finish(null);
+    await finish(null);
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Something unexpected went wrong.');
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('reports it when composing throws', () => {
+  it('reports it when composing throws', async () => {
     installCanvas();
     vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(() => {
       throw new Error('encoder exploded');
     });
     const { onNotice, onClose } = show();
+    await vi.waitFor(() => expect(onNotice).toHaveBeenCalled());
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Something unexpected went wrong.');
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('reports the reader’s failure and closes, drawing nothing', async () => {
+    read.mockRejectedValue(new ToolError('internal', { engine: 'model' }));
+    const { drawing } = installCanvas();
+    const { onNotice, onClose } = show();
+    await vi.waitFor(() => expect(onNotice).toHaveBeenCalled());
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Something unexpected went wrong.');
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(drawing.drawImage).not.toHaveBeenCalled();
   });
 });
 
 describe('download', () => {
   // The faked clock would stall user-event's own waits, so these clicks are dispatched directly.
-  it('saves the PNG under its name, tells the reader and closes; the blob URL is revoked after ten seconds', () => {
+  it('saves the PNG under its name, tells the reader and closes; the blob URL is revoked after ten seconds', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     vi.setSystemTime(new Date(2026, 2, 4, 5, 6, 7));
     const { finish } = installCanvas();
@@ -262,7 +371,7 @@ describe('download', () => {
       anchors.push(this);
     });
     const { onNotice, onClose } = show();
-    finish();
+    await finish();
     fireEvent.click(button('Download PNG'));
     expect(created).toHaveBeenCalledExactlyOnceWith(PNG);
     expect(anchors.map((a) => [a.href, a.download])).toEqual([
@@ -279,14 +388,14 @@ describe('download', () => {
     expect(revoked).toHaveBeenCalledOnce();
   });
 
-  it('revokes a blob URL still waiting when the panel unmounts, and cancels its timer', () => {
+  it('revokes a blob URL still waiting when the panel unmounts, and cancels its timer', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     const { finish } = installCanvas();
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:snapshot-2');
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const { unmount } = show();
-    finish();
+    await finish();
     fireEvent.click(button('Download PNG'));
     unmount();
     expect(revoked).toHaveBeenCalledExactlyOnceWith('blob:snapshot-2');
@@ -316,7 +425,7 @@ describe('copy to the clipboard', () => {
     const { finish } = installCanvas();
     const { user, write } = grantClipboard();
     const { onNotice, onClose } = show();
-    finish();
+    await finish();
     await user.click(button('Copy to clipboard'));
     expect(write).toHaveBeenCalledOnce();
     const items = (write.mock.calls[0] as unknown as [FakeClipboardItem[]])[0];
@@ -331,7 +440,7 @@ describe('copy to the clipboard', () => {
     grantClipboard();
     show();
     expect(button('Copy to clipboard').disabled).toBe(true);
-    finish();
+    await finish();
     expect(button('Copy to clipboard').disabled).toBe(false);
   });
 
@@ -343,7 +452,7 @@ describe('copy to the clipboard', () => {
       }),
     );
     const { onNotice, onClose } = show();
-    finish();
+    await finish();
     await user.click(button('Copy to clipboard'));
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('File access was denied.');
     expect(onClose).toHaveBeenCalledOnce();
@@ -360,7 +469,7 @@ describe('copy to the clipboard', () => {
       }),
     );
     const { onNotice } = show();
-    finish();
+    await finish();
     await user.click(button('Copy to clipboard'));
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Something unexpected went wrong.');
   });
@@ -369,7 +478,7 @@ describe('copy to the clipboard', () => {
     const { finish } = installCanvas();
     vi.stubGlobal('ClipboardItem', undefined);
     show();
-    finish();
+    await finish();
     expect(screen.queryByRole('button', { name: 'Copy to clipboard' })).toBeNull();
     expect(button('Download PNG').disabled).toBe(false);
   });
@@ -379,7 +488,7 @@ describe('copy to the clipboard', () => {
     vi.stubGlobal('ClipboardItem', FakeClipboardItem);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {} });
     show();
-    finish();
+    await finish();
     expect(screen.queryByRole('button', { name: 'Copy to clipboard' })).toBeNull();
   });
 });

@@ -10,7 +10,8 @@ import { readFileSync } from 'node:fs';
 import type { Locator, Page } from 'playwright/test';
 import { notice } from './app-helpers';
 import { expect, test } from './test';
-import { CANVAS, menuItem, openPdf, runCommand } from './ui-helpers';
+import { CANVAS, menuItem, openPdf, rail, runCommand } from './ui-helpers';
+import { clickAt, framed } from './ui-layers-helpers';
 import { revokedUrls, trackRevocations } from './ui-panels9-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -189,4 +190,40 @@ test.describe('the clipboard', () => {
     await expect(panel.getByRole('button', { name: 'Download PNG' })).toBeEnabled();
     await expect(panel.getByRole('button', { name: 'Copy to clipboard' })).toHaveCount(0);
   });
+});
+
+/** How many pixels of a PNG are clearly magenta — a colour the fixture's own marks never use — decoded by the browser. */
+function magentaOf(page: Page, bytes: Uint8Array): Promise<number> {
+  return page.evaluate(async (data) => {
+    const bitmap = await createImageBitmap(new Blob([new Uint8Array(data)], { type: 'image/png' }));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext('2d');
+    if (context === null) throw new Error('no 2d context');
+    context.drawImage(bitmap, 0, 0);
+    const pixels = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+    let magenta = 0;
+    for (let at = 0; at < pixels.length; at += 4) {
+      if ((pixels[at] ?? 0) > 200 && (pixels[at + 1] ?? 255) < 90 && (pixels[at + 2] ?? 0) > 200)
+        magenta += 1;
+    }
+    return magenta;
+  }, Array.from(bytes));
+}
+
+test('a mark that has not been saved is in the picture', async ({ page }) => {
+  await openPdf(page);
+  await framed(page);
+  const before = await magentaOf(page, (await saveSnapshot(page, await openSnapshot(page))).bytes);
+
+  // A magenta text box, drawn on the page and not saved: the shell's overlay, not the engine's page.
+  await rail(page, 'Add Text').click();
+  await page.getByLabel('Color', { exact: true }).first().fill('#ff00ff');
+  await page.getByLabel('Size', { exact: true }).fill('24');
+  await clickAt(page, 100, 300);
+  await page.keyboard.type('Styled words');
+  await page.keyboard.press('Control+Enter');
+
+  const after = await magentaOf(page, (await saveSnapshot(page, await openSnapshot(page))).bytes);
+  expect(before).toBe(0);
+  expect(after).toBeGreaterThan(150);
 });

@@ -20,6 +20,13 @@ const impose = vi.hoisted(() => ({
   progress: [] as Array<{ done?: number; total?: number }>,
 }));
 
+const opened = vi.hoisted(() => ({ open: null as unknown }));
+
+// The copy of the working bytes the dialog renders from opens as the fake engine document.
+vi.mock('pdf-core/engines/pdfjs-handle', () => ({
+  openWithPdfjs: (...args: unknown[]) => (opened.open as (...a: unknown[]) => unknown)(...args),
+}));
+
 vi.mock('pdf-core/ops/impose', () => ({
   buildPrintDocument: async (
     bytes: Uint8Array,
@@ -50,7 +57,7 @@ interface FakeSource {
   readonly pageCount: number;
   readonly getPageSize: Mock;
   readonly renderPage: Mock;
-  readonly saveDocument: Mock;
+  readonly destroy: Mock;
 }
 
 const SAVED = new Uint8Array([9, 9]);
@@ -66,8 +73,9 @@ beforeEach(() => {
     pageCount: 3,
     getPageSize: vi.fn(async () => ({ width: 300, height: 400 })),
     renderPage: vi.fn(async () => undefined),
-    saveDocument: vi.fn(async () => SAVED),
+    destroy: vi.fn(async () => undefined),
   };
+  opened.open = async () => source;
   blobGate = null;
   printCalls = 0;
   impose.calls.length = 0;
@@ -100,6 +108,7 @@ function props(overrides: Partial<PrintDialogProps> = {}): PrintDialogProps {
   return {
     t,
     viewer: { document: source } as unknown as ViewerApi,
+    read: async () => SAVED,
     open: true,
     onClose: vi.fn(),
     ...overrides,
@@ -322,8 +331,9 @@ describe('PrintDialog printing', () => {
     const onNotice = vi.fn();
     show({ onNotice });
     await user.click(button('Print'));
-    expect((await screen.findByRole('alert')).textContent).toBe('Could not read the range: 2');
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Could not read the range: 2');
+    // A page that cannot be drawn is not a range that cannot be read.
+    expect((await screen.findByRole('alert')).textContent).toBe('Page 2 could not be prepared for printing.');
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Page 2 could not be prepared for printing.');
     expect(printCalls).toBe(0);
   });
 
@@ -331,7 +341,29 @@ describe('PrintDialog printing', () => {
     source.getPageSize.mockRejectedValue(new Error('render failed'));
     show();
     await user.click(button('Print'));
-    expect((await screen.findByRole('alert')).textContent).toBe('Could not read the range: 1');
+    expect((await screen.findByRole('alert')).textContent).toBe('Page 1 could not be prepared for printing.');
+  });
+
+  it('says why the document itself could not be read, with the engine’s own sentence and hint', async () => {
+    const failure = new ToolError('value-out-of-range', { engine: 'pdf-core' });
+    const onNotice = vi.fn();
+    const read = vi.fn(async () => {
+      throw failure;
+    });
+    show({ read, onNotice });
+    await user.click(button('Print'));
+    const text = `${t(failure.messageKey)} ${t(failure.hintKey)}`;
+    expect((await screen.findByRole('alert')).textContent).toBe(text);
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(text);
+    expect(source.renderPage).not.toHaveBeenCalled();
+  });
+
+  it('prints the working bytes the shell reads, not the engine document the viewer holds', async () => {
+    const read = vi.fn(async () => SAVED);
+    show({ read });
+    await user.click(button('Print'));
+    await waitFor(() => expect(printCalls).toBe(1));
+    expect(read).toHaveBeenCalledOnce();
   });
 });
 
@@ -451,12 +483,12 @@ describe('PrintDialog producing', () => {
 
   it('delivers nothing when the job is cancelled before the file is built', async () => {
     const gate = Promise.withResolvers<Uint8Array>();
-    source.saveDocument.mockImplementation(() => gate.promise);
+    const read = vi.fn(() => gate.promise);
     const onProduced = vi.fn();
     const onNotice = vi.fn();
-    const { given } = show({ onProduced, onNotice });
+    const { given } = show({ onProduced, onNotice, read });
     await user.click(button('Generate Printable PDF'));
-    await waitFor(() => expect(source.saveDocument).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     await user.click(button('Cancel'));
     expect(given.onClose).toHaveBeenCalledTimes(1);
     await act(async () => {
