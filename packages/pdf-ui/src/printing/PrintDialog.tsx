@@ -9,9 +9,10 @@ import { type Translator, toToolError } from 'pdf-shared';
 import { useEffect, useState } from 'react';
 import { Button } from '../components/Button';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
+import type { WorkingBytesReader } from '../viewer/workingPages';
 import { parsePageRange } from './pageRange';
 import { currentViewPages, resolvePrintSource } from './printSource';
-import { type PrintProducedFile, type PrintScale, usePrinting } from './usePrinting';
+import { type PrintFailure, type PrintProducedFile, type PrintScale, usePrinting } from './usePrinting';
 
 /**
  * The print dialog ("printing with page range and scale";
@@ -41,6 +42,12 @@ export interface PrintDialogProps {
   /** The interface language's translator: the dialog's words follow the shell's locale. */
   readonly t: Translator;
   readonly viewer: ViewerApi | null;
+  /**
+   * The open document with its unsaved marks written in — the shell's route to the working
+   * bytes (the one a Save and every read-only panel read). Both actions print this, not the
+   * viewer's engine document, which has none of the marks the reader has not saved.
+   */
+  readonly read: WorkingBytesReader;
   readonly open: boolean;
   readonly onClose: () => void;
   readonly onNotice?: (message: string) => void;
@@ -57,7 +64,16 @@ type RangeChoice = 'all' | 'current' | 'custom';
 /** Cells per side, as the operation's own union. */
 const PER_SHEET_CHOICES: readonly PrintImpositionOptions['perSheet'][] = [1, 2, 4, 6, 8, 9, 16];
 
-export function PrintDialog({ t, viewer, open, onClose, onNotice, onProduced }: PrintDialogProps) {
+/**
+ * The sentence for a job that stopped: the page that could not be drawn, or the engine's own
+ * sentence and hint when the document itself could not be read (`pdf-shared/errors.ts`).
+ */
+function failureSentence(t: Translator, failure: PrintFailure): string {
+  if (failure.kind === 'page') return t('print.pageFailed', { page: failure.page });
+  return `${t(failure.error.messageKey)} ${t(failure.error.hintKey)}`;
+}
+
+export function PrintDialog({ t, viewer, read, open, onClose, onNotice, onProduced }: PrintDialogProps) {
   const [range, setRange] = useState<RangeChoice>('all');
   const [scale, setScale] = useState<PrintScale>('fit');
   const [rangeText, setRangeText] = useState('');
@@ -67,12 +83,11 @@ export function PrintDialog({ t, viewer, open, onClose, onNotice, onProduced }: 
   const [duplex, setDuplex] = useState<PrintDuplex>('simplex');
   const [marginMm, setMarginMm] = useState(0);
   const [produceError, setProduceError] = useState<string | null>(null);
-  const printing = usePrinting(viewer, { onFinished: onClose });
+  const printing = usePrinting(viewer, { read, onFinished: onClose });
 
   const source = resolvePrintSource(viewer);
   const busy = printing.phase === 'preparing' || printing.phase === 'producing';
-  const failureText =
-    printing.failure === null ? null : t('print.invalidRange', { value: printing.failure.page });
+  const failureText = printing.failure === null ? null : failureSentence(t, printing.failure);
   const message = rangeError ?? failureText;
   // A refused imposition (an impossible combination, an over-limit count) is the
   // one failure the produced file can report: the dialog shows its own sentence

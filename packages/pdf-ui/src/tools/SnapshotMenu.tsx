@@ -3,18 +3,20 @@ import { ToolError, type Translator, toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
-import { findViewerDom, pagesInView, type ViewerDom } from './viewer-dom';
+import { openWorkingPages, type WorkingBytesReader, type WorkingPages } from '../viewer/workingPages';
+import { findViewerDom, type PageImage, pagesInView } from './viewer-dom';
 import './tools.css';
 
 /**
  * View snapshot: the pages the viewport shows right now,
  * composed into one PNG, ready for the clipboard or a file.
  *
- * The bitmap is the viewer's **own render pipeline output** — the canvases pdf.js
- * already painted, at `devicePixelRatio × scale` device pixels — instead of a
- * second render call from a component (engines are reached through
- * the pane, never directly). Pages are placed where pdf.js laid them out, so
- * spreads, margins and the page gap come out the way they look on screen.
+ * The bitmap is rendered from **the document as a Save would write it**
+ * (`viewer/workingPages.ts`), at `devicePixelRatio × scale` device pixels. The canvases
+ * pdf.js painted on screen cannot be the source: a mark the reader drew and has not saved
+ * is the shell's overlay over the page, not part of that canvas, so a capture of it would
+ * leave every such mark out. Pages are placed where pdf.js laid them out, so spreads,
+ * margins and the page gap come out the way they look on screen.
  *
  * Both actions report through `onNotice` with the shell's dictionary text; a
  * failure becomes the `ToolError` contract the shell already renders rather than
@@ -29,6 +31,8 @@ const REVOKE_DELAY_MS = 10_000;
 
 export interface SnapshotMenuProps {
   readonly viewer: ViewerApi | null;
+  /** The open document with its unsaved marks written in — the shell's route to the working bytes. */
+  readonly read: WorkingBytesReader;
   readonly open: boolean;
   readonly onClose: () => void;
   /** The interface language's translator: the panel's words follow the shell's locale. */
@@ -81,15 +85,19 @@ function tokenColour(token: string): string {
 }
 
 /**
- * Draws every page the viewport shows into `target`, stacked top to bottom at
- * the viewer's own spacing. The composite is `devicePixelRatio × scale` — the
- * resolution pdf.js painted at — so each page is a 1:1 blit.
+ * Draws every page of `images` (the pages the viewport shows, measured by the caller) into
+ * `target`, stacked top to bottom at the viewer's own spacing. Each page is rendered from
+ * `pages` at the scale it has on screen, at `devicePixelRatio` — the resolution pdf.js
+ * paints the viewer at — so it is a 1:1 blit. Resolves `null` when the browser gives no 2D
+ * context, or when the capture was abandoned (`signal`).
  */
-function composeView(dom: ViewerDom, target: HTMLCanvasElement): { readonly page: number } | null {
-  const images = pagesInView(dom);
-  const first = images[0];
-  if (first === undefined) return null;
-
+async function composeView(
+  images: readonly PageImage[],
+  target: HTMLCanvasElement,
+  pages: WorkingPages['source'],
+  signal: AbortSignal,
+): Promise<{ readonly page: number } | null> {
+  const first = images[0] as PageImage;
   let left = first.rect.left;
   let top = first.rect.top;
   let right = first.rect.right;
@@ -108,14 +116,28 @@ function composeView(dom: ViewerDom, target: HTMLCanvasElement): { readonly page
   if (context === null) return null;
   context.fillStyle = tokenColour('--color-pdf-paper');
   context.fillRect(0, 0, target.width, target.height);
-  for (const image of images) {
-    context.drawImage(
-      image.canvas,
-      (image.rect.left - left) * dpr,
-      (image.rect.top - top) * dpr,
-      image.rect.width * dpr,
-      image.rect.height * dpr,
-    );
+  // One scratch canvas for every page: a full-view capture holds one page bitmap at a time.
+  const scratch = document.createElement('canvas');
+  try {
+    for (const image of images) {
+      const size = await pages.getPageSize(image.index, 1);
+      await pages.renderPage(image.index, scratch, {
+        scale: image.rect.width / size.width,
+        devicePixelRatio: dpr,
+        signal,
+      });
+      if (signal.aborted) return null;
+      context.drawImage(
+        scratch,
+        (image.rect.left - left) * dpr,
+        (image.rect.top - top) * dpr,
+        image.rect.width * dpr,
+        image.rect.height * dpr,
+      );
+    }
+  } finally {
+    scratch.width = 0;
+    scratch.height = 0;
   }
   return { page: first.index };
 }
@@ -129,7 +151,7 @@ function snapshotName(page: number, now: Date): string {
   return `snapshot-${page + 1}-${stamp}.png`;
 }
 
-export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMenuProps) {
+export function SnapshotMenu({ viewer, read, open, onClose, t, onNotice }: SnapshotMenuProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLCanvasElement | null>(null);
   const urlsRef = useRef(new Set<string>());
@@ -139,9 +161,9 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
 
   // The callbacks live in a ref: composing a capture must run once per open, not
   // every time the shell re-renders with a fresh arrow function.
-  const handlers = useRef({ onClose, onNotice, t });
+  const handlers = useRef({ onClose, onNotice, t, read });
   useEffect(() => {
-    handlers.current = { onClose, onNotice, t };
+    handlers.current = { onClose, onNotice, t, read };
   });
 
   const releaseUrls = useCallback(() => {
@@ -171,12 +193,25 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
       notice(handlers.current.t(toToolError(error, 'ui').messageKey));
     };
 
-    try {
-      const dom = findViewerDom(viewer);
-      const capture = dom === null ? null : composeView(dom, target);
-      if (capture === null) {
-        fail(new ToolError('internal', { engine: 'ui', engineMessage: 'no rendered page in the viewport' }));
-      } else {
+    // What the viewport shows is measured now, before anything is awaited: the capture is of the
+    // moment it was asked for.
+    const dom = findViewerDom(viewer);
+    const images = dom === null ? [] : pagesInView(dom);
+    if (images.length === 0) {
+      fail(new ToolError('internal', { engine: 'ui', engineMessage: 'no rendered page in the viewport' }));
+      return undefined;
+    }
+
+    void (async () => {
+      let pages: WorkingPages | null = null;
+      try {
+        pages = await openWorkingPages(handlers.current.read, viewer.document, controller.signal);
+        const capture = await composeView(images, target, pages.source, controller.signal);
+        if (controller.signal.aborted) return; // closed while the pages were rendered
+        if (capture === null) {
+          fail(new ToolError('internal', { engine: 'ui', engineMessage: 'no 2D canvas context' }));
+          return;
+        }
         target.toBlob((blob) => {
           if (controller.signal.aborted) return; // closed while the encoder ran
           if (blob === null) {
@@ -185,10 +220,13 @@ export function SnapshotMenu({ viewer, open, onClose, t, onNotice }: SnapshotMen
           }
           setSnapshot({ kind: 'ready', blob, name: snapshotName(capture.page, new Date()) });
         }, 'image/png');
+      } catch (error) {
+        // An abort is control flow: whoever closed the panel has already moved on.
+        if (!controller.signal.aborted) fail(error);
+      } finally {
+        await pages?.release();
       }
-    } catch (error) {
-      fail(error);
-    }
+    })();
 
     return () => {
       controller.abort();

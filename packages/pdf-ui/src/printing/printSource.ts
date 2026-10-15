@@ -1,16 +1,18 @@
 import type { ViewerApi } from '../viewer/PdfViewerPane';
 
 /**
- * What the printing slice takes from the viewer: the engine document it renders
- * through, and the pages it is showing right now.
+ * What the printing slice takes from the viewer: the engine document that says whether
+ * there is anything to print, and the pages the viewer is showing right now.
  *
  * `ViewerApi` (`viewer/PdfViewerPane.tsx`) exposes navigation and zoom only, and
  * the printing slice must not widen that interface. A print job is the one shell
  * action that needs pages the viewer may never have painted — every page of a
  * 500-page document, not the handful its virtualised window holds — so the pane
- * hands out the `PdfDocumentHandle` (pdf-core) it already draws with. Printing
- * then renders through **that** document: the same pipeline, the same engine
- * adapter, no second parse of the file and nothing reaching into pdf.js.
+ * hands out the `PdfDocumentHandle` (pdf-core) it already draws with. That handle
+ * gives the page count, and it is what a protected document is rendered from. It is
+ * *not* what a job rasterises in general: the reader's unsaved marks are not in the
+ * engine document, so the job renders a copy of the working bytes
+ * (`viewer/workingPages.ts`).
  */
 
 /** A page's size in PDF points (`scale 1`): 1 point = 1/72". */

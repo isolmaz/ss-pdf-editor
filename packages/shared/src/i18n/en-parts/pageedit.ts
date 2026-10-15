@@ -74,6 +74,7 @@ export const pageeditPart = {
     'Pages per sheet, booklet, duplex and margin settings are applied to the generated PDF; “Print” sends pages as-is.',
   'print.producing': 'Preparing sheets: {done}/{total}',
   'print.produced': 'Print file ready: {name}',
+  'print.pageFailed': 'Page {page} could not be prepared for printing.',
   'print.progress.sheets': 'Generating sheets',
   'print.note.sheets': '{sheets} sheet(s), {sides} side(s) produced.',
   'print.note.simplex': 'Single-sided: no back sides generated, no duplex printer setting required.',
@@ -88,6 +89,7 @@ export const pageeditPart = {
     'Actual size: {count} page(s) larger than cell cropped at boundary to avoid overlapping neighboring cells.',
   'print.note.cropMarks': 'Crop marks added to cell cut corners.',
   'print.note.vector': 'Page content remained vector: text is selectable and searchable.',
-  'print.note.lost': 'Imposition does not carry links, annotations, form fields or bookmarks.',
+  'print.note.annotations': 'Annotations and form fields are drawn into the pages.',
+  'print.note.lost': 'Imposition does not carry links or bookmarks.',
   'print.note.info': 'Document info (title, author) copied from source document.',
 } as const;

@@ -25,6 +25,12 @@ const impose = vi.hoisted(() => ({
   progress: [] as Array<{ done?: number; total?: number }>,
 }));
 
+const opened = vi.hoisted(() => ({ handle: null as unknown, open: null as unknown }));
+
+vi.mock('pdf-core/engines/pdfjs-handle', () => ({
+  openWithPdfjs: (...args: unknown[]) => (opened.open as (...a: unknown[]) => unknown)(...args),
+}));
+
 vi.mock('pdf-core/ops/impose', () => ({
   buildPrintDocument: async (
     bytes: Uint8Array,
@@ -43,12 +49,16 @@ interface FakeSource {
   readonly pageCount: number;
   readonly getPageSize: Mock;
   readonly renderPage: Mock;
-  readonly saveDocument: Mock;
+  readonly destroy: Mock;
 }
 
 const LETTER_ISH = { width: 300, height: 400 };
+/** What the shell's reader hands over: the working bytes with the unsaved marks written in. */
+const WORKING = new Uint8Array([9, 9]);
 
 let source: FakeSource;
+let read: Mock;
+let openArgs: unknown[][];
 let canvases: HTMLCanvasElement[];
 let blobGate: Promise<void> | null;
 let blobFailsAt: number | null;
@@ -79,7 +89,15 @@ beforeEach(() => {
     pageCount: 3,
     getPageSize: vi.fn(async () => LETTER_ISH),
     renderPage: vi.fn(async () => undefined),
-    saveDocument: vi.fn(async () => new Uint8Array([9, 9])),
+    destroy: vi.fn(async () => undefined),
+  };
+  read = vi.fn(async () => WORKING);
+  openArgs = [];
+  // The copy of the working bytes opens as `source` itself, so the rendering assertions below
+  // read the calls the job made on the opened document.
+  opened.open = async (...args: unknown[]) => {
+    openArgs.push(args);
+    return source;
   };
   canvases = [];
   blobGate = null;
@@ -134,8 +152,11 @@ const sheets = () => [
   ...document.querySelectorAll<HTMLImageElement>('.pdf-print-root .pdf-print-page > img'),
 ];
 
-function mount(viewer: ViewerApi | null = viewerOf(), options: Parameters<typeof usePrinting>[1] = {}) {
-  return renderHook(() => usePrinting(viewer, options));
+function mount(
+  viewer: ViewerApi | null = viewerOf(),
+  options: Partial<Parameters<typeof usePrinting>[1]> = {},
+) {
+  return renderHook(() => usePrinting(viewer, { read, ...options }));
 }
 
 async function startAndPrint(controller: { current: PrintController }, req: PrintRequest = request()) {
@@ -262,6 +283,96 @@ describe('usePrinting start', () => {
   });
 });
 
+describe('usePrinting working bytes', () => {
+  it('renders from a copy of the working bytes, not from the viewer’s engine document, and frees the copy', async () => {
+    const live = {
+      ...source,
+      renderPage: vi.fn(async () => undefined),
+      getPageSize: vi.fn(async () => LETTER_ISH),
+    };
+    const { result } = mount(viewerOf(live));
+    await startAndPrint(result);
+    expect(read).toHaveBeenCalledExactlyOnceWith({ signal: expect.any(AbortSignal) });
+    expect(openArgs[0]?.[0]).toBe(WORKING);
+    expect(source.renderPage).toHaveBeenCalledTimes(2);
+    expect(live.renderPage).not.toHaveBeenCalled();
+    expect(source.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('renders a protected document from the engine document, which then is the working version', async () => {
+    const live = {
+      ...source,
+      renderPage: vi.fn(async () => undefined),
+      getPageSize: vi.fn(async () => LETTER_ISH),
+    };
+    opened.open = async () => {
+      throw new ToolError('password-required', { engine: 'pdfjs' });
+    };
+    const { result } = mount(viewerOf(live));
+    await startAndPrint(result);
+    expect(live.renderPage).toHaveBeenCalledTimes(2);
+    expect(source.renderPage).not.toHaveBeenCalled();
+  });
+
+  it('reports the engine’s own error when the working bytes cannot be read, and prints nothing', async () => {
+    const failure = new ToolError('internal', { engine: 'model' });
+    read.mockRejectedValueOnce(failure);
+    const { result } = mount();
+    act(() => result.current.start(request()));
+    await waitFor(() => expect(result.current.failure).toEqual({ kind: 'document', error: failure }));
+    expect(result.current).toMatchObject({ phase: 'idle', done: 0, total: 2 });
+    expect(roots()).toHaveLength(0);
+    expect(source.renderPage).not.toHaveBeenCalled();
+    expect(printCalls).toBe(0);
+  });
+
+  it('words an unexpected failure of the copy as an internal error', async () => {
+    opened.open = async () => {
+      throw new Error('boom');
+    };
+    const { result } = mount();
+    act(() => result.current.start(request()));
+    await waitFor(() => expect(result.current.failure?.kind).toBe('document'));
+    expect((result.current.failure as { error: ToolError }).error.code).toBe('internal');
+  });
+
+  it('draws nothing, reports nothing and frees the copy when cancelled while the bytes are read', async () => {
+    const gate = Promise.withResolvers<Uint8Array>();
+    read.mockImplementationOnce(() => gate.promise);
+    const { result } = mount();
+    act(() => result.current.start(request()));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    act(() => result.current.cancel());
+    await act(async () => {
+      gate.resolve(WORKING);
+    });
+    await waitFor(() => expect(source.destroy).toHaveBeenCalledOnce());
+    expect(source.renderPage).not.toHaveBeenCalled();
+    expect(result.current).toMatchObject({ phase: 'idle', failure: null });
+  });
+
+  it('stays quiet when the read fails because the job was cancelled', async () => {
+    const gate = Promise.withResolvers<Uint8Array>();
+    read.mockImplementationOnce(() => gate.promise);
+    const { result } = mount();
+    act(() => result.current.start(request()));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    act(() => result.current.cancel());
+    await act(async () => {
+      gate.reject(new Error('aborted'));
+    });
+    expect(result.current).toMatchObject({ phase: 'idle', failure: null });
+  });
+
+  it('frees the copy after a failed page too', async () => {
+    source.renderPage.mockRejectedValueOnce(new Error('engine failed'));
+    const { result } = mount();
+    act(() => result.current.start(request()));
+    await waitFor(() => expect(result.current.failure).not.toBeNull());
+    await waitFor(() => expect(source.destroy).toHaveBeenCalledOnce());
+  });
+});
+
 describe('usePrinting ending a job early', () => {
   it('cancels a job: the sheets go, nothing is printed, the state is idle again', async () => {
     const gate = Promise.withResolvers<void>();
@@ -366,7 +477,7 @@ describe('usePrinting failures', () => {
     source.renderPage.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('engine failed'));
     const { result } = mount();
     act(() => result.current.start(request()));
-    await waitFor(() => expect(result.current.failure).toEqual({ page: 3 }));
+    await waitFor(() => expect(result.current.failure).toEqual({ kind: 'page', page: 3 }));
     expect(result.current).toMatchObject({ phase: 'idle', done: 1, total: 2 });
     expect(roots()).toHaveLength(0);
     expect(revoked).toEqual(['blob:sheet-1']);
@@ -377,7 +488,7 @@ describe('usePrinting failures', () => {
     blobFailsAt = 1;
     const { result } = mount();
     act(() => result.current.start(request()));
-    await waitFor(() => expect(result.current.failure).toEqual({ page: 1 }));
+    await waitFor(() => expect(result.current.failure).toEqual({ kind: 'page', page: 1 }));
     expect(result.current.done).toBe(0);
   });
 
@@ -385,7 +496,7 @@ describe('usePrinting failures', () => {
     decodeFails = true;
     const { result } = mount();
     act(() => result.current.start(request()));
-    await waitFor(() => expect(result.current.failure).toEqual({ page: 3 }));
+    await waitFor(() => expect(result.current.failure).toEqual({ kind: 'page', page: 3 }));
     expect(result.current.done).toBe(2);
     expect(roots()).toHaveLength(0);
     expect(printCalls).toBe(0);
@@ -402,7 +513,7 @@ describe('usePrinting failures', () => {
 });
 
 describe('usePrinting produce', () => {
-  it('imposes the engine document’s bytes and returns the file, with 0-based pages and A4 paper', async () => {
+  it('imposes the working bytes the shell reads and returns the file, with 0-based pages and A4 paper', async () => {
     const { result } = mount();
     let bytes: Uint8Array | null = null;
     await act(async () => {
@@ -419,7 +530,8 @@ describe('usePrinting produce', () => {
     });
     expect(bytes).toEqual(new Uint8Array([1, 2, 3]));
     expect(impose.calls).toHaveLength(1);
-    expect(impose.calls[0]?.bytes).toEqual(new Uint8Array([9, 9]));
+    expect(read).toHaveBeenCalledWith({ signal: expect.any(AbortSignal) });
+    expect(impose.calls[0]?.bytes).toBe(WORKING);
     expect(impose.calls[0]?.options).toEqual({
       pages: [1, 3],
       perSheet: 2,
@@ -492,13 +604,13 @@ describe('usePrinting produce', () => {
 
   it('returns nothing when cancelled while the document is being saved', async () => {
     const gate = Promise.withResolvers<Uint8Array>();
-    source.saveDocument.mockImplementationOnce(() => gate.promise);
+    read.mockImplementationOnce(() => gate.promise);
     const { result } = mount();
     let produced: Promise<Uint8Array | null> = Promise.resolve(null);
     act(() => {
       produced = result.current.produce(request());
     });
-    await waitFor(() => expect(source.saveDocument).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     act(() => result.current.cancel());
     await act(async () => {
       gate.resolve(new Uint8Array([1]));

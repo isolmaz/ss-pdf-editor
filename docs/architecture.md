@@ -1050,7 +1050,7 @@ writer does, and the steps it reports:
   page numbers handed to the engine are the source document's own, not the plan's slot index,
   so "insert pages 3-4 of this file" inserts pages 3-4;
 - imposition and the print layout (`ops/impose.ts`), where each source page is a form XObject
-  (`pageAsForm`, resources grafted once per document). A poster's rows count from the top of
+  (`pageAsForm`, resources grafted once per document). The print layout (`buildPrintDocument`) bakes annotations and form fields into the page content first (`PDFDocument.bake`), because a form XObject carries no `/Annots`. A poster's rows count from the top of
   the enlarged page, so every row of tiles prints, and the enlargement is the smaller of the
   two scales, so the whole page fits the grid. A poster refuses a fractional tile count (1.5
   columns or rows) as `range-invalid`;
@@ -2710,9 +2710,10 @@ Ordering rules encoded here, each of which prevents a specific defect:
   the content the user asked to remove. The same marks refuse every dialog whose result
   leaves the tab — a download (Word, text, split, protect) or a new tab (PDF/A, extract) —
   and every dialog that moves pages under them (`heldByPendingRedactions`,
-  `apps/web/src/save-plan.ts`). Print and Snapshot are refused too: they render the engine
-  document, which carries no session marks, and the print dialog's imposed file opens as a
-  new tab.
+  `apps/web/src/save-plan.ts`). Print and Snapshot are refused too: they render the working bytes a Save would write
+  (`createCurrentBytes`, opened as a throw-away copy by `pdf-ui/src/viewer/workingPages.ts`), which carry the
+  session's annotations and measurements but never a staged redaction; the print dialog's imposed
+  file opens as a new tab.
 - **A handle is attached only after the write succeeded**, so the next Save cannot write in
   place over a file this one never managed to commit.
 - **`addOutput` records the version the preparation produced**, not the one captured before
