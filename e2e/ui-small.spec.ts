@@ -3,7 +3,9 @@ import type { Page } from 'playwright/test';
 import { expect, test } from './test';
 import { readProducedPageTexts, readProducedPdf, toolFixturePdf } from './tool-fixture';
 import {
+  applyForm,
   CANVAS,
+  detailsButton,
   dragPage,
   encodePng,
   exportBytes,
@@ -12,6 +14,7 @@ import {
   openPdf,
   pageFrame,
   rail,
+  reviewHeading,
   runCommand,
   sheetPhotoPng,
   toClient,
@@ -121,32 +124,40 @@ test('Escape on the invalidation warning exports nothing', async ({ page }) => {
 });
 
 /* ------------------------------------------------------------------ *
- * The start dialog, its two steps and its report
+ * The start dialog and its report
  * ------------------------------------------------------------------ */
 
-test('the blank-document dialog marks its steps, reports a grown size, and Escape closes it', async ({
+test('the blank-document dialog opens the new document at once and keeps its report one press away', async ({
   page,
 }) => {
   await page.goto('/editor/');
   await page.getByRole('button', { name: 'Blank document' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible({ timeout: 30_000 });
-  const steps = dialog.getByRole('listitem').filter({ hasText: /Settings|Result/ });
-  await expect(steps).toHaveCount(2);
-  await expect(steps.filter({ hasText: 'Settings' })).toHaveAttribute('aria-current', 'step');
-  await expect(steps.filter({ hasText: 'Result' })).not.toHaveAttribute('aria-current', 'step');
 
   await dialog.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-  const report = dialog.getByRole('region', { name: 'Operation report' });
-  await expect(report).toBeVisible({ timeout: 60_000 });
-  await expect(steps.filter({ hasText: 'Result' })).toHaveAttribute('aria-current', 'step');
-  await expect(steps.filter({ hasText: 'Settings' })).not.toHaveAttribute('aria-current', 'step');
+  await expect(dialog).toBeHidden({ timeout: 60_000 });
+  await expect(page.locator(CANVAS).first()).toBeVisible({ timeout: 30_000 });
+
+  await detailsButton(page).click();
+  const report = page.getByRole('dialog').getByRole('region', { name: 'Operation report' });
   await expect(report.getByText('1 page(s)', { exact: true })).toBeVisible();
   // A new file starts from nothing, so the size can only have grown.
   await expect(report.getByText(/^Size: 0 B → .+ \(increased\)$/)).toBeVisible();
+  // How the file was written is folded away until asked for.
+  await expect(report.getByText('Fully rewritten (not incremental)')).toBeHidden();
+  await report.getByText('Technical details', { exact: true }).click();
   await expect(report.getByText('Fully rewritten (not incremental)')).toBeVisible();
   await expect(report.getByText(/^Executed steps: \S+/)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
+});
 
+test('Escape closes the blank-document dialog before it has run, and opens nothing', async ({ page }) => {
+  await page.goto('/editor/');
+  await page.getByRole('button', { name: 'Blank document' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(page.locator(CANVAS)).toHaveCount(0);
@@ -261,25 +272,21 @@ test('clicking the compression and image lists does not switch the chosen option
 });
 
 /* ------------------------------------------------------------------ *
- * Steps of a form that changes the document
+ * A form that changes the document
  * ------------------------------------------------------------------ */
 
-test('a replace-kind form names its second step "Review and apply" and reports the grown size', async ({
+test('a replace-kind form has no step marker; the report of what it applied stays one press away', async ({
   page,
 }) => {
   await openPdf(page, 'mark.pdf', toolFixturePdf());
   await runCommand(page, 'Watermark');
   const form = page.getByRole('region', { name: 'Watermark' });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  const steps = form.getByRole('listitem').filter({ hasText: /Settings|Review and apply|Result/ });
-  await expect(steps).toHaveCount(2);
-  await expect(steps.nth(1)).toContainText('Review and apply');
+  await expect(form.locator('[aria-current="step"]')).toHaveCount(0);
   await form.getByRole('textbox', { name: 'Text', exact: true }).fill('STEPS');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  const report = form.getByRole('region', { name: 'Operation report' });
-  await expect(report).toBeVisible({ timeout: 60_000 });
-  await expect(steps.nth(1)).toHaveAttribute('aria-current', 'step');
-  await expect(steps.nth(0)).not.toHaveAttribute('aria-current', 'step');
+  await applyForm(form);
+  await detailsButton(page).click();
+  const report = page.getByRole('dialog').getByRole('region', { name: 'Operation report' });
   await expect(report.getByText(/^Size: .+ → .+ \(increased\)$/)).toBeVisible();
   await expect(report.getByText('2 page(s)', { exact: true })).toBeVisible();
 });
@@ -366,7 +373,7 @@ test('flatten refuses a form pdf.js does not render as XFA and says why, produci
   await expect(form).toContainText('This is a static XFA form: its pages are already in the PDF.', {
     timeout: 60_000,
   });
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toHaveCount(0);
+  await expect(reviewHeading(form)).toHaveCount(0);
   await expect(page).toHaveTitle(/unrendered\.pdf/);
 });
 
@@ -747,14 +754,11 @@ test('redaction settings count the marked areas and Apply redaction removes the 
   // Apply opens the redaction form over the pending marks; its two steps remove the text.
   const form = page.getByRole('region', { name: /Redact/ });
   await expect(form).toBeVisible({ timeout: 30_000 });
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(form.getByRole('alert')).toHaveText(
     'This operation may permanently delete content. Continue?',
   );
-  await form.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 60_000 });
+  await applyForm(form, 'Continue');
   const texts = await readProducedPageTexts(await exportBytes(page, 'redacted.pdf'));
   expect(texts[0]).toContain('Third line stays untouched');
   expect(texts[0]).not.toContain('Fourth line for redaction marks');

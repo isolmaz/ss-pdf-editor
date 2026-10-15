@@ -32,9 +32,7 @@ export const dialogsPart = {
   'dialog.field.noFile': 'Henüz dosya seçilmedi',
   'dialog.field.filesChosen': '{count} dosya seçildi',
   'dialog.advanced': 'Gelişmiş seçenekler ({count})',
-  'dialog.step.settings': 'Ayarlar',
-  'dialog.step.review': 'Önizle ve uygula',
-  'dialog.step.result': 'Sonuç',
+  'dialog.review': 'Sonucu gözden geçir',
 
   /** Report groups `op.result.losses`/`op.result.preserved` did not name. */
   'dialog.result.changed': 'Değişenler',

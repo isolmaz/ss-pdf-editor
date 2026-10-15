@@ -8,7 +8,7 @@ import { notice, pdfFile } from './app-helpers';
 import { holdNext, injectEngineFaults } from './engine-faults';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts } from './tool-fixture';
-import { exportBytes } from './ui-helpers';
+import { exportBytes, reviewHeading } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
 test.describe.configure({ timeout: 180_000 });
@@ -31,7 +31,7 @@ test('a second press of a Start tool result while its tab is still opening is re
     ]);
   const confirm = dialog.getByRole('button', { name: 'Open in new tab', exact: true });
   await confirm.click();
-  await expect(dialog.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
+  await expect(reviewHeading(dialog)).toBeVisible({ timeout: 60_000 });
 
   // The new document's open is the next one pdf.js is asked for.
   const release = await holdNext(page, 'pdfjs', 'GetDocRequest');

@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPageTexts } from './tool-fixture';
-import { exportBytes, openDockTab, openPdf, pdfFile } from './ui-helpers';
+import { applyForm, chooseScope, exportBytes, openDockTab, openPdf, pdfFile } from './ui-helpers';
 
 const panel = (page: Page): Locator => page.getByRole('tabpanel');
 
@@ -24,7 +24,7 @@ async function openTool(page: Page, group: string, title: string, region: string
   return form;
 }
 
-test('the files of a multiple picker are reordered and removed before the merge, and the file follows that order', async ({
+test('the files of a multiple picker are reordered by dragging or by the arrows and removed before the merge, and the file follows that order', async ({
   page,
 }) => {
   await page.goto('/editor/');
@@ -43,6 +43,12 @@ test('the files of a multiple picker are reordered and removed before the merge,
   await expect(dialog.getByRole('button', { name: 'Move a.pdf up' })).toBeDisabled();
   await expect(dialog.getByRole('button', { name: 'Move c.pdf down' })).toBeDisabled();
 
+  // A row dragged onto another lands there, downwards and back up.
+  await names.nth(0).dragTo(names.nth(2));
+  await expect(names).toHaveText([/b.pdf/, /c.pdf/, /a.pdf/]);
+  await names.nth(2).dragTo(names.nth(0));
+  await expect(names).toHaveText([/a.pdf/, /b.pdf/, /c.pdf/]);
+
   await dialog.getByRole('button', { name: 'Move c.pdf up' }).click();
   await expect(names).toHaveText([/a\.pdf/, /c\.pdf/, /b\.pdf/]);
   await dialog.getByRole('button', { name: 'Move a.pdf down' }).click();
@@ -54,10 +60,7 @@ test('the files of a multiple picker are reordered and removed before the merge,
   await picker.setInputFiles([pdfFile('d.pdf', labelledPdf('Delta', 1))]);
   await expect(names).toHaveText([/c\.pdf/, /a\.pdf/, /d\.pdf/]);
 
-  const confirm = dialog.getByRole('button', { name: 'Open in new tab', exact: true });
-  await confirm.click();
-  await expect(dialog.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await confirm.click();
+  await applyForm(dialog, 'Open in new tab');
   await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -91,10 +94,7 @@ test('a token button inserts its placeholder at the caret and the stamp carries 
   await expect(format).toHaveValue(/^\{date\}Page \{page\} of \{total\}$/);
   await format.fill('Page {page} of {total}');
 
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
+  await applyForm(form);
   const texts = await readProducedPageTexts(await exportBytes(page, 'numbered.pdf'));
   expect(texts[0]).toContain('Page 1 of 2');
   expect(texts[1]).toContain('Page 2 of 2');
@@ -105,7 +105,7 @@ test('a page range that cannot be read is explained under the field and keeps th
 }) => {
   await openPdf(page, 'doc.pdf', labelledPdf('Doc', 2));
   const form = await openTool(page, 'Organize Pages', 'Extract Pages', 'Extract Pages');
-  await form.getByRole('radio', { name: 'Custom range' }).check();
+  await chooseScope(form, 'Custom range');
   const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
   await range.fill('abc');
   const run = form.locator('button').last();
@@ -120,6 +120,28 @@ test('a page range that cannot be read is explained under the field and keeps th
   await expect(run).toBeEnabled();
 });
 
+test('the page scope is one select: all pages first, a range box only for Custom range, and no empty-selection note', async ({
+  page,
+}) => {
+  await openPdf(page, 'doc.pdf', labelledPdf('Doc', 3));
+  const form = await openTool(page, 'Numbering & Watermark', 'Add Watermark', 'Watermark');
+  const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
+  await expect(form.getByRole('combobox', { name: 'Page range' })).toHaveText('All pages (3)');
+  await expect(range).toHaveCount(0);
+  await expect(form.getByText('No pages selected.')).toHaveCount(0);
+
+  await form.getByRole('combobox', { name: 'Page range' }).click();
+  await expect(page.getByRole('option', { name: 'Selected pages (0)' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await page.getByRole('option', { name: 'Custom range' }).click();
+  await expect(range).toBeVisible();
+
+  await chooseScope(form, 'All pages (3)');
+  await expect(range).toHaveCount(0);
+});
+
 test('the passwords typed into the protect form are what encrypts the file', async ({ page }) => {
   await openPdf(page, 'doc.pdf', labelledPdf('Doc', 1));
   const form = await openTool(page, 'Security & Redaction', 'Protect with Password', 'Security');
@@ -127,11 +149,8 @@ test('the passwords typed into the protect form are what encrypts the file', asy
   await expect(open).toHaveAttribute('type', 'password');
   await open.fill('open-sesame');
   await form.getByLabel('Owner password').fill('owner-secret');
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-
   const download = page.waitForEvent('download');
-  await form.getByRole('button', { name: 'Download', exact: true }).click();
+  await applyForm(form);
   const path = test.info().outputPath('protected.pdf');
   await (await download).saveAs(path);
   const text = readFileSync(path).toString('latin1');

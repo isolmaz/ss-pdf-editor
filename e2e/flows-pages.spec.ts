@@ -3,6 +3,7 @@ import type { Download, Page } from 'playwright/test';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { labelledPdf, readProducedEntry, readProducedPageTexts } from './tool-fixture';
+import { applyForm, chooseScope } from './ui-helpers';
 
 /**
  * Page and file flows end to end: insert, merge, extract, split, the two exports, print,
@@ -57,19 +58,12 @@ async function openForm(page: Page, command: string, region: string) {
   return form;
 }
 
-async function previewForm(form: ReturnType<Page['getByRole']>, confirm = 'Preview'): Promise<void> {
-  await form.getByRole('button', { name: confirm, exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-}
-
 test('insert pages: a blank page and a page range of another file land where asked', async ({ page }) => {
   await open(page, 'base.pdf', labelledPdf('Base', 3));
   await useAdvancedMode(page);
   let form = await openForm(page, 'Insert page', 'Insert Pages');
   await form.getByRole('spinbutton', { name: 'Position (after page N)' }).fill('1');
-  await previewForm(form);
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
+  await applyForm(form);
   await expect(thumbs(page)).toHaveCount(4);
 
   form = await openForm(page, 'Insert page', 'Insert Pages');
@@ -77,9 +71,7 @@ test('insert pages: a blank page and a page range of another file land where ask
   await form.locator('input[type="file"]').setInputFiles(pdfFile('donor.pdf', labelledPdf('Donor', 4)));
   await form.getByRole('textbox', { name: 'Source page range' }).fill('3-4');
   await form.getByRole('spinbutton', { name: 'Position (after page N)' }).fill('0');
-  await previewForm(form);
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
+  await applyForm(form);
   await expect(thumbs(page)).toHaveCount(6);
 
   const texts = await readProducedPageTexts(await exported(page, 'inserted.pdf'));
@@ -95,9 +87,7 @@ test('merge: another file added at the start and at the end keeps every page in 
     const form = await openForm(page, 'Add / Import Document', 'Add / Import Document');
     await form.locator('input[type="file"]').setInputFiles(pdfFile('donor.pdf', donor));
     await form.getByRole('radio', { name: position }).check();
-    await previewForm(form);
-    await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-    await expect(form).toBeHidden({ timeout: 30_000 });
+    await applyForm(form);
   }
   await expect(thumbs(page)).toHaveCount(5);
   const texts = await readProducedPageTexts(await exported(page, 'merged.pdf'));
@@ -110,8 +100,7 @@ test('extract: the selected page opens as its own document and the source keeps 
   await open(page, 'source.pdf', labelledPdf('Page', 3));
   await thumbs(page).nth(1).click();
   const form = await openForm(page, 'Extract Pages', 'Extract Pages');
-  await previewForm(form, 'Open in new tab');
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
+  await applyForm(form, 'Open in new tab');
   // Named for the page it holds, not for a part counter.
   const header = page.getByRole('button', { name: 'source-p2.pdf', exact: true });
   await expect(header).toBeVisible({ timeout: 30_000 });
@@ -130,14 +119,13 @@ test('extract: a custom range typed key by key is the range extracted', async ({
   await open(page, 'ranged.pdf', labelledPdf('Page', 4));
   await thumbs(page).nth(1).click();
   const form = await openForm(page, 'Extract Pages', 'Extract Pages');
-  await form.getByRole('radio', { name: 'Custom range' }).check();
+  await chooseScope(form, 'Custom range');
   const range = form.getByPlaceholder('e.g. 1-3, 5, 8-10');
   // Switching from the selection does not put the word "selection" in the box.
   await expect(range).toHaveValue('');
   await range.pressSequentially('2-3', { delay: 60 });
   await expect(range).toHaveValue('2-3');
-  await previewForm(form, 'Open in new tab');
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
+  await applyForm(form, 'Open in new tab');
   await expect(thumbs(page)).toHaveCount(2, { timeout: 30_000 });
   const extracted = await readProducedPageTexts(await exported(page, 'ranged-out.pdf'));
   expect(extracted.map((text) => text.trim())).toEqual(['Page 2', 'Page 3']);
@@ -168,10 +156,7 @@ test('split: page ranges become separate files with the right pages in the right
   const form = await openForm(page, 'Split Document', 'Split Document');
   await form.getByRole('radio', { name: 'By page ranges' }).check();
   await form.getByRole('textbox', { name: 'Page ranges' }).fill('3-4, 1');
-  await previewForm(form, 'Download');
-  const files = await collectDownloads(page, 2, () =>
-    form.getByRole('button', { name: 'Download', exact: true }).click(),
-  );
+  const files = await collectDownloads(page, 2, () => applyForm(form, 'Download'));
   expect(files.map((file) => file.name)).toEqual(['big-1.pdf', 'big-2.pdf']);
   const parts = await Promise.all(files.map((file) => readProducedPageTexts(file.bytes)));
   expect(parts.map((texts) => texts.map((text) => text.trim()))).toEqual([
@@ -185,10 +170,7 @@ test('export as images: one PNG per page at the requested resolution', async ({ 
   await useAdvancedMode(page);
   const form = await openForm(page, 'Export Pages as Images', 'Export Pages as Images');
   await form.getByRole('spinbutton', { name: 'Resolution (DPI)' }).fill('144');
-  await previewForm(form, 'Download');
-  const files = await collectDownloads(page, 2, () =>
-    form.getByRole('button', { name: 'Download', exact: true }).click(),
-  );
+  const files = await collectDownloads(page, 2, () => applyForm(form, 'Download'));
   expect(files.map((file) => file.name)).toEqual(['img-001.png', 'img-002.png']);
   for (const file of files) {
     const view = new DataView(file.bytes.buffer, file.bytes.byteOffset, file.bytes.byteLength);
@@ -204,10 +186,7 @@ test('export as text: the text file holds every page in order', async ({ page })
   await open(page, 'words.pdf', labelledPdf('Word', 3));
   await useAdvancedMode(page);
   const form = await openForm(page, 'Export Text', 'Export Text');
-  await previewForm(form, 'Download');
-  const [file] = await collectDownloads(page, 1, () =>
-    form.getByRole('button', { name: 'Download', exact: true }).click(),
-  );
+  const [file] = await collectDownloads(page, 1, () => applyForm(form, 'Download'));
   expect(file?.name).toBe('words.txt');
   const text = Buffer.from(file?.bytes ?? []).toString('utf8');
   expect(text.indexOf('Word 1')).toBeGreaterThanOrEqual(0);
@@ -228,10 +207,7 @@ test('export options: the image format chosen in the export dialog is the one th
   const form = page.getByRole('region', { name: 'Export Pages as Images' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('spinbutton', { name: 'Resolution (DPI)' }).fill('72');
-  await previewForm(form, 'Download');
-  const [file] = await collectDownloads(page, 1, () =>
-    form.getByRole('button', { name: 'Download', exact: true }).click(),
-  );
+  const [file] = await collectDownloads(page, 1, () => applyForm(form, 'Download'));
   expect(file?.name).toBe('choice-001.jpg');
   expect([...(file?.bytes.slice(0, 3) ?? [])]).toEqual([0xff, 0xd8, 0xff]);
 });
@@ -451,9 +427,7 @@ test('thumbnails follow the page: a turn of an already-turned page, an insert, a
   const form = await openForm(page, 'Insert page', 'Insert Pages');
   await form.getByRole('spinbutton', { name: 'Position (after page N)' }).fill('2');
   await form.getByRole('spinbutton', { name: 'Page count to insert' }).fill('2');
-  await previewForm(form);
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 30_000 });
+  await applyForm(form);
   await expect(thumbs(page)).toHaveCount(6);
   for (const index of [0, 1, 2, 3, 4, 5]) await expectThumbnailMatchesPage(page, index);
 

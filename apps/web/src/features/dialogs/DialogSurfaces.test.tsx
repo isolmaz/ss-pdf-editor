@@ -11,11 +11,12 @@ import type { OperationDialogSpec, OpRunResult } from 'pdf-ui/ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHELL_SHORTCUT_GROUPS } from '../../useShortcuts';
 import { coreStore, initialCoreState } from '../core/core-store';
-import { BatchDialogHost, ShortcutsDialogHost, StartDialogHost } from './DialogSurfaces';
+import { BatchDialogHost, ReportDialogHost, ShortcutsDialogHost, StartDialogHost } from './DialogSurfaces';
 import {
   dialogsStore,
   initialDialogsState,
   openBatchDialog,
+  reportOpened,
   shortcutsOpened,
   startDialogOpened,
 } from './dialogs-store';
@@ -56,6 +57,14 @@ vi.mock('pdf-ui/dialog', () => ({
       </button>
       <button type="button" onClick={() => props.onResult({ files: [] } as unknown as OpRunResult)}>
         Run start
+      </button>
+    </div>
+  ),
+  ReportDialog: (props: { title: string; report: { pageCount: number }; onClose: () => void }) => (
+    <div role="dialog" aria-label={`Report ${props.title}`}>
+      <p>{props.report.pageCount} pages</p>
+      <button type="button" onClick={props.onClose}>
+        Close report
       </button>
     </div>
   ),
@@ -130,6 +139,27 @@ describe('BatchDialogHost', () => {
     await user.click(screen.getByRole('button', { name: 'Close batch' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(dialogsStore.get().batchOpen).toBe(false);
+  });
+});
+
+describe('ReportDialogHost', () => {
+  it('mounts the report only while the store holds one, under the operation’s title', async () => {
+    render(<ReportDialogHost t={t} />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    act(() => reportOpened('Stamp', { pageCount: 5 } as never));
+    expect(await screen.findByRole('dialog', { name: 'Report Stamp' })).toBeTruthy();
+    expect(screen.getByText('5 pages')).toBeTruthy();
+  });
+
+  it('closes the report in the store on its own Close', async () => {
+    const user = userEvent.setup();
+    render(<ReportDialogHost t={t} />);
+    act(() => reportOpened('Stamp', { pageCount: 5 } as never));
+
+    await user.click(await screen.findByRole('button', { name: 'Close report' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(dialogsStore.get().reportView).toBeNull();
   });
 });
 

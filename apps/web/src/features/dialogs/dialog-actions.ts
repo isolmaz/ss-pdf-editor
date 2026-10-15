@@ -51,6 +51,7 @@ import {
   dialogsStore,
   dismissOperationDialog,
   operationDialogOpened,
+  reportOpened,
   shortcutsClosed,
   shortcutsOpened,
   startDialogOpened,
@@ -234,6 +235,14 @@ export function createDialogRuns(deps: DialogRunDeps) {
   const emptyNotice = (result: OpRunResult): string =>
     result.noticeKey === undefined ? t('op.result.nothing') : t(result.noticeKey, result.noticeParams ?? {});
 
+  /**
+   * The notice a delivered result ends in, and the way to its report. A result that needed a
+   * review was read before the user pressed its button; one that was delivered at once
+   * (`resultNeedsReview`) was not, and this is where the report stays reachable.
+   */
+  const deliveredNotice = (text: string, title: string, report: OpRunResult['report']): void =>
+    showNotice(text, { label: t('op.result.details'), run: () => reportOpened(title, report) });
+
   /** The result of the operation open in the tools panel. */
   async function dialogResult(result: OpRunResult): Promise<void> {
     const { dialogInput: input, dialogSpec: spec } = dialogsStore.get();
@@ -279,23 +288,27 @@ export function createDialogRuns(deps: DialogRunDeps) {
       const kind = result.deliver ?? spec.resultKind;
       if (kind === 'download') {
         downloadFiles(result.files);
-        showNotice(
+        deliveredNotice(
           result.noticeKey === undefined
             ? t('op.result.downloaded', { name: first.name })
             : t(result.noticeKey, result.noticeParams ?? {}),
+          t(spec.titleKey),
+          result.report,
         );
         dismissOperationDialog();
         return;
       }
       if (kind === 'new-tab') {
         const warning = await deps.openProducedTab(first.name, first.bytes, controller.signal);
-        showNotice(
+        deliveredNotice(
           appendWarning(
             result.noticeKey === undefined
               ? t('op.result.opened', { name: first.name })
               : t(result.noticeKey, result.noticeParams ?? {}),
             warning,
           ),
+          t(spec.titleKey),
+          result.report,
         );
         dismissOperationDialog();
         return;
@@ -324,10 +337,12 @@ export function createDialogRuns(deps: DialogRunDeps) {
           .then((terms) => redactedWordsRead(tab.id, terms))
           .catch(() => undefined);
       }
-      showNotice(
+      deliveredNotice(
         result.noticeKey === undefined
           ? t('op.result.applied', { label: t(spec.titleKey) })
-          : t(result.noticeKey, result.noticeParams ?? {}),
+          : `${t(result.noticeKey, result.noticeParams ?? {})} ${t('op.result.undoHint')}`,
+        t(spec.titleKey),
+        result.report,
       );
       dismissOperationDialog();
       return;
@@ -355,7 +370,7 @@ export function createDialogRuns(deps: DialogRunDeps) {
     }
     if ((result.deliver ?? spec.resultKind) === 'download') {
       downloadFiles(result.files);
-      showNotice(t('op.result.downloaded', { name: first.name }));
+      deliveredNotice(t('op.result.downloaded', { name: first.name }), t(spec.titleKey), result.report);
       closeStartDialog();
       return;
     }
@@ -368,7 +383,11 @@ export function createDialogRuns(deps: DialogRunDeps) {
     try {
       const warning = await deps.openProducedTab(first.name, first.bytes, controller.signal);
       closeStartDialog();
-      showNotice(appendWarning(t('op.result.opened', { name: first.name }), warning));
+      deliveredNotice(
+        appendWarning(t('op.result.opened', { name: first.name }), warning),
+        t(spec.titleKey),
+        result.report,
+      );
     } catch (error) {
       if (controller.signal.aborted) return;
       showNotice(noticeLine(failureNotices(error, 'error.internal.message'), t));

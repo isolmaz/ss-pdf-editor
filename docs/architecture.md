@@ -1205,7 +1205,11 @@ PageRect          { pageIndex; rect: [x0,y0,x1,y1] }
 `steps` is not decoration: the step ids an operation reports are the vocabulary the save
 verification uses to decide what the operation was allowed to change (§10). Notes carry
 `kind: 'lost'` for anything the user must be told about, and the report panel renders lost
-notes first.
+notes first, under the heading "Removed" and ahead of the page count and size. What only a
+developer reads — whether the file was rewritten, the step ids, the producer lines in
+`TECHNICAL_NOTES` (`dialogs/ReportPanel.tsx`) — sits in one closed "Technical details"
+section. Only `changed` and `preserved` notes can be folded into it; a loss or a warning is
+never hidden.
 
 Every long operation is cancellable through `OperationContext.signal`; `throwIfAborted()`
 and engine-specific abort handling are checked between phases, and a cancelled OCR run
@@ -2440,22 +2444,33 @@ when the document's list really is empty. A run's `noticeKey` is the sentence th
 shows whatever the result kind (replace, new tab, download); without one it says what
 happened to the file. A field marked `advanced` is rendered in one closed "advanced
 options" section after the essential fields (it opens itself while one of its fields is
-invalid); short controls — number, colour, select — share a row two by two
+invalid); short controls — number, colour, select, page scope — share a row two by two
 once the form's container is wider than 28 rem (a container query, because the same list
 renders in the panel and in a modal). A select shows its option's **label** in the trigger
 (`renderValue`): Kumo's trigger prints the raw value otherwise, and a stamp position read
-"bottom-right". A file field is a labelled button over a hidden input that lists what was
+"bottom-right". The `pageScope` field is such a select too — all pages, the current page, the
+selected pages (disabled while none are selected) or a custom range — and the range box exists only
+while "Custom range" is the choice; "No pages selected." is said only when the selection itself is
+the choice. A file field is a labelled button over a hidden input that lists what was
 picked, in the product's words rather than the browser's "Choose File".
 
 **One host.** `OperationForm` (`dialogs/OperationForm.tsx`) is the whole of an operation's
-surface — title, the two numbered steps (`DialogSteps`: settings, then review/result), the
-fields, progress with a working cancel, the destructive second confirmation, the error with
-its diagnostic, the report — and the right dock (`features/shell/RightDock.tsx`) shows it in
+surface — title, the fields, progress with a working cancel, the destructive second
+confirmation, the error with its diagnostic, the report of a result that has to be read — and the right dock (`features/shell/RightDock.tsx`) shows it in
 its tools panel for **every** operation, so there is one runner with one destructive confirmation and one meaning
-of "Close". The first-step button reads *Preview* (`op.apply`) because it
-runs the operation and shows the report; only the result's own action
-(`RESULT_ACTIONS[resultKind]`: apply to the document / open in a new tab / download) changes
-anything, and "Close" discards. Modals remain for decisions that block: password, unsaved
+of "Close". The button reads *Apply* (`op.apply`) and runs the operation. What follows is
+`resultNeedsReview` (`dialogs/review.ts`): a result with no file, a `lost` or `warning` note,
+or one of the few `changed` notes that say the output differs from what was asked (a text
+that had to be shrunk or reflowed, an approximate conversion, a generated owner password) is
+shown as a report first, and only its own action (`RESULT_ACTIONS[resultKind]`: apply to the
+document / open in a new tab / download) changes anything, while "Close" discards. Every
+other result is handed to the host at once — the document keeps an undo step for it, so a
+report screen in front of that step would be a second button and nothing more. The form
+shows "Processing…" meanwhile; if the host's promise ends and the form is still mounted
+(another operation held the document, the write failed), the report and its button appear,
+so the result is never lost. A result that has to be read is headed "Review the result" (`dialog.review`); the form has no step indicator. A delivered result's notice carries *Ctrl+Z* as its undo hint and a *Details* action
+(`NoticeAction` in `core-store`, rendered by `ActivityOverlay`) that opens the report in a
+`ReportDialog` (`dialogs-store.reportView`). Modals remain for decisions that block: password, unsaved
 changes, signature warning, export choice, print, settings and the shortcut list.
 
 The host (`dialogResult`, built by `createDialogRuns` in `features/dialogs/dialog-actions.ts`) applies a result and closes the form itself once the result
@@ -2481,8 +2496,9 @@ standalone operation through it would leave a command that is enabled with no do
 does nothing.
 
 A multiple `files` field is an ordered list: a new pick appends, and each entry can be moved
-up or down or removed, so the order of a merge or of the pages built from images is the
-user's.
+up or down with its arrow buttons, dragged onto another entry (the browser's own drag and drop,
+which only reorders when the drag started in that list) or removed, so the order of a merge or
+of the pages built from images is the user's.
 
 The command palette runs **one command per opening**: Enter reaches both the input's own
 handler and the list's item activation, so the keyboard path runs the command once (twice, a

@@ -1,11 +1,10 @@
 /**
  * Driving code shared by the `ui-viewer15-*.spec.ts` specs: a PDF that carries images of
- * every kind the image dialog distinguishes (binary-safe, unlike the ASCII fixtures), the
- * browser's own JPEG encoder, and the preview → apply steps of an operation form.
+ * every kind the image dialog distinguishes (binary-safe, unlike the ASCII fixtures), and the
+ * browser's own JPEG encoder.
  */
 
-import type { Locator, Page } from 'playwright/test';
-import { expect } from './test';
+import type { Page } from 'playwright/test';
 
 /** One image XObject of the fixture: extra dictionary entries and the stream bytes as stored. */
 export interface FixtureImage {
@@ -109,21 +108,4 @@ export function rgbSamples(width: number, height: number): Uint8Array {
     }
   }
   return out;
-}
-
-/** Preview an operation form, confirm a destructive prompt if asked, and wait for the report. */
-export async function previewOperation(form: Locator): Promise<void> {
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  const report = form.getByRole('heading', { name: 'Operation report' });
-  const goOn = form.getByRole('button', { name: 'Continue', exact: true });
-  await expect(goOn.or(report)).toBeVisible({ timeout: 60_000 });
-  if (await goOn.isVisible()) await goOn.click();
-  await expect(report).toBeVisible({ timeout: 60_000 });
-}
-
-/** Preview, then apply to the document, and wait for the form to close. */
-export async function applyOperation(form: Locator): Promise<void> {
-  await previewOperation(form);
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 60_000 });
 }

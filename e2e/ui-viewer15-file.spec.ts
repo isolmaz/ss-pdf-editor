@@ -6,7 +6,7 @@
 import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { labelledPdf, readProducedEntry } from './tool-fixture';
-import { encodePng, exportBytes, inkPng, openPdf, runCommand } from './ui-helpers';
+import { applyForm, encodePng, exportBytes, inkPng, openPdf, runCommand } from './ui-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -19,7 +19,7 @@ async function openForm(page: Page, command: string, region: string): Promise<Lo
 }
 
 async function expectRefused(form: Locator, message: string, diagnostic: string): Promise<void> {
-  await form.getByRole('button', { name: /^(Preview|Open in new tab)$/ }).click();
+  await form.getByRole('button', { name: /^(Apply|Open in new tab)$/ }).click();
   const alert = form.getByRole('alert');
   await expect(alert).toContainText(message, { timeout: 60_000 });
   await expect(alert.locator('[data-dialog-diagnostic]')).toHaveAttribute(
@@ -62,9 +62,7 @@ test('create from images: two pictures open as a two-page Letter document, one p
   await form.getByRole('radio', { name: 'Stretch' }).check();
   await form.getByText(/^Advanced options/).click();
   await form.getByRole('radio', { name: 'Ignore' }).check();
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
+  await applyForm(form, 'Open in new tab');
   await expect(page.getByRole('button', { name: 'Images.pdf', exact: true })).toBeVisible({
     timeout: 30_000,
   });

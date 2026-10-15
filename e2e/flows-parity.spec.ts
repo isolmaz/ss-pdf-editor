@@ -3,6 +3,7 @@ import type { Download, Page } from 'playwright/test';
 import { useAdvancedMode, useLanguage } from './settings';
 import { expect, test } from './test';
 import { authoredToolFixturePdf, readProducedEntry, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { applyForm, reviewHeading } from './ui-helpers';
 
 /**
  * The flows the parity work added, driven in the built app: the command palette's empty
@@ -226,16 +227,13 @@ test('sanitize: the preview report comes first, and applying it takes the author
 
   const form = await openForm(page, 'Sanitize document', 'Sanitize document');
   await expect(form.getByRole('checkbox', { name: 'Document metadata' })).toBeChecked();
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  const report = form.getByRole('heading', { name: 'Operation report' });
-  const goOn = form.getByRole('button', { name: 'Continue', exact: true });
-  await expect(goOn.or(report)).toBeVisible({ timeout: 60_000 });
-  if (await goOn.isVisible()) await goOn.click();
-  await expect(report).toBeVisible({ timeout: 60_000 });
-  // The report says what was found before anything is written.
-  await expect(form).toContainText(/Metadata: \d+ items found, \d+ removed\./);
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
-  await expect(form).toBeHidden({ timeout: 60_000 });
+  await applyForm(form);
+  // The notice that says it was applied keeps the report one press away.
+  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  const report = page.getByRole('dialog', { name: 'Sanitize document' });
+  await expect(report).toContainText(/Metadata: \d+ items found, \d+ removed\./);
+  await report.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(report).toBeHidden();
 
   const after = await exported(page, 'after.pdf');
   expect(await readProducedEntry(after, 'trailer', 'Info', 'Author')).toBe('');
@@ -253,7 +251,7 @@ test('PDF/A: saving as PDF/A-2b opens a new tab whose own check says PDF/A-2b wi
   await expect(form.getByRole('radio', { name: 'PDF/A-2b (recommended)' })).toBeChecked();
   // The first press converts and reports; the second opens the result.
   await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 180_000 });
+  await expect(reviewHeading(form)).toBeVisible({ timeout: 180_000 });
   await expect(form).toContainText('The document was converted to PDF/A-2b');
   await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
 
@@ -360,7 +358,7 @@ test('insert pages from a scan with nothing scanned says the input is missing, n
   const form = page.getByRole('region', { name: 'Insert Pages' });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('radio', { name: 'Scan with camera', exact: true }).check();
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  await form.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(form.getByText('This operation has nothing to work with yet.')).toBeVisible({
     timeout: 30_000,
   });

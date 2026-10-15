@@ -87,7 +87,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 - **Home screen.** *Start* opens a PDF (or several, each in its own tab: drop them on the
   first tile or click it to choose, the header's **Open** does the same), creates a blank
-  document, builds a PDF from images, merges several PDFs in the order you choose or starts
+  document, builds a PDF from images, merges several PDFs in the order you choose (drag the
+  files or use their arrow buttons) or starts
   a batch run, and lists recent documents with search, sorting and stars. *All tools* lays
   every tool out by task; pick a tool first and the editor asks for the file when the tool
   needs one. A file that does not open drops the tool, so it never runs on a later document.
@@ -169,11 +170,15 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     `#rrggbb` becomes the default colour and a date that is not a real one (month 13, hour 25)
     becomes the time of the import; a comment on a page the document does not have, or of a
     shape this app cannot draw, is skipped and counted in the notice.
-- **Operations in two steps.** Every operation opens in the tools panel. First you set it
-  up, then *Preview* runs it and shows a report. The report's own button applies the
-  result. Pop-up windows are used only for decisions that block, such as a password,
-  unsaved changes, a signature warning, export, print or settings, plus the XFA form
-  viewer, which needs the room.
+- **Operations apply at once.** Every operation opens in the tools panel. You set it up and
+  press *Apply*: a clean result goes straight into the document (or a new tab, or a
+  download) and a notice says so — *Ctrl+Z* undoes it, and the notice's *Details* button
+  opens the report, with the technical lines folded under *Technical details*. A result that
+  lost something, warns of something or only approximates what you asked for is shown first
+  as *Review the result*, warnings on top, and its own button applies it. A
+  destructive operation asks once before it runs. Pop-up windows are used only for
+  decisions that block, such as a password, unsaved changes, a signature warning, export,
+  print or settings, plus the XFA form viewer, which needs the room.
 - **Save versus Export.** *Save* writes over the file you opened; this needs Chromium
   and its File System Access API, and a document with no file yet asks where to save it
   first. The header's Save button and the Save entry of the menu and the palette are offered

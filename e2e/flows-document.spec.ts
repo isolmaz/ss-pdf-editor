@@ -9,6 +9,7 @@ import {
   textNotePdf,
   toolFixturePdf,
 } from './tool-fixture';
+import { applyForm } from './ui-helpers';
 
 /**
  * Editor flows end to end: errors, navigation, page operations, search, forms,
@@ -184,10 +185,7 @@ test('a redaction box removes the text under it from the exported file', async (
   await page.getByRole('tab', { name: 'Redaction', exact: true }).click();
   await page.getByRole('button', { name: 'Redaction (Permanent Erase)', exact: true }).click();
   const form = page.getByRole('region', { name: 'Redaction (Permanent Erase)' });
-  await form.getByRole('button', { name: 'Preview', exact: true }).click();
-  await form.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
+  await applyForm(form);
   await expect(notice(page, 'no text remains in the marked areas')).toBeVisible({ timeout: 60_000 });
 
   const texts = await readProducedPageTexts(await exported(page, 'redacted.pdf'));

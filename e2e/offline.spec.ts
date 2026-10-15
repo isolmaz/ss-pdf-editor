@@ -4,6 +4,7 @@ import type { Locator, Page } from 'playwright/test';
 import { exportBytes, notice, openApp, rotateCurrentPage } from './app-helpers';
 import { expect, test } from './test';
 import { readProducedEntry, readProducedPageTexts, scannedPdf, toolFixturePdf } from './tool-fixture';
+import { detailsButton, finishRun } from './ui-helpers';
 
 /** Every script and style the build put under `/editor/assets/` — what the editor can load. */
 const BUILT_CHUNKS = readdirSync(fileURLToPath(new URL('../dist/editor/assets/', import.meta.url)))
@@ -221,24 +222,26 @@ test.describe('offline shell', { tag: '@service-worker' }, () => {
       await expect(page.getByRole('tab', { name: 'Start', exact: true })).toBeVisible({ timeout: 30_000 });
       await openApp(page, 'scan.pdf', await scannedPdf([SCAN_LINES]), { navigate: false });
       await openOcrForm(page);
-      const run = page.getByRole('button', { name: /^Önizle$|^Preview$/ }).first();
+      const run = page.getByRole('button', { name: /^Uygula$|^Apply$/ }).first();
       await expect(run).toBeEnabled({ timeout: 120_000 });
       await run.click();
 
-      // The run read the page: a refusal ("the language pack is missing") shows no report at all.
+      // The run read the page: a refusal ("the language pack is missing") ends in no result at all.
+      await finishRun(page, 300_000);
+      await detailsButton(page).click();
       const report = page.getByRole('region', { name: /İşlem raporu|Operation report/ });
-      await expect(report).toBeVisible({ timeout: 300_000 });
+      await expect(report).toBeVisible();
       const layer = report.getByText(/Invisible text layer of \d+ word\(s\) added to \d+ page\(s\)/);
       await expect(layer).toBeVisible({ timeout: 30_000 });
       const counts = /of (\d+) word\(s\) added to (\d+) page\(s\)/.exec((await layer.textContent()) ?? '');
       expect(Number(counts?.[1] ?? 0)).toBeGreaterThan(4);
       expect(Number(counts?.[2] ?? 0)).toBe(1);
+      await page
+        .getByRole('dialog')
+        .getByRole('button', { name: /^(Kapat|Close)$/ })
+        .click();
 
       // The words are in the bytes the user takes away, in reading order: the scan had no text at all.
-      await page
-        .getByRole('button', { name: /Belgeye uygula|Apply to document/ })
-        .first()
-        .click();
       const out = await exportBytes(page, 'offline-ocr-out.pdf');
       const [text] = await readProducedPageTexts(out, 1);
       expect((text ?? '').replace(/\s+/g, ' ')).toMatch(/Invoice 2041.*Total 318\.40.*Payment due Friday/);

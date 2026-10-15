@@ -28,6 +28,8 @@ export interface ActivityProgress {
 export interface ActivityOverlayProps {
   readonly t: Translator;
   readonly notice: string | null;
+  /** A button the notice offers (the report behind "applied"); closing the notice goes with it. */
+  readonly noticeAction?: { readonly label: string; readonly run: () => void } | null;
   readonly onDismiss: () => void;
   readonly progress: ActivityProgress | null;
   readonly onCancel: () => void;
@@ -42,6 +44,7 @@ export interface ActivityOverlayProps {
 export function ActivityOverlay({
   t,
   notice,
+  noticeAction = null,
   onDismiss,
   progress,
   onCancel,
@@ -107,6 +110,18 @@ export function ActivityOverlay({
         {notice === null ? null : (
           <>
             <span className="min-w-0 flex-1 whitespace-pre-line">{notice}</span>
+            {noticeAction === null ? null : (
+              <Button
+                size="sm"
+                shape="base"
+                onClick={() => {
+                  onDismiss();
+                  noticeAction.run();
+                }}
+              >
+                {noticeAction.label}
+              </Button>
+            )}
             <button
               type="button"
               aria-label={t('op.close')}

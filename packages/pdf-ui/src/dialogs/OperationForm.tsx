@@ -14,18 +14,23 @@
  *  - **The confirm button is disabled while the fields are wrong.** `fieldErrors`
  *    is the same function the field list renders from, so an unparsable page range
  *    cannot be submitted by any route.
- *  - **Two steps, always shown** (`DialogSteps`): settings, then the report and the one
- *    decision the result asks for. The first button previews; only the second changes
- *    the document.
+ *  - **A clean result is delivered at once.** The document keeps an undo step for what a
+ *    run applies, so a report screen in front of that step is a second button and nothing
+ *    more. `resultNeedsReview` (`review.ts`) says which results must still be read first —
+ *    anything lost, warned about or approximated — and for those the form shows the
+ *    report and waits for the one decision it asks for; "close" discards.
+ *  - **A delivery the host did not take falls back to the review.** `onResult` resolves when
+ *    the host is done; a form that is still mounted then (another operation held the
+ *    document, the write failed) shows the report and its button, so the result is not lost.
  */
 
 import { Meter } from '@cloudflare/kumo/components/meter';
 import { progressCounts, progressLabel, type Translator } from 'pdf-shared';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/Button';
-import { DialogSteps } from './DialogSteps';
 import { FieldList, fieldErrors, initialParams } from './fields';
 import { OperationReportPanel } from './ReportPanel';
+import { resultNeedsReview } from './review';
 import {
   type DialogParams,
   type FieldValue,
@@ -47,8 +52,12 @@ export interface OperationFormProps {
   readonly context: OperationRunContext;
   /** Leaves without applying anything; a running job is cancelled first. */
   readonly onClose: () => void;
-  /** Performs `spec.resultKind` with the produced files; the host owns the meaning. */
-  readonly onResult: (result: OpRunResult) => void;
+  /**
+   * Performs `spec.resultKind` with the produced files; the host owns the meaning. It
+   * returns when the delivery is over and must not reject: the form reads the end of the
+   * promise, not its outcome, and a host that took the result has closed the form by then.
+   */
+  readonly onResult: (result: OpRunResult) => void | Promise<void>;
   /** The host's own title and description elements (the modal's are its accessible name). */
   readonly renderTitle: (text: string) => ReactNode;
   readonly renderIntro: (text: string) => ReactNode;
@@ -100,16 +109,27 @@ export function OperationForm({
   const [confirming, setConfirming] = useState(false);
   const { status, progress, result, error, run, cancel } = useOperationRun();
   const footerRef = useRef<HTMLDivElement | null>(null);
+  /** The host ended its delivery and this form is still on screen: the result was not taken. */
+  const [undelivered, setUndelivered] = useState(false);
+  const deliveredRef = useRef<OpRunResult | null>(null);
 
   const running = status === 'running';
   const done = status === 'done' && result !== null;
+  const reviewing = done && (undelivered || resultNeedsReview(result));
+  const delivering = done && !reviewing;
   const invalid =
     Object.keys(fieldErrors(t, spec.fields, values, context.pageCount, context.selectedPages.length)).length >
     0;
 
   useEffect(() => {
-    onRunningChange?.(running);
-  }, [onRunningChange, running]);
+    onRunningChange?.(running || delivering);
+  }, [onRunningChange, running, delivering]);
+
+  useEffect(() => {
+    if (!delivering || deliveredRef.current === result) return;
+    deliveredRef.current = result;
+    void Promise.resolve(onResult(result)).then(() => setUndelivered(true));
+  }, [delivering, result, onResult]);
 
   // The destructive step is the only place the form moves focus on its own: the
   // consequence has just been announced, and the next Enter must not be the one that
@@ -137,14 +157,17 @@ export function OperationForm({
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex shrink-0 flex-col gap-2">
         {renderTitle(t(spec.titleKey))}
-        <DialogSteps t={t} step={done ? 2 : 1} resultKind={spec.resultKind} />
         {spec.introKey === undefined || done ? null : renderIntro(t(spec.introKey))}
       </div>
 
-      {done ? (
+      {delivering ? (
+        <p role="status" aria-live="polite" className="text-xs text-kumo-subtle">
+          {t('op.running')}
+        </p>
+      ) : reviewing ? (
         <>
           <div className="min-h-0 flex-1 overflow-y-auto pe-1">
-            <OperationReportPanel t={t} report={result.report} />
+            <OperationReportPanel t={t} report={result.report} title={t('dialog.review')} />
           </div>
           <div className="flex shrink-0 justify-end gap-2 border-t border-kumo-line/40 pt-2">
             <Button variant="outline" onClick={close}>

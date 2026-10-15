@@ -22,6 +22,7 @@ export { CloseDocumentDialog } from './CloseDocumentDialog';
 export { ExportDialog, type ExportDialogProps, type ExportOptions } from './ExportDialog';
 export { OperationForm, type OperationFormProps } from './OperationForm';
 export { PasswordDialog, type PasswordDialogProps } from './PasswordDialog';
+export { ReportDialog } from './ReportDialog';
 export { OperationReportPanel, type OperationReportPanelProps } from './ReportPanel';
 export { SaveConflictDialog } from './SaveConflictDialog';
 export { SettingsDialog, type SettingsDialogProps } from './SettingsDialog';

@@ -6,6 +6,7 @@ import { useAdvancedMode } from './settings';
 import { makeSignerContainer, readSignature, SIGNER } from './signer-fixture';
 import { expect, test } from './test';
 import { readProducedPageTexts, readProducedPdf, toolFixturePdf } from './tool-fixture';
+import { applyForm } from './ui-helpers';
 
 /**
  * Keyboard history, the home screen's status bar, reading mode and presentation mode.
@@ -202,9 +203,7 @@ async function signOpenDocument(page: Page, dir: string): Promise<void> {
   const form = page.getByRole('region', { name: /Sign Document/ });
   await form.locator('input[type="file"]').setInputFiles(container);
   await form.getByRole('textbox', { name: 'PKCS#12 password' }).fill(SIGNER.password);
-  await form.getByRole('button', { name: 'Sign', exact: true }).click();
-  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
-  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
+  await applyForm(form, 'Sign');
   await expect(notice(page, `Signature applied (${SIGNER.commonName})`)).toBeVisible({ timeout: 60_000 });
 }
 
