@@ -29,6 +29,7 @@ import {
   pageObjects,
   pdfNumber,
   producerKeptNote,
+  removeXmpPacket,
   resolved,
   saveRewrite,
 } from '../engines/mupdf-write';
@@ -135,7 +136,8 @@ async function compressStructure(
     pageCount = doc.countPages();
     if (options.stripMetadata) {
       // Every Info key but the producer line, which `saveRewrite` sets again: "clean
-      // metadata" never removes the notice.
+      // metadata" never removes the notice. The XMP packet goes too: it carries the same
+      // title and author as Info, so leaving it would leave the metadata in the file.
       const info = resolved(doc.getTrailer().get('Info'));
       if (info?.isDictionary() === true) {
         const keys: string[] = [];
@@ -144,6 +146,7 @@ async function compressStructure(
         });
         for (const key of keys) info.delete(key);
       }
+      removeXmpPacket(doc);
       steps.push('metadata');
       notes.push(note('lost', 'op.note.compress.infoDropped'));
     } else {
@@ -176,7 +179,7 @@ async function compressStructure(
   return { bytes: out, report };
 }
 
-/** One rendered page: its JPEG and the size in points the page keeps. */
+/** One rendered page: its JPEG and the size the page keeps, in the page's user units (`/UserUnit` points each). */
 export interface RasterPage {
   readonly jpeg: Uint8Array;
   readonly width: number;
@@ -324,8 +327,12 @@ async function compressRaster(
         if (options.greyscale) applyGreyscale(canvas);
         rendered.set(pageIndex, {
           jpeg: canvasJpeg(canvas, quality),
-          width: Math.round(canvas.width / scale),
-          height: Math.round(canvas.height / scale),
+          // The MediaBox is in the page's own user units: pdf.js's viewport is already
+          // scaled by `/UserUnit`, and the page keeps that key, so the box is the
+          // physical size divided by it — otherwise the page would come out `/UserUnit`
+          // times too large.
+          width: Math.round(canvas.width / scale) / size.userUnit,
+          height: Math.round(canvas.height / scale) / size.userUnit,
         });
       } finally {
         // Release the backstore right away: one page's bitmap at a time.

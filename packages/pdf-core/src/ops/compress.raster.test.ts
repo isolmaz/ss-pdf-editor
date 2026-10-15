@@ -192,6 +192,41 @@ describe('compressDocument raster mode', () => {
     expect(progress.filter((entry) => entry.phase === 'render').map((entry) => entry.done)).toEqual([1, 2]);
   });
 
+  it('keeps the physical size of a page with /UserUnit: the box is in user units, the key stays', async () => {
+    const doc = new PDFDocument();
+    const page = doc.addPage([0, 0, 300, 400], 0, {}, 'BT ET');
+    page.put('UserUnit', 2);
+    doc.insertPage(0, page);
+    const input = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+
+    const { openWithPdfjs } = await import('../engines/pdfjs-handle');
+    const physical = async (bytes: Uint8Array) => {
+      const handle = await openWithPdfjs(bytes);
+      try {
+        const size = await handle.getPageSize(0, 1);
+        return [size.width, size.height];
+      } finally {
+        await handle.destroy();
+      }
+    };
+    // 300 x 400 units of 2/72 inch.
+    expect(await physical(input)).toEqual([600, 800]);
+
+    const out = await compressDocument(input, raster({ pages: [0], dpi: 144 }), run);
+    // 2 px per point: the canvas holds the physical page, 1200 x 1600 px.
+    expect(await physical(out.bytes)).toEqual([600, 800]);
+    const result = PDFDocument.openDocument(out.bytes.slice(), 'application/pdf').asPDF();
+    try {
+      const dictionary = result?.findPage(0);
+      const box = [0, 1, 2, 3].map((index) => dictionary?.get('MediaBox').get(index).asNumber());
+      expect(box).toEqual([0, 0, 300, 400]);
+      expect(dictionary?.get('UserUnit').asNumber()).toBe(2);
+    } finally {
+      result?.destroy();
+    }
+  });
+
   it('turns the picture grey with the Rec. 601 weighting when asked, and says so', async () => {
     const out = await compressDocument(fixture(false), raster({ greyscale: true }), run);
     const [first] = made;

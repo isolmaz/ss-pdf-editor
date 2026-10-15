@@ -142,6 +142,20 @@ export function resolved(object: PDFObject | null | undefined): PDFObject | null
   return target.isNull() ? null : target;
 }
 
+/**
+ * Remove the catalog's XMP packet (`/Root/Metadata`) for real: the packet object is
+ * deleted when it is indirect, the catalog entry otherwise. Returns whether there was
+ * one. Info keys are not touched — that is each caller's own policy.
+ */
+export function removeXmpPacket(doc: PDFDocument): boolean {
+  const root = doc.getTrailer().get('Root');
+  const xmp = root.get('Metadata');
+  if (xmp.isNull()) return false;
+  if (xmp.isIndirect()) doc.deleteObject(xmp.asIndirect());
+  root.delete('Metadata');
+  return true;
+}
+
 /** The text a string object carries, or `null` for anything that is not a string. */
 export function readText(object: PDFObject | null | undefined): string | null {
   const target = resolved(object);

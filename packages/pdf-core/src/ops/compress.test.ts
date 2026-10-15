@@ -60,6 +60,37 @@ async function read(bytes: Uint8Array) {
   }
 }
 
+/** The fixture plus an XMP packet whose title and creator are the same as Info's. */
+async function withXmp(): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument((await fixture()).slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  const packet =
+    '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/">' +
+    '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description ' +
+    'xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>GizliXmpBaslik</dc:title>' +
+    '<dc:creator><rdf:Seq><rdf:li>GizliXmpYazar</rdf:li></rdf:Seq></dc:creator>' +
+    '</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>';
+  const stream = doc.addRawStream(new TextEncoder().encode(packet), { Type: 'Metadata', Subtype: 'XML' });
+  doc.getTrailer().get('Root').put('Metadata', stream);
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/** The decoded `/Root/Metadata` packet, or `null` when the catalog has none. */
+async function xmpPacket(bytes: Uint8Array): Promise<string | null> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  try {
+    const xmp = doc.getTrailer().get('Root').get('Metadata');
+    return xmp.isNull() ? null : new TextDecoder().decode(xmp.readStream().asUint8Array());
+  } finally {
+    doc.destroy();
+  }
+}
+
 describe('compressDocument (structure)', () => {
   it('rewrites smaller, keeping every page and its text', async () => {
     const input = await fixture();
@@ -107,6 +138,31 @@ describe('compressDocument (structure)', () => {
     await expect(
       compressDocument(await fixture(), { mode: 'structure', stripMetadata: true, keepProducer: false }, run),
     ).rejects.toMatchObject({ code: 'unsupported' });
+  });
+
+  it('drops the XMP packet with the Info keys, so the title and creator are gone from the file', async () => {
+    const input = await withXmp();
+    // The control: without the option the packet survives the rewrite.
+    const kept = await compressDocument(
+      input,
+      { mode: 'structure', stripMetadata: false, keepProducer: true },
+      run,
+    );
+    expect(await xmpPacket(kept.bytes)).toContain('GizliXmpBaslik');
+
+    const out = await compressDocument(
+      input,
+      { mode: 'structure', stripMetadata: true, keepProducer: true },
+      run,
+    );
+    expect(await xmpPacket(out.bytes)).toBeNull();
+    const text = new TextDecoder('latin1').decode(out.bytes);
+    expect(text).not.toContain('GizliXmpBaslik');
+    expect(text).not.toContain('GizliXmpYazar');
+    expect(text).not.toContain('/Metadata');
+    const result = await read(out.bytes);
+    expect([result.title, result.author, result.producer]).toEqual([null, null, PRODUCER_LINE]);
+    expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.compress.infoDropped');
   });
 });
 

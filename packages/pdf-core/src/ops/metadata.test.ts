@@ -131,6 +131,46 @@ describe('writeMetadata', () => {
     expect((await readMetadata(cleaned.bytes)).xmp).toBeUndefined();
   });
 
+  it('keeps the zone of a PDF date: XMP carries the offset and Info the same instant', async () => {
+    const out = await writeMetadata(
+      await fixture(),
+      {
+        patch: {
+          creationDate: "D:20240101120000+02'00'",
+          modificationDate: "D:20240101120000-05'30'",
+          writeXmp: true,
+        },
+        clean: false,
+        cleanXmp: false,
+      },
+      run,
+    );
+    const read = await readMetadata(out.bytes);
+    expect(read.xmp).toContain('<xmp:CreateDate>2024-01-01T12:00:00+02:00</xmp:CreateDate>');
+    expect(read.xmp).toContain('<xmp:ModifyDate>2024-01-01T12:00:00-05:30</xmp:ModifyDate>');
+    // 12:00 at +02:00 is 10:00 UTC; 12:00 at -05:30 is 17:30 UTC.
+    expect(read.creationDate).toBe('D:20240101100000Z');
+    expect(read.modificationDate).toBe('D:20240101173000Z');
+  });
+
+  it('reads the short zone forms of a PDF date the same way', async () => {
+    for (const [pdf, iso, utc] of [
+      ["D:20240101120000+02'00", '2024-01-01T12:00:00+02:00', 'D:20240101100000Z'],
+      ['D:20240101120000+0200', '2024-01-01T12:00:00+02:00', 'D:20240101100000Z'],
+      ['D:20240101120000+02', '2024-01-01T12:00:00+02:00', 'D:20240101100000Z'],
+      ['D:20240101120000Z', '2024-01-01T12:00:00Z', 'D:20240101120000Z'],
+    ] as const) {
+      const out = await writeMetadata(
+        await fixture(),
+        { patch: { creationDate: pdf, writeXmp: true }, clean: false, cleanXmp: false },
+        run,
+      );
+      const read = await readMetadata(out.bytes);
+      expect(read.xmp).toContain(`<xmp:CreateDate>${iso}</xmp:CreateDate>`);
+      expect(read.creationDate).toBe(utc);
+    }
+  });
+
   it('refuses a creation date that is not a date', async () => {
     await expect(
       writeMetadata(

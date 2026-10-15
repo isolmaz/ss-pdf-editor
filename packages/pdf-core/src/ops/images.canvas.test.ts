@@ -102,6 +102,26 @@ describe('exportImages with a canvas', () => {
     expect([made[0]?.width, made[0]?.height]).toEqual([0, 0]);
   });
 
+  it('sizes a page with /UserUnit by its physical size, and budgets the pixels it will really paint', async () => {
+    const scaled = new PDFDocument();
+    const page = scaled.addPage([0, 0, 100, 50], 0, {}, '');
+    page.put('UserUnit', 2);
+    scaled.insertPage(0, page);
+    const bytes = new Uint8Array(scaled.saveToBuffer('').asUint8Array());
+    scaled.destroy();
+    // 100 x 50 user units of 2/72 inch are 200 x 100 pt: 2 pixels per point at 144 dpi.
+    const out = await exportImages(bytes, { ...settings, pages: [0] }, run);
+    expect(new TextDecoder().decode(out.files[0]?.bytes)).toBe('400x200');
+    // 400 x 200 px = 0.08 MP: a 0.05 MP budget refuses it, and names the DPI that fits.
+    const refusal = await exportImages(bytes, { ...settings, pages: [0], maxMegapixels: 0.05 }, run).catch(
+      (error: unknown) => error,
+    );
+    expect(refusal).toMatchObject({ code: 'file-too-large', details: { pageIndex: 0 } });
+    expect(String((refusal as { details: { engineMessage: string } }).details.engineMessage)).toContain(
+      '400x200 px = 0.1 MP',
+    );
+  });
+
   it('names png and webp files by their own extension', async () => {
     expect(
       (await exportImages(document(), { ...settings, pages: [0], format: 'png' }, run)).files[0]?.name,
