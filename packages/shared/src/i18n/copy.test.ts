@@ -38,6 +38,9 @@ const TOOL_NAMES: readonly ToolName[] = [
   { tr: 'Sayfaları sil', en: 'Delete pages', keys: ['pages.delete', 'tools.delete'] },
   { tr: 'Sayfaları ayıkla', en: 'Extract pages', keys: ['pages.extract.title', 'tools.extract'] },
   { tr: 'Belgeyi böl', en: 'Split document', keys: ['split.title', 'tools.split'] },
+  { tr: 'Sayfa sırasını ters çevir', en: 'Reverse page order', keys: ['pages.reverse'] },
+  { tr: 'Boş sayfaları kaldır', en: 'Remove blank pages', keys: ['tidy.blank.title'] },
+  { tr: 'Çift sayfalı taramaları böl', en: 'Split two-up scans', keys: ['tidy.split.title'] },
   { tr: 'Belge ekle', en: 'Add document', keys: ['file.add.title', 'tools.combine'] },
   { tr: 'Sayfa kutuları ve boyut', en: 'Page boxes and size', keys: ['boxes.title', 'boxes.dialog.title'] },
   {

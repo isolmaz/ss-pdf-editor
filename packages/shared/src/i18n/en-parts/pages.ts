@@ -14,6 +14,29 @@ export const pagesPart = {
   'pages.delete.done': '{count} page(s) deleted.',
   'pages.duplicate': 'Duplicate pages',
   'pages.duplicate.done': '{count} page(s) duplicated.',
+
+  'pages.reverse': 'Reverse page order',
+  'pages.reverse.done': 'Page order reversed.',
+
+  'tidy.blank.title': 'Remove blank pages',
+  'tidy.blank.intro':
+    'Finds pages with no text, pictures, drawings or notes, and shows which ones will go before anything changes.',
+  'tidy.blank.confirm': 'Find blank pages',
+  'tidy.blank.removed': 'Blank pages removed: {count} (pages {pages}).',
+  'tidy.blank.done': '{count} blank page(s) removed.',
+  'tidy.blank.none': 'No blank pages found. Nothing changed.',
+  'tidy.blank.all': 'Every page looks blank, so none were removed. Nothing changed.',
+  'tidy.progress.scan': 'Looking for blank pages',
+
+  'tidy.split.title': 'Split two-up scans',
+  'tidy.split.intro':
+    'Cuts each landscape page into a left and a right page without redrawing it. Pages with notes or form fields stay whole.',
+  'tidy.split.done': '{count} page(s) split into a left and a right page (pages {pages}).',
+  'tidy.split.lossless': 'Page content is unchanged; each new page shows its half of the original.',
+  'tidy.split.portrait': '{count} page(s) that are not landscape were left as they are.',
+  'tidy.split.annotated': '{count} page(s) with notes, links or form fields were left whole (pages {pages}).',
+  'tidy.split.none': 'No landscape page without notes or form fields to split. Nothing changed.',
+  'tidy.progress.split': 'Splitting pages',
   'pages.extract.title': 'Extract pages',
   'pages.extract.intro':
     'Selected pages become a new document; the current one is unchanged. Viewer preferences, language and layer settings are not carried over.',

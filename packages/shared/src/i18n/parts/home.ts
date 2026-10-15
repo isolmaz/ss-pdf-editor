@@ -46,6 +46,11 @@ export const homePart = {
   'home.tool.insert': 'Boş sayfa, görsel ya da başka bir belgeden sayfalar yerleştirin.',
   'home.tool.add': 'Başka bir PDF’nin sayfalarını bu belgeye katın.',
   'home.tool.split': 'Sayfa aralığına, sayfa sayısına ya da dosya boyutuna göre ayrı PDF’lere ayırın.',
+  'home.tool.reverse': 'Sırayı çevirir, son sayfa başa gelir; seçili sayfalarda da çalışır.',
+  'home.tool.blankPages':
+    'Tek yüz taramaların arka yüzleri gibi boş sayfaları, hangileri olduğunu gördükten sonra çıkarır.',
+  'home.tool.splitTwoUp':
+    'Yan yana iki sayfanın tek sayfaya taranmış halini iki sayfaya böler: önce sol, sonra sağ.',
   'home.tool.boxes': 'Sayfayı kırpın; kâğıt, kesim ve taşma alanlarını ayarlayın.',
   'home.tool.labels': 'Önsöz için i, ii, iii; asıl metin için 1, 2, 3 gibi numaralandırma verin.',
   'home.tool.impose':

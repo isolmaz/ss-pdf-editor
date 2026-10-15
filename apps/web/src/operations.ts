@@ -203,7 +203,9 @@ export type PageAction =
       readonly bytes: Uint8Array;
       readonly pageCount: number;
       readonly insertAfter: number;
-    };
+    }
+  /** Reverse the pages in the selection; with fewer than two selected, all of them. */
+  | { readonly kind: 'reverse' };
 
 /**
  * Build the composition a `PageAction` implies. Pure so the action's effect on
@@ -248,6 +250,14 @@ export function planPageAction(
         rotations[index] = ((page.rotation + delta) % 360) as 0 | 90 | 180 | 270;
       }
       return { pages, rotations };
+    }
+    case 'reverse': {
+      const places = selection.length > 1 ? selection : pages.map((_page, index) => index);
+      const next = [...pages];
+      for (const [turn, place] of places.entries()) {
+        next[place] = pages[places[places.length - 1 - turn] as number] as PageRef;
+      }
+      return { pages: next, rotations: {} };
     }
     case 'insert':
       // Insertion is `mergeDocuments`, not a re-composition of this document.
@@ -1539,6 +1549,8 @@ export function pageActionLabel(
       return { key: 'pages.duplicate.done', params: { count } };
     case 'move':
       return { key: 'pages.moved', params: { count } };
+    case 'reverse':
+      return { key: 'pages.reverse.done', params: { count } };
     case 'insert':
       return { key: 'file.add.done', params: { count } };
   }

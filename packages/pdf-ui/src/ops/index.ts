@@ -42,6 +42,8 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   'page-labels': async () => (await import('./pagelabels')).pageLabelsDialog,
   'insert-pages': async () => (await import('./pageedit')).insertPagesDialog,
   'replace-pages': async () => (await import('./pageedit')).replacePagesDialog,
+  'remove-blank-pages': async () => (await import('./tidy')).removeBlankPagesDialog,
+  'split-two-up': async () => (await import('./tidy')).splitTwoUpDialog,
   'text-edit': async () => (await import('./TextEditSurface')).textEditDialog,
   'outline-edit': async () => (await import('./outline-edit')).outlineEditDialog,
   'link-add': async () => (await import('./link-add')).linkAddDialog,

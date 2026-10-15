@@ -18,6 +18,29 @@ export const pagesPart = {
   'pages.delete.done': '{count} sayfa silindi.',
   'pages.duplicate': 'Sayfaları çoğalt',
   'pages.duplicate.done': '{count} sayfa çoğaltıldı.',
+
+  'pages.reverse': 'Sayfa sırasını ters çevir',
+  'pages.reverse.done': 'Sayfa sırası ters çevrildi.',
+
+  'tidy.blank.title': 'Boş sayfaları kaldır',
+  'tidy.blank.intro':
+    'Metni, resmi, çizimi ya da notu olmayan sayfaları bulur; hiçbir şey değişmeden önce hangilerinin kalkacağını gösterir.',
+  'tidy.blank.confirm': 'Boş sayfaları bul',
+  'tidy.blank.removed': 'Kaldırılan boş sayfa: {count} (sayfa {pages}).',
+  'tidy.blank.done': '{count} boş sayfa kaldırıldı.',
+  'tidy.blank.none': 'Boş sayfa bulunamadı. Hiçbir şey değişmedi.',
+  'tidy.blank.all': 'Bütün sayfalar boş görünüyor; hiçbiri kaldırılmadı. Hiçbir şey değişmedi.',
+  'tidy.progress.scan': 'Boş sayfalar aranıyor',
+
+  'tidy.split.title': 'Çift sayfalı taramaları böl',
+  'tidy.split.intro':
+    'Yatay her sayfayı yeniden çizmeden sol ve sağ sayfa olarak ikiye böler. Not ya da form alanı olan sayfalar bölünmez.',
+  'tidy.split.done': '{count} sayfa sol ve sağ sayfa olarak bölündü (sayfa {pages}).',
+  'tidy.split.lossless': 'Sayfa içeriği değişmedi; her yeni sayfa özgün sayfanın kendi yarısını gösterir.',
+  'tidy.split.portrait': 'Yatay olmayan {count} sayfa olduğu gibi bırakıldı.',
+  'tidy.split.annotated': 'Not, bağlantı ya da form alanı olan {count} sayfa bölünmedi (sayfa {pages}).',
+  'tidy.split.none': 'Bölünebilecek, notsuz ve form alanı olmayan yatay sayfa yok. Hiçbir şey değişmedi.',
+  'tidy.progress.split': 'Sayfalar bölünüyor',
   'pages.extract.title': 'Sayfaları ayıkla',
   'pages.extract.intro':
     'Seçilen sayfalar yeni bir belge olur; geçerli belge değişmez. Görünüm tercihleri, dil ve katman ayarları yeni belgeye taşınmaz.',

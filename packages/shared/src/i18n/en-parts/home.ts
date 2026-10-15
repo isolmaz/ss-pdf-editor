@@ -41,6 +41,10 @@ export const homePart = {
   'home.tool.insert': 'Place blank pages, images or pages of another document into this one.',
   'home.tool.add': 'Bring in the pages of another PDF.',
   'home.tool.split': 'Cut it into separate PDFs by page range, page count or file size.',
+  'home.tool.reverse': 'Flip the order so the last page comes first; works on selected pages too.',
+  'home.tool.blankPages':
+    'Drop empty sheets, such as the backs of one-sided scans, after you see which they are.',
+  'home.tool.splitTwoUp': 'Turn a scan of two facing pages into two pages, left then right.',
   'home.tool.boxes': 'Crop a page and adjust its paper, trim and bleed areas.',
   'home.tool.labels': 'Number the front matter i, ii, iii and the body 1, 2, 3.',
   'home.tool.impose':
