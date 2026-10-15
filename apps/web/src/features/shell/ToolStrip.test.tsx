@@ -40,7 +40,6 @@ vi.mock('pdf-ui/tools', async (original) => {
       color: string;
       opacity: number;
       thickness: number;
-      author: string;
       shape: string;
       textColor: string;
       fontSize: number;
@@ -52,7 +51,6 @@ vi.mock('pdf-ui/tools', async (original) => {
       onColor: Handler<[string]>;
       onOpacity: Handler<[number]>;
       onThickness: Handler<[number]>;
-      onAuthor: Handler<[string]>;
       onTextColor: Handler<[string]>;
       onFontSize: Handler<[number]>;
       onShape: Handler<[string]>;
@@ -69,7 +67,6 @@ vi.mock('pdf-ui/tools', async (original) => {
           'data-color': props.color,
           'data-opacity': String(props.opacity),
           'data-thickness': String(props.thickness),
-          'data-author': props.author,
           'data-shape': props.shape,
           'data-text-color': props.textColor,
           'data-font-size': String(props.fontSize),
@@ -82,7 +79,6 @@ vi.mock('pdf-ui/tools', async (original) => {
         createElement('button', { type: 'button', onClick: () => props.onColor('#112233') }, 'color'),
         createElement('button', { type: 'button', onClick: () => props.onOpacity(0.7) }, 'opacity'),
         createElement('button', { type: 'button', onClick: () => props.onThickness(5) }, 'thickness'),
-        createElement('button', { type: 'button', onClick: () => props.onAuthor('Ann') }, 'author'),
         createElement(
           'button',
           { type: 'button', onClick: () => props.onTextColor('#445566') },
@@ -108,11 +104,9 @@ vi.mock('../measure/MeasureSettingsStrip', async () => {
       color: string;
       opacity: number;
       thickness: number;
-      author: string;
       onColor: (color: string) => void;
       onOpacity: (opacity: number) => void;
       onThickness: (thickness: number) => void;
-      onAuthor: (author: string) => void;
     }) =>
       createElement(
         'section',
@@ -121,12 +115,10 @@ vi.mock('../measure/MeasureSettingsStrip', async () => {
           'data-color': props.color,
           'data-opacity': String(props.opacity),
           'data-thickness': String(props.thickness),
-          'data-author': props.author,
         },
         createElement('button', { type: 'button', onClick: () => props.onColor('#aabbcc') }, 'measure color'),
         createElement('button', { type: 'button', onClick: () => props.onOpacity(0.9) }, 'measure opacity'),
         createElement('button', { type: 'button', onClick: () => props.onThickness(7) }, 'measure thickness'),
-        createElement('button', { type: 'button', onClick: () => props.onAuthor('Bob') }, 'measure author'),
       ),
   };
 });
@@ -191,7 +183,7 @@ describe('ToolStrip', () => {
     expect(screen.queryByLabelText('tool properties')).toBeNull();
   });
 
-  it('shows the armed tool, its own style, the author, the shape and the counts', () => {
+  it('shows the armed tool, its own style, the shape and the counts', () => {
     openTab();
     coreStore.set({ canvasTool: 'ink', shape: 'line' });
     annotationsStore.set({
@@ -200,7 +192,6 @@ describe('ToolStrip', () => {
         ink: { color: '#abcdef', opacity: 0.5, thickness: 3, fontSize: 14 },
         highlight: { color: '#111111', opacity: 0.2, thickness: 9, fontSize: 40 },
       },
-      author: 'Zed',
     });
     selectMarks(['a', 'b']);
     writeRedactions(session, [{ id: 'r1', mark: { page: 0, x: 0, y: 0, width: 1, height: 1 } } as never]);
@@ -213,12 +204,11 @@ describe('ToolStrip', () => {
     expect(properties.getAttribute('data-font-size')).toBe('14');
     expect(properties.getAttribute('data-opacity')).toBe('0.5');
     expect(properties.getAttribute('data-thickness')).toBe('3');
-    expect(properties.getAttribute('data-author')).toBe('Zed');
     expect(properties.getAttribute('data-selected')).toBe('2');
     expect(properties.getAttribute('data-redactions')).toBe('1');
   });
 
-  it('writes the tool settings through to the armed tool`s style, the author and the core store', async () => {
+  it('writes the tool settings through to the armed tool`s style and the core store', async () => {
     const user = userEvent.setup();
     openTab();
     coreStore.set({ canvasTool: 'ink' });
@@ -227,7 +217,6 @@ describe('ToolStrip', () => {
     await user.click(screen.getByRole('button', { name: 'color' }));
     await user.click(screen.getByRole('button', { name: 'opacity' }));
     await user.click(screen.getByRole('button', { name: 'thickness' }));
-    await user.click(screen.getByRole('button', { name: 'author' }));
     await user.click(screen.getByRole('button', { name: 'text color' }));
     await user.click(screen.getByRole('button', { name: 'font size' }));
     // 'text color' comes last and is the style's colour as well: typed text has no second colour.
@@ -237,7 +226,6 @@ describe('ToolStrip', () => {
       thickness: 5,
       fontSize: 18,
     });
-    expect(annotationsStore.get().author).toBe('Ann');
     expect(annotationsStore.get().styles.highlight).toBe(before.highlight);
     await user.click(screen.getByRole('button', { name: 'shape' }));
     expect(coreStore.get().shape).toBe('circle');
@@ -292,17 +280,14 @@ describe('ToolStrip', () => {
     await user.click(screen.getByRole('button', { name: 'measure color' }));
     await user.click(screen.getByRole('button', { name: 'measure opacity' }));
     await user.click(screen.getByRole('button', { name: 'measure thickness' }));
-    await user.click(screen.getByRole('button', { name: 'measure author' }));
     expect(annotationsStore.get().styles.measure).toMatchObject({
       color: '#aabbcc',
       opacity: 0.9,
       thickness: 7,
     });
     expect(annotationsStore.get().styles.highlight).toEqual(defaultToolStyles().highlight);
-    expect(annotationsStore.get().author).toBe('Bob');
     const settings = screen.getByLabelText('measure settings');
     expect(settings.getAttribute('data-color')).toBe('#aabbcc');
-    expect(settings.getAttribute('data-author')).toBe('Bob');
   });
 
   it('keeps the tool settings while the ruler has no viewer to measure on', () => {

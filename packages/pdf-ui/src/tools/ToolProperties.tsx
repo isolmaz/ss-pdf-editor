@@ -10,7 +10,7 @@
  *   creates are drawn by the controlled creators, which take all three, so the row
  *   is the truth for every tool that paints a fill or a stroke. The shell keeps one
  *   style per tool, so these values are the armed tool's own.
- * - Note carries the icon colour and the author that the writer puts in `/T`.
+ * - Note carries the icon colour; the author the writer puts in `/T` is the settings dialog's one global value.
  * - Shapes choose their geometry here.
  * - Typed text ("Metin ekle") carries its own colour and size: it is ink on the page,
  *   not a translucent mark, so the marker's colour and opacity would be the wrong truth.
@@ -63,7 +63,6 @@ export interface ToolPropertiesProps {
   readonly color: string;
   readonly opacity: number;
   readonly thickness: number;
-  readonly author: string;
   readonly shape: CanvasShapeKind;
   /** Typed text: its colour and its size in points. */
   readonly textColor?: string;
@@ -79,7 +78,6 @@ export interface ToolPropertiesProps {
   readonly onColor: (color: string) => void;
   readonly onOpacity: (opacity: number) => void;
   readonly onThickness: (thickness: number) => void;
-  readonly onAuthor: (author: string) => void;
   readonly onShape: (shape: CanvasShapeKind) => void;
   /** Picks another text-markup look; only offered while one of the four is armed. */
   readonly onTool?: (tool: CanvasToolId) => void;
@@ -151,7 +149,6 @@ interface ToolStyleSpec {
   readonly color: boolean;
   readonly opacity: boolean;
   readonly thickness: boolean;
-  readonly author: boolean;
   readonly shape: boolean;
 }
 
@@ -159,7 +156,6 @@ const NO_STYLE: ToolStyleSpec = {
   color: false,
   opacity: false,
   thickness: false,
-  author: false,
   shape: false,
 };
 
@@ -167,7 +163,6 @@ const STROKE_STYLE: ToolStyleSpec = {
   color: true,
   opacity: true,
   thickness: true,
-  author: true,
   shape: false,
 };
 
@@ -203,20 +198,19 @@ const TOOL_STYLES: Record<CanvasToolId, ToolStyleSpec> = {
   // Highlight was the one tool the engine's own editor owned, and that editor takes
   // a colour and a thickness and nothing else (`HighlightEditor.typesMap`). The
   // controlled creators draw it now, so the opacity control is its truth too.
-  highlight: { color: true, opacity: true, thickness: true, author: false, shape: false },
+  highlight: { color: true, opacity: true, thickness: true, shape: false },
   underline: STROKE_STYLE,
   strikeout: STROKE_STYLE,
   squiggly: STROKE_STYLE,
   ink: STROKE_STYLE,
   shapes: { ...STROKE_STYLE, shape: true },
-  // A note is its icon colour plus the `/T` the writer stamps on it.
-  note: { color: true, opacity: false, thickness: false, author: true, shape: false },
+  note: { color: true, opacity: false, thickness: false, shape: false },
   redact: NO_STYLE,
   measure: NO_STYLE,
   link: NO_STYLE,
   text: NO_STYLE,
   // Typed text has its own colour and size (below), not the marker's style.
-  freetext: { color: false, opacity: false, thickness: false, author: true, shape: false },
+  freetext: { color: false, opacity: false, thickness: false, shape: false },
   // The picture is the style: its colours were chosen in the signature dialog.
   stamp: NO_STYLE,
 };
@@ -227,7 +221,6 @@ export function ToolProperties({
   color,
   opacity,
   thickness,
-  author,
   shape,
   textColor = '#000000',
   fontSize = 12,
@@ -240,7 +233,6 @@ export function ToolProperties({
   onColor,
   onOpacity,
   onThickness,
-  onAuthor,
   onShape,
   onTool,
   onDeleteSelection,
@@ -405,19 +397,6 @@ export function ToolProperties({
               </option>
             ))}
           </select>
-        </label>
-      ) : null}
-
-      {style.author ? (
-        <label className="flex items-center gap-1">
-          {t('ann.tool.author')}
-          <input
-            type="text"
-            value={author}
-            aria-label={t('ann.tool.author')}
-            onChange={(event) => onAuthor(event.target.value)}
-            className={`${FIELD_CLASS} w-24`}
-          />
         </label>
       ) : null}
 

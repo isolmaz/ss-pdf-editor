@@ -2,8 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   defaultToolStyles,
+  readStoredAuthor,
   readStoredStyles,
   STYLED_TOOLS,
+  storeAuthor,
   storeStyles,
   styledToolOf,
 } from './annotation-style';
@@ -62,6 +64,27 @@ describe('the stored annotation styles', () => {
     });
     expect(readStoredStyles()).toEqual(defaultToolStyles());
     expect(() => storeStyles(defaultToolStyles())).not.toThrow();
+  });
+});
+
+describe('the stored author', () => {
+  it('is empty on a first visit and comes back as stored', () => {
+    expect(readStoredAuthor()).toBe('');
+    storeAuthor('Ada Lovelace');
+    expect(readStoredAuthor()).toBe('Ada Lovelace');
+  });
+
+  it('is empty when the storage is blocked, and a blocked write loses only the memory', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+      setItem: () => {
+        throw new DOMException('full', 'QuotaExceededError');
+      },
+    });
+    expect(readStoredAuthor()).toBe('');
+    expect(() => storeAuthor('Ada')).not.toThrow();
   });
 });
 

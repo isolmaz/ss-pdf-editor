@@ -21,8 +21,8 @@ const MeasureSettings = lazy(async () => {
 export interface MeasureSettingsStripProps {
   readonly t: Translator;
   /**
-   * The annotation style the ruler shares with the marker tools: a ruler and a highlighter are
-   * the same kind of mark, so the strip edits the same state the marker tools do.
+   * The ruler's own annotation style (colour, opacity, thickness); the author a mark carries is
+   * the settings dialog's one global value.
    */
   readonly color: string;
   readonly onColor: (color: string) => void;
@@ -30,8 +30,6 @@ export interface MeasureSettingsStripProps {
   readonly onOpacity: (opacity: number) => void;
   readonly thickness: number;
   readonly onThickness: (thickness: number) => void;
-  readonly author: string;
-  readonly onAuthor: (author: string) => void;
 }
 
 /**
@@ -47,8 +45,6 @@ export function MeasureSettingsStrip({
   onOpacity,
   thickness,
   onThickness,
-  author,
-  onAuthor,
 }: MeasureSettingsStripProps) {
   const mode = useMeasureMode();
   const scale = useMeasure((state) => state.scale);
@@ -79,8 +75,6 @@ export function MeasureSettingsStrip({
         onOpacity={onOpacity}
         thickness={thickness}
         onThickness={onThickness}
-        author={author}
-        onAuthor={onAuthor}
         reading={reading}
         onStop={stopMeasure}
       />

@@ -141,10 +141,12 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Then delete, rotate 90°, drag, or nudge by 5 pt. Every edit can be undone.
   - Selection deletes whole marks only, never page content. To remove page content
     securely, use redaction.
-- **Style.** The app sets colour, opacity, thickness and author. Each tool keeps its own
-  style (a translucent yellow marker, solid underline, strike-out, squiggly, pen and shape
-  strokes, a yellow note, black typed text, the ruler), so changing the pen's colour does not
-  repaint the marker, and the styles are remembered on this device between visits. Multiply blending keeps
+- **Style.** The tool strip sets colour, opacity and thickness for the armed tool. Each tool
+  keeps its own style (a translucent yellow marker, solid underline, strike-out, squiggly, pen
+  and shape strokes, a yellow note, black typed text, the ruler), so changing the pen's colour
+  does not repaint the marker, and the styles are remembered on this device between visits. The
+  author a new mark carries is one setting (Settings → Marks), remembered the same way.
+  Multiply blending keeps
   text readable, and freehand strokes stay continuous in the exported file. A rectangle,
   circle or line writes its thickness as the annotation's border width (`/BS /W` and
   `/Border`), so other readers draw it and this editor reads the same thickness back.

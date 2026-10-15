@@ -18,7 +18,6 @@ const style = {
   onColor: vi.fn(),
   onOpacity: vi.fn(),
   onThickness: vi.fn(),
-  onAuthor: vi.fn(),
 };
 
 // The settings strip is a dynamic chunk: load it once up front so no test races the first import.
@@ -34,7 +33,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 async function renderStrip() {
-  render(<MeasureSettingsStrip t={t} color="#ff0000" opacity={0.5} thickness={3} author="Ada" {...style} />);
+  render(<MeasureSettingsStrip t={t} color="#ff0000" opacity={0.5} thickness={3} {...style} />);
   await screen.findByRole('button', { name: 'Distance' });
 }
 
@@ -89,18 +88,16 @@ describe('MeasureSettingsStrip', () => {
     });
   });
 
-  it('hands the shared annotation style back to the shell, not to the measure store', async () => {
-    const user = userEvent.setup();
+  it('hands the ruler`s annotation style back to the shell, not to the measure store, and has no author field', async () => {
     await renderStrip();
 
     fireEvent.change(screen.getByLabelText('Color'), { target: { value: '#00ff00' } });
     fireEvent.change(screen.getByLabelText('Opacity'), { target: { value: '0.75' } });
     fireEvent.change(screen.getByLabelText('Thickness'), { target: { value: '5' } });
-    await user.type(screen.getByLabelText('Author'), 'B');
+    expect(screen.queryByRole('textbox', { name: 'Author' })).toBeNull();
 
     expect(style.onColor).toHaveBeenCalledWith('#00ff00');
     expect(style.onOpacity).toHaveBeenCalledWith(0.75);
     expect(style.onThickness).toHaveBeenCalledWith(5);
-    expect(style.onAuthor).toHaveBeenCalledWith('AdaB');
   });
 });

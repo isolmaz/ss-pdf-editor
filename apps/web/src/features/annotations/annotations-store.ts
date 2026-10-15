@@ -13,8 +13,10 @@ import type { EngineValuesDraft } from 'pdf-model';
 import { createStore, type Equality, useStore } from '../store';
 import {
   defaultToolStyles,
+  readStoredAuthor,
   readStoredStyles,
   type StyledTool,
+  storeAuthor,
   storeStyles,
   type ToolStyle,
   type ToolStyles,
@@ -58,6 +60,7 @@ export function initialAnnotationsState(): AnnotationsState {
 export const annotationsStore = createStore<AnnotationsState>({
   ...initialAnnotationsState(),
   styles: readStoredStyles(),
+  author: readStoredAuthor(),
 });
 
 /** The part of the annotation state a component reads (see `useStore` for the selector rules). */
@@ -89,7 +92,11 @@ export function chooseStyle(tool: StyledTool, change: Partial<ToolStyle>): void 
   if (after !== before) storeStyles(after);
 }
 
-export const chooseAuthor = (author: string): void => annotationsStore.set({ author });
+/** Set who new marks are by (the settings dialog's one global value) and remember it. */
+export function chooseAuthor(author: string): void {
+  annotationsStore.set({ author });
+  storeAuthor(author);
+}
 
 /** The file's annotations the last read found for the bytes on screen (`null`: unknown). */
 export function existingAnnotationsRead(existing: readonly ExistingAnnotation[] | null): void {

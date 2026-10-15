@@ -40,7 +40,6 @@ export const annotationsPart = {
   'ann.tool.color': 'Color',
   'ann.tool.opacity': 'Opacity',
   'ann.tool.thickness': 'Thickness',
-  'ann.tool.author': 'Author',
   'ann.tool.stop': 'Close tool',
   'ann.tool.selection': 'Selection',
   'ann.tool.selection.count': '{count} mark(s) selected',

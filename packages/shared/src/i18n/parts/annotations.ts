@@ -61,7 +61,6 @@ export const annotationsPart = {
   'ann.tool.color': 'Renk',
   'ann.tool.opacity': 'Saydamlık',
   'ann.tool.thickness': 'Kalınlık',
-  'ann.tool.author': 'Yazar',
   'ann.tool.stop': 'Aracı kapat',
 
   // The active tool's property strip (`tools/ToolProperties.tsx`): what the next

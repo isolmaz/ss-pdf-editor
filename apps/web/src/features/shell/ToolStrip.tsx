@@ -5,12 +5,7 @@ import type { DeviceTier, Translator } from 'pdf-shared';
 import { ToolProperties } from 'pdf-ui/tools';
 import { Button } from 'pdf-ui/ui';
 import { styledToolOf } from '../annotations/annotation-style';
-import {
-  chooseAuthor,
-  chooseStyle,
-  useAnnotationAuthor,
-  useToolStyle,
-} from '../annotations/annotations-store';
+import { chooseStyle, useToolStyle } from '../annotations/annotations-store';
 import { selectShape, selectTool, useCore } from '../core/core-store';
 import { XfaBanner } from '../forms/FormsSurface';
 import { useExistingAnnotations } from '../forms/forms-store';
@@ -44,7 +39,6 @@ export function ToolStrip({ session, tier, t, actions }: ToolStripProps) {
   const selectedKeys = useSelection((state) => state.selectedKeys);
   const { redactionMarks } = useRedactionMarks(session);
   const existingAnnotations = useExistingAnnotations(activeTab);
-  const author = useAnnotationAuthor();
   // Each tool edits its own style; a tool without one shows no style controls, so the marker's
   // stands in for it and is never written.
   const styled = styledToolOf(canvasTool);
@@ -73,8 +67,6 @@ export function ToolStrip({ session, tier, t, actions }: ToolStripProps) {
             onOpacity={(opacity) => chooseStyle('measure', { opacity })}
             thickness={measureStyle.thickness}
             onThickness={(thickness) => chooseStyle('measure', { thickness })}
-            author={author}
-            onAuthor={chooseAuthor}
           />
         ) : (
           <ToolProperties
@@ -83,7 +75,6 @@ export function ToolStrip({ session, tier, t, actions }: ToolStripProps) {
             color={style.color}
             opacity={style.opacity}
             thickness={style.thickness}
-            author={author}
             shape={shape}
             textColor={style.color}
             fontSize={style.fontSize}
@@ -97,7 +88,6 @@ export function ToolStrip({ session, tier, t, actions }: ToolStripProps) {
             onColor={(color) => chooseStyle(styled, { color })}
             onOpacity={(opacity) => chooseStyle(styled, { opacity })}
             onThickness={(thickness) => chooseStyle(styled, { thickness })}
-            onAuthor={chooseAuthor}
             onShape={selectShape}
             // Selection actions share one intent across every mark family.
             onDeleteSelection={() => void actions.removeTargets(selectedKeys)}

@@ -33,6 +33,13 @@ export async function useAdvancedMode(page: Page): Promise<void> {
   await closeSettings(page);
 }
 
+/** Set the author that new marks and notes carry (one global setting). */
+export async function useAuthor(page: Page, author: string): Promise<void> {
+  const dialog = await openSettings(page);
+  await dialog.getByRole('textbox', { name: /^(Yazar|Author)$/ }).fill(author);
+  await closeSettings(page);
+}
+
 /** Choose the interface language; the dialog's own close button follows it. */
 export async function useLanguage(page: Page, language: 'Türkçe' | 'English'): Promise<void> {
   const dialog = await openSettings(page);

@@ -20,7 +20,6 @@ function show(tool: CanvasToolId, overrides: Partial<ToolPropertiesProps> = {}) 
     onColor: vi.fn(),
     onOpacity: vi.fn(),
     onThickness: vi.fn(),
-    onAuthor: vi.fn(),
     onShape: vi.fn(),
   };
   render(
@@ -30,7 +29,6 @@ function show(tool: CanvasToolId, overrides: Partial<ToolPropertiesProps> = {}) 
       color="#ff0000"
       opacity={0.8}
       thickness={3}
-      author="Ann"
       shape="square"
       selectedCount={0}
       {...handlers}
@@ -121,7 +119,6 @@ describe('typed text', () => {
     expect(control('Size').value).toBe('18');
     expect(has('Opacity')).toBe(false);
     expect(has('Thickness')).toBe(false);
-    expect(control('Author').value).toBe('Ann');
   });
 
   it('starts black at 12 pt', () => {
@@ -186,10 +183,10 @@ describe('the properties a tool carries', () => {
     ['select', []],
     ['hand', []],
     ['highlight', ['Color', 'Opacity', 'Thickness']],
-    ['underline', ['Color', 'Opacity', 'Thickness', 'Author']],
-    ['ink', ['Color', 'Opacity', 'Thickness', 'Author']],
-    ['shapes', ['Color', 'Opacity', 'Thickness', 'Author', 'Shape']],
-    ['note', ['Color', 'Author']],
+    ['underline', ['Color', 'Opacity', 'Thickness']],
+    ['ink', ['Color', 'Opacity', 'Thickness']],
+    ['shapes', ['Color', 'Opacity', 'Thickness', 'Shape']],
+    ['note', ['Color']],
     ['redact', []],
     ['measure', []],
     ['link', []],
@@ -199,6 +196,14 @@ describe('the properties a tool carries', () => {
     show(tool);
     expect(['Color', 'Opacity', 'Thickness', 'Author', 'Shape'].filter(has)).toEqual(shown);
   });
+
+  it.each<CanvasToolId>(['highlight', 'underline', 'ink', 'shapes', 'note', 'freetext', 'redact', 'select'])(
+    '%s has no text field: the author is a setting, not a tool property',
+    (tool) => {
+      show(tool);
+      expect(document.querySelectorAll('input[type="text"]')).toHaveLength(0);
+    },
+  );
 
   it('reports a chosen colour', () => {
     const { onColor } = show('ink');
@@ -231,12 +236,6 @@ describe('the properties a tool carries', () => {
     const { onThickness } = show('ink');
     fireEvent.change(control('Thickness'), { target: { value: '' } });
     expect(onThickness).not.toHaveBeenCalled();
-  });
-
-  it('reports each character typed into the author field', async () => {
-    const { onAuthor } = show('note');
-    await userEvent.setup().type(control('Author'), 'b');
-    expect(onAuthor).toHaveBeenCalledExactlyOnceWith('Annb');
   });
 
   it('offers the three shapes, shows the current one and reports the chosen one', async () => {

@@ -102,6 +102,13 @@ describe('the annotation styles', () => {
     act(() => chooseAuthor('Grace'));
     expect(result.current).toBe('Grace');
   });
+
+  it('remembers the author: a store started after a change starts with it', async () => {
+    chooseAuthor('Grace');
+    vi.resetModules();
+    const fresh = await import('./annotations-store');
+    expect(fresh.annotationsStore.get().author).toBe('Grace');
+  });
 });
 
 describe('the file`s own annotations', () => {

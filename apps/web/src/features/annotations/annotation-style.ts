@@ -1,5 +1,6 @@
 /**
- * The look each annotation tool draws with, and how it is remembered between visits.
+ * The look each annotation tool draws with, the author a new mark carries, and how both are
+ * remembered between visits.
  *
  * Every tool has its own style: a ruler, a highlighter and a pen are different marks, and
  * choosing the pen's colour must not repaint the marker. The styles persist in `localStorage`
@@ -88,6 +89,26 @@ export function readStoredStyles(): ToolStyles {
   } catch {
     // A blocked store or text that is not JSON costs the remembered styles, not the application.
     return defaults;
+  }
+}
+
+const AUTHOR_KEY = 'pdf_editor_author_v1';
+
+/** The author the user last set in the settings, or empty. */
+export function readStoredAuthor(): string {
+  try {
+    return globalThis.localStorage.getItem(AUTHOR_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Persist the author. */
+export function storeAuthor(author: string): void {
+  try {
+    globalThis.localStorage.setItem(AUTHOR_KEY, author);
+  } catch {
+    // The session keeps the author in memory; only persistence is lost.
   }
 }
 

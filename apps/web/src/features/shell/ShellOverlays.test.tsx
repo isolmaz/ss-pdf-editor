@@ -11,6 +11,7 @@ import { SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { annotationsStore, initialAnnotationsState } from '../annotations/annotations-store';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
 import { hideStartScreen, initialOpenState, openStore } from '../open/open-store';
@@ -52,6 +53,8 @@ vi.mock('pdf-ui/dialog', async () => {
   return {
     SettingsDialog: (props: {
       mode: string;
+      author: string;
+      onAuthorChange: (author: string) => void;
       sensitive: boolean | null;
       onClose: () => void;
       onModeChange: (mode: string) => void;
@@ -65,7 +68,13 @@ vi.mock('pdf-ui/dialog', async () => {
     }) =>
       createElement(
         'section',
-        { 'aria-label': 'settings', 'data-mode': props.mode, 'data-sensitive': String(props.sensitive) },
+        {
+          'aria-label': 'settings',
+          'data-mode': props.mode,
+          'data-author': props.author,
+          'data-sensitive': String(props.sensitive),
+        },
+        createElement('button', { type: 'button', onClick: () => props.onAuthorChange('Ada') }, 'author'),
         createElement('button', { type: 'button', onClick: props.onClose }, 'close settings'),
         createElement('button', { type: 'button', onClick: () => props.onModeChange('advanced') }, 'mode'),
         createElement('button', { type: 'button', onClick: props.onToggleSensitive }, 'sensitive'),
@@ -99,6 +108,7 @@ function command(id: string, run: () => void = vi.fn()): Command {
 afterEach(cleanup);
 
 beforeEach(() => {
+  annotationsStore.set(initialAnnotationsState());
   coreStore.set(initialCoreState());
   shellStore.set(initialShellState());
   openStore.set(initialOpenState());
@@ -195,6 +205,18 @@ describe('SettingsHost', () => {
     expect(dialog.getAttribute('data-sensitive')).toBe('null');
     await user.click(screen.getByRole('button', { name: 'close settings' }));
     expect(shellStore.get().settingsOpen).toBe(false);
+  });
+
+  it('shows the global author and a change sets it for the marks to come and for the next visit', async () => {
+    const user = userEvent.setup();
+    annotationsStore.set({ ...initialAnnotationsState(), author: 'Grace' });
+    mount(actions());
+    act(() => openSettings());
+    expect((await screen.findByLabelText('settings')).getAttribute('data-author')).toBe('Grace');
+    await user.click(screen.getByRole('button', { name: 'author' }));
+    expect(annotationsStore.get().author).toBe('Ada');
+    expect(screen.getByLabelText('settings').getAttribute('data-author')).toBe('Ada');
+    expect(localStorage.getItem('pdf_editor_author_v1')).toBe('Ada');
   });
 
   it("shows the active document's sensitive flag", async () => {
