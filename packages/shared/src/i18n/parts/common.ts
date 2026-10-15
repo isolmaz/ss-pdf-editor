@@ -28,8 +28,8 @@ export const commonPart = {
 
   'op.result.title': 'İşlem raporu',
   'op.result.pages': '{count} sayfa',
-  'op.result.size': 'Boyut: {before} → {after}',
-  'op.result.size.grew': 'Boyut: {before} → {after} (büyüdü)',
+  'op.result.size': 'Boyut: {before:bytes} → {after:bytes}',
+  'op.result.size.grew': 'Boyut: {before:bytes} → {after:bytes} (büyüdü)',
   'op.result.steps': 'Çalışan adımlar: {steps}',
   'op.result.incremental': 'Artımlı yazıldı',
   'op.result.fullRewrite': 'Yeniden yazıldı (artımlı değil)',

@@ -4,6 +4,7 @@ import {
   CaretDown,
   Command,
   DownloadSimple,
+  FileDoc,
   FilePdf,
   FloppyDisk,
   FolderOpen,
@@ -24,6 +25,12 @@ import { toggleReading, useReading } from '../features/reading/reading-store';
 /**
  * The editor's header: identity, menus, the four task shortcuts, the document switcher
  * and the file actions.
+ *
+ * It never overflows the bar, whatever the width: the pieces yield in a fixed order, the
+ * least essential first, so the file actions and the document name are the last to go. The
+ * menu bar yields first (below `lg`; the palette holds the same commands), then the task
+ * shortcuts (below `md`), then the file actions' labels (below `xl`), and on a phone (below
+ * `sm`) the Open button too (the palette and the home screen open files as well).
  *
  * The task shortcuts are not "modes" with one highlighted: the app has no modes, and a
  * highlighted "Edit" while the select tool is armed, or "Read" after the reading pane
@@ -161,13 +168,13 @@ export function ModernEditorHeader({
   const task = (key: MessageKey) => t(key);
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-kumo-line bg-kumo-base px-2 select-none sm:px-3">
+    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-kumo-line bg-kumo-base px-2 select-none sm:gap-2 sm:px-3">
       {/* Identity and menus: the menus yield first on a narrow bar (they are also in the palette). */}
       <div className="flex min-w-0 shrink-0 items-center gap-1">
         <button
           type="button"
           onClick={onHome}
-          className="flex items-center gap-1.5 rounded-md p-1.5 text-kumo-strong transition-colors hover:bg-kumo-recessed"
+          className="flex items-center gap-1.5 rounded-md p-1 text-kumo-strong sm:p-1.5 transition-colors hover:bg-kumo-recessed"
           title={t('shell.home')}
           aria-label={t('shell.home')}
         >
@@ -176,13 +183,13 @@ export function ModernEditorHeader({
           </span>
           <House size={16} className="hidden text-kumo-subtle sm:block" aria-hidden="true" />
         </button>
-        <div className="hidden items-center border-s border-kumo-line ps-1 md:flex">{menu}</div>
+        <div className="hidden items-center border-s border-kumo-line ps-1 lg:flex">{menu}</div>
       </div>
 
-      {/* Task shortcuts: icons below 1536 px, icon and label above. */}
+      {/* Task shortcuts: from 768 px, icons below 1536 px, icon and label above. */}
       <nav
         aria-label={t('shell.tasks')}
-        className="hidden shrink-0 items-center gap-0.5 border-s border-kumo-line ps-2 lg:flex"
+        className="hidden shrink-0 items-center gap-0.5 border-s border-kumo-line ps-2 md:flex"
       >
         <TaskButton
           label={task('mode.tools')}
@@ -198,17 +205,13 @@ export function ModernEditorHeader({
           disabled={!canEdit}
           onClick={() => toggleTool('text')}
         />
-        <TaskButton
-          label={task('mode.convert')}
-          icon={DownloadSimple}
-          disabled={!canExport}
-          onClick={onConvert}
-        />
+        <TaskButton label={task('mode.convert')} icon={FileDoc} disabled={!canExport} onClick={onConvert} />
         <TaskButton label={task('mode.sign')} icon={PenNib} onClick={onSign} />
       </nav>
 
-      {/* The document switcher takes the remaining width and truncates the name. */}
-      <div ref={switcherRef} className="relative flex min-w-0 flex-1 justify-center">
+      {/* The document switcher takes the remaining width and truncates the name, but never
+          below a width that still shows the start of it. */}
+      <div ref={switcherRef} className="relative flex min-w-16 flex-1 justify-center sm:min-w-24">
         {renaming ? (
           <input
             // biome-ignore lint/a11y/noAutofocus: the editor is opened by the explicit Rename command.
@@ -298,8 +301,8 @@ export function ModernEditorHeader({
         ) : null}
       </div>
 
-      {/* File actions: labels yield below 768 px, the controls keep their size. */}
-      <div className="flex shrink-0 items-center gap-1">
+      {/* File actions: labels yield below 1280 px and Open below 640 px; the controls keep their size. */}
+      <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
         <button
           type="button"
           onClick={onSearch}
@@ -325,8 +328,9 @@ export function ModernEditorHeader({
           onClick={onOpen}
           title={`${t('shell.open')} (Ctrl+O)`}
           aria-label={t('shell.open')}
+          className="max-sm:hidden"
         >
-          <span className="hidden md:inline">{t('shell.open')}</span>
+          <span className="hidden xl:inline">{t('shell.open')}</span>
         </Button>
         {saveMode === 'none' ? null : (
           <Button
@@ -338,7 +342,7 @@ export function ModernEditorHeader({
             title={`${t(saveMode === 'save' ? 'shell.save.hint' : 'shell.saveAs.hint')} (Ctrl+S)`}
             aria-label={t(saveMode === 'save' ? 'shell.save' : 'shell.saveAs')}
           >
-            <span className="hidden md:inline">{t(saveMode === 'save' ? 'shell.save' : 'shell.saveAs')}</span>
+            <span className="hidden xl:inline">{t(saveMode === 'save' ? 'shell.save' : 'shell.saveAs')}</span>
           </Button>
         )}
         <div className="flex items-center">
@@ -352,7 +356,7 @@ export function ModernEditorHeader({
             aria-label={t('shell.export')}
             className="rounded-e-none border-e-0"
           >
-            <span className="hidden md:inline">{t('shell.export')}</span>
+            <span className="hidden xl:inline">{t('shell.export')}</span>
           </Button>
           <button
             type="button"

@@ -1,5 +1,5 @@
 import type { Page } from 'playwright/test';
-import { formatBytes } from '../packages/pdf-core/src/ops/types';
+import { formatBytes } from '../packages/shared/src/format';
 import { openApp } from './app-helpers';
 import { expect, test } from './test';
 import { labelledPdf, toolFixturePdf } from './tool-fixture';
@@ -346,7 +346,7 @@ test('the export dialog gives the size of the document as it stands, not of the 
   const expectSize = async (bytes: number): Promise<void> => {
     await page.getByRole('button', { name: 'Export Options', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Download / Export' });
-    await expect(dialog.getByRole('radio', { name: `This PDF (${formatBytes(bytes)})` })).toBeChecked();
+    await expect(dialog.getByRole('radio', { name: `This PDF (${formatBytes(bytes, 'en')})` })).toBeChecked();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
   };

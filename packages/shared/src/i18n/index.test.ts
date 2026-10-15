@@ -37,7 +37,8 @@ describe('the shipped catalogues', () => {
   it('have the same keys, and every message uses the same {placeholders} in both', () => {
     const trKeys = Object.keys(tr).sort();
     expect(Object.keys(en).sort()).toEqual(trKeys);
-    const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
+    const placeholders = (text: string) =>
+      [...text.matchAll(/\{(\w+(?::\w+)?)\}/g)].map((match) => match[1]).sort();
     const mismatched = trKeys.filter(
       (key) =>
         JSON.stringify(placeholders(tr[key as keyof typeof tr])) !==
@@ -62,6 +63,17 @@ describe('createTranslator', () => {
     expect(translate(withParam, { count: 7 })).toBe(en[withParam].replaceAll('{count}', '7'));
     expect(translate(withParam, { other: 1 })).toBe(en[withParam]);
     expect(translate('no.such.key' as never)).toBe('no.such.key');
+  });
+
+  it('writes a {name:bytes} param as a size in its own language, and the percent sign where it reads', () => {
+    expect(createTranslator('en')('export.thisPdf', { size: 1536 })).toBe('This PDF (1.5 KB)');
+    expect(createTranslator('tr')('export.thisPdf', { size: 1536 })).toBe('Bu PDF (1,5 KB)');
+    expect(createTranslator('tr')('export.thisPdf', {})).toBe('Bu PDF ({size:bytes})');
+    const saved = { before: 2048, after: 1024, percent: 50 };
+    expect(createTranslator('en')('optimize.saved', saved)).toBe('2.0 KB → 1.0 KB (50% reduction)');
+    expect(createTranslator('tr')('optimize.saved', saved)).toBe('2,0 KB → 1,0 KB (%50 azalma)');
+    expect(createTranslator('tr')('ann.tool.opacityValue', { value: 40 })).toBe('%40');
+    expect(createTranslator('en')('ann.tool.opacityValue', { value: 40 })).toBe('40%');
   });
 });
 

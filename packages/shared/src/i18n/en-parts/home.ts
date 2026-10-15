@@ -19,6 +19,7 @@ export const homePart = {
     'A PDF opens; Word, Excel, PowerPoint, HTML and text are converted to PDF. Click to choose a file.',
 
   'home.tools.search': 'Search tools…',
+  'home.tools.loading': 'Loading tools…',
   'home.tools.activeDocument': 'Tools apply to the open document: {name}',
   'home.tools.noDocument': 'Pick a tool; if it needs a document, we ask for your file first.',
   'home.tools.empty': 'No tool matches your search.',
@@ -32,7 +33,7 @@ export const homePart = {
   'home.tool.textEdit': 'Retype text in place.',
   'home.tool.highlight': 'Highlight, underline or strike out text.',
   'home.tool.ink': 'Draw freehand.',
-  'home.tool.shapes': 'Add rectangles, ellipses, lines and arrows.',
+  'home.tool.shapes': 'Add rectangles, ellipses and lines.',
   'home.tool.note': 'Leave a sticky note on the page.',
   'home.tool.link': 'Add a link to the page.',
   'home.tool.imageEdit': 'Replace an image in the document.',

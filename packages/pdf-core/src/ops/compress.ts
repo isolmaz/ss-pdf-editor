@@ -35,7 +35,6 @@ import {
 } from '../engines/mupdf-write';
 import { openWithPdfjs, type PdfDocumentHandle } from '../engines/pdfjs-handle';
 import {
-  formatBytes,
   note,
   type OperationContext,
   type OperationNote,
@@ -88,14 +87,14 @@ function requireRange(value: number, min: number, max: number, field: string): n
  * an equal or larger file is stated as such.
  */
 function sizeNotes(inputBytes: number, outputBytes: number): OperationNote[] {
-  const before = formatBytes(inputBytes);
-  const after = formatBytes(outputBytes);
-  if (outputBytes > inputBytes) return [note('warning', 'optimize.grew', { before, after })];
-  if (outputBytes === inputBytes) return [note('warning', 'optimize.noGain', { before, after })];
+  if (outputBytes > inputBytes)
+    return [note('warning', 'optimize.grew', { before: inputBytes, after: outputBytes })];
+  if (outputBytes === inputBytes)
+    return [note('warning', 'optimize.noGain', { before: inputBytes, after: outputBytes })];
   return [
     note('changed', 'optimize.saved', {
-      before,
-      after,
+      before: inputBytes,
+      after: outputBytes,
       percent: Math.round((1 - outputBytes / inputBytes) * 100),
     }),
   ];

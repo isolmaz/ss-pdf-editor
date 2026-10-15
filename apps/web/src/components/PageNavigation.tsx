@@ -9,7 +9,7 @@ import {
   MagnifyingGlassPlus,
   Sidebar,
 } from '@phosphor-icons/react';
-import type { MessageKey, Translator } from 'pdf-shared';
+import { formatPercent, type MessageKey, type Translator } from 'pdf-shared';
 import { Tooltip } from 'pdf-ui/ui';
 import { useState } from 'react';
 import { toggleLeftDock, useCore } from '../features/core/core-store';
@@ -95,6 +95,7 @@ export function PageNavigation({
   const thumbnailsOpen = useCore((state) => state.leftDock);
   const readingActive = useReading((state) => state.reading);
   const label = (key: MessageKey) => t(key);
+  const zoomText = formatPercent(zoom, t.locale);
 
   return (
     <fieldset aria-label={t('nav.controls')} className="m-0 flex shrink-0 items-center gap-0.5 border-0 p-0">
@@ -148,11 +149,11 @@ export function PageNavigation({
       <Tooltip label={label('nav.fitWidth')} side="top">
         <button
           type="button"
-          aria-label={`${label('nav.fitWidth')} (${Math.round(zoom * 100)}%)`}
+          aria-label={`${label('nav.fitWidth')} (${zoomText})`}
           onClick={() => onZoomChange('page-width')}
           className="min-w-11 rounded px-1 text-xs font-semibold tabular-nums text-kumo-subtle transition-colors hover:bg-kumo-recessed hover:text-kumo-strong focus-visible:outline-2 focus-visible:outline-kumo-focus"
         >
-          {Math.round(zoom * 100)}%
+          {zoomText}
         </button>
       </Tooltip>
       <IconButton

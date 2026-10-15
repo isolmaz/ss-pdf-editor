@@ -16,6 +16,6 @@ export const optimizePart = {
   'optimize.stripMetadata': 'Üst veriyi temizle',
   'optimize.producerKept': 'Üretici satırı korunur.',
   'optimize.grew': 'Sonuç dosya özgün dosyadan büyük; sıkıştırma kazanç sağlamadı.',
-  'optimize.saved': '{before} → {after} ({percent}% azalma)',
-  'optimize.noGain': 'Kazanç yok: {before} → {after}',
+  'optimize.saved': '{before:bytes} → {after:bytes} (%{percent} azalma)',
+  'optimize.noGain': 'Kazanç yok: {before:bytes} → {after:bytes}',
 } as const;

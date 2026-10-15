@@ -26,7 +26,6 @@
  */
 
 import type { AuditFinding, RedactionAudit } from 'pdf-core/ops/redact-audit';
-import { formatBytes } from 'pdf-core/ops/types';
 import type { MessageKey, Translator } from 'pdf-shared';
 import { useId } from 'react';
 import { Button } from '../components/Button';
@@ -83,7 +82,7 @@ export function RedactionAuditPanel({ t, audit, loading = false, onRerun }: Reda
             : t('audit.summary' as MessageKey, {
                 objects: audit.objectCount,
                 revisions: audit.revisionCount,
-                bytes: formatBytes(audit.bytes),
+                size: audit.bytes,
               })}
         </p>
       </div>

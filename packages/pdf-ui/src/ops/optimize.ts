@@ -13,7 +13,7 @@
  * the sentence the confirmation is about.
  */
 
-import { type CompressOptions, compressDocument, formatBytes } from 'pdf-core';
+import { type CompressOptions, compressDocument } from 'pdf-core';
 import type { OperationDialogSpec } from '../dialogs/types';
 import { resolveScope } from './scope';
 
@@ -121,8 +121,8 @@ export const compressDialog: OperationDialogSpec = {
       report: outcome.report,
       noticeKey,
       noticeParams: {
-        before: formatBytes(inputBytes),
-        after: formatBytes(outputBytes),
+        before: inputBytes,
+        after: outputBytes,
         percent: Math.round((1 - outputBytes / inputBytes) * 100),
       },
     };

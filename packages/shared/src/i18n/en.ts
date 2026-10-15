@@ -353,7 +353,7 @@ export const en: Record<MessageKey, string> = {
 
   // Export Dialog
   'export.title': 'Download / Export',
-  'export.thisPdf': 'This PDF ({size})',
+  'export.thisPdf': 'This PDF ({size:bytes})',
   'export.compressed': 'Compressed PDF',
   'export.fileFormats': 'FILE FORMATS',
   'export.imageFormat': 'Image Format',

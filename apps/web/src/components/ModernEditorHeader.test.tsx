@@ -122,6 +122,13 @@ describe('ModernEditorHeader toggles', () => {
     expect(onConvert).toHaveBeenCalledTimes(1);
     expect(onSign).toHaveBeenCalledTimes(1);
   });
+
+  it('draws Convert with an icon of its own, not the one the Export button next to it uses', () => {
+    render(<ModernEditorHeader {...props()} />);
+    const glyph = (name: string) => button(name).querySelector('svg')?.innerHTML ?? '';
+    expect(glyph(t('mode.convert'))).not.toBe('');
+    expect(glyph(t('mode.convert'))).not.toBe(glyph(t('shell.export')));
+  });
 });
 
 describe('ModernEditorHeader actions', () => {

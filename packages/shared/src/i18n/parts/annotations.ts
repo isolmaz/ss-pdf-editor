@@ -79,7 +79,7 @@ export const annotationsPart = {
   'ann.tool.moveLeft': 'Sola taşı (5 pt)',
   'ann.tool.moveRight': 'Sağa taşı (5 pt)',
   'ann.tool.clearSelection': 'Seçimi bırak',
-  'ann.tool.opacityValue': '{value}%',
+  'ann.tool.opacityValue': '%{value}',
   'ann.tool.shape': 'Şekil',
   'ann.tool.shape.square': 'Kare',
   'ann.tool.shape.circle': 'Daire',
