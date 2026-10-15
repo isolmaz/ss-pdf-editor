@@ -7,7 +7,7 @@ import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { SessionStore, type SessionTab } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { coreStore, initialCoreState } from '../core/core-store';
+import { cancelOperation, coreStore, initialCoreState, operationRunning } from '../core/core-store';
 import { adoptHandle, dropHandle, handleFor } from '../core/handles';
 import { createAttachmentActions, measuredAttachments } from './attachments';
 
@@ -115,7 +115,10 @@ describe('adding files from the properties panel', () => {
 
     await actions().addToDocument([file('a.txt', 'hello', 'text/plain'), file('b.bin', 'xy', '')]);
 
-    expect(mocks.materializeBase).toHaveBeenCalledWith({ store: session, t, tab, handle });
+    expect(mocks.materializeBase).toHaveBeenCalledWith(
+      { store: session, t, tab, handle },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(mocks.addAttachments).toHaveBeenCalledWith(
       base,
       [
@@ -131,6 +134,7 @@ describe('adding files from the properties panel', () => {
       { key: 'props.attach.added', params: { count: 2 } },
       'mupdf',
       ['step'],
+      { signal: expect.any(AbortSignal) },
     );
     expect(handleFor(tab.id)).toBe(produced);
     expect(notice()).toBe('props.attach.added {"count":2}');
@@ -214,6 +218,7 @@ describe('removing a file from the properties panel', () => {
       { key: 'props.attach.removed', params: { count: 1 } },
       'mupdf',
       ['step'],
+      { signal: expect.any(AbortSignal) },
     );
     expect(handleFor(tab.id)).toBe(produced);
     expect(notice()).toBe('props.attach.removed {"count":1}');
@@ -320,7 +325,13 @@ describe('the attachments panel’s write', () => {
       ],
       { signal: expect.any(AbortSignal) },
     );
-    expect(applyWriterOutcome).toHaveBeenCalledWith(tab, handle, outcome, 'panel.attachments');
+    expect(applyWriterOutcome).toHaveBeenCalledWith(
+      tab,
+      handle,
+      outcome,
+      'panel.attachments',
+      expect.any(AbortSignal),
+    );
     expect(coreStore.get().busy).toBe(false);
   });
 
@@ -333,7 +344,13 @@ describe('the attachments panel’s write', () => {
     expect(mocks.removeAttachments).toHaveBeenCalledWith(base, ['a.txt', 'b.txt'], {
       signal: expect.any(AbortSignal),
     });
-    expect(applyWriterOutcome).toHaveBeenCalledWith(tab, handle, outcome, 'panel.attachments');
+    expect(applyWriterOutcome).toHaveBeenCalledWith(
+      tab,
+      handle,
+      outcome,
+      'panel.attachments',
+      expect.any(AbortSignal),
+    );
   });
 
   it('writes nothing for an empty request, and releases the gate', async () => {
@@ -367,5 +384,76 @@ describe('the attachments panel’s write', () => {
     expect(notice()).toBe(`${failure.messageKey} ${failure.hintKey}`);
     expect(applyWriterOutcome).not.toHaveBeenCalled();
     expect(coreStore.get().busy).toBe(false);
+  });
+});
+
+describe('Cancel', () => {
+  type Operation = { readonly signal: AbortSignal };
+
+  /** An engine call that never settles on its own: it ends when the run's signal aborts. */
+  function untilAborted(aborted: AbortSignal): Promise<never> {
+    const { promise, reject } = Promise.withResolvers<never>();
+    aborted.addEventListener('abort', () => reject(new ToolError('aborted', { engine: 'model' })));
+    return promise;
+  }
+
+  it('reaches the engine call of an add: the registered controller is the one its signal belongs to', async () => {
+    let signal: AbortSignal | undefined;
+    mocks.addAttachments.mockImplementation((_bytes: unknown, _payloads: unknown, operation: Operation) => {
+      signal = operation.signal;
+      return untilAborted(operation.signal);
+    });
+
+    const running = actions().addToDocument([file('a.txt', 'x', 'text/plain')]);
+    await vi.waitFor(() => expect(mocks.addAttachments).toHaveBeenCalled());
+    expect(operationRunning()).toBe(true);
+    expect(mocks.materializeBase).toHaveBeenCalledWith(expect.anything(), { signal });
+    cancelOperation();
+    await running;
+
+    expect(signal?.aborted).toBe(true);
+    expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
+    expect(notice()).toBeNull();
+    expect(coreStore.get().busy).toBe(false);
+    expect(operationRunning()).toBe(false);
+  });
+
+  it('reaches the engine call of a remove, and a second press meanwhile is refused', async () => {
+    let signal: AbortSignal | undefined;
+    mocks.removeAttachments.mockImplementation((_bytes: unknown, _names: unknown, operation: Operation) => {
+      signal = operation.signal;
+      return untilAborted(operation.signal);
+    });
+
+    const running = actions().removeFromDocument('a.txt');
+    await vi.waitFor(() => expect(mocks.removeAttachments).toHaveBeenCalled());
+    await actions().removeFromDocument('b.txt');
+    expect(notice()).toBe('op.busy');
+    expect(mocks.removeAttachments).toHaveBeenCalledTimes(1);
+    cancelOperation();
+    await running;
+
+    expect(signal?.aborted).toBe(true);
+    expect(mocks.applyProducedBytes).not.toHaveBeenCalled();
+    expect(coreStore.get().busy).toBe(false);
+  });
+
+  it('reaches the panel’s write, down to the pipeline that journals the bytes', async () => {
+    let signal: AbortSignal | undefined;
+    mocks.removeAttachments.mockResolvedValue({ bytes: base, removed: ['a.txt'], missing: [], report });
+    applyWriterOutcome.mockImplementationOnce(async (...args: unknown[]) => {
+      signal = args[4] as AbortSignal;
+      expect(operationRunning()).toBe(true);
+      cancelOperation();
+      expect(signal.aborted).toBe(true);
+      throw new ToolError('aborted', { engine: 'model' });
+    });
+
+    await actions().write({ remove: ['a.txt'] });
+
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(notice()).toBeNull();
+    expect(coreStore.get().busy).toBe(false);
+    expect(operationRunning()).toBe(false);
   });
 });

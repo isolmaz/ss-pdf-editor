@@ -7,17 +7,25 @@
 
 import type { RedactionAudit } from 'pdf-core';
 import type { SessionStore } from 'pdf-model';
-import { ToolError, type Translator } from 'pdf-shared';
+import type { Translator } from 'pdf-shared';
 import { auditRedactedDocument } from '../../lazy-ops';
 import { auditNotice, noticeLine } from '../../notices';
 import { materializeBase, pendingOverlays, redactionNeedles } from '../../operations';
 import { showNotice } from '../core/core-store';
+import { runGatedOperation } from '../core/gated-operation';
 import { handleFor } from '../core/handles';
 import { createStore, useStore } from '../store';
 
+/** An audit's findings, with the working version of the document they were read from. */
+export interface AuditReport {
+  /** `working.id` of the version the audit ran on: a report describes those bytes and no others. */
+  readonly workingId: string;
+  readonly audit: RedactionAudit;
+}
+
 export interface RedactionAuditState {
   /** The last audit's findings; `null` until one ran. */
-  readonly report: RedactionAudit | null;
+  readonly report: AuditReport | null;
   /** An audit is running. */
   readonly loading: boolean;
 }
@@ -35,42 +43,44 @@ export interface RedactionAuditRun {
   readonly erasedTerms: (tabId: string) => readonly string[];
 }
 
-/** Audit the active document; every failure is a notice, never a throw. */
+/**
+ * Audit the active document. It holds the document like every other operation, so Cancel stops
+ * it and a second press is refused; every failure is a notice, never a throw.
+ */
 export async function runRedactionAudit({ store, t, erasedTerms }: RedactionAuditRun): Promise<void> {
   const tab = store.active;
   const handle = tab === null ? null : (handleFor(tab.id) ?? null);
   if (tab === null || handle === null) return;
-  redactionAuditStore.set({ loading: true });
-  try {
-    const bytes = await materializeBase({ store, t, tab, handle });
-    /**
-     * The needles are the words the user erased: what the applied redactions removed plus
-     * whatever the marks still pending cover. An empty list is not silently treated as
-     * "nothing to find" — the notice below reports how many terms the scan actually had.
-     */
-    const pending = await redactionNeedles(
-      bytes,
-      pendingOverlays(tab).redactions.map((item) => item.mark),
-      { signal: new AbortController().signal },
-    );
-    const needles = [...new Set([...erasedTerms(tab.id), ...pending])];
-    const audit = await auditRedactedDocument(bytes, needles);
-    redactionAuditStore.set({ report: audit });
-    showNotice(
-      noticeLine(
-        [
-          auditNotice({
-            terms: needles.length,
-            contentFindings: audit.findings.filter((finding) => finding.severity === 'content').length,
-          }),
-        ],
-        t,
-      ),
-    );
-  } catch (error) {
-    const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-    showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
-  } finally {
-    redactionAuditStore.set({ loading: false });
-  }
+  await runGatedOperation(t, async (signal) => {
+    redactionAuditStore.set({ loading: true });
+    try {
+      const bytes = await materializeBase({ store, t, tab, handle }, { signal });
+      /**
+       * The needles are the words the user erased: what the applied redactions removed plus
+       * whatever the marks still pending cover. An empty list is not silently treated as
+       * "nothing to find" — the notice below reports how many terms the scan actually had.
+       */
+      const pending = await redactionNeedles(
+        bytes,
+        pendingOverlays(tab).redactions.map((item) => item.mark),
+        { signal },
+      );
+      const needles = [...new Set([...erasedTerms(tab.id), ...pending])];
+      const audit = await auditRedactedDocument(bytes, needles, signal);
+      redactionAuditStore.set({ report: { workingId: tab.working.id, audit } });
+      showNotice(
+        noticeLine(
+          [
+            auditNotice({
+              terms: needles.length,
+              contentFindings: audit.findings.filter((finding) => finding.severity === 'content').length,
+            }),
+          ],
+          t,
+        ),
+      );
+    } finally {
+      redactionAuditStore.set({ loading: false });
+    }
+  });
 }
