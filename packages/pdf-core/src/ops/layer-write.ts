@@ -530,7 +530,7 @@ export async function applyLayerWrite(
   // An empty list asks for no order: writing one would hide every layer from the panel.
   const order = request.order === undefined || request.order.length === 0 ? null : request.order;
   const rename = request.rename ?? null;
-  if (states.length === 0 && order === null && rename === null) return nothingToDo(bytes, 0);
+  const asksForNothing = states.length === 0 && order === null && rename === null;
 
   const { doc } = await openForWrite(bytes);
   let out: Uint8Array;
@@ -539,6 +539,9 @@ export async function applyLayerWrite(
   try {
     try {
       pageCount = doc.countPages();
+      // A call that asks for nothing still reports the document's real page count: a
+      // batch step after it resolves its page scope against it.
+      if (asksForNothing) return nothingToDo(bytes, pageCount);
       // The refusal happens here, before anything is written (`ToolError('unsupported')`).
       const properties = readProperties(doc);
       context.onProgress?.({ phase: 'layers', labelKey: 'op.progress.layer.write', done: 0, total: 1 });

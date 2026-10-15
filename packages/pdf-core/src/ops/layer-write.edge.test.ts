@@ -316,12 +316,13 @@ describe('renaming', () => {
 });
 
 describe('requests that do nothing, and requests that are stopped', () => {
-  it('returns the input without opening it when nothing is asked', async () => {
-    const garbage = new Uint8Array([1, 2, 3]);
+  it('returns the input untouched, with the real page count, when nothing is asked', async () => {
+    // A report that said 0 pages would make a step that follows in a chain resolve "all pages" to nothing.
+    const input = layerPdf({ pages: 2 });
     for (const request of [{}, { states: [] }, { order: [] }]) {
-      const out = await applyLayerWrite(garbage, request, run);
-      expect(out.bytes).toBe(garbage);
-      expect(out.report).toMatchObject({ pageCount: 0, incremental: true, outputBytes: 3 });
+      const out = await applyLayerWrite(input, request, run);
+      expect(out.bytes).toBe(input);
+      expect(out.report).toMatchObject({ pageCount: 2, incremental: true, outputBytes: input.byteLength });
       expect(keys(out)).toEqual(['op.note.layer.nothing', 'op.note.metadata.producerKept']);
     }
   });

@@ -225,6 +225,10 @@ describe('attachment edge cases', () => {
     expect(removed.bytes).toBe(input);
     expect(removed.removed).toEqual([]);
     expect(removed.missing).toEqual([]);
+    // The report names the document's real page count (blankPdf has one page), so a step
+    // that follows this one in a chain does not resolve "all pages" to nothing.
+    expect(added.report.pageCount).toBe(1);
+    expect(removed.report.pageCount).toBe(1);
   });
 
   it('reports a name as missing in a document that has no attachments at all', async () => {

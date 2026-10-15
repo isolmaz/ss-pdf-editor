@@ -36,4 +36,6 @@ export const pagesPart = {
   'split.partNames': 'Filename prefix',
   'split.partNamesHint': 'Defaults to document name; number and extension are added automatically.',
   'split.done': '{count} part(s) generated.',
+  'split.note.oversized':
+    '{count} page(s) are larger than the size limit on their own; a page cannot be cut, so each stays in its own file above the limit (page(s): {pages}).',
 } as const;

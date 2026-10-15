@@ -278,3 +278,57 @@ describe('replacePagesDialog', () => {
     });
   });
 });
+
+describe('insertPagesDialog source order and separators', () => {
+  const source = () => [
+    pdfFile([['one'], ['two'], ['three'], ['four'], ['five']]),
+    textPdf([['base']], [200, 200]),
+  ];
+
+  it('inserts the source pages in the order the range lists them', async () => {
+    const [picked, base] = await Promise.all(source());
+    const result = await runDialog(
+      insertPagesDialog,
+      { source: 'document', document: [picked as File], range: '5, 1', position: 1 },
+      base as Uint8Array,
+    );
+    expect(await textsOf(result)).toEqual(['base', 'five', 'one']);
+  });
+
+  it('keeps the typed order across a range and a single page, and reads whitespace as a separator', async () => {
+    const [picked, base] = await Promise.all(source());
+    const result = await runDialog(
+      insertPagesDialog,
+      { source: 'document', document: [picked as File], range: '4-5 2', position: 0 },
+      base as Uint8Array,
+    );
+    expect(await textsOf(result)).toEqual(['four', 'five', 'two', 'base']);
+  });
+
+  it('still inserts every page, in document order, when the range is left blank', async () => {
+    const [picked, base] = await Promise.all(source());
+    const result = await runDialog(
+      insertPagesDialog,
+      { source: 'document', document: [picked as File], range: '', position: 1 },
+      base as Uint8Array,
+    );
+    expect(await pageCountOf(bytesOf(result))).toBe(6);
+    expect(await textsOf(result)).toEqual(['base', 'one', 'two', 'three', 'four', 'five']);
+  });
+});
+
+describe('replacePagesDialog source order', () => {
+  it('fills the replaced pages from the source pages in the order the range lists them', async () => {
+    const result = await runDialog(
+      replacePagesDialog,
+      {
+        scope: 'range:2-3',
+        source: 'document',
+        document: [await pdfFile([['one'], ['two'], ['three'], ['four'], ['five']])],
+        range: '5, 1',
+      },
+      await textPdf([['a'], ['b'], ['c'], ['d']], [200, 200]),
+    );
+    expect(await textsOf(result)).toEqual(['a', 'five', 'one', 'd']);
+  });
+});

@@ -519,6 +519,19 @@ describe('runBatch', () => {
     expect(await texts(item.bytes)).toEqual(['NO-001', 'NO-002', 'NO-003']);
   });
 
+  it('lets the step after a no-op image step resolve "all" against the real page count', async () => {
+    const input = await words('Alpha', 'Bravo');
+    const { result } = await runOne(
+      input,
+      { kind: 'image', params: { action: 'replace', replacements: [] } },
+      { kind: 'text-export', params: { pages: 'all', format: 'text', baseName: 'cikti' } },
+    );
+    const item = done(result);
+    expect(item.steps[0]?.kind).toBe('image');
+    expect(item.steps[0]?.report.pageCount).toBe(2);
+    expect(new TextDecoder().decode(item.extras[0]?.bytes)).toBe('Alpha\n\n----- 2 -----\n\nBravo\n');
+  });
+
   it('applies a pages step with rotations and repeated pages through the composition path', async () => {
     const input = await words('one', 'two', 'three');
     const { result } = await runOne(input, {

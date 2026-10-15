@@ -3,9 +3,12 @@
  * duplicates rejected, out-of-range reported).
  *
  * Input syntax: `1-3, 5, 8-10`, open ranges (`3-`, `-4`), single pages, Turkish
- * separators tolerated (`;` and whitespace). Output is 0-based page indices,
- * sorted and unique — the shape `extractPages`, printing, OCR, redaction and
- * imposition all consume.
+ * separators tolerated (`;` and whitespace — `1 3` and `1-3 5` read like `1, 3`
+ * and `1-3, 5`; whitespace *around* a dash binds the dash: `1 - 3` is one range).
+ * Output is 0-based page indices, sorted and unique — the shape `extractPages`,
+ * printing, OCR, redaction and imposition all consume. A caller whose pages are
+ * *taken in the order typed* (inserting from another document) asks for
+ * `{ ordered: true }` and gets the same unique indices in the order written.
  *
  * Pure and DOM-free so the model, the UI and Node tests share exactly one rule.
  * Errors are `ToolError`s with the shared `range-invalid` code and **no English
@@ -15,9 +18,18 @@
 import { ToolError } from 'pdf-shared';
 
 export interface ParsedRanges {
-  /** 0-based page indices, ascending, duplicated removed. */
+  /** 0-based page indices, unique; ascending unless parsed with `{ ordered: true }`. */
   readonly pages: readonly number[];
   readonly source: string;
+}
+
+export interface ParsePageRangesOptions {
+  /**
+   * Keep the pages in the order they were written (`5, 1` → `[4, 0]`) instead of
+   * sorting them. For consumers where the order is the request — pages inserted from
+   * another document. Duplicates are still refused.
+   */
+  readonly ordered?: boolean;
 }
 
 const SEGMENT = /^(\d*)\s*[-–—]\s*(\d*)$/;
@@ -42,6 +54,21 @@ function addPage(pages: number[], seen: Set<number>, pageNumber: number, segment
 }
 
 /**
+ * The segments of a range expression, in the order written: `,` `;` newline and
+ * whitespace separate them, except spaces and tabs next to a dash, which belong to
+ * the range (`1 - 3` is one segment, `1 3` is two; a newline is always a separator,
+ * so `5 -\n7` is `5-` and `7`). Shared with `split.ts`, where
+ * every segment becomes one part, so the two never disagree about where one
+ * range ends.
+ */
+export function splitRangeSegments(source: string): string[] {
+  return source
+    .replace(/[ \t]*([-–—])[ \t]*/g, '$1')
+    .split(/[,;\s]+/)
+    .filter((segment) => segment !== '');
+}
+
+/**
  * Parse a page-range expression against a document.
  *
  * Rules:
@@ -52,7 +79,11 @@ function addPage(pages: number[], seen: Set<number>, pageNumber: number, segment
  *  - `pageCount` of 0 rejects everything;
  *  - never throws anything but a `ToolError`.
  */
-export function parsePageRanges(input: string, pageCount: number): ParsedRanges {
+export function parsePageRanges(
+  input: string,
+  pageCount: number,
+  options: ParsePageRangesOptions = {},
+): ParsedRanges {
   if (!Number.isSafeInteger(pageCount) || pageCount <= 0) {
     fail(input, 'invalid or zero document pageCount');
   }
@@ -62,9 +93,7 @@ export function parsePageRanges(input: string, pageCount: number): ParsedRanges 
   const pages: number[] = [];
   const seen = new Set<number>();
 
-  for (const rawSegment of source.split(/[,;\n]+/)) {
-    const segment = rawSegment.trim();
-    if (segment === '') continue;
+  for (const segment of splitRangeSegments(source)) {
     if (/^\d+$/.test(segment)) {
       addPage(pages, seen, Number(segment), segment, pageCount);
       continue;
@@ -81,7 +110,7 @@ export function parsePageRanges(input: string, pageCount: number): ParsedRanges 
   }
 
   if (pages.length === 0) fail(source, 'no pages selected');
-  pages.sort((a, b) => a - b);
+  if (options.ordered !== true) pages.sort((a, b) => a - b);
   return { pages, source };
 }
 

@@ -275,8 +275,11 @@ function pruneTree(tree: EmbeddedFilesTree): void {
   if (af?.isArray() === true && af.length === 0) catalog.delete('AF');
 }
 
-/** A call that changed nothing: same bytes, and the report says so. */
-function nothingToDo(bytes: Uint8Array): OperationOutcome {
+/**
+ * A call that changed nothing: same bytes, and the report says so. `pageCount` is the
+ * document's real one — a batch step after this one resolves its page scope against it.
+ */
+function nothingToDo(bytes: Uint8Array, pageCount: number): OperationOutcome {
   return {
     bytes,
     report: {
@@ -285,10 +288,20 @@ function nothingToDo(bytes: Uint8Array): OperationOutcome {
       notes: [note('warning', 'op.note.attach.nothing')],
       inputBytes: bytes.byteLength,
       outputBytes: bytes.byteLength,
-      pageCount: 0,
+      pageCount,
       incremental: true,
     },
   };
+}
+
+/** The page count of a document a call returns untouched before it ever opened it (`openForWrite` maps a file that does not open). */
+async function pageCountOf(bytes: Uint8Array): Promise<number> {
+  const { doc } = await openForWrite(bytes);
+  try {
+    return doc.countPages();
+  } finally {
+    doc.destroy();
+  }
 }
 
 /**
@@ -301,7 +314,9 @@ export async function addAttachments(
   context: OperationContext,
 ): Promise<OperationOutcome & { readonly added: readonly string[] }> {
   throwIfAborted(context.signal);
-  if (attachments.length === 0) return { ...nothingToDo(bytes), added: [] };
+  if (attachments.length === 0) {
+    return { ...nothingToDo(bytes, await pageCountOf(bytes)), added: [] };
+  }
 
   context.onProgress?.({
     phase: 'attach',
@@ -380,7 +395,9 @@ export async function removeAttachments(
   context: OperationContext,
 ): Promise<OperationOutcome & { readonly removed: readonly string[]; readonly missing: readonly string[] }> {
   throwIfAborted(context.signal);
-  if (names.length === 0) return { ...nothingToDo(bytes), removed: [], missing: [] };
+  if (names.length === 0) {
+    return { ...nothingToDo(bytes, await pageCountOf(bytes)), removed: [], missing: [] };
+  }
 
   context.onProgress?.({
     phase: 'attach',
@@ -418,10 +435,10 @@ export async function removeAttachments(
     if (removed.length === 0) {
       // Nothing matched: the document goes back untouched (`incremental: true`), with
       // the `missing` list as the whole answer.
-      const untouched = nothingToDo(bytes);
+      const untouched = nothingToDo(bytes, pageCount);
       return {
         ...untouched,
-        report: { ...untouched.report, pageCount, notes: [...notes, ...untouched.report.notes] },
+        report: { ...untouched.report, notes: [...notes, ...untouched.report.notes] },
         removed,
         missing,
       };
