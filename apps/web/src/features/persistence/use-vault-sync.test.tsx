@@ -11,7 +11,7 @@ import { createTranslator, ToolError, type Translator } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { storedCopyWarning } from '../../notices';
 import { coreStore, initialCoreState } from '../core/core-store';
-import { persistedKeysRecorded, persistenceStore, resetPersistence } from './persistence-store';
+import { draftWrites, persistedKeysRecorded, persistenceStore, resetPersistence } from './persistence-store';
 import { useDraftAutosave, useVaultChannel } from './use-vault-sync';
 import { fakeChannel, openTab } from './vault.fixtures';
 
@@ -162,5 +162,37 @@ describe('useVaultChannel', () => {
     openTab(store, 'one');
     rerender(<Channel store={store} />);
     expect(announce).toHaveBeenLastCalledWith(['src-one']);
+  });
+
+  it('claims the draft of every open tab, and releases a closed one after the writes queued for it', async () => {
+    const claimed: string[] = [];
+    const released: string[] = [];
+    channels.create.mockReturnValue(
+      fakeChannel({
+        claimDraft: async (id) => {
+          claimed.push(id);
+          return true;
+        },
+        releaseDraft: (id) => released.push(id),
+      }),
+    );
+    const store = new SessionStore();
+    const first = openTab(store, 'one');
+    const { rerender } = render(<Channel store={store} />);
+    expect(claimed).toEqual([first.id]);
+
+    const second = openTab(store, 'two', 'b.pdf');
+    rerender(<Channel store={store} />);
+    expect(claimed).toEqual([first.id, first.id, second.id]);
+    expect(released).toEqual([]);
+
+    store.closeTab(first.id);
+    rerender(<Channel store={store} />);
+    // The release waits behind whatever the write queue still holds for the closed tab.
+    expect(released).toEqual([]);
+    await act(async () => {
+      await draftWrites.current;
+    });
+    expect(released).toEqual([first.id]);
   });
 });

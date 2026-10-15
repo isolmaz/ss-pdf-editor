@@ -18,7 +18,7 @@ import { coreStore, initialCoreState } from '../core/core-store';
 import { handleFor } from '../core/handles';
 import { persistedKeysFor, persistenceStore, resetPersistence } from './persistence-store';
 import { type RecoveryHost, useDraftRecovery } from './use-draft-recovery';
-import { type MemoryStorage, manifest, memoryStorage, openTab } from './vault.fixtures';
+import { fakeChannel, type MemoryStorage, manifest, memoryStorage, openTab } from './vault.fixtures';
 
 const outside = vi.hoisted(() => ({
   openWithPdfjs: vi.fn(),
@@ -314,5 +314,49 @@ describe('useDraftRecovery', () => {
     await act(() => Promise.resolve());
     expect(readDraftInventory).toHaveBeenCalledTimes(1);
     expect(store.getSnapshot().tabs).toHaveLength(1);
+  });
+});
+
+describe('useDraftRecovery — one draft never costs the others', () => {
+  it('reports a draft whose source cannot be read and still restores the rest', async () => {
+    stored(manifest('good', { name: 'good.pdf' }));
+    stored(manifest('bad', { name: 'bad.pdf', updatedAt: 0 } as Partial<Draft>));
+    const getSource = storage.getSource;
+    storage.getSource = async (key) => {
+      if (key === 'src-bad') throw new Error('NotReadableError');
+      return getSource(key);
+    };
+    await recover();
+    expect(store.getSnapshot().tabs.map((tab) => tab.id)).toEqual(['good']);
+    expect(notice()).toContain(en('error.corrupt-document.message'));
+  });
+
+  it('says so when the vault cannot be read at all, instead of leaving an unhandled rejection', async () => {
+    storage.failInventory = true;
+    render(<Recovery translator={{ current: en }} />);
+    await act(() => vi.waitFor(() => expect(notice()).toBe(en('error.write-failed.message'))));
+    expect(store.getSnapshot().tabs).toHaveLength(0);
+  });
+
+  it('stays quiet about a vault that could not be read once the shell is gone', async () => {
+    storage.failInventory = true;
+    const view = render(<Recovery translator={{ current: en }} />);
+    view.unmount();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    });
+    expect(notice()).toBeNull();
+  });
+
+  it('leaves the drafts of documents another window has open to that window', async () => {
+    stored(manifest('theirs', { name: 'theirs.pdf' }));
+    stored(manifest('mine', { name: 'mine.pdf' }));
+    persistenceStore.set({ channel: fakeChannel({ claimDraft: async (id) => id === 'mine' }) });
+    render(<Recovery translator={{ current: en }} />);
+    await act(() =>
+      vi.waitFor(() => expect(outside.pruneRecentHandles).toHaveBeenCalled(), { timeout: 5_000 }),
+    );
+    expect(store.getSnapshot().tabs.map((tab) => tab.id)).toEqual(['mine']);
+    expect(notice()).toBe(en('draft.restored', { count: 1 }));
   });
 });

@@ -34,7 +34,8 @@ import {
   showNotice,
 } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
-import { draftStorage } from '../persistence/persistence-store';
+import { restoreDraft } from '../persistence/draft-restore';
+import { draftStorage, sourceStored } from '../persistence/persistence-store';
 import {
   askPassword,
   beginOpening,
@@ -174,7 +175,9 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
         // that fails (storage full, OPFS unavailable) costs the copy, never the
         // document, and is reported as exactly that — not as an open failure below.
         try {
-          await draftStorage().putSource(sourceKeyFor(tab.id, sha256), bytes);
+          const sourceKey = sourceKeyFor(tab.id, sha256);
+          await draftStorage().putSource(sourceKey, bytes);
+          sourceStored(tab.id, sourceKey);
           // A reference to the file, never its bytes; a sensitive session keeps none.
           if (fileHandle !== undefined) await putRecentHandle(tab.id, fileHandle);
         } catch (error) {
@@ -261,7 +264,9 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
     hideStartScreen();
     let warning: string | null = null;
     try {
-      await draftStorage().putSource(sourceKeyFor(tab.id, sha256), bytes);
+      const sourceKey = sourceKeyFor(tab.id, sha256);
+      await draftStorage().putSource(sourceKey, bytes);
+      sourceStored(tab.id, sourceKey);
     } catch (error) {
       warning = storedCopyWarning(error, t);
     }
@@ -461,21 +466,22 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
       const drafts = await draftStorage().readDrafts();
       const matchedDraft = drafts.find((d) => d.id === item.id);
       if (matchedDraft) {
-        const bytes = await draftStorage().getSource(matchedDraft.sourceKey);
-        if (bytes) {
-          const [handle, sha256] = await openAndFingerprint(openWithPdfjs(bytes), sha256Hex(bytes));
-          const tab = session.openDocument({
-            id: matchedDraft.id,
-            name: matchedDraft.name,
-            bytes,
-            sha256,
-            pageCount: matchedDraft.pageCount,
-          });
-          adoptHandle(tab.id, handle);
-          session.setActive(tab.id);
-          hideStartScreen();
+        // The path startup recovery takes: the draft's history and snapshots come back with the
+        // tab, and its page count is the *source's* (`sourcePageCount`), not the working
+        // version's — the two differ as soon as a page was added or removed.
+        const outcome = await restoreDraft({ store: session, openAndFingerprint }, matchedDraft, {
+          activate: true,
+        });
+        if (outcome.kind === 'elsewhere') {
+          // Its document is open in another window, whose tab owns the draft: a second copy here
+          // would write the same manifest. Say where it is rather than open the picker.
+          showNotice(t('draft.openElsewhere', { name: item.name }));
           return;
         }
+        // Restored — or opened here while the draft was read, which puts the same tab in front.
+        session.setActive(matchedDraft.id);
+        hideStartScreen();
+        return;
       }
     } catch (error) {
       // The draft could not be read back: say so, then offer the picker so the

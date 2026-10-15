@@ -13,12 +13,28 @@ import { createTranslator } from 'pdf-shared';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { signaturePrompt } from '../facts/signature-prompt';
-import { CloseDocumentHost } from './SaveSurfaces';
-import { closeRequested, initialSaveState, saveStore } from './save-store';
+import { CloseDocumentHost, SaveConflictHost } from './SaveSurfaces';
+import type { SaveOptions } from './save-actions';
+import { closeRequested, conflictFound, initialSaveState, saveStore } from './save-store';
 
 vi.mock('pdf-ui/dialog', async () => {
   const { createElement } = await import('react');
   return {
+    SaveConflictDialog: (props: {
+      name: string;
+      busy: boolean;
+      onCancel: () => void;
+      onOverwrite: () => void;
+      onSaveAs: () => void;
+    }) =>
+      createElement(
+        'section',
+        { 'aria-label': 'conflict dialog', 'data-name': props.name },
+        createElement('p', null, `conflict busy ${props.busy}`),
+        createElement('button', { type: 'button', onClick: props.onCancel }, 'keep file'),
+        createElement('button', { type: 'button', onClick: props.onOverwrite }, 'overwrite'),
+        createElement('button', { type: 'button', onClick: props.onSaveAs }, 'save as'),
+      ),
     CloseDocumentDialog: (props: {
       name: string;
       canSave: boolean;
@@ -51,7 +67,7 @@ beforeAll(async () => {
 let session: SessionStore;
 let tab: SessionTab;
 let discardTab: Mock<(id: string) => void>;
-let saveActive: Mock<(id: string) => Promise<boolean>>;
+let saveActive: Mock<(id: string, options?: SaveOptions) => Promise<boolean>>;
 let exportActive: Mock<(id: string) => Promise<void>>;
 
 function host() {
@@ -179,5 +195,64 @@ describe('CloseDocumentHost', () => {
     await vi.waitFor(() => expect(saveActive).toHaveBeenCalled());
     expect(discardTab).not.toHaveBeenCalled();
     expect(saveStore.get().closeRequest).toBe(tab.id);
+  });
+});
+
+describe('SaveConflictHost', () => {
+  const changed = {} as FileSystemFileHandle;
+  const conflictHost = () =>
+    render(<SaveConflictHost t={t} session={session} discardTab={discardTab} saveActive={saveActive} />);
+
+  it('shows nothing until a Save finds its file changed', () => {
+    expect(conflictHost().container.innerHTML).toBe('');
+  });
+
+  it('asks about the tab whose file changed, and Cancel leaves everything alone', async () => {
+    conflictHost();
+    act(() => conflictFound(tab.id, changed));
+    const dialog = await screen.findByLabelText('conflict dialog');
+    expect(dialog.getAttribute('data-name')).toBe('a.pdf');
+    await userEvent.click(screen.getByRole('button', { name: 'keep file' }));
+    expect(saveStore.get().conflict).toBeNull();
+    expect(saveActive).not.toHaveBeenCalled();
+  });
+
+  it('names nothing when the tab behind the question is gone', async () => {
+    conflictHost();
+    act(() => conflictFound('gone', changed));
+    expect((await screen.findByLabelText('conflict dialog')).getAttribute('data-name')).toBe('');
+  });
+
+  it('Overwrite and Save as save again with that answer', async () => {
+    conflictHost();
+    act(() => conflictFound(tab.id, changed));
+    await userEvent.click(await screen.findByRole('button', { name: 'overwrite' }));
+    // Overwrite carries the file the question was about.
+    expect(saveActive).toHaveBeenLastCalledWith(tab.id, { overwrite: changed });
+    act(() => conflictFound(tab.id, changed));
+    await userEvent.click(await screen.findByRole('button', { name: 'save as' }));
+    expect(saveActive).toHaveBeenLastCalledWith(tab.id, { saveAs: true });
+  });
+
+  it('takes the place of the close question while it is open, which returns afterwards', async () => {
+    render(
+      <>
+        <CloseDocumentHost
+          t={t}
+          session={session}
+          discardTab={discardTab}
+          saveActive={saveActive}
+          exportActive={exportActive}
+        />
+        <SaveConflictHost t={t} session={session} discardTab={discardTab} saveActive={saveActive} />
+      </>,
+    );
+    act(() => closeRequested(tab.id, null));
+    await screen.findByLabelText('close dialog');
+    act(() => conflictFound(tab.id, changed));
+    await screen.findByLabelText('conflict dialog');
+    expect(screen.queryByLabelText('close dialog')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'keep file' }));
+    expect(await screen.findByLabelText('close dialog')).toBeTruthy();
   });
 });

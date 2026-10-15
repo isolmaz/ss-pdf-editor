@@ -23,7 +23,7 @@ import {
   showNotice,
 } from '../core/core-store';
 import type { PreparedOutput } from './prepare-output';
-import { isSaveLocked, saveLocked, saveReleased } from './save-store';
+import { conflictFound, isSaveLocked, saveLocked, saveReleased } from './save-store';
 
 /** What the shell still holds that Save and Export run on. */
 export interface SaveHost {
@@ -35,6 +35,22 @@ export interface SaveHost {
     controller: AbortController,
     executedSteps?: SaveStepDescription[],
   ) => Promise<PreparedOutput | null>;
+}
+
+/** What the user decided about a file that changed under the document (`conflict-actions.ts`). */
+export interface SaveOptions {
+  /**
+   * The file the user confirmed overwriting although it differs from what this editor last saw
+   * there: the save writes to it, unchecked. Only the answer to the file-changed question sets
+   * it, and it carries the file that question was about (`SaveConflict.target`), so the write
+   * can only go where the question pointed.
+   */
+  readonly overwrite?: FileSystemFileHandle;
+  /**
+   * Choose a destination even though the document has a file of its own, and make the chosen one
+   * the document's file: the way out of a conflict that keeps both versions.
+   */
+  readonly saveAs?: boolean;
 }
 
 /** The name a download of `name` is saved under. */
@@ -50,8 +66,17 @@ function failureLine(error: unknown, t: Translator): string {
  * Save `tabId` (default: the active tab): in place when the document has a file, through the
  * file picker when the browser offers one, as a download otherwise. Resolves whether the
  * version was written.
+ *
+ * An in-place save writes only over the file it last saw. When the file on disk is something
+ * else — changed by another program, or by this editor in an earlier session whose write the
+ * restored draft remembers — nothing is written and the file-changed question is asked
+ * (`conflictFound`); the answers come back here as `options`.
  */
-export async function saveDocument(host: SaveHost, tabId: string | undefined): Promise<boolean> {
+export async function saveDocument(
+  host: SaveHost,
+  tabId: string | undefined,
+  options: SaveOptions = {},
+): Promise<boolean> {
   const { session, t, prepareOutput } = host;
   const tab = session.getSnapshot().tabs.find((item) => item.id === tabId) ?? null;
   if (tab === null) return false;
@@ -73,7 +98,7 @@ export async function saveDocument(host: SaveHost, tabId: string | undefined): P
   clearNotice();
   setBusy(true);
   try {
-    let target = tab.source.handle;
+    let target = options.saveAs === true ? undefined : (options.overwrite ?? tab.source.handle);
     // A handle read back from IndexedDB (a restored draft, a reopened recent entry) has
     // no write access until the user grants it: asked here, the first await of the click.
     if (target !== undefined && !(await ensureWriteAccess(target))) {
@@ -103,11 +128,13 @@ export async function saveDocument(host: SaveHost, tabId: string | undefined): P
      * original. The in-place path keeps the original/last-written protection.
      */
     const targetIsSource = target !== undefined && target === tab.source.handle;
-    const expected = targetIsSource
-      ? (tab.outputs.at(-1)?.writtenTo?.sha256 ?? tab.source.sha256)
-      : target === undefined
+    const checked = target === undefined || target !== options.overwrite;
+    const expected =
+      !checked || target === undefined
         ? null
-        : await sha256Hex(new Uint8Array(await (await target.getFile()).arrayBuffer()));
+        : targetIsSource
+          ? (tab.lastWrittenSha256 ?? tab.source.sha256)
+          : await sha256Hex(new Uint8Array(await (await target.getFile()).arrayBuffer()));
 
     const executedSteps: SaveStepDescription[] = [];
     const prepared = await prepareOutput(tab.id, controller, executedSteps);
@@ -116,9 +143,17 @@ export async function saveDocument(host: SaveHost, tabId: string | undefined): P
     const { tab: preparedTab, bytes, outputProtection, execution, outputHash, verification } = prepared;
 
     if (target !== undefined) {
-      // A destination was chosen, so a baseline was taken for it above.
-      const actual = new Uint8Array(await (await target.getFile()).arrayBuffer());
-      if ((await sha256Hex(actual)) !== expected) throw new ToolError('conflict', { engine: 'model' });
+      // A destination was chosen, so a baseline was taken for it above — unless the user has
+      // confirmed overwriting whatever the file holds now.
+      if (checked) {
+        const actual = new Uint8Array(await (await target.getFile()).arrayBuffer());
+        if ((await sha256Hex(actual)) !== expected) {
+          // A changed file is a question, not a failure: the dialog offers overwriting *this* file
+          // (confirmed), saving as a new file, or leaving it alone.
+          conflictFound(tab.id, target);
+          return false;
+        }
+      }
 
       if (controller.signal.aborted) return false;
       const writable = await target.createWritable();

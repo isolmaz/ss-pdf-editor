@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   closeDismissed,
   closeRequested,
+  conflictFound,
+  conflictResolved,
   currentViewer,
   initialSaveState,
   isSaveLocked,
@@ -39,6 +41,7 @@ describe('the save store', () => {
       layoutRevision: 0,
       closeRequest: null,
       closeTrigger: null,
+      conflict: null,
     });
   });
 
@@ -81,6 +84,16 @@ describe('the save store', () => {
     closeDismissed();
     // The trigger stays: the focus is given back after the question has closed.
     expect(saveStore.get()).toMatchObject({ closeRequest: null, closeTrigger: trigger });
+  });
+});
+
+describe('the file-changed question', () => {
+  it('names the tab and the file that changed, and ends when it is answered', () => {
+    const target = {} as FileSystemFileHandle;
+    conflictFound('tab-1', target);
+    expect(saveStore.get().conflict).toEqual({ tabId: 'tab-1', target });
+    conflictResolved();
+    expect(saveStore.get().conflict).toBeNull();
   });
 });
 

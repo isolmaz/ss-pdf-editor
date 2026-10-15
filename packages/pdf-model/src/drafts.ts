@@ -1,3 +1,4 @@
+import { fromBase64, toBase64 } from './base64';
 import type { JournalEntry, JournalOperation, JsonValue } from './journal';
 import { JOURNAL_SCHEMA } from './journal';
 import type { ProducedDocument } from './operations';
@@ -40,6 +41,12 @@ export interface Draft {
   readonly savedState?: string | null;
   readonly overlays?: JsonValue;
   readonly sourcePageCount?: number;
+  /**
+   * The SHA-256 of the file this editor last wrote in place for the tab. Outputs are not part
+   * of a draft, so without it a restored tab would compare the file on disk — which already
+   * holds that write — against the *original* source and report a conflict nobody caused.
+   */
+  readonly lastWrittenSha256?: string;
   readonly workingId?: string;
   readonly snapshots?: readonly DraftSnapshot[];
   /**
@@ -78,21 +85,6 @@ const UNREPRESENTABLE = Symbol('unrepresentable');
 
 function isBlob(value: unknown): value is Blob {
   return typeof Blob !== 'undefined' && value instanceof Blob;
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let index = 0; index < bytes.length; index += 8192) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
-  }
-  return btoa(binary);
-}
-
-function fromBase64(value: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(value);
-  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
 }
 
 /**
@@ -237,6 +229,7 @@ export function draftFor(input: {
   readonly savedState?: string | null;
   readonly overlays?: JsonValue;
   readonly sourcePageCount?: number;
+  readonly lastWrittenSha256?: string;
   readonly workingId?: string;
   readonly snapshots?: readonly DraftSnapshot[];
   readonly engineValues?: EngineValuesDraft;
@@ -256,6 +249,7 @@ export function draftFor(input: {
     ...(input.savedState === undefined ? {} : { savedState: input.savedState }),
     ...(input.overlays === undefined ? {} : { overlays: input.overlays }),
     ...(input.sourcePageCount === undefined ? {} : { sourcePageCount: input.sourcePageCount }),
+    ...(input.lastWrittenSha256 === undefined ? {} : { lastWrittenSha256: input.lastWrittenSha256 }),
     ...(input.workingId === undefined ? {} : { workingId: input.workingId }),
     ...(input.snapshots === undefined ? {} : { snapshots: input.snapshots }),
     engineValues: input.engineValues ?? EMPTY_ENGINE_VALUES,
@@ -279,6 +273,11 @@ export function isRestorable(draft: Draft): boolean {
 /** A safe count: a page or byte total has to be a non-negative whole number. */
 function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** A lowercase hex SHA-256, the only form `sha256Hex` produces. */
+function isSha256(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 }
 
 /** One journal entry, validated as a whole: a half-read entry is not an entry. */
@@ -331,6 +330,16 @@ export function parseDraft(raw: unknown): Draft | null {
   if (typeof candidate.id !== 'string' || typeof candidate.name !== 'string') return null;
   if (typeof candidate.sourceKey !== 'string') return null;
   if (!isCount(candidate.pageCount) || !isCount(candidate.size)) return null;
+  // The source's page count seeds the restored tab's page list, so it is held to the same
+  // rule as `pageCount` (and a source has at least one page): `typeof === 'number'` let `1e21`
+  // and `-3` through into a tab whose page list cannot exist. A write baseline that is not a
+  // SHA-256 would only ever read as a conflict, so it makes the draft unreadable too.
+  if (
+    candidate.sourcePageCount !== undefined &&
+    (!isCount(candidate.sourcePageCount) || candidate.sourcePageCount < 1)
+  )
+    return null;
+  if (candidate.lastWrittenSha256 !== undefined && !isSha256(candidate.lastWrittenSha256)) return null;
   const parsedJournal = parseJournal(candidate.journal, candidate.journalCursor);
   if (parsedJournal === null) return null;
   const rawEngineValues = candidate.engineValues as Partial<EngineValuesDraft> | undefined;
@@ -382,7 +391,8 @@ export function parseDraft(raw: unknown): Draft | null {
     ...(typeof candidate.savedState === 'string' || candidate.savedState === null
       ? { savedState: candidate.savedState }
       : {}),
-    ...(typeof candidate.sourcePageCount === 'number' ? { sourcePageCount: candidate.sourcePageCount } : {}),
+    ...(candidate.sourcePageCount === undefined ? {} : { sourcePageCount: candidate.sourcePageCount }),
+    ...(candidate.lastWrittenSha256 === undefined ? {} : { lastWrittenSha256: candidate.lastWrittenSha256 }),
     ...(typeof candidate.workingId === 'string' ? { workingId: candidate.workingId } : {}),
     ...(candidate.overlays !== undefined ? { overlays: candidate.overlays } : {}),
     snapshots: parsedSnapshots,

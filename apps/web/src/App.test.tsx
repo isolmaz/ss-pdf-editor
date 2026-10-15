@@ -72,7 +72,10 @@ vi.mock('./features/export/ExportSurfaces', () => ({
 }));
 vi.mock('./features/facts/SignatureWarningPrompt', () => ({ SignatureWarningPrompt: () => null }));
 vi.mock('./features/forms/FormsSurface', () => ({ XfaFormDialogHost: () => null }));
-vi.mock('./features/save/SaveSurfaces', () => ({ CloseDocumentHost: () => null }));
+vi.mock('./features/save/SaveSurfaces', () => ({
+  CloseDocumentHost: () => null,
+  SaveConflictHost: () => null,
+}));
 vi.mock('./features/stamps/StampSurface', () => ({
   ImagePickerInput: () => null,
   SignatureDialogHost: () => null,

@@ -22,12 +22,17 @@ import { failureNotice, forgetDraft } from './draft-vault';
 import {
   draftStorage,
   draftWritten,
+  ownsDraft,
   persistedKeysFor,
   persistedKeysRecorded,
-  queueDraftWrite,
+  queueVaultWrite,
+  sourceStored,
 } from './persistence-store';
 
-/** What one persistence attempt did, so the caller can word the notice honestly. */
+/**
+ * What one persistence attempt did, so the caller can word the notice honestly. `skipped`
+ * wrote nothing: the tab has no engine handle yet, or another window owns its draft.
+ */
 export type PersistOutcome = 'written' | 'sensitive' | 'skipped' | 'gone';
 
 /**
@@ -48,9 +53,14 @@ export function retainedSnapshotsFor(
  * The **one** implementation of draft persistence, used by the manual save command and
  * the debounced automatic save alike.
  *
- * The model state is captured synchronously before the first `await`, so the manifest
- * always describes the version whose bytes were written — reading it again after the
- * encoding work would let a fast edit publish a manifest for a state no blob matches.
+ * The model state — the tab, its journal, the snapshots it retains — is captured synchronously
+ * before the first `await`, so the manifest always describes the version whose bytes were
+ * written: reading any of it again after the encoding work would let a fast edit publish a
+ * manifest for a state no blob matches.
+ *
+ * It does not take the cross-window vault lock itself: it runs on the write queue, and the
+ * lock is taken *outside* the queue (`queueVaultWrite`), so every caller goes through that.
+ * Only the window that owns the draft writes it (`ownsDraft`).
  */
 export async function persistDraft(
   session: SessionStore,
@@ -71,11 +81,16 @@ export async function persistDraft(
   const map = handle.raw.annotationStorage?.serializable?.map;
   const journal = tier === 'desktop' ? before.journal.entries : [];
   const journalCursor = tier === 'desktop' ? before.journal.cursor : 0;
+  const retained = retainedSnapshotsFor(session, before, tier);
+  // Two windows writing one id overwrite each other's manifest and delete each other's
+  // snapshots; the window that does not own the draft leaves it alone.
+  if (!(await ownsDraft(tabId))) return 'skipped';
   const engineValues = await encodeEngineValues(map instanceof Map ? map.entries() : []);
   const sourceKey = sourceKeyFor(before.id, before.source.sha256);
   await storage.putSource(sourceKey, before.source.master);
+  sourceStored(tabId, sourceKey);
   const snapshots: DraftSnapshot[] = [];
-  for (const snapshot of retainedSnapshotsFor(session, before, tier)) {
+  for (const snapshot of retained) {
     const key = `snapshot-${snapshot.id}`;
     await storage.putSource(key, snapshot.bytes);
     const { bytes: _bytes, ...description } = snapshot;
@@ -88,6 +103,7 @@ export async function persistDraft(
       pageCount: workingPageCount(before),
       size: before.source.size,
       sourcePageCount: before.source.pageCount,
+      ...(before.lastWrittenSha256 === undefined ? {} : { lastWrittenSha256: before.lastWrittenSha256 }),
       dirty: before.dirty,
       sourceKey,
       journal,
@@ -135,7 +151,7 @@ export async function saveDraft(
     return;
   }
   try {
-    const outcome = await queueDraftWrite(() => persist(tab.id));
+    const outcome = await queueVaultWrite(() => persist(tab.id));
     if (outcome === 'written') showNotice(t('setting.opfsSaved'));
     else if (outcome === 'sensitive') showNotice(t('redact.sensitive.on'));
   } catch (error) {
@@ -158,7 +174,7 @@ export function toggleSensitiveSession(session: SessionStore, t: Translator): vo
     return;
   }
   showNotice(t('redact.sensitive.on'));
-  queueDraftWrite(async () => {
+  queueVaultWrite(async () => {
     await deleteRecentHandle(tab.id);
     return forgetDraft(session, tab.id);
   })

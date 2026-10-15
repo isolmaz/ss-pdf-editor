@@ -111,6 +111,28 @@ describe('SessionStore', () => {
     expect(store.active?.journal.canRedo).toBe(false);
   });
 
+  it('remembers the hash of the file each output wrote, and an output without a file changes nothing', () => {
+    const store = new SessionStore();
+    const tab = store.openDocument(document('written.pdf'));
+    expect(store.active).not.toHaveProperty('lastWrittenSha256');
+    const output = (id: string, writtenTo?: { fileName: string; savedAt: number; sha256: string }) => ({
+      id,
+      fromWorkingVersion: tab.working.id,
+      fromState: tab.working.stateId,
+      encrypted: false,
+      steps: [],
+      appliedSteps: [],
+      incremental: false,
+      ...(writtenTo === undefined ? {} : { writtenTo }),
+    });
+    store.addOutput(tab.id, output('first', { fileName: 'written.pdf', savedAt: 1, sha256: 'hash-1' }));
+    expect(store.active?.lastWrittenSha256).toBe('hash-1');
+    store.addOutput(tab.id, output('unwritten'));
+    expect(store.active?.lastWrittenSha256).toBe('hash-1');
+    store.addOutput(tab.id, output('second', { fileName: 'written.pdf', savedAt: 2, sha256: 'hash-2' }));
+    expect(store.active?.lastWrittenSha256).toBe('hash-2');
+  });
+
   it('does not mark a newer edit saved when an older output completes', () => {
     const store = new SessionStore();
     const tab = store.openDocument(document('late.pdf'));
@@ -489,6 +511,12 @@ describe('a history restored from storage', () => {
     expect(store.snapshotsFor('missing')).toEqual([]);
     store.addOutput(tab.id, { id: 'out' } as never);
     expect(store.getSnapshot().tabs.map((item) => item.outputs.length)).toEqual([0, 1]);
+  });
+
+  it('keeps the hash of the last in-place write a draft carried, and leaves a tab without one unset', () => {
+    const written = 'b'.repeat(64);
+    expect(restored({ lastWrittenSha256: written }).store.active?.lastWrittenSha256).toBe(written);
+    expect(restored({}).store.active).not.toHaveProperty('lastWrittenSha256');
   });
 
   it('opens on the source when the stored working version has no snapshot', () => {
