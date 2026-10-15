@@ -23,7 +23,7 @@
   --spacing-pdf-tabstrip: 1.875rem;
   --spacing-pdf-statusbar: 2rem;
 
-  /* Tokenized elevation: subtle hairlines and controlled elevation (DESIGN.md §14). */
+  /* Tokenized elevation: subtle hairlines and controlled elevation. */
   --shadow-pdf-floating: light-dark(0 1px 3px 0 oklch(0% 0 0 / 0.1), 0 1px 2px -1px oklch(0% 0 0 / 0.1));
   --shadow-pdf-overlay: light-dark(0 10px 15px -3px oklch(0% 0 0 / 0.1), 0 4px 6px -4px oklch(0% 0 0 / 0.1));
 
@@ -226,7 +226,7 @@
   }
 }
 
-/* Tokenized elevation utilities for floating chrome (DESIGN.md §14). */
+/* Tokenized elevation utilities for floating chrome. */
 .pdf-floating-shadow {
   box-shadow: var(--shadow-pdf-floating);
 }
