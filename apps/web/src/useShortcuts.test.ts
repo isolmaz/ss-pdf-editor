@@ -243,6 +243,13 @@ describe('composite widgets', () => {
     }
   });
 
+  it('treats the focus on a select, a text box, a number field or a slider as the control itself', () => {
+    vi.stubGlobal('Element', FakeElement);
+    for (const role of ['combobox', 'textbox', 'spinbutton', 'slider']) {
+      expect(inCompositeWidget(new FakeElement([role]) as unknown as EventTarget), role).toBe(true);
+    }
+  });
+
   it('leaves the focus on plain elements and on no target to the shell', () => {
     vi.stubGlobal('Element', FakeElement);
     expect(inCompositeWidget(new FakeElement(['button']) as unknown as EventTarget)).toBe(false);

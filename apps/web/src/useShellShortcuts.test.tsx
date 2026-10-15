@@ -143,6 +143,10 @@ describe('the tool letters', () => {
   it.each([
     ['a menu', '<div role="menu"><button id="x" role="menuitem">Open</button></div>'],
     ['a list', '<ul role="listbox"><li id="x" role="option">Page</li></ul>'],
+    ['a select', '<button id="x" role="combobox" aria-expanded="false">Page range</button>'],
+    ['a text box', '<div id="x" role="textbox" tabindex="0">Title</div>'],
+    ['a number field', '<div id="x" role="spinbutton" tabindex="0" aria-valuenow="3">3</div>'],
+    ['a slider', '<div id="x" role="slider" tabindex="0" aria-valuenow="40">40</div>'],
     ['a dialog', '<div role="dialog"><button id="x">OK</button></div>'],
     ['an alert dialog', '<div role="alertdialog"><button id="x">OK</button></div>'],
   ])('stands down inside %s, where typed letters belong to the widget', (_name, html) => {
@@ -157,6 +161,23 @@ describe('the tool letters', () => {
     expect(actions.armTool).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
     host.remove();
+  });
+
+  it('leaves the letter to a focused select button, and answers it again once the focus is back on the page', () => {
+    const actions = shortcuts();
+    renderHook(() => useShellShortcuts(actions));
+    const select = document.body.appendChild(document.createElement('button'));
+    select.setAttribute('role', 'combobox');
+    select.focus();
+
+    const typed = new KeyboardEvent('keydown', { key: 'v', bubbles: true, cancelable: true });
+    select.dispatchEvent(typed);
+    expect(actions.armTool).not.toHaveBeenCalled();
+    expect(typed.defaultPrevented).toBe(false);
+
+    select.remove();
+    press('v');
+    expect(actions.armTool).toHaveBeenCalledWith('select');
   });
 
   it('ignores key repeat: holding a letter does not toggle the tool back and forth', () => {

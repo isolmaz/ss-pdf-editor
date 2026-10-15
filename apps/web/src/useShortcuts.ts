@@ -470,11 +470,13 @@ function isEditing(target: EventTarget | null): boolean {
 }
 
 /**
- * Widgets that own the navigation keys (Home, End, Page Up/Down) while the focus is inside them:
- * the ARIA composite roles, and a list that walks its own rows (`data-owns-page-keys`).
+ * Widgets that own the navigation keys (Home, End, Page Up/Down) and the plain letters while the
+ * focus is inside them: the ARIA composite roles, the controls that take typed or arrowed values
+ * (a select's `combobox` button, a `textbox`, a `spinbutton`, a `slider`), and a list that walks its
+ * own rows (`data-owns-page-keys`).
  */
 const COMPOSITE_WIDGETS =
-  '[role="menubar"],[role="menu"],[role="listbox"],[role="tree"],[role="grid"],[role="tablist"],[data-owns-page-keys]';
+  '[role="menubar"],[role="menu"],[role="listbox"],[role="tree"],[role="grid"],[role="tablist"],[role="combobox"],[role="textbox"],[role="spinbutton"],[role="slider"],[data-owns-page-keys]';
 
 /**
  * Whether the focus sits in a composite widget (a menu bar, a menu, the thumbnail list, a dock's tabs):
