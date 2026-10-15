@@ -363,8 +363,19 @@ describe('interface mode filtering', () => {
     ]) {
       expect(simple, id).toContain(id);
     }
-    for (const id of ['tools.redact', 'tools.ocr', 'file.batch', 'tools.measure-area', 'tools.pdfa']) {
+    // Bates numbering and watermarks are the `stamp` group, which the simple mode's rail hides
+    // (`SIMPLE_MODE_RAIL_GROUPS`): the menus and the palette agree with it.
+    for (const id of [
+      'tools.redact',
+      'tools.ocr',
+      'file.batch',
+      'tools.measure-area',
+      'tools.pdfa',
+      'tools.numbering',
+      'tools.watermark',
+    ]) {
       expect(simple, id).not.toContain(id);
+      expect(isCommandVisible(byId(commands, id), 'advanced'), id).toBe(true);
     }
     expect(isCommandVisible(byId(commands, 'tools.redact'), 'simple')).toBe(false);
     expect(isCommandVisible(byId(commands, 'tools.redact'), 'advanced')).toBe(true);

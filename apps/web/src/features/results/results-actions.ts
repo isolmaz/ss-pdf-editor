@@ -63,7 +63,7 @@ export function createResultsActions(deps: ResultsDeps): ResultsActions {
 
   /**
    * The accessibility writers' results arrive as bytes plus notes; they land in the session
-   * exactly like every other produced file (journal entry → save router), so the panel never
+   * exactly like every other produced file (journal entry → save), so the panel never
    * writes a file of its own.
    */
   async function applyAccessibility(outcome: AccessibilityOutcome): Promise<void> {

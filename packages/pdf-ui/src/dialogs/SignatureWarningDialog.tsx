@@ -2,8 +2,8 @@
  * The pre-save signature warning (“editing after signing invalidates
  * the signature → pre-save warning and a status badge”).
  *
- * One question with two answers, because the save router knows which one applies and the
- * user does not (`packages/pdf-model/src/save-router.ts`, `plan.incremental`):
+ * One question with two answers, because the save knows which one applies and the user does
+ * not (`apps/web/src/save-plan.ts`, `signedBytesFate`):
  *
  *  - **incremental** — the file grows by a revision and the signature stays intact; a
  *    reader will show changes *after* the signing, which is a different statement from

@@ -3,7 +3,7 @@ import { JOURNAL_SCHEMA, type JournalEntry, OperationJournal } from './journal';
 
 /**
  * Behavioural contract of the single chronological journal.
- * These are the properties the undo/redo UI and the save router depend on; the
+ * These are the properties the undo/redo UI and the save plan depend on; the
  * `highlight → rotate → comment → undo×3` case is the acceptance case.
  */
 

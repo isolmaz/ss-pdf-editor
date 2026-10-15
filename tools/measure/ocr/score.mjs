@@ -394,12 +394,15 @@ for (const [name, r] of Object.entries(summary)) {
     `**${name}** — ${r.confidence.words} words, ${r.confidence.wrongWords} wrong (${pct(r.confidence.wrongWords / r.confidence.words, 1)})`,
   );
   lines.push('');
-  lines.push('| θ | flagged | precision | recall |');
-  lines.push('|---|---|---|---|');
-  for (const row of r.confidence.rows)
+  lines.push('| θ | flagged | precision | recall | F1 |');
+  lines.push('|---|---|---|---|---|');
+  for (const row of r.confidence.rows) {
+    // F1 is the harmonic mean of the two columns before it; undefined when either is.
+    const f1 = (2 * row.precision * row.recall) / (row.precision + row.recall);
     lines.push(
-      `| ${row.theta} | ${pct(row.flaggedShare, 1)} | ${pct(row.precision, 1)} | ${pct(row.recall, 1)} |`,
+      `| ${row.theta} | ${pct(row.flaggedShare, 1)} | ${pct(row.precision, 1)} | ${pct(row.recall, 1)} | ${Number.isFinite(f1) ? f1.toFixed(2) : '–'} |`,
     );
+  }
   lines.push('');
 }
 writeFileSync(path.join(RESULTS_DIR, 'summary.md'), lines.join('\n'));

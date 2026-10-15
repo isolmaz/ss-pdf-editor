@@ -28,14 +28,6 @@ export interface SourceDocument {
   readonly handle?: FileSystemFileHandle;
 }
 
-export interface PageBoxOverride {
-  readonly media?: readonly [number, number, number, number];
-  readonly crop?: readonly [number, number, number, number];
-  readonly trim?: readonly [number, number, number, number];
-  readonly bleed?: readonly [number, number, number, number];
-  readonly art?: readonly [number, number, number, number];
-}
-
 export interface PageRef {
   readonly id: string;
   readonly sourceId: string;
@@ -43,7 +35,6 @@ export interface PageRef {
   readonly srcIndex: number;
   /** User rotation, added to the source page rotation. */
   readonly rotation: Rotation;
-  readonly boxes?: PageBoxOverride;
 }
 
 export interface WorkingVersion {

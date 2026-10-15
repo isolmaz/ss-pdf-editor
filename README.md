@@ -860,7 +860,7 @@ apps/
   site/             landing and legal pages (static HTML, TR + EN)
 packages/
   shared/           error contract, limits, i18n (Turkish and English)
-  pdf-model/        session store, operation journal, drafts, save router
+  pdf-model/        session store, operation journal, drafts
   pdf-core/         engine adapters (pdf.js, MuPDF, Tesseract) and every operation
   pdf-text-engine/  text model, editability, reflow, fonts
   pdf-ui/           React surfaces: viewer, panels, dialogs, tools, printing

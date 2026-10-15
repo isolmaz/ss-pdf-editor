@@ -26,7 +26,6 @@ export * from './page-ranges';
 export * from './pdf-fonts';
 export * from './redact';
 export * from './redact-audit';
-export * from './redact-find';
 export * from './security';
 /**
  * **Not** `export * from './sign'`: that module brings `signature-cms` and through it pkijs

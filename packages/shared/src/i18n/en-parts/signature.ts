@@ -39,7 +39,6 @@ export const signaturePart = {
   'sig.command': 'Add a signature (draw, type, picture)',
 
   'img.add.title': 'Add an image',
-  'img.add.choose': 'Choose an image',
   'img.add.failed': 'The image could not be read: {name}. Choose a PNG, JPEG, WebP, GIF or BMP.',
   'img.add.label': 'Image',
 

@@ -2,7 +2,6 @@ export * from './drafts';
 export * from './journal';
 export * from './operations';
 export * from './revocation-lists';
-export * from './save-router';
 export * from './session';
 export * from './source';
 export * from './trust-roots';

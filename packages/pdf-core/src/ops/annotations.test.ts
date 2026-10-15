@@ -312,14 +312,14 @@ describe('storageEntriesFor', () => {
       contents: ' note ',
       author: 'Ada',
     });
-    const [entry, ...others] = storageEntriesFor(ink, 100, 90);
+    const [entry, ...others] = storageEntriesFor(ink, 100);
     expect(others).toEqual([]);
     const nan = Number.NaN;
     expect(entry).toMatchObject({
       id: 'm',
       annotationType: 15,
       pageIndex: 0,
-      rotation: 90,
+      rotation: 0,
       color: [255, 0, 0],
       opacity: 1,
       contents: `${markerFor('m')} note`,

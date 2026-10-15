@@ -2,7 +2,7 @@
  * The operation contract every capability runs through.
  *
  * One shape for all 18 capabilities: bytes in → bytes (or files) out, with
- * progress, cancellation and an honest report of what changed. The save router
+ * progress, cancellation and an honest report of what changed. The save path
  * and the UI never talk to an engine directly — they call an operation.
  *
  * Why the report is part of the result and not optional:

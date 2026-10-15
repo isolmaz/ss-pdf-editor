@@ -163,7 +163,7 @@ describe('ReadingPane column', () => {
   });
 
   it('shows a failure in the pane alone when the shell offers no notice channel', async () => {
-    const viewer = { document: undefined } as unknown as ReadingViewer;
+    const viewer = viewerOf(async () => Promise.reject(new Error('worker died')));
     render(<ReadingPane {...props({ viewer })} />);
     expect(await screen.findByText('Something unexpected went wrong.')).toBeTruthy();
   });

@@ -234,6 +234,8 @@ test('an operation applied from the tools panel reaches the document', async ({ 
   // back cancels the operation in flight — the apply that has just started — and the result
   // would be dropped with no notice and the page left as it was.
   await open(page, 'watermark.pdf', toolFixturePdf());
+  // Watermarks are an advanced-mode tool: the simple mode's palette does not offer them.
+  await useAdvancedMode(page);
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill('Watermark');
   await page.keyboard.press('Enter');
