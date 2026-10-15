@@ -1393,10 +1393,16 @@ Details that matter:
   ≥ 50 % covered throws `verification-failed`. The same pass reads the page's `/Annots`: an
   annotation or widget (anything but `/Redact`) that still shares area with a mark fails the
   page the same way, so a form field's value cannot hide behind a clean text check.
-- `auditRedactedDocument()` is a raw-byte scan and **documents its own blind spot**: it
-  cannot see inside deflated streams or object streams. It emits a `/FlateDecode` row and
-  suppresses the orphan-object verdict entirely when `/ObjStm` is present, instead of
-  implying a clean file.
+- `auditRedactedDocument()` is a raw-byte scan plus a string-object pass, and **documents
+  its own blind spot**: it cannot see inside deflated streams or object streams. The
+  string pass parses literal `(…)` and hex `<…>` strings outside filtered streams, decodes
+  them (UTF-16BE after `FE FF`, UTF-8 after a BOM, else PDFDocEncoding) and matches the
+  needle in NFC, so `Yaşar` is found in `/Alt`, `/ActualText` and form `/V` values, and
+  ASCII needles are found in hex strings. It emits a `/FlateDecode` row and suppresses the
+  orphan-object verdict entirely when `/ObjStm` is present, instead of implying a clean
+  file. Object definitions are found after LF, CR, CRLF or at the file start, and the empty
+  `/Names /EmbeddedFiles` tree MuPDF leaves after the last attachment is deleted is not
+  reported as an attachment.
 
 ### 5.5 OCR and accessibility
 

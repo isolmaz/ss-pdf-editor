@@ -776,8 +776,9 @@ The limits are defined once, in
     form XObject or it owns a link, field or annotation, does not edit per-element `/Lang`,
     and the annotation fix leaves a parent tree that is not a flat `Nums` array alone.
 - **Redaction audit.**
-  - The audit scans raw bytes, so it cannot see inside compressed streams or object
-    streams.
+  - The audit scans raw bytes and the file's string objects (literal and hex strings,
+    decoded from UTF-16BE, UTF-8 or PDFDocEncoding), so it cannot see inside compressed
+    streams or object streams.
   - It says so, and when object streams are present it skips the orphan-object verdict.
 - **Redaction and forms.**
   - A comment or field is removed whole when its rectangle meets a mark; there is no partial
