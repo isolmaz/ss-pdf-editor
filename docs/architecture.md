@@ -2668,7 +2668,7 @@ document is opening. A drop or a multi-file pick opens every PDF, each in its ow
 after the other (`openFilesFromSurface`), because an open holds the busy gate until it settles.
 
 **The home screen** (`components/HomeScreen.tsx`) has two tabs that both act. *Start* holds
-the ways to begin — open, a blank document, a PDF from images, merging several PDFs, a batch
+the ways to begin — a drop zone that is also the click target for opening a file (there is no second "open" card; the header's Open and its one palette button, with a search icon and the Ctrl+K hint, serve the whole screen), a blank document, a PDF from images, merging several PDFs, a batch
 run — and the recent list (search, sort, star, page count, an "open" badge for entries that
 are a tab right now; removing an entry or clearing the list never touches a file, it forgets
 the entry's stored handle at once, and the clear asks first; the clear keeps the handle of a

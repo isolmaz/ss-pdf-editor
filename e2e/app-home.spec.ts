@@ -190,6 +190,18 @@ test('the home screen makes the privacy claim once, in the status bar', async ({
   await expect(claim).toHaveCount(1);
 });
 
+test('the home screen has one way to pick a file besides the header and one command palette button', async ({
+  page,
+}) => {
+  await page.goto('/editor/');
+  // The drop zone's input is the one control named after opening a PDF; the "Open a PDF" card is gone.
+  await expect(page.getByRole('button', { name: /Open a PDF/ })).toHaveCount(1);
+  await expect(page.locator('label', { hasText: 'Open a PDF or drop it here' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /Command palette/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Search commands (Ctrl+K)' })).toHaveCount(1);
+  await expect(page.getByText('Ctrl+K', { exact: true })).toBeVisible();
+});
+
 test('the start cards: a blank document, a picked file and the command palette from the home header', async ({
   page,
 }) => {
@@ -201,7 +213,7 @@ test('the start cards: a blank document, a picked file and the command palette f
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 
-  await page.getByRole('button', { name: 'Command palette (Ctrl+K)' }).first().click();
+  await page.getByRole('button', { name: 'Search commands (Ctrl+K)' }).click();
   await expect(page.getByRole('combobox')).toBeVisible();
   await page.keyboard.press('Escape');
 
@@ -210,7 +222,7 @@ test('the start cards: a blank document, a picked file and the command palette f
   await page.keyboard.press('Escape');
 
   await stageFile(page, 'open', 'card.pdf', labelledPdf('Card', 1));
-  await page.getByRole('button', { name: /Open a PDF/ }).click();
+  await page.getByRole('button', { name: 'Open', exact: true }).click();
   await settled(page);
   await expect(page.getByText('/ 1', { exact: true })).toBeVisible();
 });

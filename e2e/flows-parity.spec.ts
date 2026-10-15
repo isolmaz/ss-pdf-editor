@@ -315,7 +315,7 @@ test('accessibility: the PDF/UA view lists its rules with states, and the Tags v
   for (const role of ['H1', 'P', 'L', 'LI', 'Table', 'TR', 'TH', 'TD']) expect(roles).toContain(role);
 });
 
-test('home: the Start tab lays eight tiles out in full rows, and the status bar states the privacy claim', async ({
+test('home: the Start tab lays its tiles out in full rows, and the status bar states the privacy claim', async ({
   page,
 }) => {
   await page.goto('/editor/');
@@ -325,15 +325,26 @@ test('home: the Start tab lays eight tiles out in full rows, and the status bar 
   const boxes = await grid.locator(':scope > *').evaluateAll((tiles) =>
     tiles.map((tile) => {
       const box = tile.getBoundingClientRect();
-      return { top: Math.round(box.top), left: Math.round(box.left) };
+      return { top: Math.round(box.top), left: Math.round(box.left), right: Math.round(box.right) };
     }),
   );
-  expect(boxes).toHaveLength(8);
-  // The rows, as the distinct tops: at 1440 px the tiles fill them completely, so a lone
-  // tile on a last row (what a seven-tile grid left behind) is a failure.
-  const rows = new Map<number, number>();
-  for (const box of boxes) rows.set(box.top, (rows.get(box.top) ?? 0) + 1);
-  expect([...rows.values()]).toEqual([4, 4]);
+  // The drop zone and six start cards. The drop zone is two columns wide, so at 1440 px the seven
+  // tiles make two full rows of four columns: three tiles, then four. A lone tile on a last row
+  // (what a seven-tile grid of equal tiles left behind) is a failure.
+  expect(boxes).toHaveLength(7);
+  const rows = new Map<number, { count: number; left: number; right: number }>();
+  for (const box of boxes) {
+    const row = rows.get(box.top) ?? { count: 0, left: box.left, right: box.right };
+    rows.set(box.top, {
+      count: row.count + 1,
+      left: Math.min(row.left, box.left),
+      right: Math.max(row.right, box.right),
+    });
+  }
+  const filled = [...rows.values()];
+  expect(filled.map((row) => row.count)).toEqual([3, 4]);
+  expect(new Set(filled.map((row) => row.left)).size).toBe(1);
+  expect(new Set(filled.map((row) => row.right)).size).toBe(1);
 
   await expect(page.getByRole('contentinfo')).toContainText('The document never leaves your device.');
 });

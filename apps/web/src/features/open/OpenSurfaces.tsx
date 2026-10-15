@@ -3,7 +3,7 @@
  * question and the hidden file input of the plain-input path — wired to the open store.
  */
 
-import { Command, FilePdf, FolderOpen, GearSix } from '@phosphor-icons/react';
+import { FilePdf, FolderOpen, GearSix, MagnifyingGlass } from '@phosphor-icons/react';
 import { CONVERT_ACCEPT } from 'pdf-core/ops/convert-formats';
 import type { Translator } from 'pdf-shared';
 import { Button } from 'pdf-ui/ui';
@@ -68,12 +68,15 @@ export function HomeHeader({ t, title, activeDocumentName, onSettings, onPalette
         <Button
           size="sm"
           variant="ghost"
-          icon={Command}
+          icon={MagnifyingGlass}
           onClick={onPalette}
           title={t('shell.commandPaletteHint')}
           aria-label={t('shell.commandPaletteHint')}
         >
           <span className="hidden md:inline">{t('shell.commandPaletteShort')}</span>
+          <kbd className="hidden rounded border border-kumo-line px-1 font-sans text-[10px] text-kumo-subtle md:inline">
+            Ctrl+K
+          </kbd>
         </Button>
         <Button size="sm" variant="primary" icon={FolderOpen} onClick={onOpen}>
           {t('shell.open')}

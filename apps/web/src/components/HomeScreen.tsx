@@ -17,7 +17,6 @@ import {
   FileArrowUp,
   FilePdf,
   FilePlus,
-  FolderOpen,
   Images,
   Info,
   MagnifyingGlass,
@@ -66,10 +65,8 @@ export interface HomeScreenProps {
   readonly t: Translator;
   /** A file the user chose or dropped here; with none, the shell opens its picker. */
   readonly onOpenFiles: (files: readonly File[]) => void;
-  readonly onOpenPicker: () => void;
   readonly onSelectRecent: (item: RecentDocumentItem) => void;
   readonly onStart: (action: HomeStartAction) => void;
-  readonly onOpenPalette: () => void;
   /** Every command; the tool grid is built from them whatever the interface mode. */
   readonly commands: readonly Command[];
   /** Commands that start a document and never need one open. */
@@ -166,10 +163,8 @@ function StartCard({
 export function HomeScreen({
   t,
   onOpenFiles,
-  onOpenPicker,
   onSelectRecent,
   onStart,
-  onOpenPalette,
   commands,
   standaloneCommands,
   onRunCommand,
@@ -241,14 +236,6 @@ export function HomeScreen({
             {t('home.tab.tools')}
           </TabButton>
         </div>
-        <button
-          type="button"
-          className="mb-2 flex items-center gap-1.5 text-xs font-medium text-kumo-strong hover:underline"
-          onClick={onOpenPalette}
-        >
-          <MagnifyingGlass size={14} aria-hidden="true" />
-          {t('home.palette')}
-        </button>
       </div>
 
       {topTab === 'tools' ? (
@@ -275,7 +262,7 @@ export function HomeScreen({
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label
               htmlFor={fileInputId}
-              className="group flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus"
+              className="group flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-kumo-line bg-kumo-base/50 p-4 text-center transition-colors hover:border-pdf-accent hover:bg-kumo-base focus-within:border-kumo-focus sm:col-span-2"
             >
               <span className="mb-2 flex size-10 items-center justify-center rounded-full bg-kumo-recessed text-pdf-accent transition-transform group-hover:scale-110">
                 <CloudArrowUp size={24} weight="duotone" aria-hidden="true" />
@@ -283,13 +270,6 @@ export function HomeScreen({
               <span className="text-xs font-semibold text-kumo-strong">{t('home.drop.title')}</span>
               <span className="mt-1 text-[11px] text-kumo-subtle">{t('home.drop.desc')}</span>
             </label>
-            <StartCard
-              icon={<FolderOpen size={20} weight="duotone" />}
-              title={t('home.start.open.title')}
-              description={t('home.start.open.desc')}
-              onClick={onOpenPicker}
-              disabled={busy}
-            />
             <StartCard
               icon={<FilePlus size={20} weight="duotone" />}
               title={t('home.start.blank.title')}

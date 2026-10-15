@@ -404,7 +404,7 @@ export function App({ store }: AppProps) {
         commands={commands}
         runHomeCommand={runHomeCommand}
         dialogContext={dialogContext}
-        home={{ openFilesFromSurface, openViaPicker, openStart, selectRecent }}
+        home={{ openFilesFromSurface, openStart, selectRecent }}
         dock={{ runPageAction, openDialog, writeLayers, attachments: attachmentActions }}
         viewer={{
           openDialog,

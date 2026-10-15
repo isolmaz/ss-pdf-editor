@@ -59,10 +59,8 @@ function screenFor(overrides: Partial<ComponentProps<typeof HomeScreen>> = {}) {
     <HomeScreen
       t={t}
       onOpenFiles={vi.fn()}
-      onOpenPicker={vi.fn()}
       onSelectRecent={vi.fn()}
       onStart={vi.fn()}
-      onOpenPalette={vi.fn()}
       commands={[]}
       standaloneCommands={new Set()}
       onRunCommand={vi.fn()}
@@ -101,6 +99,17 @@ describe('HomeScreen file input', () => {
 
     fireEvent.change(input, { target: { files: null } });
     expect(onOpenFiles).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('HomeScreen entry points', () => {
+  it('opens a file through the drop zone alone: no second open card, no palette button of its own', () => {
+    const { container } = render(screenFor());
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    expect(input.labels?.[0]?.textContent).toContain(t('home.drop.title'));
+    expect(screen.queryByRole('button', { name: /open a pdf/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /command palette|ctrl+k/i })).toBeNull();
   });
 });
 

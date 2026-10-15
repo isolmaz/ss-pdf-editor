@@ -2,7 +2,6 @@ import type { Icon } from '@phosphor-icons/react';
 import {
   BookOpen,
   CaretDown,
-  Command,
   DownloadSimple,
   FileDoc,
   FilePdf,
@@ -10,6 +9,7 @@ import {
   FolderOpen,
   GearSix,
   House,
+  ListMagnifyingGlass,
   MagnifyingGlass,
   PenNib,
   SquaresFour,
@@ -319,7 +319,7 @@ export function ModernEditorHeader({
           title={`${t('palette.title')} (Ctrl+K)`}
           aria-label={t('palette.title')}
         >
-          <Command size={16} aria-hidden="true" />
+          <ListMagnifyingGlass size={16} aria-hidden="true" />
         </button>
         <Button
           size="sm"

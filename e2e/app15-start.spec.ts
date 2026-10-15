@@ -81,7 +81,7 @@ test('the Start tab comes back after All tools, and a file dialog closed with no
 
   await start.click();
   await expect(start).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('button', { name: /Open a PDF/ })).toBeVisible();
+  await expect(page.locator('label', { hasText: 'Open a PDF or drop it here' })).toBeVisible();
 
   // The input reports a change with an empty selection (the user cleared it): nothing opens.
   await page

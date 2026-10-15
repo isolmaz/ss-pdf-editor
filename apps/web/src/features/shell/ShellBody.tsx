@@ -27,8 +27,6 @@ import { openScanDialog, useResults } from '../results/results-store';
 import type { DocumentDockProps } from './DocumentDock';
 import { requestEditor, useEditorSurfaces } from './editor-store';
 import type { RightDockProps } from './RightDock';
-import type { ShellActions } from './shell-actions';
-import { openPalette } from './shell-store';
 import { useEditState } from './use-edit-state';
 import type { ViewerAreaProps } from './ViewerArea';
 
@@ -41,7 +39,6 @@ export interface ShellBodyProps {
   readonly dialogContext: RightDockProps['dialogContext'];
   readonly home: {
     readonly openFilesFromSurface: (files: readonly File[]) => Promise<void>;
-    readonly openViaPicker: ShellActions['openViaPicker'];
     readonly openStart: (id: string) => void;
     readonly selectRecent: (item: RecentDocumentItem) => void;
   };
@@ -73,7 +70,6 @@ export function ShellBody(props: ShellBodyProps) {
         <HomeScreen
           t={t}
           onOpenFiles={(files) => void props.home.openFilesFromSurface(files)}
-          onOpenPicker={() => void props.home.openViaPicker()}
           onStart={(action) => {
             if (action === 'batch') openBatchDialog();
             else if (action === 'scan') openScanDialog();
@@ -96,7 +92,6 @@ export function ShellBody(props: ShellBodyProps) {
           activeDocumentName={activeTab === null ? null : activeTab.name}
           openIds={openIds}
           onSelectRecent={props.home.selectRecent}
-          onOpenPalette={openPalette}
           busy={busy}
         />
       ) : (
