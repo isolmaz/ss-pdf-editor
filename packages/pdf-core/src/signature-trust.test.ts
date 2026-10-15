@@ -30,6 +30,7 @@ import {
   NO_TRUST,
   parseAsn1,
   type TrustCheck,
+  type TrustInput,
   validityOf,
   verifyDataSignature,
 } from './signature-trust';
@@ -515,6 +516,165 @@ describe('certificate path validation', () => {
     expect((await checkTrust({ signer: leaf.der, roots: [other.der], now: NOW })).verdict).not.toBe(
       'trusted',
     );
+  });
+});
+
+describe('a trust anchor without basicConstraints', () => {
+  /** A version 1 self-signed root: no extensions at all, as the oldest CAs still in use were issued. */
+  async function makeV1Root(subject: string): Promise<CertificateFixture> {
+    const keyPair = await generateKey({ kind: 'EC', curve: 'P-256' });
+    return await issueCertificate({ subject, keyPair, ...VALID, v1: true });
+  }
+
+  it('trusts a leaf signed by an imported v1 root', async () => {
+    const root = await makeV1Root('V1 Root');
+    // The fixture really is a v1 certificate that says nothing about being a CA.
+    expect(root.parsed.version).toBe(0);
+    expect(root.parsed.extensions).toBeUndefined();
+    const leaf = await makeLeaf('V1 Leaf', root);
+    expect(opensslSaysSigned(leaf, root)).toBe(true);
+    expect(opensslSaysSigned(root, root)).toBe(true);
+
+    const verdict = await checkTrust({ signer: leaf.der, roots: [root.der], now: NOW });
+    expect(verdict).toMatchObject({ verdict: 'trusted', reason: null });
+    expect(verdict.path).toEqual(['V1 Leaf', 'V1 Root']);
+  });
+
+  it('still refuses the same certificate in the middle of a path', async () => {
+    const root = await makeCa('Anchored Root');
+    const middleKeyPair = await generateKey({ kind: 'EC', curve: 'P-256' });
+    const middle = await issueCertificate(
+      { subject: 'V1 Middle', keyPair: middleKeyPair, ...VALID, v1: true },
+      root,
+    );
+    const leaf = await makeLeaf('Leaf Under V1 Middle', middle);
+
+    // An intermediate has to say it is a CA, extensions or not.
+    expect(
+      await checkTrust({ signer: leaf.der, chain: [middle.der], roots: [root.der], now: NOW }),
+    ).toMatchObject({ verdict: 'untrusted', reason: 'not-a-ca' });
+    // Imported by the user it is the anchor, and the import is the statement that it may issue.
+    expect(await checkTrust({ signer: leaf.der, roots: [middle.der], now: NOW })).toMatchObject({
+      verdict: 'trusted',
+      reason: null,
+    });
+  });
+});
+
+describe('the path search is bounded', () => {
+  const HOSTILE = 'Hostile CA';
+  const LONG_AGO = { notBefore: new Date(Date.UTC(2020, 0, 1)), notAfter: new Date(Date.UTC(2021, 0, 1)) };
+
+  interface HostileOptions {
+    /** One key for every certificate made, instead of a key each. */
+    readonly keyPair?: CryptoKeyPair;
+    readonly expired?: boolean;
+  }
+
+  /** A self-signed CA named `HOSTILE`: every certificate made here names every other as its issuer. */
+  async function hostileCa(options: HostileOptions = {}): Promise<CertificateFixture> {
+    return await issueCertificate({
+      subject: HOSTILE,
+      keyPair: options.keyPair ?? (await generateKey({ kind: 'EC', curve: 'P-256' })),
+      ...(options.expired === true ? LONG_AGO : VALID),
+      basicConstraints: { cA: true },
+      keyUsage: ['keyCertSign'],
+    });
+  }
+
+  /** `count` same-named CAs and a leaf signed by the first, so the leaf's issuer name matches them all. */
+  async function hostilePool(
+    count: number,
+    options: HostileOptions = {},
+  ): Promise<{ readonly decoys: CertificateFixture[]; readonly leaf: CertificateFixture }> {
+    const decoys: CertificateFixture[] = [];
+    for (let index = 0; index < count; index += 1) decoys.push(await hostileCa(options));
+    const leaf = await makeLeaf('Hostile Leaf', decoys[0] as CertificateFixture);
+    return { decoys, leaf };
+  }
+
+  function inputFor(
+    leaf: CertificateFixture,
+    decoys: readonly CertificateFixture[],
+    root: CertificateFixture,
+  ): TrustInput {
+    return { signer: leaf.der, chain: decoys.map((decoy) => decoy.der), roots: [root.der], now: NOW };
+  }
+
+  it('answers indeterminate within two seconds for 32 same-named certificates over a reachable root', async () => {
+    // 32 · 31 · … · 25 ≈ 4·10¹¹ simple paths of the depth the walk allows, every one of
+    // them ending at the imported root, which shares their name. Each decoy is signed by
+    // its own key, so almost every path dies at its first mismatching link.
+    // Without the budget this never returns; the runner's own test timeout is what fails it.
+    const root = await hostileCa();
+    const { decoys, leaf } = await hostilePool(32);
+    const verify = vi.spyOn(crypto.subtle, 'verify');
+    try {
+      const started = performance.now();
+      const verdict = await checkTrust(inputFor(leaf, decoys, root));
+      expect(performance.now() - started).toBeLessThan(2000);
+      expect(verdict).toMatchObject({
+        verdict: 'indeterminate',
+        reason: 'search-limit',
+        path: ['Hostile Leaf'],
+      });
+      expect(verify.mock.calls.length).toBeLessThanOrEqual(128);
+    } finally {
+      verify.mockRestore();
+    }
+  });
+
+  it('stops after 128 signature verifications when every pair really verifies', async () => {
+    // One key behind all 32 decoys: every (child, issuer) pair is a distinct, valid check,
+    // so the pairs — not the steps — are what the search runs out of. The imported root has
+    // a key of its own and signs none of them.
+    const shared = await generateKey({ kind: 'EC', curve: 'P-256' });
+    const root = await hostileCa();
+    const { decoys, leaf } = await hostilePool(32, { keyPair: shared });
+    const verify = vi.spyOn(crypto.subtle, 'verify');
+    try {
+      const verdict = await checkTrust(inputFor(leaf, decoys, root));
+      expect(verdict).toMatchObject({ verdict: 'indeterminate', reason: 'search-limit' });
+      expect(verify).toHaveBeenCalledTimes(128);
+    } finally {
+      verify.mockRestore();
+    }
+  });
+
+  it('knows without searching that same-named certificates lead to no imported root', async () => {
+    // Nine, not 32: before the fix this walk is pure microtasks with no root in sight, so
+    // 32 would freeze the runner for good. Nine is ~6·10⁵ paths — slow enough to fail the
+    // limit below, finite enough to fail rather than hang.
+    const unrelated = await makeCa('Unrelated Root');
+    const { decoys, leaf } = await hostilePool(9);
+    const verify = vi.spyOn(crypto.subtle, 'verify');
+    try {
+      const started = performance.now();
+      const verdict = await checkTrust(inputFor(leaf, decoys, unrelated));
+      expect(performance.now() - started).toBeLessThan(2000);
+      expect(verdict).toMatchObject({ verdict: 'untrusted', reason: 'no-issuer' });
+      expect(verify).not.toHaveBeenCalled();
+    } finally {
+      verify.mockRestore();
+    }
+  });
+
+  it('yields to the event loop every 64 steps of a long search', async () => {
+    // Every decoy is expired, so each path that reaches the root fails on validity before
+    // any WebCrypto call: nothing in this search awaits anything real except the walk's own
+    // yield. Fake timers make each yield countable: the 2048 steps of the budget yield 32 times.
+    const root = await hostileCa();
+    const { decoys, leaf } = await hostilePool(7, { expired: true });
+    vi.useFakeTimers();
+    try {
+      const timeouts = vi.spyOn(globalThis, 'setTimeout');
+      const pending = checkTrust(inputFor(leaf, decoys, root));
+      await vi.runAllTimersAsync();
+      expect(await pending).toMatchObject({ verdict: 'indeterminate', reason: 'search-limit' });
+      expect(timeouts.mock.calls.filter(([, delay]) => delay === 0)).toHaveLength(32);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -44,7 +44,13 @@ import {
   scopeExtension,
 } from './signature-revocation.fixtures';
 import type { CertificateFixture } from './signature-trust.fixtures';
-import { generateKey, issueCertificate, unknownCriticalExtension } from './signature-trust.fixtures';
+import {
+  authorityKeyIdentifierExtension,
+  generateKey,
+  issueCertificate,
+  subjectKeyIdentifierExtension,
+  unknownCriticalExtension,
+} from './signature-trust.fixtures';
 
 const day = (month: number, date: number): Date => new Date(Date.UTC(2026, month - 1, date));
 const VALID = { notBefore: day(1, 1), notAfter: new Date(Date.UTC(2027, 0, 1)) };
@@ -1102,6 +1108,84 @@ describe('the certificate chain behind a check', () => {
     const leaf = await makeLeaf('Signer', ca);
     const crl = await issueCrl({ issuer: ca, ...CRL_DATES });
     expect((await check(leaf, [impostor, ca], [crl]))[0]).toMatchObject({ status: 'good' });
+  });
+
+  it('verifies at most eight same-named candidates per step, and an unproven issuer is unknown, never clean', async () => {
+    const ca = await makeCa('CA');
+    const leaf = await makeLeaf('Signer', ca);
+    const crl = await issueCrl({ issuer: ca, ...CRL_DATES });
+    const decoys: CertificateFixture[] = [];
+    for (let index = 0; index < 40; index += 1) decoys.push(await makeCa('CA'));
+    const verify = vi.spyOn(crypto.subtle, 'verify');
+    try {
+      // The real issuer comes last and nothing marks it out, so the cap stops short of it:
+      // eight failed verifications, not forty-one, and the answer is "no issuer", which a
+      // reader cannot mistake for "not revoked".
+      const checks = await check(leaf, [...decoys, ca], [crl]);
+      expect(checks).toHaveLength(1);
+      expect(checks[0]).toMatchObject({ status: 'unknown', unknownReason: 'no-issuer' });
+      expect(verify).toHaveBeenCalledTimes(8);
+    } finally {
+      verify.mockRestore();
+    }
+  });
+
+  it('tries the candidate whose key identifier matches first, however many same-named certificates precede it', async () => {
+    const keyId = Uint8Array.from({ length: 20 }, (_unused, index) => index + 1);
+    const ca = await issueCertificate({
+      subject: 'CA',
+      keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+      ...VALID,
+      basicConstraints: { cA: true },
+      keyUsage: ['keyCertSign', 'cRLSign'],
+      extraExtensions: [subjectKeyIdentifierExtension(keyId)],
+    });
+    const leaf = await issueCertificate(
+      {
+        subject: 'Signer',
+        keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+        ...VALID,
+        basicConstraints: { cA: false },
+        keyUsage: ['digitalSignature'],
+        extraExtensions: [authorityKeyIdentifierExtension(keyId)],
+      },
+      ca,
+    );
+    const crl = await issueCrl({ issuer: ca, ...CRL_DATES });
+    const decoys: CertificateFixture[] = [];
+    for (let index = 0; index < 40; index += 1) decoys.push(await makeCa('CA'));
+
+    const verify = vi.spyOn(crypto.subtle, 'verify');
+    try {
+      const alone = await check(leaf, [ca], [crl]);
+      const aloneCalls = verify.mock.calls.length;
+      verify.mockClear();
+      const flooded = await check(leaf, [...decoys, ca], [crl]);
+
+      expect(alone[0]).toMatchObject({ status: 'good' });
+      expect(flooded).toEqual(alone);
+      // The forty decoys cost nothing: the same verifications as with the real CA alone.
+      expect(aloneCalls).toBeGreaterThan(0);
+      expect(verify.mock.calls.length).toBe(aloneCalls);
+    } finally {
+      verify.mockRestore();
+    }
+  });
+
+  it('ends the chain where two CAs certify each other instead of listing them again', async () => {
+    const keyA = await generateKey({ kind: 'EC', curve: 'P-256' });
+    const keyB = await generateKey({ kind: 'EC', curve: 'P-256' });
+    const asCa = { ...VALID, basicConstraints: { cA: true }, keyUsage: ['keyCertSign', 'cRLSign'] } as const;
+    // A is signed by B's key under B's name, B by A's key under A's name; the first B only
+    // lends A its name and key, and stays out of the pool.
+    const lender = await issueCertificate({ subject: 'B', keyPair: keyB, ...asCa });
+    const a = await issueCertificate({ subject: 'A', keyPair: keyA, ...asCa }, lender);
+    const b = await issueCertificate({ subject: 'B', keyPair: keyB, ...asCa }, a);
+    const leaf = await makeLeaf('Signer', a);
+
+    const checks = await check(leaf, [a, b], []);
+    // Before the fix the loop was walked to the depth limit: Signer, A, B, A, B, A, B, A.
+    expect(checks.map((entry) => entry.subject)).toEqual(['Signer', 'A', 'B']);
   });
 
   it('yields nothing for a leaf that is not a certificate, skips pool entries that are not, and needs WebCrypto', async () => {

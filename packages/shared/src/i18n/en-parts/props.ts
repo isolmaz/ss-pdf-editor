@@ -61,6 +61,8 @@ export const propsPart = {
   'props.sig.trustReason.pathLength': "An issuer's pathLenConstraint is exceeded.",
   'props.sig.trustReason.nameConstraint':
     'A subordinate certificate has names outside the permitted subtrees, or inside an excluded one.',
+  'props.sig.trustReason.searchLimit':
+    'The certificates in this file offer too many possible chains to try them all; the search stopped at its limit, so no chain was confirmed or ruled out.',
   'props.sig.revocation.indeterminate': 'Indeterminate',
   'props.sig.revocation.note':
     'Revocation is read only from lists already on this device: the CRLs you import below and the CRLs and OCSP responses stored in the PDF. Nothing is fetched from the network; with no list for an issuer, the result is "indeterminate".',

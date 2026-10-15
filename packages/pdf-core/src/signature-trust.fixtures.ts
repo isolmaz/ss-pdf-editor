@@ -106,6 +106,11 @@ export interface IssueOptions {
     | { readonly name: 'unsupported' }
     /** An ECDSA OID over bytes that are not a DER signature at all. */
     | { readonly name: 'malformed' };
+  /**
+   * Write a version 1 certificate: no `[0] version` field, and so no extensions (a v1
+   * certificate cannot carry any; pass none). The default is version 3.
+   */
+  readonly v1?: boolean;
   /** The SubjectPublicKeyInfo DER written into the certificate instead of the key pair's own. */
   readonly spki?: Uint8Array;
   readonly notBefore?: Date;
@@ -407,7 +412,8 @@ export async function issueCertificate(
   const spki =
     options.spki ?? new Uint8Array(await crypto.subtle.exportKey('spki', options.keyPair.publicKey));
   const certificate = new Certificate();
-  certificate.version = 2;
+  // pkijs leaves the `[0] version` field out of the TBS when it equals the default, 0 (v1).
+  certificate.version = options.v1 === true ? 0 : 2;
   certificate.serialNumber = new Integer({
     valueHex: (options.serial ?? nextSerial()).slice().buffer as ArrayBuffer,
   });

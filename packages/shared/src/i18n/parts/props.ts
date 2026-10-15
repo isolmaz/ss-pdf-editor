@@ -71,6 +71,8 @@ export const propsPart = {
   'props.sig.trustReason.pathLength': 'Üst sertifikanın pathLenConstraint sınırı aşılıyor.',
   'props.sig.trustReason.nameConstraint':
     'Alt sertifikanın adları izin verilen alt ağacın dışında ya da dışlanan alt ağacın içinde.',
+  'props.sig.trustReason.searchLimit':
+    'Bu dosyadaki sertifikalar hepsini denemeye yetmeyecek kadar çok olası zincir sunuyor; arama sınırında durdu, bu yüzden hiçbir zincir doğrulanmadı ya da elenmedi.',
   'props.sig.revocation.indeterminate': 'Belirlenemedi',
   'props.sig.revocation.note':
     'İptal kanıtı yalnızca bu cihazda zaten bulunan listelerden okunur: aşağıda içe aktardığınız CRL’ler ile PDF içine gömülü CRL ve OCSP yanıtları. Hiçbir şey ağdan çekilmez; bir yayımcı için liste yoksa sonuç "belirlenemedi" olur.',

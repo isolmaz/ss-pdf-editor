@@ -57,6 +57,7 @@ import {
   OCSPResponse,
 } from 'pkijs';
 import {
+  candidatesFor,
   certificateName,
   parseAsn1,
   parsedValueOf,
@@ -113,6 +114,16 @@ const KNOWN_CRL_EXTENSIONS: ReadonlySet<string> = new Set([
 
 const KEY_USAGE_CRL_SIGN = 6;
 const MAX_CHAIN = 8;
+/**
+ * The most same-named certificates tried as the issuer of one chain step. Each try is a
+ * WebCrypto import and verify, and the pool is whatever the PDF carries (the CMS's, the
+ * `/DSS`'s, hundreds of certificates) — a pool of `n` certificates that all name the same
+ * issuer would cost `n` verifications at every one of {@link MAX_CHAIN} steps. A real chain has
+ * a handful of same-named alternatives (a key roll-over, a cross-signed root); a pool offering
+ * more is hostile, and the answer it gets is `unknown` (no issuer was proven), never a clean
+ * one.
+ */
+const MAX_ISSUER_CANDIDATES = 8;
 
 const HASHES: Readonly<Record<string, string>> = {
   '1.3.14.3.2.26': 'SHA-1',
@@ -578,6 +589,26 @@ async function issuedBy(subtle: SubtleCrypto, child: Certificate, parent: Certif
   return outcome === 'ok';
 }
 
+/**
+ * The certificates worth a signature check as the issuer of `child`: `child` itself (a
+ * self-signed certificate answers by its own key) and the pool's name matches, the key-id
+ * matches first, each distinct certificate once, at most {@link MAX_ISSUER_CANDIDATES} in all.
+ * The same certificate usually sits in the pool several times (the CMS, the `/DSS` and the
+ * user's roots all carry the chain), and two certificates with the same `tbsCertificate` have
+ * the same key, so the second copy cannot answer differently from the first.
+ */
+function issuerCandidates(child: Certificate, pool: readonly Certificate[]): Certificate[] {
+  const out: Certificate[] = [];
+  for (const candidate of candidatesFor(child, [child, ...pool])) {
+    if (out.some((kept) => sameBytes(new Uint8Array(kept.tbsView), new Uint8Array(candidate.tbsView)))) {
+      continue;
+    }
+    out.push(candidate);
+    if (out.length === MAX_ISSUER_CANDIDATES) break;
+  }
+  return out;
+}
+
 /** From the leaf up: each certificate's issuer, found by its signature and not its name. */
 async function buildChain(
   subtle: SubtleCrypto,
@@ -585,11 +616,12 @@ async function buildChain(
   pool: readonly Certificate[],
 ): Promise<Link[]> {
   const links: Link[] = [];
+  const onPath: Certificate[] = [];
   let current = leaf;
   for (let depth = 0; depth < MAX_CHAIN; depth += 1) {
+    onPath.push(current);
     let found: Certificate | null = null;
-    for (const candidate of [current, ...pool]) {
-      if (!current.issuer.isEqual(candidate.subject)) continue;
+    for (const candidate of issuerCandidates(current, pool)) {
       if (await issuedBy(subtle, current, candidate)) {
         found = candidate;
         break;
@@ -599,6 +631,11 @@ async function buildChain(
       found !== null && sameBytes(new Uint8Array(found.tbsView), new Uint8Array(current.tbsView));
     links.push({ certificate: current, issuer: found, selfSigned });
     if (found === null || selfSigned) break;
+    // An issuer already on the path closes a loop (two CAs that certify each other). It is
+    // proven and recorded as this link's issuer; walking on would only list the same
+    // certificates again, each with a verification, until the depth limit.
+    const issuerBytes = new Uint8Array(found.tbsView);
+    if (onPath.some((seen) => sameBytes(new Uint8Array(seen.tbsView), issuerBytes))) break;
     current = found;
   }
   return links;
@@ -808,7 +845,9 @@ function decidedCheck(
  *
  * The pool is every certificate known for the signature (the CMS's own, the `/DSS`'s and the
  * ones the user imported as roots); the chain is rebuilt from signatures, so a certificate in
- * the pool that does not actually sign the one below it is simply not used. A self-signed
+ * the pool that does not actually sign the one below it is simply not used. Each step tries a
+ * bounded number of same-named candidates (key-id match first, each distinct certificate once)
+ * and the chain ends where it would loop back on itself. A self-signed
  * certificate at the top is not checked (nothing above it publishes a list for it) unless it
  * is the leaf itself, where an absent list is an honest `unknown`.
  */

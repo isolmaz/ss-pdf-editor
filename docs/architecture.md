@@ -1218,8 +1218,14 @@ certificate), and `validationTime` with its `validationTimeSource`.
 **Trust (`signature-trust.ts`).** Path building follows the RFC 5280 §6.1 shape: candidate
 issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates, each link's
 signature verified over the child's `tbsCertificate`, validity windows checked against the
-supplied clock, and `basicConstraints` cA / `keyUsage.keyCertSign` / `pathLenConstraint` /
-`nameConstraints` enforced. **Policy processing (RFC 5280 §6.1.5) is deliberately not
+supplied clock, and `basicConstraints` cA (on every issuer but the trust anchor — the user's
+import is the statement that it may issue, and a v1 self-signed root has no extensions) /
+`keyUsage.keyCertSign` / `pathLenConstraint` / `nameConstraints` enforced. Depth and candidate
+counts bound one path, not the number of paths, so the search is also bounded in work: a
+certificate from which no imported root is reachable is never entered, each (certificate,
+issuer) signature is verified once, and after 2048 expansions or 128 distinct signature
+verifications the answer is `indeterminate` with reason `search-limit`; the search yields to
+the event loop every 64 expansions. **Policy processing (RFC 5280 §6.1.5) is deliberately not
 implemented**, and a critical extension outside the applied set forces `indeterminate`
 rather than being ignored. A certificate or extension whose DER cannot be read, and name constraints that cannot be read or evaluated,
 give `indeterminate` (`malformed` / `unsupported-critical-extension`), never a pass. The verdict carries
@@ -1240,7 +1246,11 @@ bounded to 256 entries / 16 MiB). The signer certificate and every certificate a
 but not including a self-signed root, are checked.
 
 - **Who may speak for whom.** The chain is rebuilt from *signatures* (each certificate's issuer
-  is the pool member whose key verifies it), and a list is accepted for a certificate only when
+  is the pool member whose key verifies it; each step tries at most eight same-named
+  candidates, the key-identifier match first and each distinct certificate once, and the chain
+  ends where it would loop back on itself, so a pool of hundreds of same-named certificates costs
+  a bounded number of verifications and an issuer it crowds out is `no-issuer`, never clean), and
+  a list is accepted for a certificate only when
   it is signed by that verified issuer: the CRL's issuer name must match, its signature must
   verify, the issuer's `keyUsage` must allow `cRLSign` when present and the issuer must be valid
   at `thisUpdate`. An OCSP response must be signed by the issuer or by a delegate the issuer

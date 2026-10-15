@@ -32,12 +32,19 @@
  * - `'no-issuer'` — no certificate in the pool names itself the issuer.
  * - `'signature-mismatch'` — a candidate issuer's key does not verify its subject.
  * - `'validity'` — a certificate in the path is expired or not yet valid at the check date.
- * - `'not-a-ca'` — an issuer has no `basicConstraints` with `cA` set.
+ * - `'not-a-ca'` — an intermediate issuer has no `basicConstraints` with `cA` set. A trust
+ *   anchor is exempt: the user's import is the statement that it may issue, and a v1
+ *   self-signed root has no extensions at all.
  * - `'key-usage'` — an issuer's `keyUsage` is present and does not assert `keyCertSign`.
  * - `'path-length'` — an issuer's `pathLenConstraint` is exceeded.
  * - `'name-constraint'` — a subordinate certificate's names fall outside the permitted
  *   subtrees, or inside an excluded one.
  * - `'no-roots'` — the user has imported nothing, so there is nothing to check against.
+ * - `'search-limit'` — the search for a path spent its work budget ({@link MAX_WALK_STEPS}
+ *   expansions or {@link MAX_SIGNATURE_CHECKS} signature verifications) before it found a
+ *   path or ran out of candidates. Always `'indeterminate'`: a pool of certificates that all
+ *   name each other as issuer has factorially many paths, and an unfinished search proves
+ *   neither that a chain exists nor that none does.
  */
 
 import type { FromBerResult } from 'asn1js';
@@ -65,6 +72,29 @@ import {
 const MAX_DEPTH = 8;
 /** The import of one SPKI per check is the only allocation worth bounding. */
 const MAX_CANDIDATES = 32;
+/**
+ * The most certificates the path search may expand in one check. Depth and candidate counts
+ * bound a single path, not the *number* of paths: `n` certificates that all name each other
+ * as issuer have `n!/(n-k)!` simple paths of length `k`, which for the 32 a pool may hold is
+ * about 4·10¹¹ at depth 8. A real chain, even with a few cross-signed alternatives, needs a
+ * few dozen expansions; this is two orders of magnitude above that.
+ */
+const MAX_WALK_STEPS = 2048;
+/**
+ * The most certificate-signature verifications one check may start. Each is a WebCrypto
+ * import and verify, the one expensive operation of the search; a pair is verified once and
+ * remembered, so this counts *distinct* (certificate, issuer) pairs. Go's `crypto/x509` bounds
+ * the same cost at 100 per chain build for the same reason.
+ */
+const MAX_SIGNATURE_CHECKS = 128;
+/**
+ * Expansions between two real yields to the event loop. Awaiting an already-settled promise
+ * only queues a microtask: a search of thousands of steps whose paths fail before any
+ * WebCrypto call would otherwise run to its budget without letting rendering or input
+ * through. A yield every 64 steps costs one timer turn per ~64 cheap steps and never more
+ * than `MAX_WALK_STEPS / 64` of them.
+ */
+const YIELD_EVERY = 64;
 
 /** The signature algorithms a certificate may be signed with, named by their OID. */
 const CERTIFICATE_SIGNATURE_HASH: Record<string, string> = {
@@ -135,7 +165,8 @@ export type TrustReason =
   | 'not-a-ca'
   | 'key-usage'
   | 'path-length'
-  | 'name-constraint';
+  | 'name-constraint'
+  | 'search-limit';
 
 export interface TrustCheck {
   readonly verdict: TrustVerdict;
@@ -365,19 +396,41 @@ export async function verifyDataSignature(
   }
 }
 
-/** Whether `child`'s `tbsCertificate` verifies with `parent`'s public key. */
+/**
+ * Whether `child`'s `tbsCertificate` verifies with `parent`'s public key, or `'budget'` when
+ * the search has no verification left to spend on a pair it has not seen.
+ *
+ * The answer is a pure function of the two certificates, so it is remembered for the whole
+ * search: the same pair turns up on every path through it, and only the first time costs a
+ * WebCrypto call (and a unit of {@link MAX_SIGNATURE_CHECKS}).
+ */
 async function signedBy(
   subtle: SubtleCrypto,
   child: Certificate,
   parent: Certificate,
-): Promise<SignatureOutcome> {
-  return verifyDataSignature(
+  state: WalkState,
+): Promise<SignatureOutcome | 'budget'> {
+  let byParent = state.signatures.get(child);
+  if (byParent === undefined) {
+    byParent = new Map();
+    state.signatures.set(child, byParent);
+  }
+  const known = byParent.get(parent);
+  if (known !== undefined) return known;
+  if (state.signatureChecks >= MAX_SIGNATURE_CHECKS) {
+    state.exhausted = true;
+    return 'budget';
+  }
+  state.signatureChecks += 1;
+  const outcome = await verifyDataSignature(
     subtle,
     parent,
     child.signatureAlgorithm.algorithmId,
     new Uint8Array(child.signatureValue.valueBlock.valueHexView),
     new Uint8Array(child.tbsView),
   );
+  byParent.set(parent, outcome);
+  return outcome;
 }
 
 export function validityOf(certificate: Certificate, now: Date): CertificateValidity {
@@ -389,7 +442,7 @@ export function validityOf(certificate: Certificate, now: Date): CertificateVali
   return 'valid';
 }
 
-/** `basicConstraints` as this validator reads it; `null` when the extension is absent. */
+/** `basicConstraints` as this validator reads it; `null` when the extension is absent or cannot be read. */
 function basicConstraintsOf(certificate: Certificate): BasicConstraints | null {
   const extension = certificate.extensions?.find((entry) => entry.extnID === OID_BASIC_CONSTRAINTS);
   const parsed = parsedValueOf(extension);
@@ -651,9 +704,10 @@ async function validatePath(
   subtle: SubtleCrypto,
   path: readonly Certificate[],
   now: Date,
-  leafApplied: readonly string[],
+  state: WalkState,
 ): Promise<PathOutcome> {
   const last = path.length - 1;
+  const leafApplied = state.leafApplied;
 
   for (const [index, certificate] of path.entries()) {
     if (
@@ -676,7 +730,8 @@ async function validatePath(
 
   for (let index = 0; index < last; index += 1) {
     // `index < last`: both ends of the pair are on the path.
-    const outcome = await signedBy(subtle, path[index] as Certificate, path[index + 1] as Certificate);
+    const outcome = await signedBy(subtle, path[index] as Certificate, path[index + 1] as Certificate, state);
+    if (outcome === 'budget') return { ok: false, reason: 'search-limit', indeterminate: true };
     if (outcome === 'unsupported' || outcome === 'malformed') {
       return {
         ok: false,
@@ -692,10 +747,21 @@ async function validatePath(
     const usage = keyCertSignOf(issuer);
     if (usage === false) return { ok: false, reason: 'key-usage', indeterminate: false };
     const constraints = basicConstraintsOf(issuer);
-    if (constraints === null || (index !== last && !constraints.cA)) {
+    if (index !== last) {
+      // An intermediate has to say it is a CA.
+      if (constraints === null || !constraints.cA) {
+        return { ok: false, reason: 'not-a-ca', indeterminate: false };
+      }
+    } else if (
+      constraints === null &&
+      issuer.extensions?.some((entry) => entry.extnID === OID_BASIC_CONSTRAINTS) === true
+    ) {
+      // The anchor need not say anything: it is the user's own input, and a v1 certificate (a
+      // self-signed root, typically) cannot carry extensions at all. What it does say must be
+      // readable — an extension that cannot be decoded is not an absent one.
       return { ok: false, reason: 'not-a-ca', indeterminate: false };
     }
-    const limit = pathLengthOf(constraints);
+    const limit = constraints === null ? null : pathLengthOf(constraints);
     // §4.2.1.9 / §6.1.4(l): `pathLenConstraint` bounds the *intermediate* certificates
     // that follow toward the end entity — the ones between this issuer and the subject,
     // the end entity itself excluded. In this array, “below” is a lower index.
@@ -721,8 +787,11 @@ async function validatePath(
   return { ok: true };
 }
 
-/** The certificates that could have issued `child`, best key-identifier match first. */
-function candidatesFor(child: Certificate, pool: readonly Certificate[]): Certificate[] {
+/**
+ * The certificates in `pool` whose subject is `child`'s issuer, best key-identifier match
+ * first. A name match is only a candidate: every caller proves the issuer by its signature.
+ */
+export function candidatesFor(child: Certificate, pool: readonly Certificate[]): Certificate[] {
   const authorityKeyId = keyIdentifierOf(child, OID_AUTHORITY_KEY_IDENTIFIER);
   const named = pool.filter((candidate) => child.issuer.isEqual(candidate.subject));
   if (authorityKeyId === null) return named;
@@ -756,29 +825,113 @@ export interface TrustInput {
   readonly leafCriticalExtensions?: readonly string[];
 }
 
-/** One walk over the candidate issuers, collecting the best failure seen on the way. */
+/**
+ * One search over the candidate issuers: the graph it walks, what it has learned, and what
+ * it has spent.
+ */
 interface WalkState {
   /** A path ended at a trust anchor and every check ran: the answer is above argument. */
   reachableFailure: { reason: TrustReason; indeterminate: boolean } | null;
   /** See {@link TrustInput.leafCriticalExtensions}. */
   readonly leafApplied: readonly string[];
+  /** The candidate issuers of every certificate, in the order the walk tries them. */
+  readonly issuers: ReadonlyMap<Certificate, readonly Certificate[]>;
+  /** The certificates that *are* a user-imported root; a path ends at the first one it meets. */
+  readonly anchors: ReadonlySet<Certificate>;
+  /** Fewest issuer links from a certificate to an anchor; absent when no anchor is reachable. */
+  readonly distance: ReadonlyMap<Certificate, number>;
+  /** Every signature check made so far, so a pair is verified once however many paths use it. */
+  readonly signatures: Map<Certificate, Map<Certificate, SignatureOutcome>>;
+  /** Expansions made, against {@link MAX_WALK_STEPS}. */
+  steps: number;
+  /** Signature verifications started, against {@link MAX_SIGNATURE_CHECKS}. */
+  signatureChecks: number;
+  /** A budget ran out: the search stopped early and its silence proves nothing. */
+  exhausted: boolean;
 }
 
-/** Depth-first over the candidate paths, bounded by `MAX_DEPTH` and a visited set. */
+/**
+ * Fewest issuer links from each certificate to an anchor, by a breadth-first search backwards
+ * from the anchors; a certificate no anchor can be reached from has no entry.
+ *
+ * This is the memo of the states the search can already know are dead ends: a
+ * (certificate, remaining depth) pair whose remaining depth is below this distance cannot
+ * reach an anchor along *any* path, whatever came before it, so the depth-first walk never
+ * enters it. It is deliberately a statement about the issuer graph alone. Remembering that a
+ * depth-first descent from a certificate *failed* would be unsound, because whether a path
+ * validates depends on the certificates below it — a name constraint on the anchor, say,
+ * admits one prefix and refuses another — so a failure under one prefix is no evidence about
+ * another. Unreachability has no such dependence, and it is exactly what makes the search
+ * factorial when the pool is a clique of same-named certificates and none of them leads to a
+ * root the user imported.
+ */
+function distancesToAnchor(
+  nodes: readonly Certificate[],
+  issuers: ReadonlyMap<Certificate, readonly Certificate[]>,
+  anchors: ReadonlySet<Certificate>,
+): Map<Certificate, number> {
+  // The walk stops at an anchor, so an anchor has no outgoing issuer link to count.
+  const children = new Map<Certificate, Certificate[]>();
+  for (const node of nodes) {
+    if (anchors.has(node)) continue;
+    for (const issuer of issuers.get(node) as readonly Certificate[]) {
+      const list = children.get(issuer);
+      if (list === undefined) children.set(issuer, [node]);
+      else list.push(node);
+    }
+  }
+  const distance = new Map<Certificate, number>();
+  const queue: Certificate[] = [];
+  for (const node of nodes) {
+    if (!anchors.has(node)) continue;
+    distance.set(node, 0);
+    queue.push(node);
+  }
+  for (const issuer of queue) {
+    const next = (distance.get(issuer) as number) + 1; // every queued certificate has a distance
+    for (const child of children.get(issuer) ?? []) {
+      if (distance.has(child)) continue;
+      distance.set(child, next);
+      queue.push(child);
+    }
+  }
+  return distance;
+}
+
+/**
+ * Depth-first over the candidate paths, bounded by `MAX_DEPTH`, by the anchor-distance memo,
+ * and by the step and signature budgets in `state`. A certificate already on `path` is never
+ * a candidate again: a path with a repeated certificate contains a loop, and the path with
+ * the loop cut out is shorter and strictly easier to validate.
+ */
 async function walk(
   subtle: SubtleCrypto,
-  anchorSet: readonly Certificate[],
   current: Certificate,
-  pool: readonly Certificate[],
   now: Date,
   path: Certificate[],
-  seen: ReadonlySet<Certificate>,
   state: WalkState,
 ): Promise<readonly Certificate[] | null> {
-  const anchored = anchorSet.some((anchor) => sameBytes(anchor.tbsView, current.tbsView));
-  if (anchored) {
-    const outcome = await validatePath(subtle, path, now, state.leafApplied);
+  // No `exhausted` check here: a budget is only spent inside this function or `validatePath`,
+  // and both callers below return as soon as they see the flag, so it is never set on entry.
+  state.steps += 1;
+  if (state.steps > MAX_WALK_STEPS) {
+    state.exhausted = true;
+    return null;
+  }
+  if (state.steps % YIELD_EVERY === 0) {
+    // A timer is a task; a settled promise is only a microtask, which runs before rendering
+    // and input. The executor form is what typechecks: the repository's `lib` is ES2023 and
+    // `Promise.withResolvers` is ES2024 (`search.ts` yields the same way).
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  }
+
+  if (state.anchors.has(current)) {
+    const outcome = await validatePath(subtle, path, now, state);
     if (outcome.ok) return path;
+    // The budget ended this path's check, not the path: nothing was decided about it.
+    if (state.exhausted) return null;
     // A definite failure on a path that *did* reach an anchor outranks an indeterminate
     // one: “this chain is broken” is a stronger statement than “this chain could not be
     // finished”, and the reason the user sees should be the strongest one available.
@@ -788,14 +941,20 @@ async function walk(
     }
     return null;
   }
-  if (path.length > MAX_DEPTH) return null;
 
-  for (const candidate of candidatesFor(current, pool)) {
-    if (seen.has(candidate)) continue;
-    const nextSeen = new Set(seen);
-    nextSeen.add(candidate);
-    const found = await walk(subtle, anchorSet, candidate, pool, now, [...path, candidate], nextSeen, state);
+  // The depth limit is enforced below, by the anchor distance: a candidate is entered only when
+  // `path.length + distance <= MAX_DEPTH`, and a certificate that is not an anchor is at
+  // distance 1 or more, so `path.length` never exceeds `MAX_DEPTH` here.
+  // Every certificate the walk reaches is a node of the graph, so it has an entry.
+  for (const candidate of state.issuers.get(current) as readonly Certificate[]) {
+    if (path.includes(candidate)) continue;
+    // `candidate` would sit at position `path.length + 1`, and an anchor `distance` links
+    // above it at `path.length + 1 + distance`; an anchor is accepted up to `MAX_DEPTH + 1`.
+    const distance = state.distance.get(candidate);
+    if (distance === undefined || path.length + distance > MAX_DEPTH) continue;
+    const found = await walk(subtle, candidate, now, [...path, candidate], state);
     if (found !== null) return found;
+    if (state.exhausted) return null;
   }
   return null;
 }
@@ -857,11 +1016,25 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
     return { verdict: 'not-checked', path: [name], validity, notBefore, notAfter, reason: 'no-roots' };
   }
 
+  // The issuer graph is built once: candidate lookup (a name comparison and two key-id
+  // parses per pair) is the same on every path, so the walk reads it instead of redoing it.
+  const nodes = [signer, ...pool];
+  const issuers = new Map(nodes.map((node) => [node, candidatesFor(node, pool)] as const));
+  const anchors = new Set(
+    nodes.filter((node) => roots.some((root) => sameBytes(root.tbsView, node.tbsView))),
+  );
   const state: WalkState = {
     reachableFailure: null,
     leafApplied: input.leafCriticalExtensions ?? [],
+    issuers,
+    anchors,
+    distance: distancesToAnchor(nodes, issuers, anchors),
+    signatures: new Map(),
+    steps: 0,
+    signatureChecks: 0,
+    exhausted: false,
   };
-  const found = await walk(subtle, roots, signer, pool, now, [signer], new Set([signer]), state);
+  const found = await walk(subtle, signer, now, [signer], state);
   if (found !== null) {
     return {
       verdict: 'trusted',
@@ -873,6 +1046,18 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
     };
   }
 
+  // Checked before the self-signed and no-issuer answers: those say the search *ended*, and
+  // a search that spent its budget did not.
+  if (state.exhausted) {
+    return {
+      verdict: 'indeterminate',
+      path: [name],
+      validity,
+      notBefore,
+      notAfter,
+      reason: 'search-limit',
+    };
+  }
   if (signer.issuer.isEqual(signer.subject)) {
     return { verdict: 'self-signed', path: [name], validity, notBefore, notAfter, reason: 'no-issuer' };
   }
