@@ -388,7 +388,7 @@ export function OrganizeView({
       }
       case 'Delete':
       case 'Backspace': {
-        // The pages in the selection, or the one the key was pressed on; never every page.
+        // The selected pages, never every page; with nothing selected the key does nothing.
         event.preventDefault();
         if (editing && selection.length > 0 && selection.length < pageCount) onPageAction({ kind: 'delete' });
         return;

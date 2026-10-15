@@ -300,7 +300,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     step; only the pages near the window are drawn, so a 1000-page document stays smooth.
 - **Page boxes.** You can edit the Media, Crop, Trim, Bleed and Art boxes. Auto-crop sets
   the box from the ink bounds.
-- **Straighten pages.** **Page → Straighten pages…** measures how far each scanned page is tilted
+- **Straighten pages.** **Page → Straighten pages** measures how far each scanned page is tilted
   (up to 15° either way, to a few hundredths of a degree on generated pages) and turns the page back.
   - The scan is not re-encoded: a rotation about the page centre is added to the page's content, so the
     picture, an OCR text layer and any vector content turn together, and the page keeps its size and boxes.

@@ -47,7 +47,7 @@ export const pagesPart = {
   'organize.status': '{total} sayfadan {selected} tanesi seçili',
   'organize.page': '{page}. sayfa',
   'organize.help':
-    'Sayfaları seçin; sürükleyin ya da Alt ile bir ok tuşuna basarak taşıyın. Enter sayfayı açar.',
+    'Sayfaları seçin; sürükleyin ya da Alt ya da Ctrl ile bir ok tuşuna basarak taşıyın. Enter sayfayı açar.',
   'organize.size': 'Küçük resim boyutu',
   'organize.selectMode': 'Birden çok seç',
   'organize.close': 'Belgeye dön',

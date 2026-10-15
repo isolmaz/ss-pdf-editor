@@ -43,7 +43,7 @@ export const pagesPart = {
   'organize.status': '{selected} of {total} page(s) selected',
   'organize.page': 'Page {page}',
   'organize.help':
-    'Select pages, then drag them or press Alt with an arrow key to move them. Enter opens a page.',
+    'Select pages, then drag them or press Alt or Ctrl with an arrow key to move them. Enter opens a page.',
   'organize.size': 'Thumbnail size',
   'organize.selectMode': 'Select several',
   'organize.close': 'Back to document',
