@@ -2572,7 +2572,9 @@ pointer rests on it.
 (`COMPACT_VIEW_QUERY`, `(max-width: 1023px)`) both docks start collapsed and reopen as
 overlaid panels, so the canvas keeps the width and the tools stay one click away. The page
 and view controls (`PageNavigation`) live in the status bar's navigation slot, never over
-the page. The header keeps identity, menus, five task buttons (three toggles that show real state — tools
+the page. Zoom in and out walk `ZOOM_STOPS` (`pdf-shared`'s `zoom.ts`, shared by the buttons,
+the shortcuts and the commands), and the percentage opens `ZoomMenu` (a popover, so the status bar's
+clipping cannot hide it) with the stops, fit width, fit page and a typed value. The header keeps identity, menus, five task buttons (three toggles that show real state — tools
 panel, reading pane, text-edit tool — and the one-shot convert and sign actions), the document
 switcher, the file actions and one settings button — language, theme, the interface mode,
 privacy, storage and offline preparation are in `SettingsDialog`. The header never overflows the bar at

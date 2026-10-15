@@ -5,6 +5,7 @@
  */
 
 import { type SessionStore, workingPageCount } from 'pdf-model';
+import { nextZoomStop } from 'pdf-shared';
 import { isPresenting } from 'pdf-ui/tools';
 import { useMemo } from 'react';
 import { useShellShortcuts } from '../../useShortcuts';
@@ -57,8 +58,8 @@ export function useShellBindings({ session, actions }: ShellBindingHost): void {
         // one: the key is not swallowed to mean nothing.
         deleteSelection: deleteMarkSelection,
         print: openPrint,
-        zoomIn: () => currentViewer()?.setZoom(Math.min(4, saveStore.get().zoom + 0.25)),
-        zoomOut: () => currentViewer()?.setZoom(Math.max(0.25, saveStore.get().zoom - 0.25)),
+        zoomIn: () => currentViewer()?.setZoom(nextZoomStop(saveStore.get().zoom, 'in')),
+        zoomOut: () => currentViewer()?.setZoom(nextZoomStop(saveStore.get().zoom, 'out')),
         zoomReset: () => currentViewer()?.setZoom(1),
         fitWidth: () => currentViewer()?.setZoom('page-width'),
         nextPage: () => turnPage(() => saveStore.get().currentPage + 1),

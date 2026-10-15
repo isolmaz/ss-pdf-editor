@@ -186,9 +186,12 @@ test('the strip edits scale, unit, grid, snapping and style; the exported line c
 test('a grid denser than a few pixels is not drawn', async ({ page }) => {
   await openPdf(page);
   // 75 %: one page point is exactly one CSS pixel, so 5 pt lines are 5 px apart.
-  await page.keyboard.press('Control+1');
-  await page.keyboard.press('Control+-');
-  await expect(page.getByRole('button', { name: /^Fit Width \(75%\)$/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Zoom level \(\d+%\)$/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Zoom level' })
+    .getByRole('button', { name: '75%', exact: true })
+    .click();
+  await expect(page.getByRole('button', { name: /^Zoom level \(75%\)$/ })).toBeVisible();
   await armMeasure(page, 'Distance');
   const bar = strip(page);
   await bar.getByRole('checkbox', { name: 'Grid', exact: true }).check();

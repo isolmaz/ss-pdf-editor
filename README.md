@@ -102,6 +102,11 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     `Home` and `End` go to the first and last page. `Esc` ends it, and so does the browser
     leaving full screen. A browser that refuses full screen still shows the presentation
     layout in the page. Leaving restores the zoom you had.
+- **Zoom.** `Ctrl+=` and `Ctrl+-` (and the status bar's plus and minus) step through the
+  standard levels, 25 · 33 · 50 · 67 · 75 · 90 · 100 · 110 · 125 · 150 · 175 · 200 · 250 · 300 ·
+  400 %, from wherever fit width left the page. The percentage in the status bar opens a menu
+  with those levels, fit width, fit page and a box for a typed value (25 to 400). The rotate
+  button next to it turns the current page in the document; it is one undoable step.
 - **Reading mode.** The page is shown as a text column. Read-aloud speaks it a sentence at a
   time, with pause, stop and a speed control, and uses only a speech voice installed on the
   device for the document's own language (the catalog `/Lang`, matched on its primary

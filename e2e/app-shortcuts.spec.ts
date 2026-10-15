@@ -27,7 +27,9 @@ test('PageDown, PageUp, End and Home move through the pages and the page field f
   await expect(pageField(page)).toHaveValue('1');
 });
 
-test('Ctrl+= , Ctrl+-, Ctrl+1 and Ctrl+0 change the zoom the status bar reports', async ({ page }) => {
+test('Ctrl+= , Ctrl+-, Ctrl+1 and Ctrl+0 step the zoom through the standard stops the status bar reports', async ({
+  page,
+}) => {
   await openApp(page, 'zoom.pdf', labelledPdf('Zoom', 1), { advanced: false });
   const zoom = (value: RegExp) => page.getByRole('button', { name: value });
   // The scale pdf.js draws the pages at (its `--scale-factor` is in CSS pixels per point).
@@ -43,19 +45,60 @@ test('Ctrl+= , Ctrl+-, Ctrl+1 and Ctrl+0 change the zoom the status bar reports'
   // the viewer had already applied fit width.
   const fit = await drawn();
   expect(fit).not.toBe(100);
-  await expect(zoom(new RegExp(`^Fit Width \\(${fit}%\\)$`))).toBeVisible();
+  await expect(zoom(new RegExp(`^Zoom level \\(${fit}%\\)$`))).toBeVisible();
   await page.keyboard.press('Control+1');
-  await expect(zoom(/^Fit Width \(100%\)$/)).toBeVisible();
+  await expect(zoom(/^Zoom level \(100%\)$/)).toBeVisible();
   expect(await drawn()).toBe(100);
   await page.keyboard.press('Control+=');
-  await expect(zoom(/^Fit Width \(125%\)$/)).toBeVisible();
+  await expect(zoom(/^Zoom level \(110%\)$/)).toBeVisible();
   await page.keyboard.press('Control+-');
   await page.keyboard.press('Control+-');
-  await expect(zoom(/^Fit Width \(75%\)$/)).toBeVisible();
-  expect(await drawn()).toBe(75);
+  await expect(zoom(/^Zoom level \(90%\)$/)).toBeVisible();
+  expect(await drawn()).toBe(90);
   await page.keyboard.press('Control+0');
-  await expect(zoom(new RegExp(`^Fit Width \\(${fit}%\\)$`))).toBeVisible();
+  await expect(zoom(new RegExp(`^Zoom level \\(${fit}%\\)$`))).toBeVisible();
   expect(await drawn()).toBe(fit);
+});
+
+test('the zoom button opens a menu of the standard stops, fit width, fit page and a typed value', async ({
+  page,
+}) => {
+  await openApp(page, 'menu.pdf', labelledPdf('Menu', 1), { advanced: false });
+  const button = page.getByRole('button', { name: /^Zoom level \(\d+%\)$/ });
+  const fitWidth = (await button.textContent()) ?? '';
+  const panel = page.getByRole('dialog', { name: 'Zoom level' });
+
+  await button.click();
+  await panel.getByRole('button', { name: '150%', exact: true }).click();
+  await expect(panel).toBeHidden();
+  await expect(button).toHaveText('150%');
+
+  await button.click();
+  await expect(panel.getByRole('button', { name: '150%', exact: true })).toHaveAttribute(
+    'aria-current',
+    'true',
+  );
+  const typed = panel.getByRole('textbox', { name: 'Zoom (%)' });
+  await typed.fill('600');
+  await typed.press('Enter');
+  await expect(panel.getByRole('alert')).toHaveText('Enter a value from 25 to 400.');
+  await expect(typed).toHaveAttribute('aria-invalid', 'true');
+  await typed.fill('80');
+  await typed.press('Enter');
+  await expect(button).toHaveText('80%');
+
+  await button.click();
+  await panel.getByRole('button', { name: 'Fit page', exact: true }).click();
+  await expect(button).not.toHaveText('80%');
+  await button.click();
+  await panel.getByRole('button', { name: 'Fit width', exact: true }).click();
+  await expect(button).toHaveText(fitWidth);
+
+  await button.click();
+  await expect(panel).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(panel).toBeHidden();
+  await expect(button).toBeFocused();
 });
 
 test('F4 and Shift+F4 toggle the page panel and the tools dock, F9 the reading pane, Escape closes it', async ({

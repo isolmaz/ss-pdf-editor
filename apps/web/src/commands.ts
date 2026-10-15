@@ -12,7 +12,7 @@
  * failing).
  */
 
-import type { Translator } from 'pdf-shared';
+import { nextZoomStop, type Translator } from 'pdf-shared';
 import type { Command, DocumentPanelTab } from 'pdf-ui';
 import type { CanvasToolId } from 'pdf-ui/tools';
 import type { PageAction } from './operations';
@@ -506,7 +506,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'view',
       shortcut: shortcutHint('view.zoom-in'),
       disabled: noDocument,
-      run: () => host.setZoom(Math.min(4, host.zoom() + 0.25)),
+      run: () => host.setZoom(nextZoomStop(host.zoom(), 'in')),
     },
     {
       id: 'view.zoom-out',
@@ -514,7 +514,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'view',
       shortcut: shortcutHint('view.zoom-out'),
       disabled: noDocument,
-      run: () => host.setZoom(Math.max(0.25, host.zoom() - 0.25)),
+      run: () => host.setZoom(nextZoomStop(host.zoom(), 'out')),
     },
     {
       id: 'view.zoom-reset',

@@ -122,8 +122,8 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'edit.select-all-marks': ['selectAllMarks'],
   'edit.find-replace': dialog('find-replace'),
   'edit.rename': ['rename'],
-  'view.zoom-in': ['setZoom', 1.25],
-  'view.zoom-out': ['setZoom', 0.75],
+  'view.zoom-in': ['setZoom', 1.1],
+  'view.zoom-out': ['setZoom', 0.9],
   'view.zoom-reset': ['setZoom', 1],
   'view.fit-width': ['setZoom', 'page-width'],
   'view.fit-page': ['setZoom', 'page-fit'],
@@ -287,12 +287,15 @@ describe('buildCommands', () => {
     expect(opened).toEqual([[SOURCE_URL, '_blank', 'noopener,noreferrer']]);
   });
 
-  it('zooms in and out by a quarter, never past 400% or under 25%', () => {
+  it('zooms in and out to the standard stops, never past 400% or under 25%', () => {
     const zoomed = (id: string, zoom: number) => {
       const { host, calls } = recordingHost({ zoom: () => zoom });
       byId(buildCommands(host), id).run();
       return calls[0]?.[1];
     };
+    expect(zoomed('view.zoom-in', 0.65)).toBe(0.67);
+    expect(zoomed('view.zoom-in', 0.9)).toBe(1);
+    expect(zoomed('view.zoom-out', 1)).toBe(0.9);
     expect(zoomed('view.zoom-in', 3.9)).toBe(4);
     expect(zoomed('view.zoom-in', 4)).toBe(4);
     expect(zoomed('view.zoom-out', 0.3)).toBe(0.25);

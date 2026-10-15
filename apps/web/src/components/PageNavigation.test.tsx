@@ -4,7 +4,7 @@
  * (core store) and reading mode (reading store).
  */
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import type { ComponentProps } from 'react';
@@ -40,6 +40,16 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('PageNavigation', () => {
+  // First in the file on purpose: the zoom menu is a lazy chunk, and only the first render of the
+  // file can see it not yet loaded.
+  it('draws the zoom as plain text until the zoom menu has loaded, then as its button', async () => {
+    render(bar());
+    expect(screen.queryByRole('button', { name: /^Zoom level/ })).toBeNull();
+    expect(screen.getByText('100%')).toBeTruthy();
+
+    expect(await screen.findByRole('button', { name: 'Zoom level (100%)' })).toBeTruthy();
+  });
+
   it('toggles the page dock, pressed while it is open', async () => {
     const user = userEvent.setup();
     render(bar());
@@ -128,15 +138,20 @@ describe('PageNavigation page and zoom controls', () => {
     expect(onGoToPage).not.toHaveBeenCalled();
   });
 
-  it('zooms a quarter at a time inside the range, and fits the width', async () => {
+  it('zooms to the next standard stop inside the range, from a zoom that is on none too', async () => {
     const user = userEvent.setup();
     const onZoomChange = vi.fn();
     const { rerender } = render(bar({ onZoomChange, zoom: 1 }));
 
     await user.click(toggle('nav.zoomOut'));
     await user.click(toggle('nav.zoomIn'));
-    await user.click(screen.getByRole('button', { name: `${t('nav.fitWidth')} (100%)` }));
-    expect(onZoomChange.mock.calls).toEqual([[0.75], [1.25], ['page-width']]);
+    expect(onZoomChange.mock.calls).toEqual([[0.9], [1.1]]);
+
+    onZoomChange.mockClear();
+    rerender(bar({ onZoomChange, zoom: 0.6347 }));
+    await user.click(toggle('nav.zoomOut'));
+    await user.click(toggle('nav.zoomIn'));
+    expect(onZoomChange.mock.calls).toEqual([[0.5], [0.67]]);
 
     rerender(bar({ onZoomChange, zoom: 0.25 }));
     expect(toggle('nav.zoomOut').hasAttribute('disabled')).toBe(true);
@@ -144,11 +159,27 @@ describe('PageNavigation page and zoom controls', () => {
     expect(toggle('nav.zoomIn').hasAttribute('disabled')).toBe(true);
   });
 
-  it('writes the zoom the way the interface language does: the sign first in Turkish', () => {
+  it('shows the zoom on the button that opens the zoom menu, written the way the language does', async () => {
+    render(bar({ zoom: 1.4 }));
+    expect((await screen.findByRole('button', { name: 'Zoom level (140%)' })).textContent).toBe('140%');
+    cleanup();
     const tr = createTranslator('tr');
     render(bar({ t: tr, zoom: 1.4 }));
-    const fit = screen.getByRole('button', { name: `${tr('nav.fitWidth')} (%140)` });
-    expect(fit.textContent).toBe('%140');
+    const trButton = await screen.findByRole('button', { name: `${tr('nav.zoomMenu')} (%140)` });
+    expect(trButton.textContent).toBe('%140');
+  });
+
+  it('opens the zoom menu from the bar and hands the choice to the viewer', async () => {
+    const user = userEvent.setup();
+    const onZoomChange = vi.fn();
+    render(bar({ onZoomChange }));
+    await user.click(await screen.findByRole('button', { name: 'Zoom level (100%)' }));
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Zoom level' })).getByRole('button', {
+        name: 'Fit page',
+      }),
+    );
+    expect(onZoomChange).toHaveBeenCalledExactlyOnceWith('page-fit');
   });
 
   it('offers rotate only while the document can be edited, and always offers fullscreen', async () => {
@@ -159,6 +190,8 @@ describe('PageNavigation page and zoom controls', () => {
     expect(screen.queryByRole('button', { name: t('nav.rotate') })).toBeNull();
 
     rerender(bar({ onToggleFullscreen, onRotate }));
+    // The tooltip and the description say what a press does to the document, and that it can be undone.
+    expect(toggle('nav.rotate').getAttribute('aria-description')).toBe(t('nav.rotate.hint'));
     await user.click(toggle('nav.rotate'));
     await user.click(toggle('nav.fullscreen'));
     expect(onRotate).toHaveBeenCalledTimes(1);

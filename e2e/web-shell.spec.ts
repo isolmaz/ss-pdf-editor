@@ -210,13 +210,17 @@ test('the page number box takes a valid page, and an unusable or out-of-range en
 
 test('Fit Width puts the zoom back to the page width after zooming out', async ({ page }) => {
   await openApp(page, 'zoom.pdf', labelledPdf('Zoom', 1), { advanced: false });
-  const fit = page.getByRole('button', { name: /^Fit Width \(\d+%\)$/ });
-  const fitted = await fit.getAttribute('aria-label');
+  const level = page.getByRole('button', { name: /^Zoom level \(\d+%\)$/ });
+  const fitted = await level.getAttribute('aria-label');
   await page.getByRole('button', { name: 'Zoom Out (-)' }).click();
   await page.getByRole('button', { name: 'Zoom Out (-)' }).click();
-  await expect(fit).not.toHaveAttribute('aria-label', fitted ?? '');
-  await fit.click();
-  await expect(fit).toHaveAttribute('aria-label', fitted ?? '');
+  await expect(level).not.toHaveAttribute('aria-label', fitted ?? '');
+  await level.click();
+  await page
+    .getByRole('dialog', { name: 'Zoom level' })
+    .getByRole('button', { name: 'Fit width', exact: true })
+    .click();
+  await expect(level).toHaveAttribute('aria-label', fitted ?? '');
 });
 
 test('the header lists the open documents; Escape and a press outside close the list, and a choice switches document', async ({

@@ -93,7 +93,7 @@ describe('shell bindings', () => {
     shortcuts.zoomOut();
     shortcuts.zoomReset();
     shortcuts.fitWidth();
-    expect(viewer.setZoom.mock.calls).toEqual([[1.25], [4], [0.75], [0.25], [1], ['page-width']]);
+    expect(viewer.setZoom.mock.calls).toEqual([[1.1], [4], [0.9], [0.25], [1], ['page-width']]);
   });
 
   it('walks pages from the page the viewer reports now', () => {

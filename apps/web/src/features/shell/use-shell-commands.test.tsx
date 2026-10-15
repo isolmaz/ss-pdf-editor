@@ -166,7 +166,7 @@ describe('useShellCommands', () => {
     run(result, 'view.fit-width');
     run(result, 'view.single');
     run(result, 'view.book');
-    expect(viewer.setZoom.mock.calls).toEqual([[1.25], [0.75], [1], ['page-width']]);
+    expect(viewer.setZoom.mock.calls).toEqual([[1.1], [0.9], [1], ['page-width']]);
     expect(viewer.setSpreadMode.mock.calls).toEqual([['single'], ['book']]);
   });
 
