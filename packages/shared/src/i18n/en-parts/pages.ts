@@ -4,7 +4,7 @@ export const pagesPart = {
   'pages.selected': '{count} page(s) selected',
   'pages.moveUp': 'Move up',
   'pages.moveDown': 'Move down',
-  'pages.moveTo': 'Move to…',
+  'pages.moveTo': 'Move to',
   'pages.dragHandle': 'Move page {page}',
   'pages.moved': '{count} page(s) moved.',
   'pages.rotate.left': 'Rotate left',

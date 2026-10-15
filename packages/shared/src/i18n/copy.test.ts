@@ -185,3 +185,17 @@ describe('Turkish suffixes after an abbreviation', () => {
     expect(wrong.map(([key, text]) => `${key}: ${text}`)).toEqual([]);
   });
 });
+
+describe('the ellipsis', () => {
+  const keys = Object.keys(tr) as Key[];
+
+  it('ends the same strings in both languages', () => {
+    expect(keys.filter((key) => tr[key].endsWith('…') !== en[key].endsWith('…'))).toEqual([]);
+  });
+
+  it('is not on a title, a heading or the label of a field', () => {
+    const heading = /(\.title|^home\.cat\.[a-z]+|^tools\.group\.[a-z]+|^panel\.[a-z0-9]+|^pages\.moveTo)$/;
+    const wrong = keys.filter((key) => heading.test(key) && (tr[key].endsWith('…') || en[key].endsWith('…')));
+    expect(wrong).toEqual([]);
+  });
+});

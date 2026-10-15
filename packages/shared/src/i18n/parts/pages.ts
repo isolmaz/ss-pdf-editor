@@ -8,7 +8,7 @@ export const pagesPart = {
   'pages.selected': '{count} sayfa seçildi',
   'pages.moveUp': 'Yukarı taşı',
   'pages.moveDown': 'Aşağı taşı',
-  'pages.moveTo': 'Şu konuma taşı…',
+  'pages.moveTo': 'Şu konuma taşı',
   'pages.dragHandle': '{page}. sayfayı taşı',
   'pages.moved': '{count} sayfa taşındı.',
   'pages.rotate.left': 'Sola döndür',

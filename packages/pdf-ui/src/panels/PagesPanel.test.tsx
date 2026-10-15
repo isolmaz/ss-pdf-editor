@@ -530,8 +530,8 @@ describe('PagesPanel selection toolbar', () => {
 });
 
 describe('PagesPanel "move to"', () => {
-  const field = () => within(toolbar(1)).getByRole('spinbutton', { name: 'Move to…' }) as HTMLInputElement;
-  const submit = () => within(toolbar(1)).getByRole('button', { name: 'Move to…' });
+  const field = () => within(toolbar(1)).getByRole('spinbutton', { name: 'Move to' }) as HTMLInputElement;
+  const submit = () => within(toolbar(1)).getByRole('button', { name: 'Move to' });
 
   it('bounds the field by the places that remain', () => {
     show({ initial: [0, 1] });

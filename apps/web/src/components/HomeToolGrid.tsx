@@ -173,7 +173,8 @@ export default function HomeToolGrid({
     tools: HOME_TOOLS.filter((tool) => tool.category === category).flatMap((tool) => {
       const command = byId.get(tool.id);
       if (command === undefined) return [];
-      const title = t(command.labelKey);
+      // A menu or palette label ends in "…" when it opens a dialog; a tile is not a menu item.
+      const title = t(command.labelKey).replace(/…$/, '');
       const description = t(tool.descriptionKey);
       if (needle.length > 0) {
         const haystack = fold([title, description, ...(command.keywords ?? [])].join(' '));

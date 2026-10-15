@@ -159,8 +159,8 @@ test('Move to puts the selection at a position, clamped to the pages that remain
   await options(page)
     .nth(1)
     .click({ modifiers: ['Control'] });
-  const field = toolbar(page).getByRole('spinbutton', { name: 'Move to…' });
-  const go = toolbar(page).getByRole('button', { name: 'Move to…' });
+  const field = toolbar(page).getByRole('spinbutton', { name: 'Move to' });
+  const go = toolbar(page).getByRole('button', { name: 'Move to' });
   await expect(go).toBeDisabled();
   await field.fill('3');
   await go.click();
@@ -325,7 +325,7 @@ test.describe('a document that is only viewed', () => {
     for (const name of ['Rotate left', 'Rotate right', 'Duplicate pages', 'Delete pages', 'Extract pages']) {
       await expect(toolbar(page).getByRole('button', { name })).toBeDisabled();
     }
-    await expect(toolbar(page).getByRole('spinbutton', { name: 'Move to…' })).toBeDisabled();
+    await expect(toolbar(page).getByRole('spinbutton', { name: 'Move to' })).toBeDisabled();
     await expect(options(page).first()).toHaveAttribute('draggable', 'false');
     await expect(options(page).first().getByRole('button', { name: 'Rotate right' })).toHaveCount(0);
     // A drag that is refused starts nothing.
