@@ -6,6 +6,7 @@
  */
 
 import { createRequire } from 'node:module';
+import { TESSERACT_ASSETS } from 'pdf-core/assets';
 import { loadMupdf } from 'pdf-core/engines/mupdf';
 import { fixturePage } from 'pdf-core/ops/layout-fixtures';
 import { createTranslator } from 'pdf-shared';
@@ -26,7 +27,8 @@ const state = vi.hoisted(() => ({
   confidence: 95,
 }));
 
-vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
+// Not hoisted: the module's URL carries the engine's pinned version, so it is the asset's own.
+vi.doMock(TESSERACT_ASSETS.module, () => ({
   default: undefined,
   createWorker: async (languages: string[]) => {
     state.created.push(languages);

@@ -171,8 +171,8 @@ test.describe('offline shell', { tag: '@service-worker' }, () => {
     expect(await cachedPaths(page)).toContain(lost);
   });
 
-  // The cache name follows the pinned assets, not the app, so an app deploy keeps the cache and
-  // its hashed chunks change: what the new build no longer ships must not pile up.
+  // A release has a cache of its own, but a run-time load can still leave a chunk the manifest does
+  // not list: what the build no longer ships must not pile up.
   test('Prepare deletes editor chunks the build no longer ships and keeps the ones it does', async ({
     page,
   }) => {

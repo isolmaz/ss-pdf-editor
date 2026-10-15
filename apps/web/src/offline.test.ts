@@ -1,144 +1,26 @@
 /**
  * Offline readiness and preparation, against the failures that make it lie.
  *
- * The cases worth testing are the ones that make readiness lie: a partially
- * cached capability reported as ready, and a cache from another release counted as
- * evidence for this one. Both are silent — the user only finds out when the feature fails
- * with no network to fall back on.
+ * What the page owns is the list of what a capability needs and the exchange with the worker
+ * that computes readiness (`tools/audit/regressions.cjs` runs the worker itself). The list has
+ * to name the URLs the adapters actually request, at the version the pins give the engine:
+ * the browser keeps `/engines/**` for a year, so a URL that does not change with the bytes
+ * would hand a new shell the old engine, silently, with no network to fall back on.
  */
 
 import { readFileSync } from 'node:fs';
+import type * as RealAssets from 'pdf-core/assets';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { OfflineCapability, WorkerReadiness } from './offline';
+import { engineVersions } from '../../../tools/fetch-engines.mjs';
+import type { WorkerReadiness } from './offline';
 import {
-  allOfflinePaths,
-  capabilityReadiness,
   incompleteCapabilities,
-  manifestVersion,
   OFFLINE_CAPABILITIES,
-  offlineReadiness,
   prepareOffline,
   requestOfflineReadiness,
   requiredCapabilities,
 } from './offline';
-
-const PINS = [
-  { path: 'engines/pdfjs/pdf.worker.mjs', sha256: 'aa' },
-  { path: 'engines/mupdf/mupdf-wasm.wasm', sha256: 'bb' },
-];
-const VERSION = manifestVersion(PINS, '1.2.3');
-
-function manifest(capabilities: Partial<Record<OfflineCapability, readonly string[]>> = {}) {
-  return {
-    version: VERSION,
-    capabilities: {
-      core: ['/editor/'],
-      app: ['/editor/assets/index-a1.js', '/editor/assets/pdf-b2.js'],
-      pdfjs: ['/engines/pdfjs/pdf.worker.mjs'],
-      mupdf: ['/engines/mupdf/mupdf-wasm.wasm', '/engines/mupdf/mupdf.js'],
-      tesseract: ['/engines/tesseract/worker.min.js', '/engines/tesseract/lang/fast/tur.traineddata.gz'],
-      fonts: ['/fonts/noto/NotoSans-Regular.ttf'],
-      ...capabilities,
-    },
-  };
-}
-
-describe('manifestVersion', () => {
-  it('changes when a pinned asset changes, and when the release stamp changes', () => {
-    const base = manifestVersion(PINS, '1.2.3');
-    expect(base).toBe(VERSION);
-    // A rebuilt engine under the same path must not reuse the cache identity: the path is
-    // immutable-cached for a year, so identical identity would serve the old bytes.
-    expect(
-      manifestVersion([{ path: PINS[0]?.path ?? '', sha256: 'cc' }, ...PINS.slice(1)], '1.2.3'),
-    ).not.toBe(base);
-    expect(manifestVersion(PINS, '1.2.4')).not.toBe(base);
-    // The stamp is also the visible prefix of the identity, so comparing whole strings
-    // cannot show that it is *hashed*: two builds with the same pins and different stamps
-    // must differ in the digest too, or the digest says nothing about the release.
-    const digest = (version: string) => version.slice(version.lastIndexOf('-') + 1);
-    expect(digest(manifestVersion(PINS, '1.2.4'))).not.toBe(digest(base));
-    // Order in the pin file is not a fact about the assets.
-    expect(manifestVersion([...PINS].reverse(), '1.2.3')).toBe(base);
-  });
-});
-
-describe('capabilityReadiness', () => {
-  it('is ready only when every required path is present', () => {
-    const cached = new Set(['/engines/mupdf/mupdf-wasm.wasm', '/engines/mupdf/mupdf.js']);
-    expect(capabilityReadiness(manifest(), 'mupdf', cached)).toEqual({ ready: true, missing: [] });
-    // One file whose URL merely contains "mupdf" is not ready: every required path must be cached.
-    expect(capabilityReadiness(manifest(), 'mupdf', new Set(['/engines/mupdf/mupdf-wasm.wasm']))).toEqual({
-      ready: false,
-      missing: ['/engines/mupdf/mupdf.js'],
-    });
-  });
-
-  it('does not accept a different file of the same engine as a stand-in', () => {
-    const half = new Set(['/engines/tesseract/worker.min.js']);
-    expect(capabilityReadiness(manifest(), 'tesseract', half)).toEqual({
-      ready: false,
-      missing: ['/engines/tesseract/lang/fast/tur.traineddata.gz'],
-    });
-  });
-
-  it("is not ready while one of the editor's own chunks is missing, and names it", () => {
-    // A first visit that never opened a tool holds the entry and not that tool's chunk: the
-    // engines being cached says nothing about whether the editor can open a document.
-    const entryOnly = new Set(['/editor/assets/index-a1.js']);
-    expect(capabilityReadiness(manifest(), 'app', entryOnly)).toEqual({
-      ready: false,
-      missing: ['/editor/assets/pdf-b2.js'],
-    });
-    const all = new Set(['/editor/assets/index-a1.js', '/editor/assets/pdf-b2.js']);
-    expect(capabilityReadiness(manifest(), 'app', all)).toEqual({ ready: true, missing: [] });
-  });
-
-  it('compares paths exactly, so a directory request is not the file inside it', () => {
-    expect(capabilityReadiness(manifest(), 'core', new Set(['/editor']))).toEqual({
-      ready: false,
-      missing: ['/editor/'],
-    });
-  });
-});
-
-describe('offlineReadiness', () => {
-  it('calls a complete cache of this build fully ready', () => {
-    const cached = new Set(allOfflinePaths(manifest()));
-    const readiness = offlineReadiness(manifest(), cached, VERSION);
-    expect(readiness.matchesBuild).toBe(true);
-    expect(readiness.fullyReady).toBe(true);
-  });
-
-  it('is not fully ready while any capability of this build is incomplete', () => {
-    const all = allOfflinePaths(manifest());
-    const cached = new Set(all.filter((path) => path !== '/engines/mupdf/mupdf.js'));
-    const readiness = offlineReadiness(manifest(), cached, VERSION);
-    expect(readiness.matchesBuild).toBe(true);
-    expect(readiness.fullyReady).toBe(false);
-    expect(readiness.capabilities.mupdf).toEqual({ ready: false, missing: ['/engines/mupdf/mupdf.js'] });
-    expect(readiness.capabilities.pdfjs.ready).toBe(true);
-    // The editor's own chunks count as much as an engine does.
-    const noChunk = new Set(all.filter((path) => path !== '/editor/assets/pdf-b2.js'));
-    expect(offlineReadiness(manifest(), noChunk, VERSION).fullyReady).toBe(false);
-  });
-
-  it('refuses to count a cache written by another release', () => {
-    const cached = new Set(allOfflinePaths(manifest()));
-    const readiness = offlineReadiness(manifest(), cached, '1.2.2-deadbeef');
-    expect(readiness.matchesBuild).toBe(false);
-    expect(readiness.fullyReady).toBe(false);
-    // Every capability is reported missing, with its real requirements, rather than
-    // inheriting a stale "ready" from a cache this build cannot vouch for.
-    expect(readiness.capabilities.pdfjs.missing).toEqual(manifest().capabilities.pdfjs);
-  });
-
-  it('treats an empty cache and a null version as nothing prepared', () => {
-    const readiness = offlineReadiness(manifest(), new Set(), null);
-    expect(readiness.fullyReady).toBe(false);
-    expect(readiness.capabilities.core.ready).toBe(false);
-  });
-});
+import packages from './offline-packages.json';
 
 describe('requiredCapabilities', () => {
   it("always asks for the editor's own code and MuPDF, because core editing runs on both, and OCR only when OCR is on", () => {
@@ -156,16 +38,27 @@ describe('requiredCapabilities', () => {
 
 describe('the shipped path list matches the pinned assets', () => {
   const pins = JSON.parse(readFileSync('tools/asset-pins.json', 'utf8')) as {
-    engines: Record<string, { files: { path: string }[] }>;
+    engines: Record<string, { files: { path: string; sha256: string }[] }>;
   };
-  const offline = allOfflinePaths({ version: VERSION, capabilities: OFFLINE_CAPABILITIES });
+  const versions = engineVersions(pins);
+  const offline = [...new Set(Object.values(OFFLINE_CAPABILITIES).flat())];
 
-  it('names only paths that exist in tools/asset-pins.json', () => {
+  /**
+   * A pin's path as the browser requests it, worked out here from the pins alone (not from
+   * `engine-versions.json`, which is what the list under test reads): an engine file sits in
+   * its version directory, a font keeps its path.
+   */
+  function servedUrl(pinPath: string): string {
+    const [root = '', id = '', ...rest] = pinPath.split('/');
+    return root === 'engines' ? `/engines/${id}/${versions[id]}/${rest.join('/')}` : `/${pinPath}`;
+  }
+
+  it('names only URLs of pinned files, each engine file at the version its pins give', () => {
     // The list is data (so the worker and the build can read it), which means nothing but
     // this test stops it from drifting away from the assets the repository actually pins.
     const pinned = new Set<string>();
     for (const engine of Object.values(pins.engines)) {
-      for (const file of engine.files) pinned.add(`/${file.path}`);
+      for (const file of engine.files) pinned.add(servedUrl(file.path));
     }
     // The shell's pages and scripts are build outputs, not pinned engine assets. The
     // interface fonts it caches are pinned, so they are checked like every other asset.
@@ -177,22 +70,77 @@ describe('the shipped path list matches the pinned assets', () => {
     expect(missing).toEqual([]);
   });
 
+  it('puts a version directory in every engine URL, and none in a font or shell path', () => {
+    const engineUrls = offline.filter((path) => path.startsWith('/engines/'));
+    expect(engineUrls.length).toBeGreaterThan(0);
+    for (const url of engineUrls) {
+      const [, , id = '', version = ''] = url.split('/');
+      expect(version, url).toMatch(/^v[0-9a-f]{12}$/);
+      expect(version, url).toBe(versions[id]);
+    }
+    const versioned = offline.filter(
+      (path) => !path.startsWith('/engines/') && /\/v[0-9a-f]{12}\//.test(path),
+    );
+    expect(versioned).toEqual([]);
+  });
+
+  it('is the logical list in offline-packages.json with only the engine files moved to their version', () => {
+    for (const [name, list] of Object.entries(packages.capabilities)) {
+      const shipped = OFFLINE_CAPABILITIES[name as keyof typeof OFFLINE_CAPABILITIES];
+      expect(shipped.length, name).toBe(list.length);
+      list.forEach((logical, index) => {
+        const url = shipped[index];
+        if (logical.startsWith('/engines/')) expect(url, logical).toBe(servedUrl(logical.slice(1)));
+        else expect(url, logical).toBe(logical);
+      });
+    }
+  });
+
   it("leaves the editor's own chunks to the build, which is the only place their hashed names exist", () => {
     // `tools/assemble-dist.mjs` refuses a non-empty list and writes the real one into the manifest.
     expect(OFFLINE_CAPABILITIES.app).toEqual([]);
   });
 
   it('lists every pinned file the OCR and MuPDF capabilities need', () => {
-    // The optional `lang/best/` packs are downloaded on demand, not cached ahead of time.
-    const needed = [
-      ...(pins.engines.tesseract?.files ?? [])
-        .map((file) => `/${file.path}`)
-        .filter((path) => !path.includes('/lang/best/')),
-      ...(pins.engines.mupdf?.files ?? []).map((file) => `/${file.path}`),
-    ];
+    // The optional `lang/best/` packs are downloaded on demand, not cached ahead of time. The
+    // tesseract core carries its wasm inline (`tesseract-core-simd-lstm.wasm.js`), so the
+    // `.wasm` pinned beside it is requested by nothing and is not part of the capability.
+    const ocrPaths = (pins.engines.tesseract?.files ?? [])
+      .map((file) => file.path)
+      .filter((path) => !path.includes('/lang/best/'))
+      .filter((path) => !path.endsWith('/tesseract-core-simd-lstm.wasm'));
+    const mupdfPaths = (pins.engines.mupdf?.files ?? []).map((file) => file.path);
+    const needed = [...ocrPaths, ...mupdfPaths].map(servedUrl);
     expect(needed.length).toBeGreaterThan(0);
     const listed = new Set(offline);
     expect(needed.filter((path) => !listed.has(path))).toEqual([]);
+  });
+
+  it('lists the URL of every file the adapters request, as they build it', async () => {
+    // The unit setup swaps some of these for installed-package paths; the real ones are what ships.
+    const assets = await vi.importActual<typeof RealAssets>('pdf-core/assets');
+    const listed = new Set(offline);
+    const requested = [
+      assets.PDFJS_ASSETS.worker,
+      // pdf.js appends the file name to these directories.
+      `${assets.PDFJS_ASSETS.cmaps}Adobe-Japan1-UCS2.bcmap`,
+      `${assets.PDFJS_ASSETS.standardFonts}FoxitSerif.pfb`,
+      `${assets.PDFJS_ASSETS.wasm}openjpeg.wasm`,
+      `${assets.PDFJS_ASSETS.wasm}qcms_bg.wasm`,
+      assets.MUPDF_ASSETS.js,
+      // The wasm engine resolves its neighbours next to the module it was imported from.
+      new URL('mupdf-wasm.js', `https://editor.test${assets.MUPDF_ASSETS.js}`).pathname,
+      new URL('mupdf-wasm.wasm', `https://editor.test${assets.MUPDF_ASSETS.js}`).pathname,
+      assets.TESSERACT_ASSETS.module,
+      assets.TESSERACT_ASSETS.worker,
+      assets.TESSERACT_ASSETS.core,
+      ...assets.OCR_LANGUAGE_CODES.map(
+        (code) => `${assets.TESSERACT_ASSETS.fastLangPath}/${code}.traineddata.gz`,
+      ),
+      assets.NOTO_ASSETS.regular,
+      assets.NOTO_ASSETS.semiBold,
+    ];
+    expect(requested.filter((url) => !listed.has(url))).toEqual([]);
   });
 });
 

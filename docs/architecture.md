@@ -382,7 +382,7 @@ From here on, a path that starts with `ops/` or `engines/` is relative to
 
 | Adapter | Upstream | Threading | Used for |
 |---|---|---|---|
-| `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
+| `engines/pdfjs-handle.ts` | `pdfjs-dist` 6.3.289 | its own Web Worker (`/engines/pdfjs/v<digest>/pdf.worker.mjs`); painting on the main thread into a caller canvas | rendering, text, outline, page labels, annotation storage and its save, form field objects, attachments, operators, page composition |
 | `engines/mupdf.ts` | `mupdf` 1.28.1 (wasm, ~9.93 MiB) | main thread, imported by **runtime URL** behind a `vite-ignore` marker | redaction, redaction find/audit, encryption, page boxes (auto-crop), page-label writing and the range reading behind an insert's, replace's and merge's label plan, text editing's erase stage, structured text extraction, the page layout behind the Word/Excel/CSV export (`ops/page-layout.ts`) |
 | `engines/mupdf-write.ts` | `mupdf` (through `engines/mupdf.ts`) | as above | the shared writer vocabulary: open/save (`garbage,compress`, object numbers kept), the producer line, text-as-string, the embedded Noto face; used by document properties (`ops/metadata.ts`), attachments (`ops/attachments-write.ts`), layers (`ops/layer-write.ts`), links (`ops/link-edit.ts`), the outline (`ops/outline-edit.ts`), annotation removal, transforms and the session annotation writers (`ops/annotation-*.ts`, `ops/annotations.ts`), the font inventory (`ops/pdf-fonts.ts`, read-only), stamps (`ops/stamp.ts`), placed pictures and simple signatures (`ops/image-stamp.ts`), the conversion of other formats (`ops/convert.ts`), the image writers (`ops/image-opacity.ts`, `ops/image-edit.ts`, `ops/images.ts`), page boxes (`ops/page-boxes.ts`), blank documents (`ops/create.ts`), composition (`ops/compose.ts`), page insertion (`ops/page-insert.ts`), imposition (`ops/impose.ts`), compression (`ops/compress.ts`), forms (`ops/forms.ts`), the OCR text layer (`ops/ocr.ts`), text editing (`ops/text-edit.ts`) and find and replace (`ops/find-replace.ts`, with the document's own fonts read by `engines/doc-fonts.ts`), form field detection (`ops/form-detect.ts`, rules in `ops/form-detect-rules.ts`); page drawing goes through `appendPageContent` (existing content wrapped in `q`/`Q`, one new stream), `wrapPageContent` (a transform around the existing streams) and `addPageResource` (fresh names in the page's own `/Resources`) |
 | `engines/noto.ts` | the pinned Noto Sans files | `fetch` from our own origin, cached per session | the font bytes every writer embeds, whichever engine writes |
@@ -1092,7 +1092,7 @@ carry their alpha the same way, since pdf.js and PDFium paint the `/AP` and igno
 stroke width is the annotation's own `/BS /W` (and `/Border`), not only a number inside the
 appearance stream: a reader that rebuilds the appearance draws the border, and reopening the
 file here reads back the thickness that was drawn. The
-viewer's `imageResourcesPath` points at `PDFJS_ASSETS.images` (`/engines/pdfjs/images/`,
+viewer's `imageResourcesPath` points at `PDFJS_ASSETS.images` (`/engines/pdfjs/v<digest>/images/`,
 pinned by `fetch-engines`), where pdf.js finds the `annotation-<name>.svg` icon it lays over a
 file's own `/Text` note.
 
@@ -2950,8 +2950,19 @@ Versioning is the interesting half:
 
 - `CACHE_NAME` is `pdf-editor-static-<version>`, and `<version>` is stamped at build time
   by `tools/assemble-dist.mjs` from the release stamp plus a digest over the pinned
-  `path + sha256` list.
-- The name therefore changes when a pinned asset changes. A release never reads the
+  `path + sha256` list and the editor build.
+- The stamp also covers the editor build (`tools/release-version.mjs`: the entry page and the
+  hashed name of every file in the manifest), so a deploy that changes only code changes
+  `sw.js` as well and the update banner appears.
+- Every engine URL is `/engines/<engine>/v<digest>/<file>`, the digest taken over that
+  engine's pinned files (`engine-versions.json`, held to the pins by `verify-assets`;
+  `assemble-dist` places the files there). `/engines/*` is `immutable` for a year, so a
+  rebuilt engine has to be a different URL; a directory and not a query, because mupdf.js
+  imports its wasm next to itself and pdf.js and tesseract.js append file names to the
+  directories they are given. Fonts keep their paths and are revalidated, not immutable;
+  hashed `/editor/assets/*` are immutable (`! Cache-Control` detaches the `/editor/*` rule).
+  A `?retry=N` module import (MuPDF's loader) is looked up and stored without the parameter.
+- The name therefore changes when a pinned asset or the code changes. A release never reads the
   previous release's cache, and activation deletes only caches in **its own** namespace —
   the origin's storage is shared with other applications.
 - Install fills the new cache without touching the old one, so an interrupted preparation
@@ -2978,7 +2989,8 @@ Versioning is the interesting half:
   a PDF offline without `app`. Prepare fetches `app` and readiness requires it (`requiredCapabilities`);
   install still holds only the shell above, so a first visit stays light.
 - A cache written under a different identity is not evidence for this build:
-  `matchesBuild` is false and nothing may be called ready.
+  `matchesBuild` (the manifest's version against the version the worker was stamped with) is
+  false and nothing is ready; the worker also refuses to prepare against that manifest.
 - The worker only ever caches paths from the build's own manifest. `PREPARE_PACKAGE` carries
   capability *names*, never URLs, and the worker resolves them against the manifest, so a
   page cannot hand it an arbitrary URL (a name the manifest lacks asks for nothing). Work
@@ -3020,7 +3032,9 @@ runs `biome check --staged`, so a file is formatted, import-sorted and lint-clea
 enters git; a checkout without `node_modules` skips that step with a note.
 
 Because the pins are the identity offline caching keys on, changing a pinned asset changes
-the cache name, the manifest and the worker stamp together.
+the cache name, the manifest and the worker stamp together, and `verify-assets` also fails on a
+file under `public/engines/**` that no pin names and on an `engine-versions.json` that no
+longer matches the pins (`node tools/fetch-engines.mjs --versions` rewrites it).
 
 ### 13.2 Assembling the distribution
 

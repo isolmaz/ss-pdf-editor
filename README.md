@@ -1016,11 +1016,16 @@ pnpm worker:deploy:dry      # same, with --dry-run
   pack is reported as `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release never
   reads an older cache.
-- **After an app update.** The cache name follows the pinned assets, not the app, so an app
-  deploy keeps the same cache while its hashed scripts change. The new build's readiness then
-  reports the new scripts as `missing` and asks you to Prepare again; Prepare fetches them and
-  deletes the editor scripts and styles that the new build does not ship, so superseded ones do
-  not accumulate.
+- **Engine versions.** Every engine is served from a version directory
+  (`/engines/<engine>/v<digest>/…`, the digest taken over the engine's pins), because the
+  browser keeps `/engines/*` for a year: a rebuilt engine is a new URL, never old bytes under
+  the new editor. Readiness compares those URLs, so a cached engine of another version counts
+  as `missing`.
+- **After an app update.** The release identity covers the pinned assets and the editor build,
+  so an app-only deploy changes the service worker too: the browser installs it and offers the
+  update. The old worker, still serving, reports nothing ready and refuses to Prepare against
+  the new release's list; after the update, readiness reports what the new release still lacks
+  as `missing` and asks you to Prepare again.
 
 ---
 

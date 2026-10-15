@@ -12,9 +12,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TESSERACT_ASSETS } from '../assets';
 
-/** The literal the mock below intercepts — kept next to the assertion that it matches. */
-const TESSERACT_MODULE = '/engines/tesseract/tesseract.esm.min.js';
-
 const state = vi.hoisted(() => ({
   /** Passes of the loader's `module.default` step — one per import attempt it makes. */
   accesses: 0,
@@ -24,7 +21,8 @@ const state = vi.hoisted(() => ({
   engine: { recognize: () => 'stub engine' },
 }));
 
-vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
+// Not hoisted: the module's URL carries the engine's pinned version, so it is the asset's own.
+vi.doMock(TESSERACT_ASSETS.module, () => ({
   get default(): typeof state.engine {
     state.accesses += 1;
     if (state.failures > 0) {
@@ -48,7 +46,7 @@ describe('loadTesseract', () => {
   });
 
   it('loads the pinned chunk once and gives simultaneous callers one shared attempt', async () => {
-    expect(TESSERACT_ASSETS.module).toBe(TESSERACT_MODULE); // otherwise the mock above intercepts nothing
+    expect(TESSERACT_ASSETS.module).toMatch(/^\/engines\/tesseract\/v[0-9a-f]{12}\/tesseract\.esm\.min\.js$/);
     const { loadTesseract } = await freshLoader();
 
     const first = loadTesseract();

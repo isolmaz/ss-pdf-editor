@@ -6,7 +6,7 @@
  * state the document keeps) can be asserted.
  *
  * How it works. `injectEngineFaults(page)` (before the first navigation) installs
- *  - a route on `/engines/mupdf/mupdf.js` that serves a small ESM wrapper in its place. The wrapper
+ *  - a route on `/engines/mupdf/v<digest>/mupdf.js` that serves a small ESM wrapper in its place. The wrapper
  *    imports the real module under `?real` (a URL the route lets through), wraps every method of
  *    every exported MuPDF class (instance and static, inherited ones included: a rule on
  *    `PDFDocument.loadPage` also catches the `Document.loadPage` it inherits) and re-exports the
@@ -71,7 +71,13 @@ interface FaultTable {
   take(engine: FaultEngine, call: string, kinds: readonly ('fail' | 'hold')[]): FaultRule | null;
 }
 
-const MUPDF_URL = '/engines/mupdf/mupdf.js';
+/**
+ * The served MuPDF module: `/engines/mupdf/<version>/mupdf.js` (`pdf-core`'s `assets.ts`), where the
+ * version is the digest of the pinned build, so it is matched and not written out.
+ */
+const MUPDF_PATH = /^\/engines\/mupdf\/v[0-9a-f]{12}\/mupdf\.js$/;
+/** Where the wrapper below names the real module's URL; filled in with the one the page asked for. */
+const MUPDF_URL_MARK = '__MUPDF_URL__';
 
 /** Installed in the page before any script runs: the rule table and the worker wrapper. */
 function installTable(): void {
@@ -167,12 +173,12 @@ function installTable(): void {
 }
 
 /**
- * The module that stands in for `/engines/mupdf/mupdf.js`. Plain JavaScript served to the page;
+ * The module that stands in for `/engines/mupdf/v<digest>/mupdf.js`. Plain JavaScript served to the page;
  * it runs in the page, so it reads `window.__engineFaults` like the worker wrapper does.
  */
 const MUPDF_WRAPPER = `
-import * as real from '${MUPDF_URL}?real';
-export * from '${MUPDF_URL}?real';
+import * as real from '${MUPDF_URL_MARK}?real';
+export * from '${MUPDF_URL_MARK}?real';
 export default real.default;
 
 const table = () => globalThis.__engineFaults;
@@ -233,7 +239,7 @@ export async function injectEngineFaults(page: Page): Promise<void> {
   states.set(page, state);
   await page.addInitScript(installTable);
   await page.route(
-    (url) => url.pathname === MUPDF_URL && !url.searchParams.has('real'),
+    (url) => MUPDF_PATH.test(url.pathname) && !url.searchParams.has('real'),
     async (route: Route) => {
       if (state.failLoads > 0) {
         state.failLoads -= 1;
@@ -249,7 +255,7 @@ export async function injectEngineFaults(page: Page): Promise<void> {
         status: 200,
         contentType: 'text/javascript',
         headers: { 'cache-control': 'no-store' },
-        body: MUPDF_WRAPPER,
+        body: MUPDF_WRAPPER.replaceAll(MUPDF_URL_MARK, new URL(route.request().url()).pathname),
       });
     },
   );
