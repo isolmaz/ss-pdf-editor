@@ -7,6 +7,7 @@
  * anyway, and a strict import that accepts a file that is not well-formed.
  */
 
+import { ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import {
   dataElementOf,
@@ -632,5 +633,66 @@ describe('xfa-data files with nothing to import', () => {
     expect(exportDataXml(datasetsOf(''))).toBeNull();
     expect(replaceData('<not xml', '<a/>')).toBeNull();
     expect(replaceData(`<xfa:datasets xmlns:xfa="${NS_DATA}"/>`, '<a/>')).toBeNull();
+  });
+});
+
+describe('xfa-data export with several data roots', () => {
+  it('writes one XML root that the import reads back to the same data', () => {
+    const datasets = datasetsOf('<a>1</a><b>2</b>');
+    const exported = exportDataXml(datasets) ?? '';
+    // One root: a file with two top-level elements is not XML, and the strict import refuses it.
+    const document = parseXml(exported, true);
+    expect(document?.documentElement.localName).toBe('data');
+    expect(dataMarkupOf(exported)).toBe('<a>1</a><b>2</b>');
+    expect(entries(replaceData(datasets, dataMarkupOf(exported) ?? ''))).toEqual([
+      { path: 'a', value: '1' },
+      { path: 'b', value: '2' },
+    ]);
+  });
+
+  it('leaves the single-root export as the bare data document', () => {
+    expect(exportDataXml(datasetsOf('<a>1</a>'))).toBe('<?xml version="1.0" encoding="UTF-8"?>\n<a>1</a>\n');
+  });
+});
+
+describe('xfa-data nesting and size limits', () => {
+  const nested = (depth: number, tag = 'a') => `${`<${tag}>`.repeat(depth)}x${`</${tag}>`.repeat(depth)}`;
+
+  it('refuses a 5000-deep document with a ToolError, not a stack overflow', () => {
+    const deepData = datasetsOf(nested(5000));
+    for (const read of [
+      () => parseXml(deepData),
+      () => dataEntries(deepData),
+      () => dataMarkupOf(nested(5000)),
+      () => exportDataXml(deepData),
+      () => replaceData(datasetsOf(''), nested(5000)),
+      () =>
+        resolveBindings(
+          `<template xmlns="${NS_TEMPLATE}">${'<subform name="s">'.repeat(5000)}${'</subform>'.repeat(5000)}</template>`,
+          FIELDS,
+        ),
+    ]) {
+      expect(read).toThrow(ToolError);
+      expect(read).toThrow(/nested deeper than 256 levels/);
+    }
+    try {
+      dataEntries(deepData);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolError);
+      expect(error).toMatchObject({ code: 'unsupported' });
+    }
+  });
+
+  it('still reads a document nested well past any real form, below the limit', () => {
+    // 100 levels of groups below xfa:data, the leaf at the bottom.
+    const path = Array.from({ length: 100 }, () => 'g').join('/');
+    expect(entries(datasetsOf(`${'<g>'.repeat(99)}<g>leaf</g>${'</g>'.repeat(99)}`))).toEqual([
+      { path, value: 'leaf' },
+    ]);
+  });
+
+  it('refuses a document with more nodes than the limit', () => {
+    const wide = `<xfa:datasets xmlns:xfa="${NS_DATA}"><xfa:data>${'<n/>'.repeat(500_001)}</xfa:data></xfa:datasets>`;
+    expect(() => parseXml(wide)).toThrow(/more than 500000 nodes/);
   });
 });

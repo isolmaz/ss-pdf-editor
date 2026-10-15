@@ -17,6 +17,7 @@
 
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { readText, resolved } from '../engines/mupdf-write';
+import { dropUsageRights } from './usage-rights';
 import {
   dataElementOf,
   dataEntries,
@@ -69,7 +70,13 @@ function locate(doc: PDFDocument): Located | null {
 }
 
 function streamBytes(entry: PDFObject): Uint8Array | null {
-  return entry.isStream() ? new Uint8Array(entry.readStream().asUint8Array()) : null;
+  if (!entry.isStream()) return null;
+  const buffer = entry.readStream();
+  try {
+    return new Uint8Array(buffer.asUint8Array());
+  } finally {
+    buffer.destroy();
+  }
 }
 
 interface PacketRead {
@@ -159,14 +166,25 @@ export function writeDatasets(doc: PDFDocument, xml: string): void {
         entry.writeStream(bytes);
         return;
       }
+      // The first datasets pair is the form's; one that holds no stream is replaced below.
+      break;
     }
-    // No datasets packet: add one, keeping the packet order the specification gives
-    // (the postamble stays last).
+    // No usable datasets packet: add one, keeping the packet order the specification gives
+    // (the postamble stays last). A `datasets` pair whose value is not a stream is dropped,
+    // not kept beside the new one: two pairs would leave the form with two datasets.
     const rebuilt = doc.newArray();
     const created = doc.addStream(bytes, doc.newDictionary());
     let inserted = false;
     for (let index = 0; index + 1 < resolvedXfa.length; index += 2) {
       const name = readText(resolvedXfa.get(index));
+      if (name === 'datasets') {
+        if (!inserted) {
+          rebuilt.push(doc.newString('datasets'));
+          rebuilt.push(created);
+          inserted = true;
+        }
+        continue;
+      }
       if (name === 'postamble' && !inserted) {
         rebuilt.push(doc.newString('datasets'));
         rebuilt.push(created);
@@ -237,11 +255,14 @@ export function syncXfaInDocument(
 /**
  * Remove the XFA from the form: the AcroForm keeps every field and value, and a reader has
  * nothing but the AcroForm to use. The packets become unreferenced and the rewrite's
- * garbage pass drops them.
+ * garbage pass drops them. The reader-extension signature (`/Perms /UR3`, `/UR`) goes with
+ * them: the callers rewrite the file, which breaks it, and an XFA-less form has nothing for
+ * its usage rights to enable. Callers save a rewrite, never an incremental update.
  */
 export function removeXfaEntries(doc: PDFDocument): boolean {
   const located = locate(doc);
   if (located === null) return false;
+  dropUsageRights(doc);
   located.acroForm.delete('XFA');
   if (!located.catalog.get('NeedsRendering').isNull()) located.catalog.delete('NeedsRendering');
   return true;

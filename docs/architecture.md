@@ -1768,8 +1768,8 @@ dynamic, in a real browser):
 
 | File | Role |
 |---|---|
-| `ops/xfa-data.ts` | Pure XML (xmldom): the binding of AcroForm names to data nodes through the template, the sync plan, the date picture, data import and export markup. DOM-free, Node-testable. |
-| `ops/xfa.ts` | MuPDF packet I/O: read both layouts, write `datasets` (create it when missing), remove the XFA, `syncXfaInDocument`. Imported by `forms.ts` **lazily** (`import('./xfa')` only when the form has `/XFA`), so the XML parser stays out of the entry chunk. |
+| `ops/xfa-data.ts` | Pure XML (xmldom): the binding of AcroForm names to data nodes through the template, the sync plan, the date picture, data import and export markup (several data roots export under one `xfa:data` root). A document nested deeper than 256 levels or past 500 000 nodes is refused at parse time with a `ToolError` (`unsupported`), before any recursive walk. DOM-free, Node-testable. |
+| `ops/xfa.ts` | MuPDF packet I/O: read both layouts, write `datasets` (create it when missing), remove the XFA, `syncXfaInDocument`. `removeXfaEntries` and every form write that rewrites the file also drop the Reader Extensions signature (`/Perms /UR3`, `/UR`, `ops/usage-rights.ts`), which the rewrite invalidates; `/DocMDP` stays. Imported by `forms.ts` **lazily** (`import('./xfa')` only when the form has `/XFA`), so the XML parser stays out of the entry chunk. |
 | `ops/xfa-form.ts` | The operations: `inspectXfa`, `syncXfaDatasets`, `removeXfa`, `exportXfaData`, `importXfaData`, `finishXfaFill`. |
 | `ops/xfa-flatten.ts` | `buildFlattenedXfa`: pictures to a PDF, the OCR text-layer writer over them, read-back. |
 | `pdf-ui/src/dialogs/XfaFormDialog.tsx` | The XFA viewer dialog (pdf.js `PDFViewer` over its own `enableXfa` document). |
