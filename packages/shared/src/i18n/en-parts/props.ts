@@ -95,7 +95,7 @@ export const propsPart = {
   'props.sig.reason.invalid':
     'Either covered bytes digest does not match messageDigest or signature could not be verified: document may have been altered.',
   'props.sig.reason.unchecked.layout':
-    'Signature dictionary not found in file bytes or /ByteRange and /Contents mismatched; local check skipped.',
+    'The signed part of the file could not be located; local check skipped.',
   'props.sig.reason.unchecked.subFilter':
     'This signature format is not a direct CMS signature over byte range; not checked.',
   'props.sig.reason.unchecked.digest':

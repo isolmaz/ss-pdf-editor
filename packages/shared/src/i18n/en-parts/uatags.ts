@@ -170,8 +170,8 @@ export const uatagsPart = {
 
   'ua.rule.xfa.name': 'No XFA form',
   'ua.rule.xfa.why': 'XFA forms are dynamic and cannot be made to conform to PDF/UA.',
-  'ua.rule.xfa.fix': 'Convert the form to a standard AcroForm.',
-  'ua.rule.xfa.detail': 'The AcroForm carries an XFA entry.',
+  'ua.rule.xfa.fix': 'Convert the form to a standard PDF form.',
+  'ua.rule.xfa.detail': 'The form also carries an XFA layer.',
 
   'ua.rule.struct-tree.name': 'Structure tree (/StructTreeRoot)',
   'ua.rule.struct-tree.why':

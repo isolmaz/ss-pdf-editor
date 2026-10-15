@@ -167,8 +167,8 @@ export const uatagsPart = {
 
   'ua.rule.xfa.name': 'XFA formu yok',
   'ua.rule.xfa.why': 'XFA formları dinamiktir ve PDF/UA ile uyumlu hâle getirilemez.',
-  'ua.rule.xfa.fix': 'Formu standart bir AcroForm’a dönüştürün.',
-  'ua.rule.xfa.detail': 'AcroForm bir XFA girdisi taşıyor.',
+  'ua.rule.xfa.fix': 'Formu standart bir PDF formuna dönüştürün.',
+  'ua.rule.xfa.detail': 'Form ayrıca bir XFA katmanı taşıyor.',
 
   'ua.rule.struct-tree.name': 'Yapı ağacı (/StructTreeRoot)',
   'ua.rule.struct-tree.why':

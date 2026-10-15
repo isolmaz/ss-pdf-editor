@@ -225,7 +225,9 @@ describe('the copy people read before they decide', () => {
     const named = entries
       .filter(([, key]) => !/^settings?\./.test(key))
       .filter(([, , text]) =>
-        /Ghostscript|MuPDF|pdf\.js|pdfjs|\bmotor|\bengine|katalog|\bcatalog|\bOCG\b|\bOPFS\b/i.test(text),
+        /Ghostscript|MuPDF|pdf\.js|pdfjs|\bmotor|\bengine|katalog|\bcatalog|\bOCG\b|\bOPFS\b|AcroForm|\/ByteRange/i.test(
+          text,
+        ),
       )
       .map(([locale, key, text]) => `${locale} ${key}: ${text}`);
     expect(named).toEqual([]);

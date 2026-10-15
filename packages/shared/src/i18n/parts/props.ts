@@ -103,8 +103,7 @@ export const propsPart = {
     'İmzanın kapsadığı baytların özeti CMS yapısındaki messageDigest ile eşleşiyor ve imza değeri sertifikanın açık anahtarıyla doğrulandı.',
   'props.sig.reason.invalid':
     'Ya kapsanan baytların özeti messageDigest ile eşleşmiyor ya da imza değeri sertifikanın açık anahtarıyla doğrulanamadı: belge imzalandıktan sonra değişmiş olabilir.',
-  'props.sig.reason.unchecked.layout':
-    'İmza sözlüğü dosyanın baytlarında bulunamadı ya da /ByteRange ile /Contents eşleşmedi; yerel denetim yapılamadı.',
+  'props.sig.reason.unchecked.layout': 'Dosyada imzalı bölüm bulunamadı; yerel denetim yapılamadı.',
   'props.sig.reason.unchecked.subFilter':
     'Bu imza biçimi, bayt aralığı üzerinden doğrudan doğrulanabilen bir CMS imzası değil; denetlenmedi.',
   'props.sig.reason.unchecked.digest':
