@@ -4,14 +4,16 @@
  * picked, the review of detected fields, and the dynamic XFA form being filled.
  *
  * An inventory describes the bytes it was read from, so every one is tagged with the tab and
- * version it describes and a reader only sees the one that matches the tab it asks about: a
- * read that lands after an operation replaced that version is never mixed into the new one.
+ * the key of the bytes it describes and a reader only sees the one that matches the tab it asks
+ * about: a read that lands after an operation replaced that version is never mixed into the new
+ * one. What the key is differs by what the inventory describes — see `ExistingInventory` and
+ * `formInventoryKey`.
  */
 
 import type { ExistingAnnotation, FormFieldInfo } from 'pdf-core';
 import type { FormDetection } from 'pdf-core/ops/form-detect';
 import type { XfaInfo } from 'pdf-core/ops/xfa';
-import type { SessionTab } from 'pdf-model';
+import { type EngineValuesDraft, type SessionTab, workingBytesKey } from 'pdf-model';
 import type { ToolError } from 'pdf-shared';
 import { createStore, type Equality, useStore } from '../store';
 
@@ -24,8 +26,8 @@ import { createStore, type Equality, useStore } from '../store';
  * read, and a read that lands after a byte operation replaced that version is discarded
  * rather than mixed into the new one.
  *
- * The key is the produced version's own id
- * (or the source master), **not** `working.id`: drawing, erasing or undoing a mark journals an
+ * The key is `workingBytesKey` (the produced version's own id, or the source master),
+ * **not** `working.id`: drawing, erasing or undoing a mark journals an
  * overlay step and mints a new working id without touching a byte, and keying on that would
  * throw away a perfectly good inventory every time the user drew something.
  */
@@ -36,13 +38,13 @@ export interface ExistingInventory {
 }
 
 /**
- * The form inventory of one tab's working version. Read from the **working bytes** rather than
- * from the viewer: a field list is a document fact, and re-reading it after every operation
- * keeps it true (a page delete can remove widgets).
+ * The form inventory of one tab's working bytes. Read from the **working bytes** rather than
+ * from the viewer: a field list is a document fact, and re-reading it after every byte
+ * operation keeps it true (a page delete can remove widgets). `key` is `formInventoryKey`.
  */
 export interface FormInventory {
   readonly tabId: string;
-  readonly version: string;
+  readonly key: string;
   readonly fields?: readonly FormFieldInfo[];
   /** What the version's XFA is (`null`: none); read with the fields, from the same bytes. */
   readonly xfa?: XfaInfo | null;
@@ -121,7 +123,7 @@ export function existingInventoryUnknown(): void {
 /** The form inventory is being read for a version (or, with `null`, there is nothing to read). */
 export function formInventoryReading(tab: SessionTab | null): void {
   formsStore.set({
-    formInventory: tab === null ? null : { tabId: tab.id, version: tab.working.id },
+    formInventory: tab === null ? null : { tabId: tab.id, key: formInventoryKey(tab) },
   });
 }
 
@@ -215,14 +217,44 @@ export function existingAnnotationsOf(
   return inventory !== null &&
     tab !== null &&
     inventory.tabId === tab.id &&
-    inventory.bytesKey === (tab.working.produced?.id ?? 'source')
+    inventory.bytesKey === workingBytesKey(tab)
     ? inventory.annotations
     : null;
 }
 
-/** The form inventory of `tab`'s current working version, or `null` when it is not read yet. */
+/** A draft's text, made once: the key is asked for on every render, and a draft can carry bitmaps. */
+const serializedDrafts = new WeakMap<EngineValuesDraft, string>();
+
+function serializedValues(draft: EngineValuesDraft): string {
+  let text = serializedDrafts.get(draft);
+  if (text === undefined) {
+    text = JSON.stringify(draft);
+    serializedDrafts.set(draft, text);
+  }
+  return text;
+}
+
+/**
+ * What a form inventory of `tab` is keyed to: the bytes (`workingBytesKey`) **and** the values typed
+ * into pdf.js's own forms that are not in them yet.
+ *
+ * The bytes alone are right for what the file carries, and a mark step must not read the inventory
+ * again — but a value typed into a field reaches the session only as `overlays.engineValues` (the
+ * live engine holds it; `materializeBase` saves it into the bytes a read or a write sees), and
+ * Save hands this inventory to `verifyForWrite` as the field values the written file must carry.
+ * An inventory read before the typing would report every typed field as changed. So the key moves
+ * with the typed values, and with nothing else an overlay step carries.
+ */
+export function formInventoryKey(tab: SessionTab): string {
+  const overlays = tab.working.overlays as unknown as { readonly engineValues?: EngineValuesDraft } | null;
+  const typed = overlays?.engineValues;
+  const bytesKey = workingBytesKey(tab);
+  return typed === undefined ? bytesKey : `${bytesKey}#${serializedValues(typed)}`;
+}
+
+/** The form inventory of `tab`'s current bytes and typed values, or `null` when it is not read yet. */
 export function formsOf(inventory: FormInventory | null, tab: SessionTab | null): FormInventory | null {
-  return tab !== null && inventory?.tabId === tab.id && inventory.version === tab.working.id
+  return tab !== null && inventory?.tabId === tab.id && inventory.key === formInventoryKey(tab)
     ? inventory
     : null;
 }

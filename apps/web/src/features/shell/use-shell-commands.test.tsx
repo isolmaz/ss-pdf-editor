@@ -3,7 +3,7 @@
 
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import { SessionStore } from 'pdf-model';
+import { SessionStore, workingBytesKey } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { ViewerApi } from 'pdf-ui/viewer';
 import { Component, type ReactNode } from 'react';
@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
 import { factsRead, factsStore } from '../facts/facts-store';
-import { formInventoryRead, formsStore, initialFormsState } from '../forms/forms-store';
+import { formInventoryKey, formInventoryRead, formsStore, initialFormsState } from '../forms/forms-store';
 import { initialMeasureState, measureStore } from '../measure/measure-store';
 import { hideStartScreen, initialOpenState, openStore } from '../open/open-store';
 import { readingStore } from '../reading/reading-store';
@@ -49,13 +49,13 @@ function openReadyTab(fileHandle?: FileSystemFileHandle) {
   hideStartScreen();
   factsRead({
     tabId: tab.id,
-    version: tab.working.id,
+    bytesKey: workingBytesKey(tab),
     fonts: [],
     attachments: [],
     signatures: [],
     security: { encrypted: false, permissions: [] },
   });
-  formInventoryRead({ tabId: tab.id, version: tab.working.id, fields: [] } as never);
+  formInventoryRead({ tabId: tab.id, key: formInventoryKey(tab), fields: [] } as never);
   viewerChanged(viewer as unknown as ViewerApi);
   return tab;
 }

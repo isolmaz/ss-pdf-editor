@@ -5,7 +5,7 @@
  */
 
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
-import { SessionStore, type SessionTab, sha256Hex } from 'pdf-model';
+import { SessionStore, type SessionTab, sha256Hex, workingBytesKey } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
@@ -75,7 +75,7 @@ beforeEach(() => {
   mocks.currentFactsError.mockReturnValue(null);
   mocks.currentForms.mockReturnValue({
     tabId: tab.id,
-    version: tab.working.id,
+    key: workingBytesKey(tab),
     fields: [{ name: 'city', value: 'Ankara' }],
   });
   mocks.editableOverlays.mockReturnValue({ annotations: ['mark'] });
@@ -125,7 +125,11 @@ describe('prepareOutput: what stops it', () => {
   });
 
   it('says the inspection failed when the form inventory failed to read', async () => {
-    mocks.currentForms.mockReturnValue({ tabId: tab.id, version: tab.working.id, error: new Error('forms') });
+    mocks.currentForms.mockReturnValue({
+      tabId: tab.id,
+      key: workingBytesKey(tab),
+      error: new Error('forms'),
+    });
     expect(await prepare()).toBeNull();
     expect(coreStore.get().notice).toBe('inspection.failed');
   });
@@ -244,7 +248,11 @@ describe('prepareOutput: the checked output', () => {
       steps: ['rotate'],
       overlays: null,
     });
-    mocks.currentForms.mockReturnValue({ tabId: tab.id, version: session.active?.working.id, fields: [] });
+    mocks.currentForms.mockReturnValue({
+      tabId: tab.id,
+      key: workingBytesKey(session.active as SessionTab),
+      fields: [],
+    });
     mocks.signatureWarning.mockClear();
     await prepare();
     expect(mocks.signatureWarning.mock.calls[0]?.[2]).toEqual(produced);

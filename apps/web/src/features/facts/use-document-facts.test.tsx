@@ -1,19 +1,20 @@
 // @vitest-environment happy-dom
 /**
  * The facts follow the document on screen: they are read from the materialised working bytes
- * (verdicts judged against the user's trust), start over whenever the version, the handle, the
- * trust or a retry changes, and a read that arrives late or fails after the next one began is
- * dropped.
+ * (verdicts judged against the user's trust), start over whenever the bytes, the handle, the
+ * trust or a retry changes — not for a mark step, which changes no byte — and a read that arrives
+ * late or fails after the next one began is dropped.
  */
 
 import { act, cleanup, render } from '@testing-library/react';
-import { SessionStore, type SessionTab } from 'pdf-model';
+import { SessionStore, type SessionTab, workingBytesKey } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { currentFacts, currentFactsError, factsReading, factsStore } from './facts-store';
 import { trustStore } from './trust-store';
 import { useDocumentFacts } from './use-document-facts';
 
+const emptyOverlays = vi.hoisted(() => ({ annotations: [], measures: [], redactions: [] }));
 const calls = vi.hoisted(() => ({
   materializeBase: vi.fn(),
   listPdfFonts: vi.fn(),
@@ -22,7 +23,10 @@ const calls = vi.hoisted(() => ({
   listPdfAttachments: vi.fn(),
   readPdfAttachment: vi.fn(),
 }));
-vi.mock('../../operations', () => ({ materializeBase: calls.materializeBase }));
+vi.mock('../../operations', () => ({
+  EMPTY_OVERLAYS: emptyOverlays,
+  materializeBase: calls.materializeBase,
+}));
 vi.mock('../../lazy-ops', () => ({
   listPdfFonts: calls.listPdfFonts,
   verifySignatures: calls.verifySignatures,
@@ -41,6 +45,26 @@ const empty = trustStore.get();
 
 function openTab(store = new SessionStore()): SessionTab {
   return store.openDocument({ name: 'a.pdf', bytes, sha256: 'a', pageCount: 1 });
+}
+
+/** The tab after a mark step: a new working id over the same bytes. */
+function mark(store: SessionStore, tab: SessionTab): SessionTab {
+  store.setOverlays(tab.id, { annotations: [{ id: 'm1' }], measures: [], redactions: [] }, 'ann.transform');
+  return store.active as SessionTab;
+}
+
+/** The tab after a byte operation landed. */
+function produce(store: SessionStore, tab: SessionTab): SessionTab {
+  store.applyOperation({
+    tabId: tab.id,
+    bytes: new Uint8Array([4, 5]),
+    pageCount: 1,
+    labelKey: 'ann.transform',
+    engine: 'mupdf',
+    steps: [],
+    overlays: null,
+  });
+  return store.active as SessionTab;
 }
 
 function Follower(props: {
@@ -96,14 +120,17 @@ describe('useDocumentFacts', () => {
     expect(calls.materializeBase).toHaveBeenCalledWith(
       { store, t, tab, handle },
       { signal: expect.any(AbortSignal) },
+      undefined,
+      emptyOverlays,
     );
+    expect(calls.materializeBase.mock.calls[0]?.[3]).toBe(emptyOverlays);
     expect(calls.verifySignatures).toHaveBeenCalledWith(bytes, expect.any(AbortSignal), {
       roots: [new Uint8Array([9])],
       crls: [new Uint8Array([8])],
     });
     expect(currentFacts(tab)).toEqual({
       tabId: tab.id,
-      version: tab.working.id,
+      bytesKey: workingBytesKey(tab),
       fonts: [{ name: 'Helvetica' }],
       signatures: [{ fieldName: 'Sig1' }],
       attachments: [
@@ -127,6 +154,62 @@ describe('useDocumentFacts', () => {
     view.rerender(<Follower store={store} tab={null} handle={null} />);
     expect(factsStore.get()).toEqual({ facts: null, failure: null });
     expect(calls.materializeBase).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not read again for a mark step, which mints a new working id over the same bytes', async () => {
+    const store = new SessionStore();
+    const tab = openTab(store);
+    const view = render(<Follower store={store} tab={tab} handle={handle} />);
+    await act(async () => undefined);
+    const facts = currentFacts(tab);
+    expect(facts).not.toBeNull();
+
+    const drawn = mark(store, tab);
+    expect(drawn.working.id).not.toBe(tab.working.id);
+    view.rerender(<Follower store={store} tab={drawn} handle={handle} />);
+    await act(async () => undefined);
+    mark(store, drawn);
+    view.rerender(<Follower store={store} tab={store.active} handle={handle} />);
+    await act(async () => undefined);
+
+    expect(calls.materializeBase).toHaveBeenCalledTimes(1);
+    expect(currentFacts(store.active)).toBe(facts);
+    expect(factsStore.get().facts).toBe(facts);
+  });
+
+  it('reads again for another version of the bytes, and takes the tab it reads from the store', async () => {
+    const store = new SessionStore();
+    const tab = openTab(store);
+    const view = render(<Follower store={store} tab={tab} handle={handle} />);
+    await act(async () => undefined);
+
+    const next = produce(store, tab);
+    view.rerender(<Follower store={store} tab={next} handle={handle} />);
+    await act(async () => undefined);
+    expect(calls.materializeBase).toHaveBeenCalledTimes(2);
+    expect(calls.materializeBase.mock.calls[1]?.[0].tab).toBe(next);
+    expect(currentFacts(next)).toMatchObject({ tabId: tab.id, bytesKey: workingBytesKey(next) });
+    expect(currentFacts(tab)).toBeNull();
+
+    // Another read of the same bytes (a swapped handle) sees the marks the store has since gained,
+    // not the tab object its caller last rendered.
+    const drawn = mark(store, next);
+    view.rerender(<Follower store={store} tab={next} handle={otherHandle} />);
+    await act(async () => undefined);
+    expect(calls.materializeBase).toHaveBeenCalledTimes(3);
+    expect(calls.materializeBase.mock.calls[2]?.[0].tab).toBe(drawn);
+    expect(currentFacts(drawn)).not.toBeNull();
+  });
+
+  it('reads nothing for a tab the store no longer holds', async () => {
+    const store = new SessionStore();
+    const tab = openTab(store);
+    store.closeTab(tab.id);
+    render(<Follower store={store} tab={tab} handle={handle} />);
+    await act(async () => undefined);
+
+    expect(calls.materializeBase).not.toHaveBeenCalled();
+    expect(factsStore.get()).toEqual({ facts: null, failure: null });
   });
 
   it('starts over when the handle changes, the user imports a root, or asks to retry', async () => {

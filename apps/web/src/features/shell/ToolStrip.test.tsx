@@ -17,6 +17,7 @@ import { coreStore, initialCoreState, selectTool } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
 import {
   existingInventoryRead,
+  formInventoryKey,
   formInventoryRead,
   formsStore,
   initialFormsState,
@@ -334,7 +335,7 @@ describe('ToolStrip', () => {
     viewerChanged(viewer);
     formInventoryRead({
       tabId: tab.id,
-      version: tab.working.id,
+      key: formInventoryKey(tab),
       fields: [],
       xfa: { kind: 'dynamic' },
     } as never);
@@ -355,7 +356,7 @@ describe('ToolStrip', () => {
 
   it('shows no XFA banner for a form without XFA', () => {
     const tab = openTab();
-    formInventoryRead({ tabId: tab.id, version: tab.working.id, fields: [] } as never);
+    formInventoryRead({ tabId: tab.id, key: formInventoryKey(tab), fields: [] } as never);
     mount();
     expect(screen.queryByTestId('xfa-banner')).toBeNull();
   });

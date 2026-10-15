@@ -2,7 +2,7 @@
 
 import type { MarkTransform } from 'pdf-core/ops/annotation-transform';
 import { transformPdfAnnotations } from 'pdf-core/ops/annotation-transform';
-import type { JsonValue } from 'pdf-model';
+import { type JsonValue, workingBytesKey } from 'pdf-model';
 import { ToolError } from 'pdf-shared';
 import { planMarkTransform } from '../../annotation-interaction';
 import { applyProducedBytes, hasEngineEdits, materializeBase } from '../../operations';
@@ -63,7 +63,7 @@ export function transformTargets(
       if (
         controller.signal.aborted ||
         fresh?.id !== tab.id ||
-        fresh.working.produced?.id !== tab.working.produced?.id
+        workingBytesKey(fresh) !== workingBytesKey(tab)
       )
         return;
       const before = editableOverlays(fresh);
