@@ -17,6 +17,16 @@ export const pagesPart = {
   'pages.extract.title': 'Extract pages',
   'pages.extract.intro':
     'Selected pages become a new document; the current one is unchanged. Viewer preferences, language and layer settings are not carried over.',
+  'organize.status': '{selected} of {total} page(s) selected',
+  'organize.page': 'Page {page}',
+  'organize.help':
+    'Select pages, then drag them or press Alt with an arrow key to move them. Enter opens a page.',
+  'organize.size': 'Thumbnail size',
+  'organize.selectMode': 'Select several',
+  'organize.close': 'Back to document',
+  'organize.moveEarlier': 'Move earlier',
+  'organize.moveLater': 'Move later',
+  'organize.movedTo': 'Moved to position {position}.',
 
   'split.title': 'Split document',
   'split.intro':

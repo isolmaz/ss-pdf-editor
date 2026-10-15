@@ -21,6 +21,16 @@ export const pagesPart = {
   'pages.extract.title': 'Sayfaları ayıkla',
   'pages.extract.intro':
     'Seçilen sayfalar yeni bir belge olur; geçerli belge değişmez. Görünüm tercihleri, dil ve katman ayarları yeni belgeye taşınmaz.',
+  'organize.status': '{total} sayfadan {selected} tanesi seçili',
+  'organize.page': '{page}. sayfa',
+  'organize.help':
+    'Sayfaları seçin; sürükleyin ya da Alt ile bir ok tuşuna basarak taşıyın. Enter sayfayı açar.',
+  'organize.size': 'Küçük resim boyutu',
+  'organize.selectMode': 'Birden çok seç',
+  'organize.close': 'Belgeye dön',
+  'organize.moveEarlier': 'Öne taşı',
+  'organize.moveLater': 'Arkaya taşı',
+  'organize.movedTo': '{position}. konuma taşındı.',
 
   'split.title': 'Belgeyi böl',
   'split.intro':

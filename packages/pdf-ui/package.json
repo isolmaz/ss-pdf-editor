@@ -9,6 +9,7 @@
     "./ui": "./src/shell/ShellSurface.tsx",
     "./viewer": "./src/viewer/PdfViewerPane.tsx",
     "./panels": "./src/panels/DockPanels.tsx",
+    "./organize": "./src/panels/OrganizeView.tsx",
     "./dialog": "./src/dialogs/DialogSurface.tsx",
     "./tools": "./src/tools/ToolSurface.tsx",
     "./printing": "./src/printing/PrintSurface.tsx",
