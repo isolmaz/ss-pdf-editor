@@ -103,7 +103,11 @@ export interface AccessibilityDockProps {
   readonly currentPage: number;
   readonly canEdit: boolean;
   readonly onGoToPage: (pageIndex: number) => void;
-  /** Bytes a PDF/UA fix, the tags editor or the alt-text writer produced. */
+  /**
+   * Bytes a PDF/UA fix, the tags editor or the alt-text writer produced. The handler is an
+   * operation of its own (busy gate, Cancel, failures as notices) and never rejects, which is
+   * what lets the panel's callbacks fire it without awaiting.
+   */
   readonly onWritten: (outcome: AccessibilityOutcome) => Promise<void>;
 }
 

@@ -221,7 +221,13 @@ export function RightDock({ session, tier, t, dialogContext, actions }: RightDoc
             onReadAttachment={(name) => void actions.attachments.readOut(name)}
           />
         ) : rightTab === 'redaction-audit' ? (
-          <RedactionAuditView store={session} t={t} erasedTerms={erasedWordsOf} />
+          <RedactionAuditView
+            key={activeTab.working.id}
+            store={session}
+            t={t}
+            erasedTerms={erasedWordsOf}
+            workingId={activeTab.working.id}
+          />
         ) : rightTab === 'compare' ? (
           <Suspense
             fallback={

@@ -22,6 +22,7 @@ import {
   showNotice,
 } from '../core/core-store';
 import { documentContext } from '../core/document';
+import { failureLine, runGatedOperation } from '../core/gated-operation';
 import { handleFor, swapHandle } from '../core/handles';
 import type { WriteFileAnnotation } from '../marks/host';
 import {
@@ -39,12 +40,6 @@ import {
 export interface FormsHost {
   readonly store: SessionStore;
   readonly t: Translator;
-}
-
-/** An error as the status line words it: what happened, then what to do. */
-function failureNotice(error: unknown, t: Translator): string {
-  const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
-  return `${t(toolError.messageKey)} ${t(toolError.hintKey)}`;
 }
 
 /**
@@ -72,7 +67,7 @@ export async function openXfaForm(host: FormsHost): Promise<void> {
       xfaFormOpened({ tab, bytes });
     }
   } catch (error) {
-    showNotice(failureNotice(error, t));
+    showNotice(failureLine(error, t));
   } finally {
     setBusy(false);
   }
@@ -118,16 +113,9 @@ export async function fillField(name: string, value: string | boolean, host: For
   if (tab === null || handle === null) return;
   const current = currentForms(tab)?.fields?.find((field) => field.name === name);
   if (current !== undefined && fieldValueText(current.value) === String(value)) return;
-  if (isBusy()) {
-    refuseBusy(t);
-    return;
-  }
-  setBusy(true);
-  try {
-    const base = await materializeBase(documentContext(store, t, tab, handle));
-    const outcome = await fillFormFields(base, [{ name, value }], {
-      signal: new AbortController().signal,
-    });
+  await runGatedOperation(t, async (signal) => {
+    const base = await materializeBase(documentContext(store, t, tab, handle), { signal });
+    const outcome = await fillFormFields(base, [{ name, value }], { signal });
     const next = await applyProducedBytes(
       documentContext(store, t, tab, handle),
       outcome.bytes,
@@ -135,14 +123,11 @@ export async function fillField(name: string, value: string | boolean, host: For
       { key: 'form.note.filled', params: { count: 1 } },
       outcome.report.engine,
       outcome.report.steps,
+      { signal },
     );
     swapHandle(t, tab.id, next);
     showNotice(t('op.result.applied', { label: t('panel.forms') }));
-  } catch (error) {
-    showNotice(failureNotice(error, t));
-  } finally {
-    setBusy(false);
-  }
+  });
 }
 
 /**
@@ -171,7 +156,7 @@ export async function startFormDetect(host: FormsHost): Promise<void> {
     if (detection.candidates.length === 0) showNotice(t('formDetect.panel.none'));
   } catch (error) {
     detectCancelled();
-    showNotice(failureNotice(error, t));
+    showNotice(failureLine(error, t));
   }
 }
 

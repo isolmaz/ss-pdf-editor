@@ -7,9 +7,17 @@ const RedactionAuditPanel = lazy(async () => {
   return { default: module.RedactionAuditPanel };
 });
 
-/** The right dock's redaction-audit tab: the last audit, and the button that runs it again. */
-export function RedactionAuditView({ store, t, erasedTerms }: RedactionAuditRun) {
-  const report = useRedactionAudit((state) => state.report);
+export interface RedactionAuditViewProps extends RedactionAuditRun {
+  /** `working.id` of the version on screen: only a report read from it is shown. */
+  readonly workingId: string;
+}
+
+/** The right dock's redaction-audit tab: the last audit of this version, and the button that runs it again. */
+export function RedactionAuditView({ store, t, erasedTerms, workingId }: RedactionAuditViewProps) {
+  // A report read from another version of the document, or from another tab, is not shown.
+  const report = useRedactionAudit((state) =>
+    state.report?.workingId === workingId ? state.report.audit : null,
+  );
   const loading = useRedactionAudit((state) => state.loading);
   return (
     <Suspense
