@@ -131,6 +131,7 @@ describe('the simple mode keeps what a free reader carries', () => {
       'tools.security',
       'tools.unlock',
       'tools.optimize',
+      'page.deskew',
       'file.batch',
       'tools.compare',
       'tools.accessibility',

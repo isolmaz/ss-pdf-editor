@@ -39,6 +39,7 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   'form-create-field': async () => (await import('./forms')).createFieldDialog,
   'form-data': async () => (await import('./forms')).formDataDialog,
   'page-boxes': async () => (await import('./pageboxes')).pageBoxesDialog,
+  deskew: async () => (await import('./deskew')).deskewDialog,
   'page-labels': async () => (await import('./pagelabels')).pageLabelsDialog,
   'insert-pages': async () => (await import('./pageedit')).insertPagesDialog,
   'replace-pages': async () => (await import('./pageedit')).replacePagesDialog,

@@ -43,7 +43,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · detect fields on a flat form · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
-| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · labels |
+| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder · rotate · extract · split · replace · merge (several files, in any order) · page boxes and auto-crop · straighten tilted scans · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
@@ -272,6 +272,16 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     is viewing-only.
 - **Page boxes.** You can edit the Media, Crop, Trim, Bleed and Art boxes. Auto-crop sets
   the box from the ink bounds.
+- **Straighten pages.** **Page → Straighten pages…** measures how far each scanned page is tilted
+  (up to 15° either way, to a few hundredths of a degree on generated pages) and turns the page back.
+  - The scan is not re-encoded: a rotation about the page centre is added to the page's content, so the
+    picture, an OCR text layer and any vector content turn together, and the page keeps its size and boxes.
+  - The report names every page: the tilt removed (`1.8°`), already straight (under 0.1°), skipped for
+    having no clear text lines (a blank page, a photograph, a page number) or skipped because the
+    turn would push text off the page.
+  - Annotations, links and form fields stay where they were. The report counts the turned pages that
+    carry any, since they may no longer line up with the content.
+  - Undo restores the scan.
 - **Structure.**
   - Page labels. Inserting, replacing or merging pages keeps the label every page already had;
     a page from a document without labels is numbered by its page number in that document.

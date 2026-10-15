@@ -148,6 +148,7 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'page.replace': dialog('replace-pages'),
   'page.split': dialog('split'),
   'page.boxes': dialog('page-boxes'),
+  'page.deskew': dialog('deskew'),
   'page.labels': dialog('page-labels'),
   'tools.numbering': dialog('page-numbers'),
   'tools.watermark': dialog('watermark'),
@@ -371,7 +372,7 @@ describe('buildCommands', () => {
     ]) {
       expect(byId(none, id).disabled, id).toBe(true);
     }
-    for (const id of ['page.split', 'tools.ocr', 'tools.impose', 'tools.measure-area']) {
+    for (const id of ['page.split', 'page.deskew', 'tools.ocr', 'tools.impose', 'tools.measure-area']) {
       expect(byId(none, id).disabled, id).toBe(true);
     }
     // Starting a document, help and settings never need one.
@@ -382,6 +383,7 @@ describe('buildCommands', () => {
     const viewing = buildCommands(recordingHost({ canEdit: false }).host);
     expect(byId(viewing, 'view.zoom-in').disabled).toBeFalsy();
     expect(byId(viewing, 'tools.ocr').disabled).toBe(true);
+    expect(byId(viewing, 'page.deskew').disabled).toBe(true);
     // Redaction rewrites the file: a protected (read-only) tab refuses it from the palette
     // exactly as the toolbar does.
     expect(byId(viewing, 'tools.redact').disabled).toBe(true);
