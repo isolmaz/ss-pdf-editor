@@ -805,7 +805,7 @@ const OPERATION_TABLE: readonly OperationDeclaration[] = [
   {
     steps: ['split-two-up'],
     mayChange: ['pageCount', 'pageOrder', 'pageContent', 'textContent', 'rotation', 'cropBox', 'pageLabels'],
-    why: 'page-tidy turns each landscape page into a left and a right page that window the same content through their own boxes, and re-plans the labels so each half keeps the label of the page it came from',
+    why: 'page-tidy splits a landscape page into two that window its content, and re-plans the labels',
   },
 
   /* — annotation and outline writers — */
