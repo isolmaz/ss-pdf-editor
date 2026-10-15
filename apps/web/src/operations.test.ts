@@ -999,6 +999,15 @@ describe('materializeBase with pending measurements', () => {
       const steps: SaveStepDescription[] = [];
       const bytes = await materializeBase(context(), SIGNAL, steps);
       expect(annotationSubtypes(bytes)).toEqual([['Line']]);
+      // The session's translator is English, so the measurement text in the file is too:
+      // 200 pt at 1:100 in cm is 705.6 (a Turkish reading would print `705,6`).
+      const document = reopen(bytes);
+      try {
+        const line = document.findPage(0).get('Annots').get(0);
+        expect(line.get('Contents').asString()).toBe('705.6 cm');
+      } finally {
+        document.destroy();
+      }
       expect(steps.length).toBeGreaterThan(0);
       expect(steps.every((step) => step.note === 'pending measurements' && step.engine === 'mupdf')).toBe(
         true,

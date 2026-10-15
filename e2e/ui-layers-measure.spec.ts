@@ -25,12 +25,11 @@ const HINT = 'e.g. 1:100 · 1 cm = 5 m';
 /** Points per centimetre of a 1:100 drawing: 72 pt per inch, 2.54 cm per inch, ratio 100. */
 const POINTS_PER_CM = 72 / 2.54 / 100;
 
-/** The product prints numbers with the Turkish locale: decimal comma, no grouping. */
-function turkish(value: number, decimals: number): string {
-  return new Intl.NumberFormat('tr', {
+/** The product prints numbers with the interface locale (the e2e app is English): decimal point, comma grouping. */
+function english(value: number, decimals: number): string {
+  return new Intl.NumberFormat('en', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
-    useGrouping: false,
   }).format(value);
 }
 
@@ -95,24 +94,24 @@ test('a distance is read live at the pointer, and the exported line carries its 
 
   await clickAt(page, 100, 300);
   await moveTo(page, 300, 300);
-  // 200 pt at 1:100 is 705,6 cm; the first segment points along +x.
+  // 200 pt at 1:100 is 705.6 cm; the first segment points along +x.
   expect(200 / POINTS_PER_CM).toBeCloseTo(705.6, 1);
-  await expect(readout(page)).toHaveText(/^705,\d cm · 0,0°$/);
+  await expect(readout(page)).toHaveText(/^705\.\d cm · 0\.0°$/);
   await clickAt(page, 300, 300);
   await page.keyboard.press('Enter');
 
   const mark = page.locator('button[data-measure]');
   await expect(mark).toHaveCount(1);
   await expect(mark).toHaveAttribute('aria-label', 'Distance');
-  await expect(mark).toContainText(/^705,\d cm$/);
+  await expect(mark).toContainText(/^705\.\d cm$/);
   await expect(readout(page)).toHaveText(HINT);
 
   const line = only(await readAnnotations(await exportBytes(page, 'distance.pdf')), 'Line');
   expect(line.pageIndex).toBe(0);
   expect(line.measureSubtype).toBe('RL');
-  expect(line.measureRatio).toEqual([1, 100]);
+  expect(line.measureRatio).toBe('1:100');
   expect(line.measureUnit).toBe('cm');
-  expect(line.contents).toMatch(/^705,\d cm$/);
+  expect(line.contents).toMatch(/^705\.\d cm$/);
   expect(line.line[0]).toBeCloseTo(100, 0);
   expect(line.line[1]).toBeCloseTo(300, 0);
   expect(line.line[2]).toBeCloseTo(300, 0);
@@ -156,11 +155,11 @@ test('the strip edits scale, unit, grid, snapping and style; the exported line c
   // Both clicks land off the lines and snap onto the 50 pt grid: (100, 292) and (250, 342).
   await clickAt(page, 112, 287);
   await moveTo(page, 263, 342);
-  // 158,11 pt drawn is 5,578 cm of paper, 27,89 m at 1 cm = 5 m.
-  await expect(readout(page)).toHaveText(/^27,89 m · 18,4°$/);
+  // 158.11 pt drawn is 5.578 cm of paper, 27.89 m at 1 cm = 5 m.
+  await expect(readout(page)).toHaveText(/^27\.89 m · 18\.4°$/);
   // Changing the unit re-reads the chain being clicked: the same ratio in feet.
   await unit.selectOption('ft');
-  await expect(readout(page)).toHaveText(/^91,50 ft · 18,4°$/);
+  await expect(readout(page)).toHaveText(/^91\.50 ft · 18\.4°$/);
 
   await bar.locator('input[type="color"]').fill('#ff0000');
   await bar.locator('input[type="range"]').fill('0.5');
@@ -168,13 +167,13 @@ test('the strip edits scale, unit, grid, snapping and style; the exported line c
   await bar.getByRole('textbox', { name: 'Author', exact: true }).fill('Ada');
   await clickAt(page, 263, 342);
   await page.keyboard.press('Enter');
-  await expect(page.locator('button[data-measure]')).toContainText('91,50 ft');
+  await expect(page.locator('button[data-measure]')).toContainText('91.50 ft');
 
   const line = only(await readAnnotations(await exportBytes(page, 'strip.pdf')), 'Line');
   // The grid counts from the page's top edge: 50 pt rows at 842 − 550 = 292 and 842 − 500 = 342.
   expect(line.line).toEqual([100, 292, 250, 342]);
-  expect(line.contents).toBe('91,50 ft');
-  expect(line.measureRatio).toEqual([1, 500]);
+  expect(line.contents).toBe('91.50 ft');
+  expect(line.measureRatio).toBe('1:500');
   expect(line.measureUnit).toBe('ft');
   expect(line.color).toEqual([1, 0, 0]);
   expect(line.opacity).toBe(0.5);
@@ -213,7 +212,7 @@ test('a perimeter snaps onto its own first point, Backspace takes the last point
 
   await clickAt(page, 50, 300);
   await moveTo(page, 150, 300);
-  await expect(readout(page)).toHaveText(/^\d+(,\d)? cm · 0,0°$/);
+  await expect(readout(page)).toHaveText(/^\d+(\.\d)? cm · 0\.0°$/);
   // Escape ends the chain, not the tool.
   await page.keyboard.press('Escape');
   await expect(readout(page)).toHaveText(HINT);
@@ -232,7 +231,7 @@ test('a perimeter snaps onto its own first point, Backspace takes the last point
 
   await expect(page.locator('button[data-measure]')).toHaveAttribute('aria-label', 'Perimeter');
   const polyline = only(await readAnnotations(await exportBytes(page, 'perimeter.pdf')), 'PolyLine');
-  expect(polyline.measureSubtype).toBe('P');
+  expect(polyline.measureSubtype).toBe('RL');
   expect(polyline.vertices).toHaveLength(8);
   // The fourth vertex is the first, to the bit: it was snapped, not clicked near.
   expect(polyline.vertices.slice(6, 8)).toEqual(polyline.vertices.slice(0, 2));
@@ -242,7 +241,7 @@ test('a perimeter snaps onto its own first point, Backspace takes the last point
   expect(polyline.vertices[3]).toBeCloseTo(560, 0);
   expect(polyline.vertices[4]).toBeCloseTo(300, 0);
   expect(polyline.vertices[5]).toBeCloseTo(500, 0);
-  expect(polyline.contents).toBe(`${turkish(lengthOf(polyline.vertices, false) / POINTS_PER_CM, 0)} cm`);
+  expect(polyline.contents).toBe(`${english(lengthOf(polyline.vertices, false) / POINTS_PER_CM, 0)} cm`);
 });
 
 test('an area is a rectangle from two corners and a polygon from three; the reading carries area, boundary and bearing', async ({
@@ -254,7 +253,7 @@ test('an area is a rectangle from two corners and a polygon from three; the read
   // Two corners: a rectangle 200 × 100 pt.
   await clickAt(page, 100, 300);
   await moveTo(page, 300, 400);
-  await expect(readout(page)).toHaveText(/^\d+(,\d)? cm² · \d+(,\d)? cm · \d+,\d°$/);
+  await expect(readout(page)).toHaveText(/^[\d,]+(\.\d)? cm² · [\d,]+(\.\d)? cm · \d+\.\d°$/);
   await clickAt(page, 300, 400);
   await page.keyboard.press('Enter');
   await expect(page.locator('button[data-measure]')).toHaveCount(1);
@@ -267,17 +266,17 @@ test('an area is a rectangle from two corners and a polygon from three; the read
 
   const annotations = await readAnnotations(await exportBytes(page, 'areas.pdf'));
   const square = only(annotations, 'Square');
-  expect(square.measureSubtype).toBe('A');
+  expect(square.measureSubtype).toBe('RL');
   expectNear(square.rect[0], 100 - 1);
   expectNear(square.rect[1], 300 - 1);
   expectNear(square.rect[2], 300 + 1);
   expectNear(square.rect[3], 400 + 1);
-  expect(square.contents).toMatch(/^\d+ cm²$/);
+  expect(square.contents).toMatch(/^[\d,]+ cm²$/);
   const polygon = only(annotations, 'Polygon');
-  expect(polygon.measureSubtype).toBe('A');
+  expect(polygon.measureSubtype).toBe('RL');
   expect(polygon.vertices.length).toBeGreaterThanOrEqual(6);
   const squareCm = areaOf(polygon.vertices) / (POINTS_PER_CM * POINTS_PER_CM);
-  expect(polygon.contents).toBe(`${turkish(squareCm, 0)} cm²`);
+  expect(polygon.contents).toBe(`${english(squareCm, 0)} cm²`);
 });
 
 test('a chain belongs to one page; a click on another page does not extend it', async ({ page }) => {

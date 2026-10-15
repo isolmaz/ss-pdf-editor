@@ -133,7 +133,11 @@ export async function materializeBase(
     bytes = await writeSessionAnnotations(bytes, pending.annotations, operation, executedSteps);
   }
   if (pending.measures.length > 0) {
-    const outcome = await writeMeasureAnnotations(bytes, pending.measures, operation);
+    // The measurement text in `/Contents` is printed in the interface's language, not the
+    // product default.
+    const outcome = await writeMeasureAnnotations(bytes, pending.measures, operation, {
+      locale: context.t.locale,
+    });
     bytes = outcome.bytes;
     for (const id of outcome.report.steps) {
       executedSteps?.push({ id, engine: outcome.report.engine, note: 'pending measurements' });

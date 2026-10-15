@@ -6,9 +6,10 @@
  * (`tools.measure.*`), the scale field, its example and the refusal that keeps the
  * previous scale when the new one cannot be read, the unit, the grid and the snap
  * options (`tools.measure.unit`, `tools.measure.grid*`, `tools.measure.snap*`),
+ * the refusal of an area polygon whose edges cross (`tools.measure.selfIntersecting`),
  * the progress line of the write and its notes (`op.progress.measure`,
- * `op.note.measure.*`) — including the note that says which `/Measure` subtypes are
- * Acrobat's own spelling and which names the standard defines.
+ * `op.note.measure.*`) — including the note that says the `/Measure` dictionary is
+ * written in the ISO 32000-1 form and what a reader without measurement support shows.
  *
  * Framework vocabulary stays in the shared parts: the operation dialog's own labels
  * and buttons come from `dialog.*`, cancel and progress from `op.*`, and a refusal
@@ -30,9 +31,11 @@ export const measurePart = {
   'tools.measure.gridGap': 'Aralık',
   'tools.measure.snapGrid': 'Izgaraya yapıştır',
   'tools.measure.snapPoints': 'Noktalara yapıştır',
+  'tools.measure.selfIntersecting':
+    'Çokgenin kenarları birbirini kesiyor; alan hesaplanamaz. Noktaları kenarlar kesişmeyecek biçimde yerleştirin.',
   'op.progress.measure': 'Ölçümler yazılıyor',
   'op.note.measure.written': '{count} ölçüm açıklaması /Measure sözlüğüyle yazıldı.',
   'op.note.measure.readers':
-    "/Measure sözlüğündeki /A ve /P alt türleri Acrobat'ın yazdığı biçimdir; ISO 32000-1 yalnızca /RL ve /GEO adlarını tanımlar.",
+    '/Measure sözlüğü ISO 32000-1 biçiminde yazıldı (/RL alt türü; /X, /D ve /A ölçü biçimi dizileri). Ölçüm desteği olmayan okuyucular yalnızca çizgiyi ve açıklama metnini gösterir.',
   'op.note.measure.nothing': 'Yazılacak ölçüm yok; belge olduğu gibi bırakıldı.',
 } as const;

@@ -82,10 +82,12 @@ export interface WrittenAnnotation {
   readonly inkLists: readonly (readonly number[])[];
   /** `/Measure /Subtype`, empty without a `/Measure` dictionary. */
   readonly measureSubtype: string;
-  /** `/Measure /R`: drawn units, real units. */
-  readonly measureRatio: readonly number[];
+  /** `/Measure /R`: the scale as text (`1:100`, `1 cm = 5 m`). */
+  readonly measureRatio: string;
+  /** `/Measure /X`, first number format: the unit label. */
   readonly measureUnit: string;
-  readonly measureDecimals: number | null;
+  /** `/Measure /X`, first number format: `/D`, the decimal precision (a power of ten). */
+  readonly measurePrecision: number | null;
 }
 
 /** Every annotation of an exported file, page by page, as MuPDF's object model reads them. */
@@ -123,9 +125,9 @@ export async function readAnnotations(bytes: Uint8Array): Promise<readonly Writt
           quadPoints: numbers(dict.get('QuadPoints')),
           inkLists,
           measureSubtype: measure.isNull() ? '' : text(measure.resolve().get('Subtype')),
-          measureRatio: measure.isNull() ? [] : numbers(measure.resolve().get('R')),
-          measureUnit: measure.isNull() ? '' : text(measure.resolve().get('X', 'U')),
-          measureDecimals: measure.isNull() ? null : number(measure.resolve().get('X', 'D')),
+          measureRatio: measure.isNull() ? '' : text(measure.resolve().get('R')),
+          measureUnit: measure.isNull() ? '' : text(measure.resolve().get('X', 0, 'U')),
+          measurePrecision: measure.isNull() ? null : number(measure.resolve().get('X', 0, 'D')),
         });
       }
     }

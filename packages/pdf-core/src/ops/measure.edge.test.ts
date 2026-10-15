@@ -298,7 +298,8 @@ describe('writeMeasureAnnotations refuses what it cannot write', () => {
     const out = await writeMeasureAnnotations(bytes, [], run);
     expect(out.bytes).toBe(bytes);
     expect(out.written).toEqual([]);
-    expect(out.report).toMatchObject({ steps: ['measure.write.skipped'], pageCount: 0, incremental: true });
+    // The document's real page count — a batch chain resolves its next `'all'` against it.
+    expect(out.report).toMatchObject({ steps: ['measure.write.skipped'], pageCount: 1, incremental: true });
     expect(out.report.notes.map((entry) => entry.key)).toEqual(['op.note.measure.nothing']);
   });
 

@@ -79,6 +79,8 @@ export interface ViewerApi {
    * The page's box and rotation, which is what turns a top-left-origin mark into
    * the `/QuadPoints` a PDF annotation carries: `viewBox` is `[x0, y0, x1, y1]`
    * in user space and `rotation` the page's own `/Rotate` (one of 0/90/180/270).
+   * `userUnit` is the page's `/UserUnit` (the size of one user-space unit in 1/72 inch,
+   * 1 by default), which every real-world measurement is scaled by.
    */
   pageGeometry(pageIndex: number): {
     readonly x: number;
@@ -86,6 +88,7 @@ export interface ViewerApi {
     readonly width: number;
     readonly height: number;
     readonly rotation: 0 | 90 | 180 | 270;
+    readonly userUnit?: number;
   } | null;
   /**
    * The origin of the **scrolled content**, in client coordinates, and a page element's
@@ -951,6 +954,7 @@ export function PdfViewerPane({
             width: Math.abs(x1 - x0),
             height: Math.abs(y1 - y0),
             rotation: rotation === 90 || rotation === 180 || rotation === 270 ? rotation : 0,
+            userUnit: pageView.viewport.userUnit,
           };
         },
         pointToPage: (clientX, clientY) => {
