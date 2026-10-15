@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isToolError, TOOL_ERROR_CODES, ToolError, toToolError } from './errors';
 import { tr } from './i18n/tr';
 
@@ -45,18 +45,50 @@ describe('ToolError contract', () => {
     expect(isToolError({ code: 'internal' })).toBe(false);
   });
 
-  it('names a chunk the browser could not fetch as offline, not as an internal failure', () => {
-    for (const message of [
+  describe('a chunk the browser could not fetch', () => {
+    const CHUNK_MESSAGES = [
       'Failed to fetch dynamically imported module: http://localhost/editor/assets/pdf-1.js',
       'error loading dynamically imported module: http://localhost/editor/assets/pdf-1.js',
       'Importing a module script failed.',
       'Unable to preload CSS for /editor/assets/PrintDialog-1.css',
-    ]) {
-      const error = toToolError(new TypeError(message), 'pdfjs');
-      expect(error.code, message).toBe('asset-offline');
-      expect(error.details.engineMessage).toBe(message);
-    }
-    expect(toToolError(new TypeError('Failed to fetch'), 'pdfjs').code).toBe('internal');
+    ];
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('is offline when the browser has no network: connecting is what brings the chunk', () => {
+      vi.stubGlobal('navigator', { onLine: false });
+      for (const message of CHUNK_MESSAGES) {
+        const error = toToolError(new TypeError(message), 'pdfjs');
+        expect(error.code, message).toBe('asset-offline');
+        expect(error.details.engineMessage).toBe(message);
+      }
+      expect(toToolError(new TypeError('Failed to fetch'), 'pdfjs').code).toBe('internal');
+    });
+
+    it('is stale when the browser has a network: the page outlived its release, so reloading is the cure', () => {
+      vi.stubGlobal('navigator', { onLine: true });
+      for (const message of CHUNK_MESSAGES) {
+        const error = toToolError(new TypeError(message), 'pdfjs');
+        expect(error.code, message).toBe('asset-stale');
+        expect(error.messageKey).toBe('error.asset-stale.message');
+        expect(error.hintKey).toBe('error.asset-stale.hint');
+        expect(error.details.engineMessage).toBe(message);
+      }
+      expect(toToolError(new TypeError('Failed to fetch'), 'pdfjs').code).toBe('internal');
+      // Its words are not the offline ones, which would send a reader whose network works the wrong way.
+      expect(tr['error.asset-stale.hint']).toContain('yenileyin');
+      expect(tr['error.asset-stale.hint']).not.toBe(tr['error.asset-offline.hint']);
+      expect(tr['error.asset-stale.message']).not.toBe(tr['error.asset-offline.message']);
+    });
+
+    it('is offline when the runtime does not say whether it has a network', () => {
+      vi.stubGlobal('navigator', {});
+      expect(toToolError(new TypeError(CHUNK_MESSAGES[0] as string)).code).toBe('asset-offline');
+      vi.stubGlobal('navigator', undefined);
+      expect(toToolError(new TypeError(CHUNK_MESSAGES[0] as string)).code).toBe('asset-offline');
+    });
   });
 
   it('names the message and the hint of every code separately, after the code', () => {

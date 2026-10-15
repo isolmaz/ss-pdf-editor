@@ -417,19 +417,24 @@ describe('ShellBody editor chunk', () => {
     expect(editorStore.get().loading).toBeNull();
   });
 
-  it('says so when the editor chunk cannot be fetched', async () => {
-    editorStore.set({
-      surfaces: null,
-      loading: Promise.reject(new TypeError('Failed to fetch dynamically imported module')),
-    });
-    openTab('a.pdf');
-    renderBody();
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(coreStore.get().notice).toBe(
-      `${t('error.asset-offline.message')} ${t('error.asset-offline.hint')}`,
-    );
+  it('says so when the editor chunk cannot be fetched offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    try {
+      editorStore.set({
+        surfaces: null,
+        loading: Promise.reject(new TypeError('Failed to fetch dynamically imported module')),
+      });
+      openTab('a.pdf');
+      renderBody();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(coreStore.get().notice).toBe(
+        `${t('error.asset-offline.message')} ${t('error.asset-offline.hint')}`,
+      );
+    } finally {
+      Reflect.deleteProperty(navigator, 'onLine');
+    }
   });
 });
 

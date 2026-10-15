@@ -240,6 +240,9 @@ export const tr = {
   'error.asset-hash-mismatch.hint': 'Paketi yeniden indirin.',
   'error.asset-offline.message': 'Düzenleyicinin bu parçası henüz bu cihazda yok.',
   'error.asset-offline.hint': 'İnternete bağlanıp sayfayı yenileyin.',
+  'error.asset-stale.message':
+    'Düzenleyicinin bu parçası yüklenemedi; bu sayfa açıldığından beri uygulama güncellenmiş olabilir.',
+  'error.asset-stale.hint': 'Yeni sürümü almak için sayfayı yenileyin; sürerse bağlantınızı denetleyin.',
   'error.font-missing.message': 'Gerekli yazı tipi bulunamadı.',
   'error.font-missing.hint': 'Yazı tipi paketini indirin veya başka bir yazı tipi seçin.',
   'error.ocr-language-missing.message': 'Seçilen OCR dili yüklü değil.',

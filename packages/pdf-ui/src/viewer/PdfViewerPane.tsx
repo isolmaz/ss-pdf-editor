@@ -2,7 +2,7 @@ import { PDFJS_ASSETS } from 'pdf-core/assets';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import { pdfOptionalContentConfig } from 'pdf-core/layers';
 import { decodeEngineValues, type EngineValuesDraft, encodeEngineValues } from 'pdf-model';
-import type { Translator } from 'pdf-shared';
+import { type ToolError, type Translator, toToolError } from 'pdf-shared';
 import type { EventBus, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { hideEditorMarkers } from './marker-text';
@@ -331,6 +331,13 @@ export function PdfViewerPane({
    * screen, so it never goes back to "not painted".
    */
   const [painted, setPainted] = useState(false);
+  /**
+   * Why the engine stack could not be loaded, while it could not. The pane says so and offers
+   * a reload instead of preparing pages for ever: the chunk is the one thing every page of
+   * every document waits for, and a fetch that fails (offline with the chunk not cached, a
+   * release that replaced it) is not retried by the browser within this page's lifetime.
+   */
+  const [failure, setFailure] = useState<ToolError | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{
     clientX: number;
@@ -556,11 +563,29 @@ export function PdfViewerPane({
       frozenStackRef.current = frozen;
       frozen.captureView();
       frozen.freeze();
+      // A rewrite that comes before the previous one has painted drops that replacement
+      // (disposed above) and keeps the stack still frozen on screen. The shell holds the
+      // dropped stack's api, over a viewer that is gone, until the next replacement publishes
+      // its own: it is told, as for every other stack that is disposed. The ordinary freeze
+      // (the previous stack *is* the frozen one) says nothing, as above.
+      if (previous !== null && previous !== frozen) callbacksRef.current.onReady?.(null);
     }
+    setFailure(null);
 
     void (async () => {
-      const [{ EventBus, PDFFindController, PDFLinkService, PDFViewer }, _styles] = await loadPdfjsViewer();
-      if (disposed) return;
+      // As in `XfaFormDialog`, the import is guarded: a chunk the browser cannot fetch is a
+      // message in the pane, not a pane that prepares pages for ever. No api is published,
+      // and the shell is told there is none, as on every other path that leaves the pane
+      // without a viewer.
+      const engine = await loadPdfjsViewer().catch((error: unknown) => {
+        if (!disposed) {
+          callbacksRef.current.onReady?.(null);
+          setFailure(toToolError(error, 'pdfjs'));
+        }
+        return null;
+      });
+      if (engine === null || disposed) return;
+      const [{ EventBus, PDFFindController, PDFLinkService, PDFViewer }, _styles] = engine;
       // Both slots keep pdf.js styling while one is frozen, but DOM consumers
       // (printing and canvas tools) must follow only the current stack.
       primary.removeAttribute('data-active-viewer');
@@ -1216,7 +1241,22 @@ export function PdfViewerPane({
           {overlay}
         </div>
       </div>
-      {ready && painted ? null : (
+      {failure !== null ? (
+        <div role="alert" className="absolute inset-0 z-30 grid place-items-center p-6">
+          <div className="pdf-floating-shadow flex max-w-md flex-col items-center gap-3 rounded-md border border-kumo-line bg-kumo-base px-4 py-3 text-center text-xs text-kumo-default">
+            <p>
+              {t(failure.messageKey)} {t(failure.hintKey)}
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="h-7 rounded-md bg-pdf-accent px-3 font-semibold text-pdf-on-accent hover:opacity-90"
+            >
+              {t('recovery.reload')}
+            </button>
+          </div>
+        </div>
+      ) : ready && painted ? null : (
         <div
           role="status"
           aria-live="polite"

@@ -228,6 +228,10 @@ export const en: Record<MessageKey, string> = {
   'error.asset-hash-mismatch.hint': 'Download the package again.',
   'error.asset-offline.message': 'This part of the editor is not on this device yet.',
   'error.asset-offline.hint': 'Connect to the internet and reload the page.',
+  'error.asset-stale.message':
+    'This part of the editor could not be loaded; the app has probably been updated since this page was opened.',
+  'error.asset-stale.hint':
+    'Reload the page to get the new version; if it keeps failing, check your connection.',
   'error.font-missing.message': 'A required font is missing.',
   'error.font-missing.hint': 'Download the font pack or choose another font.',
   'error.ocr-language-missing.message': 'The selected OCR language is not installed.',
