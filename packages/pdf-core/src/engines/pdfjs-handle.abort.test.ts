@@ -149,3 +149,33 @@ describe('text reads over marked-content items', () => {
     ]);
   });
 });
+
+describe('renderPage while the page is still being fetched', () => {
+  it('settles as aborted without starting a render when the abort lands during getPage', async () => {
+    const controller = new AbortController();
+    const arrival = Promise.withResolvers<unknown>();
+    const render = vi.fn();
+    state.document = fake({ getPage: () => arrival.promise });
+    state.failLoad = undefined;
+    state.onSettled = undefined;
+    const handle = await openWithPdfjs(new Uint8Array([1]));
+
+    const canvas = {
+      width: 300,
+      height: 150,
+      style: {},
+      getContext: () => null,
+    } as unknown as HTMLCanvasElement;
+    const rendering = handle.renderPage(0, canvas, { scale: 1, signal: controller.signal });
+    const settled = expect(rendering).rejects.toMatchObject({ code: 'aborted' });
+    controller.abort();
+    arrival.resolve({
+      getViewport: () => ({ width: 10, height: 10, rotation: 0, viewBox: [0, 0, 10, 10] }),
+      render,
+    });
+    await settled;
+    expect(render).not.toHaveBeenCalled();
+    // The canvas was never sized for a render that did not happen.
+    expect([canvas.width, canvas.height]).toEqual([300, 150]);
+  });
+});

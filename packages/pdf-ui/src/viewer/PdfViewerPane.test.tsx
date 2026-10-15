@@ -1027,15 +1027,62 @@ describe('the find bar', () => {
     runFrames();
   });
 
-  it('closes on Escape and says nothing when it was not open', async () => {
+  const closed = (bus: BusFake) => bus.dispatched.filter((event) => event.name === 'findbarclose');
+
+  it('says nothing to pdf.js on Escape when the bar was not open', async () => {
     await mount();
+    await userEvent.setup().keyboard('{Escape}');
+    expect(screen.queryByRole('textbox', { name: 'Find in document' })).toBeNull();
+    expect(closed(lastBus())).toEqual([]);
+  });
+
+  it('closes on Escape pressed in its field, telling pdf.js to drop the highlights', async () => {
+    const pane = await mount();
+    act(() => apiOf(pane).find('tax'));
+    emit(lastBus(), 'updatefindmatchescount', { matchesCount: { total: 4, current: 1 } });
     const user = userEvent.setup();
+    await user.click(screen.getByRole('textbox', { name: 'Find in document' }));
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('textbox', { name: 'Find in document' })).toBeNull();
+    expect(closed(lastBus())).toEqual([{ name: 'findbarclose', payload: { query: '' } }]);
+    // The query is forgotten: a reopened bar is empty and has no matches to step through.
     await user.keyboard('{Control>}f{/Control}');
-    expect(screen.getByRole('textbox', { name: 'Find in document' })).toBeTruthy();
+    expect((screen.getByRole('textbox', { name: 'Find in document' }) as HTMLInputElement).value).toBe('');
+    expect((screen.getByRole('button', { name: 'Next match' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('closes on Escape pressed in the page area or with nothing focused', async () => {
+    const pane = await mount();
+    const user = userEvent.setup();
+    act(() => apiOf(pane).find('tax'));
+    const inPage = document.createElement('button');
+    pane.container.append(inPage);
+    inPage.focus();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('textbox', { name: 'Find in document' })).toBeNull();
+    expect(closed(lastBus())).toHaveLength(1);
+
+    act(() => apiOf(pane).find('tax'));
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('textbox', { name: 'Find in document' })).toBeNull();
+    expect(closed(lastBus())).toHaveLength(2);
+  });
+
+  it('keeps the bar and its highlights when Escape is pressed somewhere else in the shell', async () => {
+    const pane = await mount();
+    const outside = document.createElement('input');
+    document.body.append(outside);
+    try {
+      act(() => apiOf(pane).find('tax'));
+      outside.focus();
+      await userEvent.setup().keyboard('{Escape}');
+      expect(screen.getByRole('textbox', { name: 'Find in document' })).toBeTruthy();
+      expect(closed(lastBus())).toEqual([]);
+    } finally {
+      outside.remove();
+    }
   });
 
   it('starts a search on Enter, and walks the matches with Enter and Shift+Enter after that', async () => {

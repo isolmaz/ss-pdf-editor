@@ -92,6 +92,28 @@ describe('showContextMenu', () => {
     });
   });
 
+  it('opens under the focused element when the menu was asked for with the keyboard and has no pointer', () => {
+    vi.spyOn(window, 'getSelection').mockReturnValue(null);
+    const focused = document.createElement('button');
+    vi.spyOn(focused, 'getBoundingClientRect').mockReturnValue(new DOMRect(120, 300, 80, 24));
+    showContextMenu({ preventDefault: vi.fn(), clientX: 0, clientY: 0, target: focused });
+    expect(exportStore.get().contextMenu).toEqual({ x: 120, y: 324, hasSelection: false, selectedText: '' });
+  });
+
+  it('keeps a position that is only partly zero, and a keyboard event without an element', () => {
+    vi.spyOn(window, 'getSelection').mockReturnValue(null);
+    const edge = document.createElement('div');
+    vi.spyOn(edge, 'getBoundingClientRect').mockReturnValue(new DOMRect(120, 300, 80, 24));
+    // A pointer at the left edge of the window is a real position, not a missing one.
+    showContextMenu({ preventDefault: vi.fn(), clientX: 0, clientY: 5, target: edge });
+    expect(exportStore.get().contextMenu).toEqual({ x: 0, y: 5, hasSelection: false, selectedText: '' });
+    showContextMenu({ preventDefault: vi.fn(), clientX: 7, clientY: 0, target: edge });
+    expect(exportStore.get().contextMenu).toEqual({ x: 7, y: 0, hasSelection: false, selectedText: '' });
+    // Nothing to anchor to: the position stays what the event said.
+    showContextMenu({ preventDefault: vi.fn(), clientX: 0, clientY: 0, target: window });
+    expect(exportStore.get().contextMenu).toEqual({ x: 0, y: 0, hasSelection: false, selectedText: '' });
+  });
+
   it('records no selection when the browser has none', () => {
     vi.spyOn(window, 'getSelection').mockReturnValue(null);
     showContextMenu({ preventDefault: vi.fn(), clientX: 1, clientY: 2 });

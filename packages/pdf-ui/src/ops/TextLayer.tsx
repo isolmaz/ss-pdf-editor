@@ -135,17 +135,19 @@ export function TextLayer({ t, viewer, layout, bytes, pageIndex, onSelect, onClo
 
   /**
    * Reading the page is async and the viewer keeps painting underneath it, so the
-   * effect re-runs on page change and on a viewer resize; a stale run is dropped by
-   * the `cancelled` latch instead of painting boxes against a viewport that moved.
+   * effect re-runs on page change and on a viewer resize. A stale run is aborted — the
+   * reader stops at its next checkpoint instead of finishing a page nobody will see — and
+   * what it still delivers is dropped rather than painted against a viewport that moved.
    */
   useEffect(() => {
-    let cancelled = false;
-    const context: OperationContext = { signal: new AbortController().signal };
+    const controller = new AbortController();
+    const { signal } = controller;
+    const context: OperationContext = { signal };
     setLoading(true);
     void (async () => {
       try {
         const [source, fonts] = await Promise.all([readPageText(bytes, pageIndex, context), loadTextFonts()]);
-        if (cancelled) return;
+        if (signal.aborted) return;
         const model = buildTextPage(source);
         const report = measureEditability(model);
         // One verdict per block, in the block order (`measureEditability` maps the blocks).
@@ -177,7 +179,7 @@ export function TextLayer({ t, viewer, layout, bytes, pageIndex, onSelect, onClo
         setFailure(null);
         setLoading(false);
       } catch (error) {
-        if (cancelled) return;
+        if (signal.aborted) return;
         setPainted([]);
         setLoading(false);
         // The reader failing is a real failure: say so on the page rather than
@@ -188,9 +190,7 @@ export function TextLayer({ t, viewer, layout, bytes, pageIndex, onSelect, onClo
         setFailure({ code: toolError.code, detail: toolError.message });
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [bytes, pageIndex]);
 
   useEffect(() => {

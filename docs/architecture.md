@@ -2493,6 +2493,14 @@ files through the input, never the picker), so it never reaches that read.
 Page actions from the status bar and the context menu act on the page panel's selection, or
 on the page on screen when nothing is selected.
 
+The context menu keeps the keyboard contract of a menu: the first live entry takes focus as it
+opens, the arrow keys, Home and End walk the live entries (a disabled entry takes no focus), Tab
+and Escape close it, and focus goes back to the element that had it. A menu asked for with the
+keyboard (the Menu key, Shift+F10 — an event with no pointer position) opens under the focused
+element instead of in the window's top-left corner. In the viewer pane, Escape closes the find
+bar — and tells pdf.js to drop its highlights — only when it is pressed in the pane or with
+nothing focused, so the Escape of a dialog, the palette or a menu leaves the search alone.
+
 ### 8.2 The write pipeline
 
 ```mermaid

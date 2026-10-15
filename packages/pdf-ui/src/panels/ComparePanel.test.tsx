@@ -587,6 +587,20 @@ describe('ComparePanel failures', () => {
     expect(compareVisual).not.toHaveBeenCalled();
   });
 
+  it('says a picked file could not be read, keeping the document picked before it', async () => {
+    const { user, container, onNotice } = show();
+    await pick(user, container);
+    const gone = new File([RIGHT], 'gone.pdf', { type: 'application/pdf' });
+    vi.spyOn(gone, 'arrayBuffer').mockRejectedValue(new Error('disk went away'));
+    fireEvent.change(pickerOf(container), { target: { files: [gone] } });
+
+    const failure = await screen.findByText(`${t('error.internal.message')} ${t('error.internal.hint')}`);
+    expect(failure.getAttribute('data-compare-failure')).toBe('disk went away');
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith(t('error.internal.message'));
+    expect(screen.getByText('Selected: other.pdf')).toBeTruthy();
+    expect(compareText).not.toHaveBeenCalled();
+  });
+
   it('clears the failure when the next comparison starts', async () => {
     compareText.mockRejectedValueOnce(new ToolError('unsupported', { engine: 'pdfjs' }));
     const { user, container } = show();

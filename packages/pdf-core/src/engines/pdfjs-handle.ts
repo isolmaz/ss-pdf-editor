@@ -367,6 +367,11 @@ export async function openWithPdfjs(
     async renderPage(pageIndex, canvas, renderOptions) {
       if (renderOptions.signal?.aborted) throw abortError();
       const page = await document.getPage(pageIndex + 1);
+      // The page may take a while to arrive (a worker busy parsing, a first open), and a
+      // cancel sent meanwhile has no render task to stop yet and no listener to reach one:
+      // without this look the render would start after the caller gave up and paint a canvas
+      // that was already released.
+      if (renderOptions.signal?.aborted) throw abortError();
       const pixelRatio =
         renderOptions.devicePixelRatio ?? (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1);
       const viewport = page.getViewport({

@@ -307,6 +307,8 @@ export function PdfViewerPane({
   onLayoutChange,
   onReplace,
 }: PdfViewerPaneProps) {
+  /** The pane's own box: the find bar and the page area, nothing else the shell draws. */
+  const paneRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   /** The overlay host: inside the scroll container, sized to the laid-out pages. */
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -1097,7 +1099,16 @@ export function PdfViewerPane({
         return;
       }
       if (event.key === 'Escape') {
-        setFind((previous) => (previous.open ? INITIAL_FIND : previous));
+        // The bar's key when it is pressed in the pane (the field, the page area) or with
+        // nothing focused: a dialog, the palette, a menu or a field elsewhere in the shell
+        // owns the Escape pressed in it, and closing the bar as well would throw the
+        // reader's search away for a key that was meant for something else.
+        // `document` is the pdf.js handle prop here, not the global: reach for the DOM explicitly.
+        const target = event.target as Node;
+        const nothingFocused = target === globalThis.document.body;
+        if (find.open && (nothingFocused || (paneRef.current as HTMLElement).contains(target))) {
+          closeFind();
+        }
         return;
       }
       if (find.open && event.key === 'F3') {
@@ -1107,7 +1118,7 @@ export function PdfViewerPane({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [find.open, runAgain]);
+  }, [find.open, runAgain, closeFind]);
 
   const countLabel =
     find.query.length === 0
@@ -1119,7 +1130,7 @@ export function PdfViewerPane({
           : t('viewer.find.scanning');
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={paneRef} className="relative h-full w-full">
       {find.open ? (
         <search className="pdf-floating-shadow absolute end-3 top-3 z-40 flex items-center gap-1 rounded-md border border-kumo-line bg-kumo-base px-2 py-1">
           <input

@@ -207,6 +207,68 @@ describe('DocumentPanel: outline', () => {
     expect(await screen.findByText('This document has no outline.')).toBeTruthy();
   });
 
+  it('says the outline could not be read when the document refuses it, instead of reading for good', async () => {
+    const refusing = {
+      ...documentOf(),
+      getOutline: () => Promise.reject(new Error('outline stream broke')),
+    } as unknown as PdfDocumentHandle;
+    const { user } = show({ document: refusing });
+    await user.click(tab('Outline'));
+    expect(await screen.findByText('Something unexpected went wrong.')).toBeTruthy();
+    expect(screen.queryByText('Reading the outline…')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Outline' })).toBeNull();
+  });
+
+  it('drops a refusal that arrives after the document was replaced', async () => {
+    const { promise: late, reject: refuse } = Promise.withResolvers<never>();
+    const refusing = { ...documentOf(), getOutline: () => late } as unknown as PdfDocumentHandle;
+    const { rerender } = show({ document: refusing, tab: 'outline' });
+    const props = {
+      t,
+      currentPage: 0,
+      selectedPages: [] as number[],
+      editing: true,
+      tab: 'outline' as const,
+      onGoToPage: vi.fn(),
+      onSelectionChange: vi.fn(),
+      onPageAction: vi.fn(),
+      onAddAttachments: vi.fn(),
+      onRemoveAttachments: vi.fn(),
+      onToggle: vi.fn(),
+    };
+    rerender(
+      <DocumentPanel {...props} document={documentOf([{ title: 'Current', pageIndex: 0, children: [] }])} />,
+    );
+    expect(await screen.findByRole('button', { name: 'Current' })).toBeTruthy();
+    await act(async () => {
+      refuse(new Error('too late'));
+      await late.catch(() => undefined);
+    });
+    expect(screen.getByRole('button', { name: 'Current' })).toBeTruthy();
+    expect(screen.queryByText('Something unexpected went wrong.')).toBeNull();
+  });
+
+  it('lists siblings that share a title and a page, each once, without a repeated key', async () => {
+    const twins: OutlineEntry[] = [
+      { title: 'Untitled', pageIndex: 0, children: [] },
+      { title: 'Untitled', pageIndex: 0, children: [] },
+      { title: 'Untitled', pageIndex: 1, children: [] },
+    ];
+    const problems = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const { user, onGoToPage } = show({ document: documentOf(twins) });
+      await user.click(tab('Outline'));
+      const nav = await screen.findByRole('navigation', { name: 'Outline' });
+      const entries = within(nav).getAllByRole('button');
+      expect(entries.map((entry) => entry.textContent)).toEqual(['Untitled', 'Untitled', 'Untitled']);
+      expect(problems).not.toHaveBeenCalled();
+      await user.click(entries[1] as HTMLElement);
+      expect(onGoToPage).toHaveBeenCalledExactlyOnceWith(0);
+    } finally {
+      problems.mockRestore();
+    }
+  });
+
   it('lists the outline with nesting, marks the current page, and walks to a page', async () => {
     const { user, onGoToPage } = show({ document: documentOf(OUTLINE), currentPage: 1 });
     await user.click(tab('Outline'));

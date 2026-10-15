@@ -67,6 +67,7 @@ import {
   readingOrderStore,
   useReadingOrder,
 } from './reading-order-store';
+import { useAbortableRuns } from './useAbortableRuns';
 
 const key = (value: string): MessageKey => value as MessageKey;
 
@@ -243,16 +244,9 @@ function TaggedEditor({
   } | null>(null);
   const [groupRole, setGroupRole] = useState('Sect');
   const counter = useRef(1);
-  const alive = useRef(true);
+  const runs = useAbortableRuns();
   const treeRef = useRef<HTMLDivElement | null>(null);
   const { selectedKeys } = useReadingOrder();
-
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
 
   const draft = useMemo(() => {
     try {
@@ -477,21 +471,22 @@ function TaggedEditor({
 
   // The button is disabled while there is no edit.
   const apply = async () => {
-    const controller = new AbortController();
+    // A view that closes while the write is working stops the engine and says nothing
+    // (`useAbortableRuns`).
+    const controller = runs.begin();
     setBusy(true);
     setFailure(null);
     try {
       const outcome = await editStructure(bytes, edits, { signal: controller.signal });
-      if (!alive.current) return;
+      if (controller.signal.aborted) return;
       onWritten?.({ bytes: outcome.bytes, notes: outcome.report.notes, steps: outcome.report.steps });
     } catch (error) {
-      if (!alive.current) return;
+      if (controller.signal.aborted) return;
       const mapped = toToolError(error, 'ui');
       setFailure(mapped.messageKey);
       onNotice?.(t(mapped.messageKey));
     } finally {
-      controller.abort();
-      if (alive.current) setBusy(false);
+      if (!runs.end(controller)) setBusy(false);
     }
   };
 
@@ -1077,15 +1072,8 @@ function UntaggedEditor({
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<MessageKey | null>(null);
   const [dropOn, setDropOn] = useState<string | null>(null);
-  const alive = useRef(true);
+  const runs = useAbortableRuns();
   const { selectedKeys } = useReadingOrder();
-
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
 
   const byPage = useMemo(() => new Map(candidates.pages.map((page) => [page.pageIndex, page])), [candidates]);
   const page = byPage.get(currentPage);
@@ -1148,7 +1136,7 @@ function UntaggedEditor({
     });
 
   const apply = async () => {
-    const controller = new AbortController();
+    const controller = runs.begin();
     const context: OperationContext = { signal: controller.signal };
     setBusy(true);
     setFailure(null);
@@ -1173,16 +1161,15 @@ function UntaggedEditor({
         notes.push(...cleaned.report.notes.filter((entry) => entry.kind !== 'preserved'));
         steps.push(...cleaned.report.steps.filter((step) => step.startsWith('ua.')));
       }
-      if (!alive.current) return;
+      if (controller.signal.aborted) return;
       onWritten?.({ bytes: outBytes, notes, steps });
     } catch (error) {
-      if (!alive.current) return;
+      if (controller.signal.aborted) return;
       const mapped = toToolError(error, 'ui');
       setFailure(mapped.messageKey);
       onNotice?.(t(mapped.messageKey));
     } finally {
-      controller.abort();
-      if (alive.current) setBusy(false);
+      if (!runs.end(controller)) setBusy(false);
     }
   };
 

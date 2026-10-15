@@ -5,7 +5,7 @@
  * closes after an entry, on Escape and on a press outside it.
  */
 
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -133,6 +133,138 @@ describe('ContextMenu', () => {
     expect(onClose).not.toHaveBeenCalled();
     await user.pointer({ keys: '[MouseLeft>]', target: document.body });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  describe('the keyboard', () => {
+    const WIRED = { onRotateRight: vi.fn(), onDeletePage: vi.fn(), onAddText: vi.fn(), onFitWidth: vi.fn() };
+    const focused = () => document.activeElement?.textContent;
+
+    it('takes focus into the first entry as it opens', () => {
+      show(WIRED);
+      expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Rotate Clockwise (90°)' }));
+    });
+
+    it('lands on the first entry that is live while the document is read-only', () => {
+      show({ ...WIRED, canEdit: false });
+      expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Fit Width' }));
+    });
+
+    it('takes focus itself when every entry it offers is disabled, and walks nowhere', async () => {
+      show({ onRotateRight: vi.fn(), onDeletePage: vi.fn(), canEdit: false });
+      const menu = screen.getByRole('menu');
+      expect(document.activeElement).toBe(menu);
+      const user = userEvent.setup();
+      await user.keyboard('{ArrowDown}{ArrowUp}{Home}{End}');
+      expect(document.activeElement).toBe(menu);
+    });
+
+    it('walks the entries with the arrow keys, wrapping at both ends', async () => {
+      show(WIRED);
+      const user = userEvent.setup();
+      await user.keyboard('{ArrowDown}');
+      expect(focused()).toBe('Delete Current Page');
+      await user.keyboard('{ArrowDown}{ArrowDown}');
+      expect(focused()).toBe('Fit Width');
+      await user.keyboard('{ArrowDown}');
+      expect(focused()).toBe('Rotate Clockwise (90°)');
+      await user.keyboard('{ArrowUp}');
+      expect(focused()).toBe('Fit Width');
+      await user.keyboard('{ArrowUp}');
+      expect(focused()).toBe('Add Text');
+    });
+
+    it('walks past the disabled entries while the document is read-only', async () => {
+      show({
+        hasSelection: true,
+        canEdit: false,
+        onHighlight: vi.fn(),
+        onCopy: vi.fn(),
+        onRedact: vi.fn(),
+        onRotateRight: vi.fn(),
+        onFitWidth: vi.fn(),
+      });
+      const user = userEvent.setup();
+      // Copy and Fit Width are the only entries that do not write: the keys reach those two.
+      expect(focused()).toBe('Copy Text');
+      await user.keyboard('{ArrowDown}');
+      expect(focused()).toBe('Fit Width');
+      await user.keyboard('{ArrowDown}');
+      expect(focused()).toBe('Copy Text');
+      await user.keyboard('{ArrowUp}');
+      expect(focused()).toBe('Fit Width');
+      await user.keyboard('{Home}');
+      expect(focused()).toBe('Copy Text');
+    });
+
+    it('goes to the first and last entry with Home and End', async () => {
+      show(WIRED);
+      const user = userEvent.setup();
+      await user.keyboard('{End}');
+      expect(focused()).toBe('Fit Width');
+      await user.keyboard('{Home}');
+      expect(focused()).toBe('Rotate Clockwise (90°)');
+    });
+
+    it('enters the last entry with ArrowUp from the menu itself, and keeps the keys it does not use', async () => {
+      show({ ...WIRED, canEdit: false });
+      const menu = screen.getByRole('menu');
+      act(() => menu.focus());
+      const user = userEvent.setup();
+      await user.keyboard('{ArrowUp}');
+      expect(focused()).toBe('Fit Width');
+      const other = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true });
+      act(() => {
+        screen.getByRole('menuitem', { name: 'Fit Width' }).dispatchEvent(other);
+      });
+      expect(other.defaultPrevented).toBe(false);
+    });
+
+    it('closes on Tab and keeps focus from walking on into the page', async () => {
+      const { onClose } = show(WIRED);
+      await userEvent.setup().keyboard('{Tab}');
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(focused()).toBe('Rotate Clockwise (90°)');
+    });
+
+    it('hands focus back to where it was when it closes with focus still inside', () => {
+      const opener = document.createElement('button');
+      document.body.append(opener);
+      try {
+        opener.focus();
+        const { unmount } = show(WIRED);
+        expect(document.activeElement).not.toBe(opener);
+        unmount();
+        expect(document.activeElement).toBe(opener);
+      } finally {
+        opener.remove();
+      }
+    });
+
+    it('leaves focus where an entry sent it', async () => {
+      const opener = document.createElement('button');
+      const elsewhere = document.createElement('input');
+      document.body.append(opener, elsewhere);
+      try {
+        opener.focus();
+        const onAddText = vi.fn(() => elsewhere.focus());
+        const { unmount } = show({ onAddText });
+        await userEvent.setup().click(screen.getByRole('menuitem', { name: 'Add Text' }));
+        expect(document.activeElement).toBe(elsewhere);
+        unmount();
+        expect(document.activeElement).toBe(elsewhere);
+      } finally {
+        opener.remove();
+        elsewhere.remove();
+      }
+    });
+
+    it('opened with nothing focused, drops its focus with the menu instead of inventing a target', () => {
+      (document.activeElement as HTMLElement).blur();
+      expect(document.activeElement).toBe(document.body);
+      const { unmount } = show(WIRED);
+      unmount();
+      expect(document.activeElement).toBe(document.body);
+    });
   });
 
   it('stops listening once it is gone', async () => {

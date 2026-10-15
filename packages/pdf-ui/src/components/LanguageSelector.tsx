@@ -88,7 +88,12 @@ export function useLocale(): {
 
   useEffect(() => {
     const stored = getStoredLocale();
-    if (!isLocaleLoaded(stored)) void loadLocale(stored).then(() => setLocaleState(stored));
+    if (isLocaleLoaded(stored)) return;
+    // The language is adopted when its dictionary could not be fetched too (as in
+    // `setLocale`): the translator reads the fallback's words for what is missing, and a
+    // rejection nobody handles would only surface as an unhandled one.
+    const adopt = () => setLocaleState(stored);
+    void loadLocale(stored).then(adopt, adopt);
   }, []);
 
   useEffect(() => {

@@ -15,7 +15,14 @@ import {
   Trash,
 } from '@phosphor-icons/react';
 import type { MessageKey, Translator } from 'pdf-shared';
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  Fragment,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 /**
  * The document's right-click menu.
@@ -29,6 +36,10 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
  * Entries that write are disabled while the document cannot be edited, instead of
  * running into a refusal nobody sees; page actions act on the page panel's selection,
  * or on the page on screen when nothing is selected.
+ *
+ * It keeps the keyboard contract of a menu: the first live entry takes focus as it opens,
+ * the arrow keys, Home and End walk the live entries, Tab and Escape close it, and when it
+ * closes with focus still inside, focus goes back to where it was.
  */
 export interface ContextMenuProps {
   readonly x: number;
@@ -71,6 +82,8 @@ interface Section {
 const ITEM_CLASS =
   'flex items-center gap-2 rounded px-2 py-1.5 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-40';
 const EDGE = 8;
+/** The entries a key can land on: a disabled one takes no focus. */
+const LIVE_ITEM = '[role="menuitem"]:not(:disabled)';
 
 export function ContextMenu({
   x,
@@ -106,6 +119,38 @@ export function ContextMenu({
       top: Math.max(EDGE, Math.min(y, window.innerHeight - height - EDGE)),
     });
   }, [x, y]);
+
+  // A menu that opens takes the keyboard: without focus inside it the arrow keys went to the
+  // page behind it. The first live entry is the way in; a menu with none (everything it
+  // offers writes, and the document is read-only) is focused itself so Escape still reaches it.
+  useLayoutEffect(() => {
+    const menu = menuRef.current as HTMLDivElement;
+    const opener = document.activeElement;
+    (menu.querySelector<HTMLElement>(LIVE_ITEM) ?? menu).focus({ preventScroll: true });
+    return () => {
+      // Focus that an entry's action sent elsewhere stays there; focus left in the menu goes home.
+      if (!menu.contains(document.activeElement)) return;
+      if (opener instanceof HTMLElement && opener !== document.body) opener.focus({ preventScroll: true });
+    };
+  }, []);
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    const live = Array.from((menuRef.current as HTMLDivElement).querySelectorAll<HTMLElement>(LIVE_ITEM));
+    const at = live.indexOf(document.activeElement as HTMLElement);
+    let target: HTMLElement | undefined;
+    if (event.key === 'ArrowDown') target = live[at + 1] ?? live[0];
+    else if (event.key === 'ArrowUp') target = at > 0 ? live[at - 1] : live.at(-1);
+    else if (event.key === 'Home') target = live[0];
+    else if (event.key === 'End') target = live.at(-1);
+    else return;
+    event.preventDefault();
+    target?.focus();
+  };
 
   useEffect(() => {
     const handleOutside = (event: PointerEvent) => {
@@ -153,8 +198,10 @@ export function ContextMenu({
     <div
       ref={menuRef}
       role="menu"
+      tabIndex={-1}
+      onKeyDown={handleMenuKeyDown}
       style={position}
-      className="pdf-floating-shadow fixed z-50 flex min-w-[200px] flex-col rounded-lg border border-kumo-line bg-kumo-base p-1 text-xs select-none"
+      className="pdf-floating-shadow fixed z-50 flex min-w-[200px] flex-col rounded-lg border border-kumo-line bg-kumo-base p-1 text-xs outline-none select-none"
     >
       {sections.map((section, index) => (
         <Fragment key={section.title}>
