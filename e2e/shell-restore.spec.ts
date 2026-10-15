@@ -1,5 +1,5 @@
 import type { Page } from 'playwright/test';
-import { exportBytes, notice, openApp, rotateCurrentPage } from './app-helpers';
+import { exportBytes, notice, openApp, recordNotices, rotateCurrentPage } from './app-helpers';
 import { expect, test } from './test';
 import { labelledPdf, readProducedEntry } from './tool-fixture';
 
@@ -76,6 +76,11 @@ test.describe('on the smaller tier', () => {
     await expect(page.getByText(/step\(s\) can be undone/)).toHaveText(
       '0 step(s) can be undone · 0 step(s) can be redone',
     );
+    // There is nothing to undo, so the key does nothing and says nothing: not that a step's data is missing.
+    const seen = await recordNotices(page);
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(1_000);
+    expect((await seen()).filter((line) => line.includes('cannot undo'))).toEqual([]);
     expect(await readProducedEntry(await exportBytes(page, 'edited.pdf'), 0, 'Rotate')).toBe('90');
   });
 });

@@ -9,7 +9,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
 import type { EngineValuesDraft, JsonValue } from 'pdf-model';
-import { SessionStore } from 'pdf-model';
+import { draftFor, SessionStore } from 'pdf-model';
 import { createTranslator, ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type * as Operations from '../../operations';
@@ -43,6 +43,9 @@ vi.mock('../../operations', async (importOriginal) => ({
   applyPageAction: vi.fn(),
   applyHistoryStep: vi.fn(),
 }));
+
+const { applyHistoryStep: actualApplyHistoryStep } =
+  await vi.importActual<typeof Operations>('../../operations');
 
 const t = createTranslator('en');
 const pageAction = vi.mocked(applyPageAction);
@@ -134,6 +137,13 @@ function pressHost(
     held,
     mocks: { setCurrentPage, sweepOrphanAnnotations },
   });
+}
+
+/** Two journalled steps with the cursor between them: a press in either direction has a step to take. */
+function giveHistory(): void {
+  session.setOverlays(tabId, { marks: ['a'] } as unknown as JsonValue, 'ann.engineEdit');
+  session.setOverlays(tabId, { marks: ['a', 'b'] } as unknown as JsonValue, 'ann.engineEdit');
+  session.undo(tabId);
 }
 
 beforeEach(() => {
@@ -314,6 +324,7 @@ describe('requestCancel', () => {
 
 describe('stepHistory', () => {
   const entry = { labelKey: 'pages.rotate.done', labelParams: { count: 1 } };
+  beforeEach(giveHistory);
 
   it('undoes a mark-only step without replacing the live handle', async () => {
     historyStep.mockResolvedValue({ handle, entry } as never);
@@ -342,13 +353,13 @@ describe('stepHistory', () => {
     historyStep.mockResolvedValue({ handle: restored, entry } as never);
     const host = pressHost(session);
 
-    await stepHistory(host, 'redo');
+    await stepHistory(host, 'undo');
 
     expect(host.held.get(tabId)).toEqual(values);
     expect(handleFor(tabId)).toBe(restored);
     const update = host.mocks.setCurrentPage.mock.calls[0]?.[0] as (page: number) => number;
     expect([update(0), update(1), update(5)]).toEqual([0, 1, 1]);
-    expect(coreStore.get().notice).toBe(t('op.redo.done', { label: t('pages.rotate.done', { count: 1 }) }));
+    expect(coreStore.get().notice).toBe(t('op.undo.done', { label: t('pages.rotate.done', { count: 1 }) }));
   });
 
   it('forgets the carried values when the restored step has none', async () => {
@@ -361,14 +372,61 @@ describe('stepHistory', () => {
     expect(host.held.has(tabId)).toBe(false);
   });
 
-  it('says there is nothing to step to', async () => {
-    historyStep.mockResolvedValue(null);
+  it('says so when the step is there but the session no longer holds its data', async () => {
+    const earlier = new SessionStore();
+    const original = earlier.openDocument({
+      name: 'doc.pdf',
+      bytes: new Uint8Array([1]),
+      sha256: 'a',
+      pageCount: 1,
+    });
+    for (const byte of [2, 3]) {
+      earlier.applyOperation({
+        tabId: original.id,
+        bytes: new Uint8Array([byte]),
+        pageCount: 1,
+        labelKey: 'ann.engineEdit',
+        engine: 'mupdf',
+        steps: [],
+        overlays: null,
+      });
+    }
+    const journal = earlier.getSnapshot().tabs[0]?.journal;
+    const restored = draftFor({
+      id: tabId,
+      name: 'doc.pdf',
+      pageCount: 1,
+      size: 1,
+      dirty: true,
+      sourceKey: 'src-a',
+      journal: journal?.entries ?? [],
+      now: 1,
+    });
+    session.restoreHistory(tabId, restored, []);
+    historyStep.mockImplementation(actualApplyHistoryStep);
 
     await stepHistory(pressHost(session), 'undo');
 
+    expect(historyStep).toHaveBeenCalledOnce();
     expect(coreStore.get().notice).toBe(t('op.undo.unavailable'));
     expect(isBusy()).toBe(false);
   });
+
+  it.each(['undo', 'redo'] as const)(
+    'does nothing, and says nothing, when there is no step left to %s',
+    async (direction) => {
+      // The cursor sits between two steps; moving it once that way leaves none on that side.
+      session[direction](tabId);
+      historyStep.mockImplementation(actualApplyHistoryStep);
+
+      await stepHistory(pressHost(session), direction);
+
+      expect(coreStore.get().notice).toBeNull();
+      expect(historyStep).not.toHaveBeenCalled();
+      expect(isBusy()).toBe(false);
+      expect(operationRunning()).toBe(false);
+    },
+  );
 
   it('keeps quiet about nothing to step to when the user already left the tab', async () => {
     const answer = deferred<null>();
@@ -452,6 +510,7 @@ describe('stepHistory', () => {
 
 describe('stepHistoryNow', () => {
   const entry = { labelKey: 'pages.rotate.done', labelParams: { count: 1 } };
+  beforeEach(giveHistory);
 
   it('declines the key with no document, with nothing said', () => {
     const host = pressHost(new SessionStore());
@@ -666,6 +725,7 @@ describe('usePageActions', () => {
 
   it('steps history, now and queued, through the same host', async () => {
     const entry = { labelKey: 'pages.rotate.done', labelParams: { count: 1 } };
+    giveHistory();
     historyStep.mockResolvedValue({ handle, entry } as never);
     const { host, rendered } = bound();
 
