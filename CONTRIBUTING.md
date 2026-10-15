@@ -89,8 +89,13 @@ own test must fail on the fix commit's parent and pass on the fix commit. The ma
 `tools/review/revert-proof.json` is an empty list until a pull request wants the proof: that
 pull request adds one entry per fix commit (`commit` as a full SHA, `title`, `kind` `unit` or
 `e2e`, `tests` the files brought in from the fix, `run` the test files to run, `filter` the
-test-name pattern, and optionally `testCommit` and `failure`). With an empty manifest
-`node tools/review/revert-proof.mjs` says so and exits 0.
+test-name pattern, and optionally `testCommit` and `failure`, the expected failure pattern for a fix
+whose defect was a throw or a hang rather than a wrong value). With an empty manifest
+`node tools/review/revert-proof.mjs` says so and exits 0. Run it locally on a clean work tree with
+`node tools/review/revert-proof.mjs [--shard i/n] [--only <sha-prefix>]`: it checks the commits out,
+restores your `HEAD` afterwards and writes `revert-proof-report.json` (git-ignored). An entry counts
+as proved only when the test fails on an assertion on the parent; a failure to load, or no tests
+found, proves nothing and fails the run.
 
 ### How a change lands
 
@@ -144,11 +149,9 @@ fixture fails a test when any page of its browser context (a second window, the 
 logged a console error or threw an uncaught exception. A test that provokes an error on purpose
 names it with `test.use({ allowedErrors: [/…/] })`.
 
-The PDF → Word export is not measured round trip in CI. A LibreOffice-based fidelity harness (convert the
-exported DOCX back to PDF and compare it with the original) was removed because LibreOffice is no
-longer used (its headless runs hang), and with it the `fidelity` CI job. The export is covered by its
-unit tests (`packages/pdf-core/src/ops/docx-*.test.ts`) and the Playwright specs. Do not install or run
-LibreOffice for this repository.
+The PDF → Word export is not measured round trip in CI; it is covered by its unit tests
+(`packages/pdf-core/src/ops/docx-*.test.ts`) and the Playwright specs. Do not install or run
+LibreOffice for this repository (see [`AGENTS.md`](AGENTS.md)).
 
 The OCR evaluation tools in `tools/measure/ocr/` benchmark Tesseract against PaddleOCR and OnnxTR
 engines and layout models in Chromium, on 24 synthetic Turkish pages and, when present, the

@@ -3089,9 +3089,8 @@ merges are merge commits.
   the HTML report and the traces (7 days). `e2e-service-worker` needs `e2e` and runs
   `playwright test --project=service-worker --no-deps`. `behavior` needs `verify` and runs
   `pnpm ci:behavior` (the OpenSSL signing round trip). The PDF → Word export is not measured round
-  trip in CI: the LibreOffice-based fidelity harness (export to DOCX, convert back to PDF, compare)
-  and its `fidelity` job were removed because LibreOffice is no longer used (its headless runs
-  hang). The LibreOffice layout notes elsewhere in this file stay as measured facts. Coverage runs
+  trip in CI (the LibreOffice layout notes elsewhere in this file are recorded measurements, not a
+  dependency). Coverage runs
   as three kinds of job, so that no runner holds the whole browser run: `coverage-unit` (needs
   `verify`) runs `pnpm coverage --unit-only`; `coverage-e2e` (needs `verify`) runs `pnpm coverage
   --e2e-shard=N/4` in four shards; and `coverage` needs both, downloads what they uploaded and runs

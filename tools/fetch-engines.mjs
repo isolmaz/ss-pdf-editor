@@ -161,7 +161,7 @@ const ENGINES = [
     id: 'space-grotesk',
     package: '@fontsource/space-grotesk',
     target: 'fonts/space-grotesk',
-    // UI typeface (`P6`, `DESIGN.md`): OFL-1.1, self-hosted so the app keeps its
+    // UI typeface: OFL-1.1, self-hosted so the app keeps its
     // offline promise, and never committed — the pins below are the reference.
     // Turkish coverage comes from the `latin-ext` subset: Ğ/ğ U+011E/011F,
     // İ/ı U+0130/0131, Ş/ş U+015E/015F all fall inside U+0100-02BA.
@@ -188,7 +188,7 @@ const ENGINES = [
     id: 'dm-sans',
     package: '@fontsource/dm-sans',
     target: 'fonts/dm-sans',
-    // Body typeface (DESIGN.md): OFL-1.1, self-hosted, offline-first.
+    // Body typeface: OFL-1.1, self-hosted, offline-first.
     // Turkish coverage via latin-ext.
     entries: [
       { from: 'files/dm-sans-latin-400-normal.woff2', to: 'dm-sans-latin-400-normal.woff2' },

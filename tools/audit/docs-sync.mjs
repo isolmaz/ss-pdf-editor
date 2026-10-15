@@ -5,7 +5,8 @@
  * with a one-line summary of what was checked.
  *
  * Checks
- *  1. Docs (README.md, CONTRIBUTING.md, docs/*.md): every inline-code
+ *  1. Docs (the root .md files, .github/PULL_REQUEST_TEMPLATE.md, docs/*.md and
+ *     tools/measure/ocr/README.md): every inline-code
  *     token that starts with `packages/ apps/ tools/ e2e/ docs/ .github/` (or is one of the named
  *     root files below) and every relative markdown/HTML link target exists, case-exactly (CI is
  *     Linux). `path:line`, `#anchor`, trailing punctuation are stripped; globs and placeholders
@@ -93,6 +94,7 @@ const ROOT_FILES = new Set([
   'CONTRIBUTING.md',
   'SECURITY.md',
   'CODE_OF_CONDUCT.md',
+  'AGENTS.md',
 ]); // explicit: a bare `tr.ts` is a module name, not a root file
 const BUILD_OUTPUT = new Set(['dist', 'node_modules', 'coverage', 'test-results', 'playwright-report']);
 const PLACEHOLDER = /[*<{[…]|\.\.\./;
@@ -221,7 +223,15 @@ function scanDoc(file) {
   flush();
 }
 
-const docs = ['README.md', 'CONTRIBUTING.md'].filter((f) => existsSync(join(root, f)));
+const docs = [
+  'README.md',
+  'CONTRIBUTING.md',
+  'SECURITY.md',
+  'CODE_OF_CONDUCT.md',
+  'AGENTS.md',
+  '.github/PULL_REQUEST_TEMPLATE.md',
+  'tools/measure/ocr/README.md',
+].filter((f) => existsSync(join(root, f)));
 if (existsSync(join(root, 'docs'))) {
   docs.push(
     ...readdirSync(join(root, 'docs'))

@@ -331,7 +331,7 @@ export function ComparePanel({ t, readDocument, onGoToPage, onNotice, disabled }
             </Button>
           ) : null}
         </div>
-        {/* The live region exists before it has anything to say (`DESIGN.md`). */}
+        {/* The live region exists before it has anything to say. */}
         <p aria-live="polite" className="min-h-[1.1rem] text-[11px] tabular-nums text-kumo-subtle">
           {running && run.progress !== null
             ? t('op.progress', {

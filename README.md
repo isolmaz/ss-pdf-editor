@@ -902,8 +902,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
 - **`deploy`** runs only on a push to `main`, after every job above has passed; see
   [Build and deploy](#build-and-deploy).
 
-The PDF → Word export is not measured round trip in CI: the LibreOffice-based fidelity harness (and
-its `fidelity` job) was removed because LibreOffice is no longer used (its headless runs hang).
+The PDF → Word export is not measured round trip in CI; its unit tests and the Playwright specs cover it.
 
 `.github/workflows/nightly.yml` runs daily and on manual dispatch: the same three coverage jobs,
 whose `coverage` fails when any total is under 100 % and uploads the report, and the
