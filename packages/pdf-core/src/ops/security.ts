@@ -10,7 +10,7 @@
  * password and report its permissions, or the operation fails.
  *
  * Everything below was measured against mupdf@1.28.1 (the pinned build, Node-side
- * probe over `/engines/mupdf/mupdf.js`):
+ * probe over `/engines/mupdf/v<digest>/mupdf.js`):
  *
  * | permission        | bit     | value |
  * |-------------------|---------|-------|

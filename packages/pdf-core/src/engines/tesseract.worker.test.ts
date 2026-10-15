@@ -29,7 +29,8 @@ const state = vi.hoisted(() => ({
   logger: undefined as undefined | ((message: unknown) => void),
 }));
 
-vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
+// Not hoisted: the module's URL carries the engine's pinned version, so it is the asset's own.
+vi.doMock(TESSERACT_ASSETS.module, () => ({
   default: undefined,
   createWorker: async (languages: string[], _engine: unknown, options: Record<string, unknown>) => {
     state.created.push({ languages, options });

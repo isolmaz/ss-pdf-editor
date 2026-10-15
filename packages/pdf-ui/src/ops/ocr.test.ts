@@ -6,6 +6,7 @@
  * Skia canvas pdf.js itself uses in Node (`skia-canvas.fixtures`).
  */
 
+import { TESSERACT_ASSETS } from 'pdf-core/assets';
 import { terminateOcrWorkers } from 'pdf-core/engines/tesseract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -21,7 +22,8 @@ import { ocrDialog } from './ocr';
 
 const state = vi.hoisted(() => ({ created: [] as string[][], recognized: 0 }));
 
-vi.mock('/engines/tesseract/tesseract.esm.min.js', () => ({
+// Not hoisted: the module's URL carries the engine's pinned version, so it is the asset's own.
+vi.doMock(TESSERACT_ASSETS.module, () => ({
   default: undefined,
   createWorker: async (languages: string[]) => {
     state.created.push(languages);

@@ -11,7 +11,6 @@
  * One Cloudflare Worker (static assets) serves this tree; deploying stays manual and is
  * never a CI step.
  */
-import { createHash } from 'node:crypto';
 import {
   copyFileSync,
   cpSync,
@@ -26,17 +25,19 @@ import {
 import { createRequire } from 'node:module';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { engineVersions, printReport, verifyAssets } from './fetch-engines.mjs';
+import { releaseVersion } from './release-version.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = join(root, 'dist');
 
-function copyInto(from, to) {
+function copyInto(from, to, options = {}) {
   if (!existsSync(from)) {
     console.error(`assemble-dist: missing ${relative(root, from)} — run the build first`);
     process.exit(1);
   }
   mkdirSync(to, { recursive: true });
-  cpSync(from, to, { recursive: true });
+  cpSync(from, to, { recursive: true, ...options });
 }
 
 function sizeOf(path) {
@@ -49,31 +50,65 @@ function sizeOf(path) {
   return total;
 }
 
+// What `public/engines/**` holds is what ships, so it is checked first: a missing or altered
+// pinned file, a file no pin names (a local `worker:deploy` runs no other gate), or a
+// version record that no longer matches the pins stops the assembly.
+const verification = verifyAssets();
+if (verification.problems.length > 0) {
+  printReport(verification, { action: 'assemble-dist' });
+  console.error('assemble-dist: public/engines/** does not match the pins — refusing to assemble');
+  process.exit(1);
+}
+
 rmSync(out, { recursive: true, force: true });
 copyInto(join(root, 'apps/site/dist'), out);
 copyInto(join(root, 'apps/web/dist'), join(out, 'editor'));
-copyInto(join(root, 'public'), out);
+const publicDir = join(root, 'public');
+copyInto(publicDir, out, { filter: (source) => relative(publicDir, source) !== 'engines' });
 
 /**
- * The offline identity: one version for the cache name, the manifest and the
- * worker, derived from the pinned asset hashes and the release stamp. Deriving it here —
- * from `tools/asset-pins.json`, the same table `verify-assets` enforces — is what makes
- * "the cached engine belongs to this shell" a checkable fact instead of an assumption:
- * change a pin, and every cache name in the distribution changes with it.
+ * The engines go to `dist/engines/<engine>/<version>/`, the directory their URLs name
+ * (`packages/pdf-core/src/assets.ts`): `/engines/*` is cached as immutable, so a rebuilt
+ * engine has to be a different URL.
  */
 const pins = JSON.parse(readFileSync(join(root, 'tools/asset-pins.json'), 'utf8'));
+const versions = engineVersions(pins);
+for (const [engine, version] of Object.entries(versions)) {
+  copyInto(join(publicDir, 'engines', engine), join(out, 'engines', engine, version));
+}
+
+/**
+ * The offline identity: one version for the cache name, the manifest and the worker
+ * (`tools/release-version.mjs`), derived from the pinned asset hashes, the release stamp and
+ * the editor build. Deriving it here — from `tools/asset-pins.json`, the same table
+ * `verify-assets` enforces, and from the build's own files — is what makes "the cached copy
+ * belongs to this shell" a checkable fact instead of an assumption: change a pin or the
+ * code, and every cache name in the distribution changes with it.
+ */
 const pinned = Object.values(pins.engines).flatMap((engine) => engine.files);
 const stamp =
   readFileSync(join(root, 'package.json'), 'utf8').match(/"version":\s*"([^"]+)"/)?.[1] ?? '0.0.0';
-const digest = createHash('sha256');
-digest.update(stamp);
-for (const file of [...pinned].sort((left, right) => (left.path < right.path ? -1 : 1))) {
-  digest.update(file.path);
-  digest.update(file.sha256);
-}
-const version = `${stamp}-${digest.digest('hex').slice(0, 12)}`;
 
 const packages = JSON.parse(readFileSync(join(root, 'apps/web/src/offline-packages.json'), 'utf8'));
+
+/**
+ * `/engines/<engine>/<file>` as the packages list writes it, at the URL the build serves it
+ * from (`/engines/<engine>/<version>/<file>`; `servedEnginePath` in `assets.ts` does the same
+ * for the page). An engine with no version is a defect in the list.
+ */
+function servedPath(path) {
+  const match = /^\/engines\/([^/]+)\/(.+)$/.exec(path);
+  if (match === null) return path;
+  const version = versions[match[1]];
+  if (version === undefined) {
+    console.error(`assemble-dist: ${path} names an engine the pins do not serve`);
+    process.exit(1);
+  }
+  return `/engines/${match[1]}/${version}/${match[2]}`;
+}
+const served = Object.fromEntries(
+  Object.entries(packages.capabilities).map(([name, list]) => [name, list.map(servedPath)]),
+);
 
 /**
  * The interface catalogues, as the paths the build gave them. Each language is a chunk of
@@ -134,9 +169,21 @@ if (packages.capabilities.app.length > 0 || app.length === 0) {
   );
   process.exit(1);
 }
+/**
+ * The release version covers the pinned bytes *and* the editor build — its entry page and the
+ * hashed name of every file in the manifest — so a deploy that changed only code changes the
+ * worker's stamp too, and the browser installs it and offers the update.
+ */
+const manifestBody = { capabilities: { ...served, app }, shell };
+const version = releaseVersion({
+  stamp,
+  pins: pinned,
+  editorHtml: readFileSync(join(root, 'apps/web/dist/index.html')),
+  manifest: manifestBody,
+});
 writeFileSync(
   join(out, 'offline-manifest.json'),
-  `${JSON.stringify({ version, capabilities: { ...packages.capabilities, app }, shell }, null, 2)}\n`,
+  `${JSON.stringify({ version, ...manifestBody }, null, 2)}\n`,
 );
 
 /**
@@ -357,7 +404,8 @@ writeFileSync(
     {
       note: 'Licence texts bundled with this distribution. Generated by tools/assemble-dist.mjs.',
       components: licenceIndex,
-      engineAssets: 'dist/engines/pdfjs/** carries its own LICENSE_* files (cmaps, standard_fonts, wasm).',
+      engineAssets:
+        'dist/engines/pdfjs/<version>/** carries its own LICENSE_* files (cmaps, standard_fonts, wasm).',
     },
     null,
     2,

@@ -43,6 +43,12 @@ function loader(mocks = {}) {
     );
     if (!filename) throw new Error(`Cannot resolve ${specifier} from ${parent}`);
     if (cache.has(filename)) return cache.get(filename).exports;
+    if (filename.endsWith('.json')) {
+      // Data files (`engine-versions.json`) are read, not transpiled.
+      const data = JSON.parse(fs.readFileSync(filename, 'utf8'));
+      cache.set(filename, { exports: data });
+      return data;
+    }
     const module = { exports: {} };
     cache.set(filename, module);
     const source = compile(fs.readFileSync(filename, 'utf8'), filename);
@@ -126,6 +132,8 @@ async function check(name, run) {
   }
 }
 const tick = () => new Promise((resolve) => setImmediate(resolve));
+/** The release version the harness's manifest names; the worker under test is stamped `v1`. */
+let swManifestVersion = 'v1';
 const documentInput = (extra = {}) => ({
   name: 'sample.pdf',
   bytes: new Uint8Array([1, 2, 3]),
@@ -340,7 +348,7 @@ function swHarness({ online = true, cacheFailure = false } = {}) {
       if (String(url).includes('/offline-manifest.json')) {
         return new Response(
           JSON.stringify({
-            version: 'v1',
+            version: swManifestVersion,
             capabilities: {
               core: ['/engines/core.js'],
               app: ['/editor/assets/index-1.js', '/editor/assets/pdf-1.js'],
@@ -355,7 +363,10 @@ function swHarness({ online = true, cacheFailure = false } = {}) {
       return new Response('network');
     },
   };
-  vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8'), context, {
+  // The build stamps the worker with the release version the manifest carries (`assemble-dist`).
+  const source = fs.readFileSync(path.join(ROOT, 'public/sw.js'), 'utf8');
+  const stamped = source.replaceAll('__CACHE_VERSION__', 'v1');
+  vm.runInNewContext(stamped, context, {
     filename: 'public/sw.js',
   });
   function dispatch(kind, fields = {}) {
@@ -677,6 +688,148 @@ async function main() {
       const after = await askWorker(h, { type: 'CHECK_READINESS' });
       assert.deepEqual(plain(after.capabilities.app), { ready: true, missing: [] });
       assert.equal(after.capabilities.core.ready, false);
+    },
+  );
+  await check(
+    'readiness counts a cached engine of another version as missing, and nothing for another release',
+    async () => {
+      const plain = (value) => JSON.parse(JSON.stringify(value));
+      const h = swHarness();
+      // The same file under another version's directory is another URL: it is not this build's copy.
+      h.cached.set('https://local.test/engines/vold/core.js', new Response('old'));
+      const stale = await askWorker(h, { type: 'CHECK_READINESS' });
+      assert.equal(stale.matchesBuild, true);
+      assert.deepEqual(plain(stale.capabilities.core), { ready: false, missing: ['/engines/core.js'] });
+      h.cached.set('https://local.test/engines/core.js', new Response('current'));
+      assert.equal((await askWorker(h, { type: 'CHECK_READINESS' })).capabilities.core.ready, true);
+      // The manifest on the network names another release than the one this worker was stamped with
+      // (an update is waiting): the cache is complete for a build the list no longer describes.
+      swManifestVersion = 'v2';
+      try {
+        const other = await askWorker(h, { type: 'CHECK_READINESS' });
+        assert.equal(other.matchesBuild, false);
+        assert.deepEqual(plain(other.capabilities.core), { ready: false, missing: ['/engines/core.js'] });
+        assert.equal(other.capabilities.app.ready, false);
+        const before = fetchedBeyondManifest(h).length;
+        const prepared = await askWorker(h, { type: 'PREPARE_PACKAGE', capabilities: ['app'] });
+        assert.equal(prepared.type, 'PREPARE_FAILED');
+        assert.equal(fetchedBeyondManifest(h).length, before);
+      } finally {
+        swManifestVersion = 'v1';
+      }
+    },
+  );
+  await check(
+    'a module retry is served from the cached engine and stored without the retry parameter',
+    async () => {
+      const engine = 'https://local.test/engines/mupdf/vabc/mupdf.js';
+      const offline = swHarness({ online: false });
+      offline.cached.set(engine, new Response('engine'));
+      const retry = offline.dispatch('fetch', {
+        request: { method: 'GET', url: `${engine}?retry=2`, cache: 'default', mode: 'cors' },
+      });
+      assert.equal(await (await retry.response()).text(), 'engine');
+      // Any other parameter still names another file.
+      const other = offline.dispatch('fetch', {
+        request: { method: 'GET', url: `${engine}?x=1`, cache: 'default', mode: 'cors' },
+      });
+      assert.equal((await other.response()).status, 503);
+      const online = swHarness();
+      const first = online.dispatch('fetch', {
+        request: { method: 'GET', url: `${engine}?retry=1`, cache: 'default', mode: 'cors' },
+      });
+      await first.response();
+      await Promise.all(first.lifetimes);
+      assert.deepEqual([...online.cached.keys()], [engine]);
+    },
+  );
+  await check(
+    'a code-only deploy changes the release version although the pins and stamp do not',
+    async () => {
+      const { pathToFileURL } = require('node:url');
+      const { releaseVersion } = await import(
+        pathToFileURL(path.join(ROOT, 'tools/release-version.mjs')).href
+      );
+      const pins = [
+        { path: 'engines/a/x.js', sha256: 'aa' },
+        { path: 'fonts/f.woff2', sha256: 'bb' },
+      ];
+      const base = {
+        stamp: '0.0.0',
+        pins,
+        editorHtml: '<script src="/editor/assets/index-A1.js">',
+        manifest: {
+          capabilities: { app: ['/editor/assets/index-A1.js'] },
+          shell: ['/editor/assets/en-1.js'],
+        },
+      };
+      const version = releaseVersion(base);
+      assert.match(version, /^0\.0\.0-[0-9a-f]{12}$/);
+      assert.equal(releaseVersion({ ...base, pins: [...pins].reverse() }), version);
+      const html = '<script src="/editor/assets/index-B2.js">';
+      const manifest = { ...base.manifest, capabilities: { app: ['/editor/assets/index-B2.js'] } };
+      assert.notEqual(releaseVersion({ ...base, editorHtml: html, manifest }), version);
+      assert.notEqual(releaseVersion({ ...base, editorHtml: html }), version);
+      assert.notEqual(releaseVersion({ ...base, manifest }), version);
+      assert.notEqual(releaseVersion({ ...base, pins: [{ ...pins[0], sha256: 'cc' }, pins[1]] }), version);
+    },
+  );
+  await check('verify-assets refuses a file under public/engines that no pin names', async () => {
+    const { pathToFileURL } = require('node:url');
+    const { verifyAssets } = await import(pathToFileURL(path.join(ROOT, 'tools/fetch-engines.mjs')).href);
+    const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'pins-'));
+    try {
+      const bytes = Buffer.from('engine');
+      fs.mkdirSync(path.join(dir, 'public/engines/demo'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'public/engines/demo/a.js'), bytes);
+      const sha256 = require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+      const pinsPath = path.join(dir, 'pins.json');
+      const files = [{ path: 'engines/demo/a.js', bytes: bytes.length, sha256 }];
+      fs.writeFileSync(pinsPath, JSON.stringify({ engines: { demo: { packages: [], files } } }));
+      const options = { pinsPath, publicDir: path.join(dir, 'public'), versionsPath: null };
+      assert.deepEqual(verifyAssets(options).problems, []);
+      fs.writeFileSync(path.join(dir, 'public/engines/demo/stray.js'), 'x');
+      assert.deepEqual(
+        verifyAssets(options).problems.map(({ engine, path: file, kind }) => ({ engine, file, kind })),
+        [{ engine: 'demo', file: 'engines/demo/stray.js', kind: 'unpinned' }],
+      );
+      fs.rmSync(path.join(dir, 'public/engines/demo/stray.js'));
+      // The URL versions must be the ones the pins give.
+      const versionsPath = path.join(dir, 'versions.json');
+      fs.writeFileSync(versionsPath, JSON.stringify({ versions: { demo: 'v000000000000' } }));
+      const stale = verifyAssets({ ...options, versionsPath }).problems;
+      assert.deepEqual(
+        stale.map((problem) => problem.kind),
+        ['version'],
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  await check(
+    'public/_headers: hashed editor assets and engines are immutable, shell and fonts are not',
+    async () => {
+      const { pathToFileURL } = require('node:url');
+      const { headersFor, parseHeadersFile } = await import(
+        pathToFileURL(path.join(ROOT, 'tools/vite/hosting.mjs')).href
+      );
+      const sections = parseHeadersFile(fs.readFileSync(path.join(ROOT, 'public/_headers'), 'utf8'));
+      const cache = (pathname) => headersFor(sections, pathname)['Cache-Control'];
+      // One policy, not two joined: `! Cache-Control` removes what `/editor/*` set.
+      assert.equal(cache('/editor/assets/index-abc.js'), 'public, max-age=31536000, immutable, no-transform');
+      assert.equal(
+        headersFor(sections, '/editor/assets/index-abc.js')['Cross-Origin-Embedder-Policy'],
+        'require-corp',
+      );
+      assert.equal(cache('/editor/index.html'), 'no-transform, public, max-age=0, must-revalidate');
+      assert.equal(
+        cache('/engines/mupdf/v0123456789ab/mupdf.js'),
+        'no-transform, public, max-age=31536000, immutable',
+      );
+      assert.equal(
+        cache('/fonts/noto/NotoSans-Regular.ttf'),
+        'no-transform, public, max-age=0, must-revalidate',
+      );
     },
   );
   await check('service-worker install caches the shell and its catalogues, only from the build', async () => {
@@ -1098,7 +1251,7 @@ async function main() {
         }),
     };
     const fresh = loader({
-      '/engines/tesseract/tesseract.esm.min.js': {
+      [load('pdf-core/assets').TESSERACT_ASSETS.module]: {
         __esModule: true,
         default: { createWorker: async () => worker },
       },

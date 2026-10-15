@@ -25,7 +25,7 @@
  *     content hash and a Workers deployment serves only its own assets, so the entry script of a
  *     new build answering is what shows the custom domain serves this build. `/sw.js` is byte
  *     for byte `<dist-dir>/sw.js`: the worker that decides what the editor caches arrives
- *     unaltered (its cache version follows the engine pins, not the editor build).
+ *     unaltered (its cache version follows the engine pins and the editor build alike).
  *  5. The first editor script carries every header `_headers` declares for it (the `/editor/*`
  *     rule), so the security headers are checked even when `/editor/` itself is challenged.
  *
