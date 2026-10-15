@@ -623,7 +623,7 @@ try {
   await check(
     'compare: the panel reports the document against its own export as unchanged on every page',
     async () => {
-      await openPalette('Karşılaştırma');
+      await openPalette('Karşılaştır');
       // The panel's own controls, by their dictionary labels: the file input is a hidden
       // element behind a button, and Playwright can set a hidden input directly.
       const pick = page.getByRole('button', { name: /İkinci belgeyi seç/i }).first();
