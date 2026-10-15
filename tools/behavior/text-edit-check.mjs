@@ -31,7 +31,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as mupdf from 'mupdf';
 import { chromium } from 'playwright';
@@ -102,7 +102,13 @@ let serverLog = '';
 async function recoverFromFailure() {
   try {
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
+    // A dialog that listens for Escape closes on it; its going away is the signal, bounded so
+    // one that ignores the key costs seconds. What stays is removed below, synchronously.
+    await page
+      .locator('[role="dialog"]')
+      .first()
+      .waitFor({ state: 'hidden', timeout: 3_000 })
+      .catch(() => undefined);
     const open = await page.locator('[role="dialog"]').count();
     if (open > 0) {
       await page.evaluate(() => {
@@ -110,7 +116,6 @@ async function recoverFromFailure() {
         document.body.style.pointerEvents = '';
       });
     }
-    await page.waitForTimeout(200);
   } catch {
     // the tab may be gone; the next check reports it on its own
   }
@@ -148,21 +153,46 @@ async function check(name, fn, timeoutMs = CHECK_TIMEOUT_MS) {
  * the item markup).
  */
 async function openPalette(pattern) {
+  // The palette's own input, not "any listbox": a dock panel's select is a listbox too, and
+  // a looser guard would trip on those instead of on the palette.
+  const input = page.locator('input[aria-label="Komut paleti"], input[placeholder*="Komut"]').first();
   await page.keyboard.press('Control+K');
-  await page.waitForTimeout(500);
+  // The primitive focuses the input on mount; keys typed before that go to the page.
+  await input.waitFor({ state: 'visible', timeout: 10_000 });
+  await page.waitForFunction(
+    () => document.activeElement?.matches('input[aria-label="Komut paleti"], input[placeholder*="Komut"]'),
+    undefined,
+    { timeout: 10_000 },
+  );
   await page.keyboard.type(pattern.split('|')[0]);
-  await page.waitForTimeout(700);
   const option = page.getByRole('option', { name: new RegExp(pattern, 'i') }).first();
-  const names = await page.getByRole('option').allInnerTexts();
-  if ((await option.count()) === 0) {
+  try {
+    // The filtered list is the signal; a pattern that never shows reports what the list holds.
+    await option.waitFor({ state: 'visible', timeout: 10_000 });
+  } catch {
+    const names = await page.getByRole('option').allInnerTexts();
     throw new Error(`no palette entry matches /${pattern}/ — entries: ${JSON.stringify(names)}`);
   }
   await option.click();
-  await page.waitForTimeout(1200);
-  // The palette's own input, not "any listbox": a dock panel's select is a listbox too, and
-  // a looser guard would trip on those instead of on the palette.
-  const input = page.locator('input[aria-label="Komut paleti"], input[placeholder*="Komut"]');
-  if ((await input.count()) > 0) throw new Error(`the palette is still open after /${pattern}/`);
+  // Running a command closes the palette first; the input going away is the signal, and one
+  // that stays is the defect this guard names.
+  try {
+    await input.waitFor({ state: 'hidden', timeout: 10_000 });
+  } catch {
+    throw new Error(`the palette is still open after /${pattern}/`);
+  }
+}
+
+/**
+ * The shell's own "at rest" signal: the tool strip's settings group is disabled unless the
+ * document is editable (`isEditable`: the viewer shows the working version and no operation
+ * holds the shell) and, for the select tool, the file's own annotations are read.
+ */
+async function documentAtRest(timeout = 60_000) {
+  await page
+    .locator('fieldset[aria-label="Araç ayarları"]:enabled')
+    .first()
+    .waitFor({ state: 'attached', timeout });
 }
 
 /** Export the current version through File → Dışa aktar and save the download. */
@@ -247,7 +277,9 @@ async function runMenuCommand(menu, pattern) {
     throw new Error(`no menu entry matches /${pattern}/ — entries: ${JSON.stringify(names)}`);
   }
   await item.click();
-  await page.waitForTimeout(400);
+  // Running an entry closes the menu; the panel going away is the signal. What the command
+  // did is waited for by the check that ran it, on that command's own result.
+  await menuPanel.waitFor({ state: 'hidden', timeout: 10_000 });
 }
 
 async function openFixture(path) {
@@ -403,9 +435,13 @@ try {
         document.querySelector('[data-dialog-diagnostic]')?.getAttribute('data-dialog-diagnostic') ?? null,
     );
     if (failure !== null) throw new Error(`the operation failed its own verification: ${failure}`);
-    const apply = page.getByRole('button', { name: 'Belgeye uygula' }).first();
-    if ((await apply.count()) > 0) await apply.click();
-    await page.waitForTimeout(2500);
+    // The report offers the document action, so it has to be there to press; a form that
+    // closes without it would let the page-count assertion below pass on an edit never applied.
+    await page.getByRole('button', { name: 'Belgeye uygula' }).first().click();
+    // Applying swaps the working version and closes the form in one step; then the viewer
+    // takes the new version, which the shell at rest says (the next check searches it).
+    await form.waitFor({ state: 'hidden', timeout: 60_000 });
+    await documentAtRest();
     const pages = await page.evaluate(() => document.querySelector('footer')?.textContent ?? '');
     if (!pages.includes(`/ ${FIXTURE_PAGES}`)) {
       throw new Error(`page count moved after the edit: ${pages}`);
@@ -540,21 +576,38 @@ try {
     await openPalette('Mesafe|Ölçüm');
     const sheet = await page.locator('.pdfViewer .page').first().boundingBox();
     if (sheet === null) throw new Error('no page to measure on');
+    // The tool's gesture layer (`role="application"`, named by the tool) mounts only while
+    // the ruler is armed; clicks before it exists would land on the page.
+    const gesture = page.getByRole('application', { name: 'Ölçüm', exact: true });
+    await gesture.waitFor({ state: 'attached', timeout: 15_000 });
     // Two clicks: a distance needs a start and an end. The layer's own gesture, no dialog.
     await page.mouse.click(sheet.x + 120, sheet.y + 200);
-    await page.waitForTimeout(200);
+    // The first click starts the chain, and the ruler draws its dashed preview from it; the
+    // second click has to arrive after that, or it would start a chain of its own.
+    await page
+      .locator('polyline[stroke-dasharray="4 3"]')
+      .first()
+      .waitFor({ state: 'attached', timeout: 10_000 });
     await page.mouse.click(sheet.x + 320, sheet.y + 260);
-    await page.waitForTimeout(400);
     // The gesture's own ending: the ruler finishes on Enter (or a double click), which is
-    // the tool's documented interaction, not a second click.
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(600);
+    // the tool's documented interaction, not a second click. The finished measurement is a
+    // `data-measure` mark on the page. Enter on a chain that is not yet two points long does
+    // nothing and on a finished one nothing is left to finish, so pressing it until the mark
+    // shows is what a user does and cannot create a second one.
+    const finished = page.locator('[data-measure]');
+    for (let attempt = 0; attempt < 5 && (await finished.count()) === 0; attempt += 1) {
+      await page.keyboard.press('Enter');
+      await finished
+        .first()
+        .waitFor({ state: 'attached', timeout: 3_000 })
+        .catch(() => undefined);
+    }
     // Two Escape presses end the tool: one clears the chain, the second disarms it — and the
     // overlay has to be gone before the export menu is reachable (it is not, otherwise: that
     // is the defect this check found).
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
+    await gesture.waitFor({ state: 'detached', timeout: 10_000 });
     const readout = await page
       .locator('[data-testid="measure-readout"], [aria-label*="Ölçüm"], fieldset')
       .first()
@@ -584,7 +637,9 @@ try {
       // The app's document has been edited since the fixture was written (page 1 carries the
       // replacement), so "itself" is the file the previous check exported from the document as it is now.
       await chooser.setFiles(join(fixtureDir, 'measured.pdf'));
-      await page.waitForTimeout(900);
+      // The panel reads the file and then names it ("Seçilen: …"); the run controls are
+      // judged after that line, not after a delay.
+      await page.getByText('Seçilen: measured.pdf', { exact: true }).waitFor({ timeout: 15_000 });
       const run = page.getByRole('button', { name: /Metni karşılaştır/i }).first();
       if (await run.isDisabled()) throw new Error('the text run is disabled after picking a document');
       await run.click();
@@ -653,19 +708,28 @@ try {
       .first();
     await dialog.waitFor({ state: 'visible', timeout: 15_000 });
     await dialog.locator('input[type="file"]').first().setInputFiles(fixture);
-    await page.waitForTimeout(400);
+    // The queue lists the file once the dialog has taken it; the run is judged after that.
+    await dialog.getByText(basename(fixture), { exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
     // Tick one real step — the first checkbox may be the whole-step switch — then run.
     const boxes = dialog.getByRole('checkbox');
     const count = await boxes.count();
     if (count === 0) throw new Error('the dialog offers no steps to tick');
+    // `check()` returns once the box reads as checked, which is the state the run reads.
     await boxes.nth(count > 1 ? 1 : 0).check();
-    await page.waitForTimeout(300);
     const runButton = dialog.getByRole('button', { name: /Çalıştır/i }).first();
     if (await runButton.isDisabled()) {
       throw new Error(`run is disabled after ticking a step (checkboxes: ${count})`);
     }
     await runButton.click();
-    await page.waitForTimeout(6000);
+    // The report section appears when the run has ended (`report` and `status` are set
+    // together); a run that failed outright shows an alert instead. Either ends the wait, and
+    // the assertions below say which it was.
+    await dialog
+      .getByRole('heading', { name: 'Dosya raporu', exact: true })
+      .or(dialog.getByRole('alert'))
+      .first()
+      .waitFor({ state: 'visible', timeout: 120_000 })
+      .catch(() => undefined);
     // The report region, not the dialog's own intro: the intro sentence mentions the word
     // "başarısız" too, and a check that matches it would pass without a run ever happening.
     const text = await dialog.innerText();

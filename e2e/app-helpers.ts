@@ -27,6 +27,32 @@ export const pdfFile = (name: string, bytes: Uint8Array, mimeType = 'application
 export const notice = (page: Page, text: string | RegExp): Locator =>
   page.locator('[role="status"]').filter({ hasText: text });
 
+/**
+ * Start remembering every line the page's status regions show, and return the reader of that
+ * record (oldest first). A notice leaves the screen on its own, so "nothing was reported" cannot
+ * be read off the page after a wait: it is read off this record, after a positive signal says
+ * that whatever would have reported has finished.
+ */
+export async function recordNotices(page: Page): Promise<() => Promise<readonly string[]>> {
+  await page.evaluate(() => {
+    const seen: string[] = [];
+    Reflect.set(window, '__noticesSeen', seen);
+    const take = () => {
+      for (const region of document.querySelectorAll('[role="status"]')) {
+        const text = (region.textContent ?? '').trim();
+        if (text !== '' && !seen.includes(text)) seen.push(text);
+      }
+    };
+    new MutationObserver(take).observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+    take();
+  });
+  return () => page.evaluate(() => Reflect.get(window, '__noticesSeen'));
+}
+
 /** Wait for the shell to finish opening (the source is still being stored when the page shows). */
 export async function settled(page: Page): Promise<void> {
   await expect(page.locator(CANVAS).first()).toBeVisible({ timeout: 30_000 });

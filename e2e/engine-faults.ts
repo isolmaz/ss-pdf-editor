@@ -51,6 +51,8 @@ interface FaultRule {
   skip: number;
   held: number;
   fired: number;
+  /** Held calls whose reply the page has received since they were let through. */
+  answered: number;
   readonly gate: Promise<void>;
   readonly open: () => void;
 }
@@ -60,6 +62,8 @@ interface FaultTable {
   readonly rules: FaultRule[];
   /** Every pdf.js request the page sent, by action. */
   readonly requests: Record<string, number>;
+  /** Every reply to a pdf.js request that expects one (faulted replies included), by action. */
+  readonly replies: Record<string, number>;
   arm(
     engine: FaultEngine,
     call: string,
@@ -79,6 +83,7 @@ function installTable(): void {
   const table: FaultTable = {
     rules,
     requests: {},
+    replies: {},
     arm(engine, call, kind, message, times, skip) {
       const gate = Promise.withResolvers<void>();
       rules.push({
@@ -90,6 +95,7 @@ function installTable(): void {
         skip,
         held: 0,
         fired: 0,
+        answered: 0,
         gate: gate.promise,
         open: () => gate.resolve(),
       });
@@ -114,6 +120,29 @@ function installTable(): void {
 
   const NativeWorker = window.Worker;
   class FaultWorker extends NativeWorker {
+    /**
+     * Requests of this worker that expect a reply, by `sourceName|callbackId` (the counter is per
+     * message handler, so the key is only unique within one worker), until that reply arrives.
+     */
+    readonly awaitingReply = new Map<string, { readonly action: string; readonly rule: FaultRule | null }>();
+
+    constructor(scriptURL: string | URL, options?: WorkerOptions) {
+      super(scriptURL, options);
+      // pdf.js answers a request with `{ targetName: <the request's sourceName>, callbackId, callback }`;
+      // a message that carries an `action` is the worker's own request, not an answer.
+      this.addEventListener('message', (event: MessageEvent) => {
+        const data: unknown = event.data;
+        if (typeof data !== 'object' || data === null) return;
+        if (typeof Reflect.get(data, 'callback') !== 'number') return;
+        const key = `${String(Reflect.get(data, 'targetName'))}|${String(Reflect.get(data, 'callbackId'))}`;
+        const waiting = this.awaitingReply.get(key);
+        if (waiting === undefined) return;
+        this.awaitingReply.delete(key);
+        table.replies[waiting.action] = (table.replies[waiting.action] ?? 0) + 1;
+        if (waiting.rule !== null) waiting.rule.answered += 1;
+      });
+    }
+
     override postMessage(message: unknown, transfer?: Transferable[] | StructuredSerializeOptions): void {
       const forward = (): void => {
         if (transfer === undefined) super.postMessage(message);
@@ -134,6 +163,8 @@ function installTable(): void {
         return;
       }
       table.requests[action] = (table.requests[action] ?? 0) + 1;
+      const replyKey = `${String(source)}|${String(callbackId)}`;
+      if (callbackId !== undefined) this.awaitingReply.set(replyKey, { action, rule: null });
       const rule = table.take(
         'pdfjs',
         action,
@@ -145,6 +176,7 @@ function installTable(): void {
       }
       if (rule.kind === 'hold') {
         rule.held += 1;
+        if (callbackId !== undefined) this.awaitingReply.set(replyKey, { action, rule });
         void rule.gate.then(forward);
         return;
       }
@@ -210,7 +242,9 @@ for (const exported of Object.values(real)) {
 interface ModuleHold {
   readonly gate: Promise<void>;
   readonly open: () => void;
-  reached: boolean;
+  /** Settles once the route handler has taken the load and is waiting on the gate. */
+  readonly reached: Promise<void>;
+  readonly markReached: () => void;
 }
 
 interface PageState {
@@ -242,7 +276,7 @@ export async function injectEngineFaults(page: Page): Promise<void> {
       }
       const hold = state.holds.shift();
       if (hold !== undefined) {
-        hold.reached = true;
+        hold.markReached();
         await hold.gate;
       }
       await route.fulfill({
@@ -255,10 +289,16 @@ export async function injectEngineFaults(page: Page): Promise<void> {
   );
 }
 
-/** How the test releases a held call; `reached()` resolves once the application is waiting on it. */
+/**
+ * How the test releases a held call; `reached()` resolves once the application is waiting on it.
+ * `answered()` resolves once the engine's reply to the released call has reached the page (pdf.js
+ * requests that expect a reply only), so what the application does with a late answer can be
+ * asserted after it came rather than after a guessed delay.
+ */
 export interface Hold {
   (): Promise<void>;
   reached(): Promise<void>;
+  answered(): Promise<void>;
 }
 
 async function arm(
@@ -326,15 +366,30 @@ export async function holdNext(page: Page, engine: FaultEngine, call: string): P
     if (call !== 'module')
       throw new Error('MuPDF methods are synchronous and cannot be held; only "module" can');
     const gate = Promise.withResolvers<void>();
-    const hold: ModuleHold = { gate: gate.promise, open: () => gate.resolve(), reached: false };
+    const reached = Promise.withResolvers<void>();
+    const hold: ModuleHold = {
+      gate: gate.promise,
+      open: () => gate.resolve(),
+      reached: reached.promise,
+      markReached: () => reached.resolve(),
+    };
     stateOf(page).holds.push(hold);
     const release = async (): Promise<void> => hold.open();
     release.reached = async (): Promise<void> => {
-      const started = Date.now();
-      while (!hold.reached) {
-        if (Date.now() - started > 30_000) throw new Error('the MuPDF load was never requested');
-        await page.waitForTimeout(25);
+      const outcome = Promise.withResolvers<void>();
+      const giveUp = setTimeout(
+        () => outcome.reject(new Error('the MuPDF load was never requested')),
+        30_000,
+      );
+      void hold.reached.then(outcome.resolve);
+      try {
+        await outcome.promise;
+      } finally {
+        clearTimeout(giveUp);
       }
+    };
+    release.answered = async (): Promise<void> => {
+      throw new Error('only a held pdf.js request reports its answer; a MuPDF module load has none');
     };
     return release;
   }
@@ -351,6 +406,12 @@ export async function holdNext(page: Page, engine: FaultEngine, call: string): P
       return (table.rules[id]?.held ?? 0) > 0;
     }, id);
   };
+  release.answered = async (): Promise<void> => {
+    await page.waitForFunction((id) => {
+      const table: FaultTable = Reflect.get(window, '__engineFaults');
+      return (table.rules[id]?.answered ?? 0) > 0;
+    }, id);
+  };
   return release;
 }
 
@@ -359,5 +420,16 @@ export async function requestCount(page: Page, action: string): Promise<number> 
   return page.evaluate((action) => {
     const table: FaultTable = Reflect.get(window, '__engineFaults');
     return table.requests[action] ?? 0;
+  }, action);
+}
+
+/**
+ * How many replies to requests of this pdf.js action the page has received so far (an injected
+ * failure counts: it is the reply the application gets). Only requests that expect a reply have one.
+ */
+export async function replyCount(page: Page, action: string): Promise<number> {
+  return page.evaluate((action) => {
+    const table: FaultTable = Reflect.get(window, '__engineFaults');
+    return table.replies[action] ?? 0;
   }, action);
 }

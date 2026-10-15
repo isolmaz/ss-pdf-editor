@@ -132,8 +132,9 @@ test('closing the XFA dialog while its form is still opening leaves it closed wh
 
   const before = await requestCount(page, 'GetDocRequest');
   await release();
-  // The late answer is dropped: no form, no failure, nothing comes back.
-  await page.waitForTimeout(1_000);
+  // The late answer is dropped: no form, no failure, nothing comes back. It is asserted once
+  // the engine's answer has reached the page, which is the moment the application could have used it.
+  await release.answered();
   await expect(page.getByRole('dialog', { name: /Fill/ })).toHaveCount(0);
   expect(before).toBe(await requestCount(page, 'GetDocRequest'));
 

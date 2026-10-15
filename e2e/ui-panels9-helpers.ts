@@ -514,6 +514,85 @@ export function printedJobs(page: Page): Promise<readonly (readonly PrintedSheet
   });
 }
 
+/**
+ * Hold a print job at its first rasterised sheet, so a test can cancel a job that is deterministically
+ * half-prepared instead of racing the renderer, and learn when the cancelled job has dropped that
+ * sheet. Call before the page loads.
+ *
+ * The job turns every rendered page into an image with `canvas.toBlob` (its canvas is never in the
+ * document); the first call made while a job's container exists is kept back until
+ * `releasePrintRaster`. A job cancelled while its image was being made revokes that image's object URL
+ * and returns (`usePrinting.ts`: before it appends the sheet, decodes or prints), so the revocation of
+ * exactly that URL — `heldSheetDropped` — is the signal that the job has seen the cancellation.
+ */
+export async function holdPrintRaster(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const gate = Promise.withResolvers<void>();
+    let holding = true;
+    let heldBlob: Blob | null = null;
+    let heldUrl: string | null = null;
+    Reflect.set(window, 'printRasterHeld', false);
+    Reflect.set(window, 'heldSheetDropped', false);
+    Reflect.set(window, 'releasePrintRaster', () => gate.resolve());
+
+    const toBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (
+      this: HTMLCanvasElement,
+      callback: BlobCallback,
+      type?: string,
+      quality?: number,
+    ) {
+      if (!holding || document.querySelector('.pdf-print-root') === null) {
+        toBlob.call(this, callback, type, quality);
+        return;
+      }
+      holding = false;
+      Reflect.set(window, 'printRasterHeld', true);
+      void gate.promise.then(() =>
+        toBlob.call(
+          this,
+          (blob) => {
+            heldBlob = blob;
+            callback(blob);
+          },
+          type,
+          quality,
+        ),
+      );
+    };
+
+    const create = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (source: Blob | MediaSource) => {
+      const url = create(source);
+      if (heldBlob !== null && source === heldBlob) heldUrl = url;
+      return url;
+    };
+    const revoke = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = (url: string) => {
+      if (heldUrl !== null && url === heldUrl) Reflect.set(window, 'heldSheetDropped', true);
+      revoke(url);
+    };
+  });
+}
+
+/** Whether a job is waiting at the held raster (see `holdPrintRaster`). */
+export function printRasterHeld(page: Page): Promise<boolean> {
+  return page.evaluate(() => Reflect.get(window, 'printRasterHeld') === true);
+}
+
+/** Let the held raster through: the job continues, cancelled or not. */
+export async function releasePrintRaster(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const release: () => void = Reflect.get(window, 'releasePrintRaster');
+    release();
+  });
+}
+
+/** Whether the released sheet's object URL was revoked: the cancelled job dropped it (see `holdPrintRaster`). */
+export function heldSheetDropped(page: Page): Promise<boolean> {
+  return page.evaluate(() => Reflect.get(window, 'heldSheetDropped') === true);
+}
+
 export interface SpeechVoiceSpec {
   readonly name: string;
   readonly lang: string;

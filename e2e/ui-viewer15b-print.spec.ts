@@ -7,7 +7,14 @@ import type { Locator, Page } from 'playwright/test';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
 import { openPdf } from './ui-helpers';
-import { printedJobs, spyOnPrint } from './ui-panels9-helpers';
+import {
+  heldSheetDropped,
+  holdPrintRaster,
+  printedJobs,
+  printRasterHeld,
+  releasePrintRaster,
+  spyOnPrint,
+} from './ui-panels9-helpers';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ timeout: 180_000 });
@@ -24,16 +31,24 @@ test('Escape does not close the dialog while the pages are being prepared; Cance
   page,
 }) => {
   await spyOnPrint(page);
-  await openPdf(page, 'many.pdf', labelledPdf('Many', 60));
+  // The job is held at its first rasterised sheet: half-prepared on purpose, not by a race.
+  await holdPrintRaster(page);
+  await openPdf(page, 'one.pdf', labelledPdf('One', 1));
   const panel = await openPrint(page);
   await panel.getByRole('button', { name: 'Print', exact: true }).click();
-  await expect(panel.getByRole('status')).toContainText(/^Preparing pages: \d+\/60$/);
+  await expect(panel.getByRole('status')).toContainText(/^Preparing pages: \d+\/1$/);
+  await expect.poll(() => printRasterHeld(page)).toBe(true);
   await page.keyboard.press('Escape');
   await expect(dialog(page)).toBeVisible();
-  await expect(panel.getByRole('status')).toContainText(/^Preparing pages: \d+\/60$/);
+  await expect(panel.getByRole('status')).toContainText(/^Preparing pages: \d+\/1$/);
   await panel.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(dialog(page)).toBeHidden();
-  await page.waitForTimeout(1500);
+
+  // The held sheet now comes back to a job that is gone. A job cancelled while its image was being
+  // made revokes that image's URL and returns, before it would append the sheet or print: the
+  // revocation is the signal that it has seen the cancellation.
+  await releasePrintRaster(page);
+  await expect.poll(() => heldSheetDropped(page)).toBe(true);
   expect(await printedJobs(page)).toEqual([]);
 });
 

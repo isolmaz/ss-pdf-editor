@@ -152,7 +152,14 @@ let page = null;
 async function recoverFromFailure() {
   try {
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
+    // A dialog that listens for Escape closes on it; one that does not stays, and is closed
+    // through its own button below. The dialog going away is the signal, bounded so a dialog
+    // that ignores the key costs seconds, not the run.
+    await page
+      .locator('[role="dialog"]')
+      .first()
+      .waitFor({ state: 'hidden', timeout: 3_000 })
+      .catch(() => undefined);
     const open = await page.locator('[role="dialog"]').count();
     if (open > 0) {
       const close = page
@@ -162,10 +169,13 @@ async function recoverFromFailure() {
       await close.click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
     }
-    // An operation left open in the tools panel is closed the same way a user would.
+    // An operation left open in the tools panel is closed the same way a user would; its way
+    // back disappearing is the proof the panel closed.
     const back = page.getByRole('button', { name: 'Tüm Araçlara Dön', exact: true }).first();
-    if ((await back.count()) > 0 && (await back.isVisible())) await back.click();
-    await page.waitForTimeout(200);
+    if ((await back.count()) > 0 && (await back.isVisible())) {
+      await back.click();
+      await back.waitFor({ state: 'hidden', timeout: 10_000 });
+    }
   } catch {
     // the tab may be gone; the next check reports that on its own
   }
@@ -205,13 +215,21 @@ async function check(name, fn, timeoutMs = CHECK_TIMEOUT_MS) {
 async function markRows() {
   const list = page.locator('ul[aria-label="Notlar"]').first();
   await list.waitFor({ state: 'visible', timeout: 20_000 });
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const rows = await list.locator('> li').count();
-    if (rows > 0) return rows;
-    await page.waitForTimeout(400);
+  try {
+    // The first row is the signal; the page re-evaluates the condition on every frame.
+    await page.waitForFunction(
+      () => {
+        const rows = document.querySelector('ul[aria-label="Notlar"]')?.querySelectorAll(':scope > li');
+        return rows !== undefined && rows.length > 0;
+      },
+      undefined,
+      { timeout: 8_000 },
+    );
+  } catch {
+    const text = await page.locator('body').innerText();
+    throw new Error(`comment panel stayed empty: ${text.replace(/\s+/g, ' ').slice(0, 200)}`);
   }
-  const text = await page.locator('body').innerText();
-  throw new Error(`comment panel stayed empty: ${text.replace(/\s+/g, ' ').slice(0, 200)}`);
+  return list.locator('> li').count();
 }
 
 /** The page list's own option element, by 0-based page index. */
@@ -219,10 +237,68 @@ function pageOption(index) {
   return page.locator(`[data-page-option="${index}"]`).first();
 }
 
-/** A panel tab, by its own Turkish label — the left `DocumentPanel` or the right `Dock`. */
+/**
+ * A panel tab, by its own Turkish label — the left `DocumentPanel` or the right `Dock`. The
+ * dock marks the tab it shows with `aria-selected` in the same render that swaps the panel
+ * body, so the tab reading as selected is the signal that the panel is the one asked for.
+ */
 async function openTab(label) {
-  await page.getByRole('tab', { name: label, exact: true }).first().click();
-  await page.waitForTimeout(400);
+  const tab = page.getByRole('tab', { name: label, exact: true }).first();
+  await tab.click();
+  await page
+    .getByRole('tab', { name: label, exact: true, selected: true })
+    .first()
+    .waitFor({ state: 'visible', timeout: 10_000 });
+}
+
+/**
+ * The shell's own "at rest" signal: the tool strip's settings group is disabled unless the
+ * document is editable (`isEditable`: the viewer shows the working version and no operation
+ * holds the shell) and, for the select tool, the file's own annotations are read. After an
+ * operation lands this is the moment the next press can be trusted not to meet a half-swapped
+ * viewer.
+ */
+async function documentAtRest(timeout = 60_000) {
+  await page
+    .locator('fieldset[aria-label="Araç ayarları"]:enabled')
+    .first()
+    .waitFor({ state: 'attached', timeout });
+}
+
+/** The status line (`role="status"`) that carries `text`. */
+function notice(text) {
+  return page.locator('[role="status"]').filter({ hasText: text });
+}
+
+/**
+ * Closes the notice that carries `text` and waits for it to be gone, so the notice that shows
+ * next is provably a new one: two identical operations word their result identically, and a
+ * wait on the text alone would be satisfied by the first one's line.
+ */
+async function dismissNotice(text) {
+  const line = notice(text);
+  if ((await line.count()) === 0) return;
+  // The line also closes itself; if it does so between the count and the press, it is gone.
+  await line
+    .getByRole('button', { name: 'Kapat', exact: true })
+    .click({ timeout: 5_000 })
+    .catch(() => undefined);
+  await line.first().waitFor({ state: 'hidden', timeout: 10_000 });
+}
+
+/**
+ * The comment panel's text once a row matching `pattern` is listed. A row that never comes
+ * fails with what the panel does show, which is what a wrong mark kind looks like.
+ */
+async function notesWithRow(pattern, what, timeout = 15_000) {
+  const list = page.locator('ul[aria-label="Notlar"]').first();
+  try {
+    await list.locator('li').filter({ hasText: pattern }).first().waitFor({ state: 'visible', timeout });
+  } catch {
+    const text = (await list.innerText({ timeout: 2_000 }).catch(() => '(no list)')) || '(empty list)';
+    throw new Error(`no ${what} row in the panel: ${text.slice(0, 200)}`);
+  }
+  return list.innerText();
 }
 
 /**
@@ -451,16 +527,19 @@ try {
       await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click();
       await settings.getByRole('radio', { name: 'Gelişmiş mod' }).check();
       await settings.getByRole('button', { name: 'Kapat', exact: true }).click();
+      await settings.waitFor({ state: 'hidden', timeout: 15_000 });
+      // The switch's own state and the shell's mode state are two updates; a menu probed in
+      // between would be one render behind, which is a timing artefact and not a missing
+      // command. The shell's own evidence that it re-filtered comes first — the left dock's
+      // structure tabs exist only in the advanced mode (`SIMPLE_MODE_DOCK_TABS`) — and the
+      // menu is read after it, once, so a command that is still missing is a real failure.
+      await page
+        .getByRole('tab', { name: 'Katmanlar', exact: true })
+        .first()
+        .waitFor({ state: 'visible', timeout: 15_000 });
       for (const command of commands) {
-        // The switch's own state and the shell's mode state are two updates; a menu that
-        // is one render behind is a timing artefact, not a missing command, so the probe
-        // is retried the way a user would open the menu again.
-        let offered = false;
-        for (let attempt = 0; attempt < 10 && !offered; attempt += 1) {
-          offered = await menuOffers('Sayfa', command);
-          if (!offered) await page.waitForTimeout(300);
-        }
-        if (!offered) throw new Error(`"${command}" is still missing after the switch to the advanced mode`);
+        if (!(await menuOffers('Sayfa', command)))
+          throw new Error(`"${command}" is still missing after the switch to the advanced mode`);
       }
       return `simple (default) → advanced through the settings; ${commands
         .map((command) => `"${command}"`)
@@ -527,7 +606,13 @@ try {
     await page.evaluate(() => {
       document.querySelector('.pdfViewer')?.parentElement?.scrollTo(0, 0);
     });
-    await page.waitForTimeout(300);
+    // The scroller reaching the top is what the gesture below needs: the page box is read
+    // from where the page is, and a scroll still under way would move it.
+    await page.waitForFunction(
+      () => (document.querySelector('.pdfViewer')?.parentElement?.scrollTop ?? 0) === 0,
+      undefined,
+      { timeout: 10_000 },
+    );
     await runMenuCommand('Araçlar', 'Dikdörtgen');
     // The layer takes the gesture itself, so the page is the only surface to wait for.
     const pageEl = page.locator('.pdfViewer .page').first();
@@ -537,10 +622,10 @@ try {
     await page.mouse.down();
     await page.mouse.move(box.x + 300, box.y + 300, { steps: 10 });
     await page.mouse.up();
-    await page.waitForTimeout(600);
     await openTab('Notlar');
-    const text = await page.locator('ul[aria-label="Notlar"]').first().innerText();
-    if (!/Şekil/.test(text)) throw new Error(`no shape row in the panel: ${text.slice(0, 200)}`);
+    // The row the stroke commits is the signal that it landed; a missing one fails with the
+    // rows the panel does list.
+    await notesWithRow(/Şekil/, 'shape');
     return 'rectangle mark listed';
   });
 
@@ -551,15 +636,14 @@ try {
     const area = page.locator('textarea').first();
     await area.fill('Ada Lovelace notu');
     await area.blur();
-    await page.waitForTimeout(400);
-    const text = await page.locator('ul[aria-label="Notlar"]').first().innerText();
-    if (!text.includes('Ada Lovelace notu')) throw new Error(`comment not shown: ${text.slice(0, 200)}`);
+    // The edit commits on blur; the typed words showing in the mark's own row (a textarea's
+    // value is not row text) is the signal that the comment reached the mark.
+    await notesWithRow('Ada Lovelace notu', 'comment');
     return 'comment text visible in the panel';
   });
 
   await check('highlight: the controlled creator commits a readable mark on release', async () => {
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(300);
     const line = await page.evaluate(() => {
       const span = [...document.querySelectorAll('.textLayer span')].find((node) =>
         (node.textContent ?? '').includes('body line'),
@@ -570,19 +654,24 @@ try {
     });
     if (line === null) throw new Error('no text line to drag over');
     await runMenuCommand('Araçlar', 'Vurgu');
-    await page.waitForTimeout(400);
+    // The tool strip marks the armed tool as pressed; the stroke below is only a highlight
+    // once the strip says so.
+    await page
+      .getByRole('button', { name: 'Vurgu', exact: true, pressed: true })
+      .first()
+      .waitFor({ state: 'visible', timeout: 10_000 });
     await page.mouse.move(line.x + 2, line.y);
     await page.mouse.down();
     await page.mouse.move(line.x + line.width / 2, line.y, { steps: 12 });
     await page.mouse.move(line.x + line.width - 0.25, line.y, { steps: 12 });
     await page.mouse.up();
-    await page.waitForTimeout(600);
     // The mark the user drew is still there — as the session's own row, which is the
     // record the save writes and the panel shows. A highlight that silently vanished
     // is the defect this guards; the export check asserts the `/Subtype` in the bytes.
+    // The row is awaited on a short bound: the creator commits on release, so a row that
+    // takes seconds is the defect, not a slow machine.
     await openTab('Notlar');
-    const text = await page.locator('ul[aria-label="Notlar"]').first().innerText();
-    if (!/Vurgu/.test(text)) throw new Error(`no highlight row in the panel: ${text.slice(0, 200)}`);
+    await notesWithRow(/Vurgu/, 'highlight', 5_000);
     return 'highlight listed in the panel immediately after the stroke';
   });
 
@@ -599,7 +688,8 @@ try {
      * selected at once, and the inline control arrives with the inventory reload after it.
      * Waiting for the input alone made this step pass or fail by timing — the same build
      * measured 10/16 and 12/16 on consecutive runs. So: select, wait for
-     * the selection to be *visible*, and retry like a user would rather than guess a delay.
+     * the selection to be *visible*, give the control a bounded window to arrive, and retry
+     * like a user would instead of guessing a delay.
      */
     for (let attempt = 0; attempt < 3 && (await input.count()) === 0; attempt += 1) {
       await row.getByRole('button').first().click();
@@ -610,7 +700,9 @@ try {
           { timeout: 10_000 },
         )
         .catch(() => undefined);
-      await page.waitForTimeout(700);
+      // The control is the thing being waited for; a press that did not bring it is pressed
+      // again by the next pass.
+      await input.waitFor({ state: 'visible', timeout: 3_000 }).catch(() => undefined);
     }
     try {
       await input.waitFor({ state: 'visible', timeout: 15_000 });
@@ -640,8 +732,17 @@ try {
       timeout: 60_000,
     });
     // The write swaps the tab's working version, so the inventory reloads from the
-    // new bytes: re-open the row and read the value the document now holds.
-    await page.waitForTimeout(1500);
+    // new bytes. The row listing the new value (a draft's input is not row text, so only a
+    // reload can put it there) is the signal that the reload landed, and the shell at rest
+    // is the signal that nothing is still churning when the next press comes. Then re-open
+    // the row and read the value the document now holds.
+    await list
+      .locator('li')
+      .filter({ hasText: 'musteri' })
+      .filter({ hasText: 'Grace Hopper' })
+      .first()
+      .waitFor({ state: 'visible', timeout: 30_000 });
+    await documentAtRest();
     await row.getByRole('button').first().click();
     const reopened = page.locator('#form-musteri');
     await reopened.waitFor({ state: 'visible', timeout: 20_000 });
@@ -671,7 +772,10 @@ try {
     );
 
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(500);
+    // The page count above is the working version's; the next command is offered only once
+    // the viewer shows that version and no operation holds the shell (`isEditable`), and the
+    // tool strip says so when it is.
+    await documentAtRest();
     await runMenuCommand('Sayfa', 'Sayfa ekle');
     await waitForOperationForm(60_000);
     await confirmDialog();
@@ -702,7 +806,9 @@ try {
         timeout: 30_000,
       },
     );
-    await page.waitForTimeout(1500);
+    // The stamped text is on screen, so the viewer shows the new version; the shell at rest
+    // is the signal that nothing it started for that version is still running.
+    await documentAtRest();
     return 'header/footer applied';
   });
 
@@ -735,7 +841,11 @@ try {
       const viewMenu = page.getByRole('menu');
       await viewMenu.waitFor({ state: 'visible', timeout: 8000 });
       await viewMenu.getByText('Sağ paneli aç/kapat', { exact: false }).first().click();
-      await page.waitForTimeout(400);
+      // The dock opening is what the next step presses on: its tab strip is the signal.
+      await page
+        .getByRole('tab', { name: 'Belge bilgileri', exact: true })
+        .first()
+        .waitFor({ state: 'visible', timeout: 10_000 });
     }
     await openTab('Belge bilgileri');
     const panel = page.locator('div[role="tabpanel"], section').first();
@@ -748,12 +858,12 @@ try {
 
   await check('redaction audit panel opens with its section', async () => {
     await openTab('Karartma denetimi');
-    await page.waitForTimeout(1200);
     // "Karartma" is also the tab's own label, so the page text names it whether or not the
-    // panel opened. The panel's own control ("Yeniden çalıştır") exists only inside it.
+    // panel opened. The panel's own control ("Yeniden çalıştır") exists only inside it, and
+    // the panel is a lazy chunk, so that control is what is waited for.
     await page.getByRole('button', { name: 'Yeniden çalıştır', exact: true }).first().waitFor({
       state: 'visible',
-      timeout: 8000,
+      timeout: 15_000,
     });
     return 'audit panel opened: its own re-run control is visible';
   });
@@ -844,10 +954,18 @@ try {
     await openTab('Sayfalar');
     await pageOption(0).click();
     const right = page.getByRole('button', { name: 'Sağa döndür', exact: true }).first();
-    await right.click();
-    await page.waitForTimeout(1500);
-    await right.click();
-    await page.waitForTimeout(1500);
+    const applied = /Belgeye uygulandı/;
+    for (let turn = 1; turn <= 2; turn += 1) {
+      // Both rotations word their result identically, so the line left by the first one is
+      // closed before the second press: only a line that shows after the press can be that
+      // rotation's own. The shell at rest after it is the moment the next press is a real
+      // one — the control is disabled while an operation holds the shell, and this is the
+      // defect the check guards (the second press doing nothing).
+      await dismissNotice(applied);
+      await right.click();
+      await notice(applied).first().waitFor({ state: 'visible', timeout: 60_000 });
+      await documentAtRest();
+    }
     const shape = await page.evaluate(() => {
       const page = document.querySelector('.pdfViewer .page canvas');
       return page === null ? null : { width: page.clientWidth, height: page.clientHeight };

@@ -12,8 +12,12 @@ import { expect, test } from './test';
 import { labelledPdf, readProducedEntry, readProducedPageTexts, readProducedPdf } from './tool-fixture';
 import { exportBytes, openPdf } from './ui-helpers';
 import {
+  heldSheetDropped,
+  holdPrintRaster,
   type PrintedSheet,
   printedJobs,
+  printRasterHeld,
+  releasePrintRaster,
   revokedUrls,
   spyOnPrint,
   trackRevocations,
@@ -191,15 +195,24 @@ test('Cancel while the pages are being prepared stops the job: nothing is printe
   page,
 }) => {
   await spyOnPrint(page);
-  await openPdf(page, 'many.pdf', labelledPdf('Many', 60));
+  // The job is held at its first rasterised sheet: half-prepared on purpose, not by a race.
+  await holdPrintRaster(page);
+  await openPdf(page, 'one.pdf', labelledPdf('One', 1));
   const panel = await openPrint(page);
   await printButton(page).click();
-  await expect(panel.getByRole('status')).toContainText(/^Preparing pages: \d+\/60$/);
+  await expect(panel.getByRole('status')).toContainText(/^Preparing pages: \d+\/1$/);
+  await expect.poll(() => printRasterHeld(page)).toBe(true);
   // Neither the button nor Escape can start or end a half-prepared job twice.
   await expect(printButton(page)).toBeDisabled();
   await panel.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(dialog(page)).toBeHidden();
-  await page.waitForTimeout(1500);
+  await expect(page.locator('.pdf-print-root')).toHaveCount(0);
+
+  // The held sheet now comes back to a job that is gone. A job cancelled while its image was being
+  // made revokes that image's URL and returns, before it would append the sheet or print: the
+  // revocation is the signal that it has seen the cancellation.
+  await releasePrintRaster(page);
+  await expect.poll(() => heldSheetDropped(page)).toBe(true);
   expect(await printedJobs(page)).toEqual([]);
   await expect(page.locator('.pdf-print-root')).toHaveCount(0);
 });
