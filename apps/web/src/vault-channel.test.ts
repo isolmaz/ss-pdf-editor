@@ -171,6 +171,11 @@ describe('vault channel over BroadcastChannel', () => {
     const lone = channel();
     expect(await lone.runExclusive(async () => 'direct')).toBe('direct');
 
+    // A DOM that does not implement the API answers `null` (happy-dom): the same as having none.
+    vi.stubGlobal('navigator', { locks: null });
+    expect(await lone.runExclusive(async () => 'direct')).toBe('direct');
+    expect(await lone.claimDraft('d-null')).toBe(true);
+
     const requested: string[] = [];
     vi.stubGlobal('navigator', {
       locks: {

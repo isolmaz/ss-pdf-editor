@@ -425,8 +425,9 @@ describe('applyPageBoxes: the media box and the boxes derived from it', () => {
     expect((await facts(out.bytes, 0)).crop).toEqual([0, 0, 100, 100]);
     const [first, second] = await readPageBoxes(out.bytes, [0, 1]);
     expect(first?.crop).toEqual([0, 0, 100, 100]);
-    // The sibling page keeps the box it inherits.
-    expect(second?.crop).toEqual([150, 0, 400, 100]);
+    // The sibling page keeps the box it inherits. The visible box is the CropBox clipped to the
+    // page's MediaBox (200 pt wide here), so the 400 pt right edge reads as 200 (#101).
+    expect(second?.crop).toEqual([150, 0, 200, 100]);
     expect(out.report.notes.find((entry) => entry.key === 'boxes.note.clamped')?.params).toEqual({
       count: 1,
     });

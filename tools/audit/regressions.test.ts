@@ -25,7 +25,12 @@ beforeAll(() => {
   cpSync(join(root, 'apps/web/src'), join(checkout, 'apps/web/src'), { recursive: true, filter: sources });
   mkdirSync(join(checkout, 'public'), { recursive: true });
   cpSync(join(root, 'public/sw.js'), join(checkout, 'public/sw.js'));
-  mkdirSync(join(checkout, 'tools'), { recursive: true });
+  cpSync(join(root, 'public/_headers'), join(checkout, 'public/_headers'));
+  mkdirSync(join(checkout, 'tools/vite'), { recursive: true });
+  // What the release-version, asset-pin and hosting-header checks load from the tree under audit.
+  for (const file of ['release-version.mjs', 'fetch-engines.mjs', 'vite/hosting.mjs']) {
+    cpSync(join(root, 'tools', file), join(checkout, 'tools', file));
+  }
   cpSync(join(root, 'README.md'), join(checkout, 'README.md'));
 }, 120_000);
 

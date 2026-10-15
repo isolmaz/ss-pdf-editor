@@ -126,7 +126,9 @@ export interface VaultChannel {
 
 /** The platform's lock manager, `undefined` where there is none. */
 function lockManager(): LockManager | undefined {
-  return globalThis.navigator?.locks;
+  // `null` is "no lock manager" as much as `undefined` is: a DOM that does not implement the API
+  // (happy-dom answers `null`) must not make every claim and every write throw.
+  return globalThis.navigator?.locks ?? undefined;
 }
 
 /** A per-window identifier: two tabs must be distinguishable inside one announcement map. */
