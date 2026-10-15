@@ -161,19 +161,20 @@ test('Export Text: a text file comes with the finished PDF', async ({ page }) =>
   expect(text).toContain('Memo 2');
 });
 
-test('Security without an owner password fails every file with the policy message', async ({ page }) => {
+test('Security without an owner password generates one and still encrypts every file', async ({ page }) => {
   const dialog = await openBatch(page);
   await queue(dialog, [{ name: 'memo.pdf', bytes: labelledPdf('Memo', 2) }]);
   await onlySteps(dialog, ['Security']);
   await dialog.getByLabel('Open password').fill('s3cret');
   await dialog.getByRole('button', { name: 'Run batch' }).click();
-  await expect(dialog.getByText('0 completed, 1 failed, 0 skipped').first()).toBeVisible({
+  await expect(dialog.getByText('1 completed, 0 failed, 0 skipped').first()).toBeVisible({
     timeout: 120_000,
   });
-  const failure = fileReport(dialog).getByRole('alert');
-  await expect(failure).toContainText('Failed at step Security:');
-  await expect(failure).toContainText('Operation halted by password policy.');
-  await expect(failure).toContainText('owner password is required');
+  const files = await downloads(page, 1, () =>
+    dialog.getByRole('button', { name: 'Download finished files' }).click(),
+  );
+  const bytes = [...files.values()][0] ?? new Uint8Array();
+  expect(await readProducedEntry(bytes, 'trailer', 'Encrypt', 'Filter')).toContain('Standard');
 });
 
 test('Security: the finished PDF is encrypted with the open password and the chosen permissions', async ({

@@ -13,6 +13,8 @@ export const enginesPart = {
   'op.note.security.encryptionApplied': 'AES-256 şifreleme uygulandı.',
   'op.note.security.opensWithoutPassword':
     'Belge parolasız açılıyor; izinler yalnızca sahip parolasıyla sınırlanır.',
+  'op.note.security.ownerPasswordGenerated':
+    'Sahip parolası boş bırakıldı; rastgele bir sahip parolası üretildi ve saklanmadı. İzinler açma parolasıyla değiştirilemez.',
   'op.note.security.signatureInvalidated':
     'Belgede dijital imza var. Şifreleme dosyayı yeniden yazdığı için imza artık geçerli olmayacak.',
   'op.note.security.signatureInvalidatedUnlock':

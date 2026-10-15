@@ -8,7 +8,8 @@
  * an in-place replace would be the one mistake this capability must not make.
  *
  * Nothing here re-implements the policy: an empty open password is refused by
- * `protectDocument` (`error.password-policy` says why), the produced bytes are
+ * `protectDocument` (`error.password-policy` says why), an empty owner password is
+ * replaced there by a random one, the produced bytes are
  * re-opened and their permissions checked inside the operation, and a wrong unlock password raises `wrong-password` rather than a raw
  * engine string.
  */
