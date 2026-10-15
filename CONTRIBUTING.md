@@ -41,6 +41,14 @@ pnpm e2e                     # Playwright against the assembled dist/ (signing s
 pnpm ci:behavior             # the behaviour checks in tools/behavior/ (needs openssl)
 ```
 
+While you work, run what your change touches rather than the whole suite after every step:
+`pnpm unit:changed` runs the unit tests that import a file changed since `origin/main` (committed
+or not), and `pnpm e2e:changed` the Playwright spec files changed since then (Playwright follows
+the imports of a spec, not the app's sources, so add the specs that exercise the code you
+changed: `pnpm e2e e2e/<spec>.spec.ts`). Run the full gates above once, on the finished branch,
+before you push; CI runs them all again. Several people or agents working at once each run only
+their own tests, so no one waits on a machine that every full suite is competing for.
+
 `pnpm check:docs` (`tools/audit/docs-sync.mjs`) reads the documentation and fails when a file
 path, a `pnpm` script or a command it names does not exist. When you rename a file or a script,
 update the docs that name it in the same commit.

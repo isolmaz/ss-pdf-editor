@@ -1,4 +1,25 @@
+import { copyFileSync, mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+
+/**
+ * Phosphor's icons as one file. The package's ES entry imports about 9,000 modules (an SSR, a
+ * client and a definition file per icon), and every isolated test file that draws an icon, or a
+ * Kumo control that does, had Node load them again: more than half of the suite's time. Its CommonJS
+ * build is the same icons in a single file, but named `.js` in a package Node reads as ES modules,
+ * so it is copied under a `.cjs` name, next to `pdf-ui`'s own `react`, and the tests import that.
+ * Kumo is inlined so its own icon imports take the same alias. The build is untouched.
+ */
+const phosphorBundle = fileURLToPath(
+  new URL('./packages/pdf-ui/node_modules/.vitest/phosphor.cjs', import.meta.url),
+);
+mkdirSync(dirname(phosphorBundle), { recursive: true });
+copyFileSync(
+  createRequire(new URL('./packages/pdf-ui/package.json', import.meta.url)).resolve('@phosphor-icons/react'),
+  phosphorBundle,
+);
 
 /**
  * The unit suite's boundary.
@@ -16,7 +37,9 @@ import { defineConfig } from 'vitest/config';
  * instead of asserting them, and runs under `vitest.measure.config.ts`.
  */
 export default defineConfig({
+  resolve: { alias: [{ find: /^@phosphor-icons\/react$/, replacement: phosphorBundle }] },
   test: {
+    server: { deps: { inline: [/@cloudflare\/kumo/] } },
     include: [
       'packages/**/src/**/*.test.ts',
       'packages/**/src/**/*.test.tsx',
