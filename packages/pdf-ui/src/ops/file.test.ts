@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { en } from '../../../shared/src/i18n/en';
+import { tr } from '../../../shared/src/i18n/tr';
+import type { OperationDialogSpec } from '../dialogs/types';
 import {
   pageCountOf,
   pageSizesOf,
@@ -176,5 +179,32 @@ describe('exportTextDialog', () => {
     expect(result.report.notes).toEqual([
       { kind: 'warning', key: 'export.text.detected', params: { count: 1 } },
     ]);
+  });
+});
+
+describe('the tool descriptions name the formats the dialogs offer', () => {
+  const formatLabels = (dialog: OperationDialogSpec) => {
+    const field = dialog.fields.find((candidate) => candidate.id === 'format');
+    if (field === undefined || (field.kind !== 'select' && field.kind !== 'radio'))
+      throw new Error('no format');
+    return field.options.map((option) => option.labelKey);
+  };
+
+  it.each([
+    ['export-images', exportImagesDialog, 'tools.exportImagesDesc'],
+    ['export-text', exportTextDialog, 'tools.exportTextDesc'],
+  ] as const)('%s', (_id, dialog, descriptionKey) => {
+    const labels = formatLabels(dialog);
+    expect(labels.length).toBeGreaterThan(1);
+    for (const [locale, catalogue] of [
+      ['tr', tr],
+      ['en', en],
+    ] as const) {
+      for (const label of labels) {
+        expect(catalogue[descriptionKey].toLowerCase(), `${locale} ${label}`).toContain(
+          catalogue[label].toLowerCase(),
+        );
+      }
+    }
   });
 });

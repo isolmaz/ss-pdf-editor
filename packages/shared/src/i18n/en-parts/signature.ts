@@ -50,5 +50,5 @@ export const signaturePart = {
   'op.note.stamp.resized': 'The stamp annotation was resized; the image was not re-encoded.',
 
   'home.tool.signature': 'Draw, type or upload a picture of your handwriting; initials work too.',
-  'home.tool.imageAdd': 'Place a PNG or JPEG; move, turn and resize it.',
+  'home.tool.imageAdd': 'Place a PNG, JPEG, WebP, GIF or BMP; move, turn and resize it.',
 } as const;

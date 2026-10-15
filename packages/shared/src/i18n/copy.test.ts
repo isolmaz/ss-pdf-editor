@@ -249,3 +249,10 @@ describe('the signature check that could not run', () => {
     expect(tr['props.sig.reason.unchecked.layout']).toContain('kurcalanmış olabilir');
   });
 });
+
+describe('a reason that names a tool', () => {
+  it('uses the name the tool has on its own button, not a shorter one', () => {
+    expect(en['cmd.reason.selectTool']).toContain(en['toolbar.select']);
+    expect(tr['cmd.reason.selectTool']).toContain(tr['toolbar.select'].replace(/ı$/, ''));
+  });
+});

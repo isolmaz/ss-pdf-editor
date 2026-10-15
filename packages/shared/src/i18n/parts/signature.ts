@@ -57,5 +57,5 @@ export const signaturePart = {
   'op.note.stamp.resized': 'Damga notunun boyutu değiştirildi; görsel yeniden kodlanmadı.',
 
   'home.tool.signature': 'Çizin, yazın ya da fotoğraftan yükleyin; paraf da olur.',
-  'home.tool.imageAdd': 'PNG ya da JPEG yerleştirin; taşıyın, döndürün ve boyutlandırın.',
+  'home.tool.imageAdd': 'PNG, JPEG, WebP, GIF veya BMP yerleştirin; taşıyın, döndürün ve boyutlandırın.',
 } as const;
