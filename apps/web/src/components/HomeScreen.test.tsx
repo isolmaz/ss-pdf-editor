@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 /**
  * The home screen's start tab: the file input, and the recent list read from `localStorage`
- * with its search, sort, star, remove and clear controls.
+ * with its search, sort, star, remove and clear controls; and the "All tools" tab, which asks for
+ * its chunk when the pointer reaches it and states that it is loading.
  */
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import type { ComponentProps } from 'react';
@@ -19,6 +20,21 @@ const handles = vi.hoisted(() => ({
   pruneRecentHandles: vi.fn(async (_keep: ReadonlySet<string>) => undefined),
 }));
 vi.mock('../recent-handles', () => handles);
+
+/** The tool grid's chunk: it counts how often it is asked for and arrives when the test says so. */
+const grid = vi.hoisted(() => {
+  const state = { loads: 0, arrive: () => {}, arrived: Promise.resolve() };
+  state.arrived = new Promise<void>((resolve) => {
+    state.arrive = resolve;
+  });
+  return state;
+});
+vi.mock('./HomeToolGrid', async () => {
+  const { createElement } = await import('react');
+  grid.loads += 1;
+  await grid.arrived;
+  return { default: () => createElement('p', null, 'the tool grid') };
+});
 
 const t = createTranslator('en');
 const NOW = Date.now();
@@ -247,5 +263,30 @@ describe('HomeScreen recent list', () => {
     setTimeout(resolve, 0);
     await settled;
     expect(handles.pruneRecentHandles).not.toHaveBeenCalled();
+  });
+});
+
+describe('HomeScreen tools tab', () => {
+  it('asks for the tool grid when the tab is reached, and states that it is loading until it arrives', async () => {
+    const user = userEvent.setup();
+    render(screenFor());
+    const tools = screen.getByRole('tab', { name: t('home.tab.tools') });
+    expect(grid.loads).toBe(0);
+
+    await user.hover(tools);
+    expect(grid.loads).toBe(1);
+
+    await user.click(tools);
+    expect(tools.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: t('home.tab.start') }).getAttribute('aria-selected')).toBe(
+      'false',
+    );
+    expect(screen.getByRole('status').textContent).toBe(t('home.tools.loading'));
+    expect(screen.queryByText('the tool grid')).toBeNull();
+
+    await act(async () => grid.arrive());
+    expect(await screen.findByText('the tool grid')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(grid.loads).toBe(1);
   });
 });

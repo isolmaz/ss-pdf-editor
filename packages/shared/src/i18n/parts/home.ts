@@ -24,6 +24,7 @@ export const homePart = {
     'PDF açılır; Word, Excel, PowerPoint, HTML ve metin PDF’e dönüştürülür. Dosya seçmek için tıklayın.',
 
   'home.tools.search': 'Araç ara…',
+  'home.tools.loading': 'Araçlar yükleniyor…',
   'home.tools.activeDocument': 'Araçlar açık belgeye uygulanır: {name}',
   'home.tools.noDocument': 'Bir araç seçin; belge gerekiyorsa önce dosyanızı soracağız.',
   'home.tools.empty': 'Aramanızla eşleşen araç yok.',

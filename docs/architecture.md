@@ -2648,7 +2648,7 @@ are a tab right now; removing an entry or clearing the list never touches a file
 the entry's stored handle at once, and the clear asks first; the clear keeps the handle of a
 document that is open in a tab or has a draft in the vault, and prunes nothing when the draft
 inventory cannot be read completely). *All tools*
-(`components/HomeToolGrid.tsx`, loaded with the tab) lays the command registry out by task:
+(`components/HomeToolGrid.tsx`, a chunk the tab fetches when the pointer or focus reaches it, with a "Loading tools…" status in the panel until it arrives) lays the command registry out by task:
 each tile is a command id, its title is the command's label and pressing it runs the
 command, so the grid cannot drift from the menus or the palette. It lists
 every tool in either interface mode — the simple mode filters menus and the palette, it never

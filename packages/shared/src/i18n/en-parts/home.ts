@@ -19,6 +19,7 @@ export const homePart = {
     'A PDF opens; Word, Excel, PowerPoint, HTML and text are converted to PDF. Click to choose a file.',
 
   'home.tools.search': 'Search tools…',
+  'home.tools.loading': 'Loading tools…',
   'home.tools.activeDocument': 'Tools apply to the open document: {name}',
   'home.tools.noDocument': 'Pick a tool; if it needs a document, we ask for your file first.',
   'home.tools.empty': 'No tool matches your search.',
