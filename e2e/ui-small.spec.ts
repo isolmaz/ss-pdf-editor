@@ -159,7 +159,7 @@ test('the blank-document dialog marks its steps, reports a grown size, and Escap
 const EXPORT_TITLE = 'Export options';
 
 async function openExportDialog(page: Page) {
-  await page.getByRole('button', { name: 'Export options', exact: true }).click();
+  await page.getByRole('button', { name: 'Export options', exact: true }).first().click();
   const dialog = page.getByRole('dialog', { name: EXPORT_TITLE });
   await expect(dialog).toBeVisible();
   return dialog;
@@ -204,7 +204,7 @@ test('the Word, Excel or CSV choice starts the office form on the format picked 
   await openPdf(page, 'tables.pdf', toolFixturePdf());
   let dialog = await openExportDialog(page);
   await dialog.getByRole('radio', { name: 'Word, Excel or CSV' }).check();
-  const format = dialog.getByRole('combobox', { name: 'Format' });
+  const format = dialog.getByRole('combobox', { name: 'Format', exact: true });
   await expect(format).toBeEnabled();
   await expect(format).toHaveValue('docx');
   // The Word layout is offered while Word is the format, the exact layout first, and only then.
@@ -222,7 +222,7 @@ test('the Word, Excel or CSV choice starts the office form on the format picked 
 
   dialog = await openExportDialog(page);
   await dialog.getByRole('radio', { name: 'Word, Excel or CSV' }).check();
-  await dialog.getByRole('combobox', { name: 'Format' }).selectOption('csv');
+  await dialog.getByRole('combobox', { name: 'Format', exact: true }).selectOption('csv');
   await dialog.getByRole('button', { name: 'Download as Word, Excel or CSV' }).click();
   const csv = page.getByRole('region', { name: 'Export to Word, Excel or CSV' });
   await expect(csv.getByRole('radio', { name: /^CSV/ })).toBeChecked({ timeout: 30_000 });
@@ -745,7 +745,7 @@ test('redaction settings count the marked areas and Apply redaction removes the 
   await expect(apply).toBeEnabled();
   await apply.click();
   // Apply opens the redaction form over the pending marks; its two steps remove the text.
-  const form = page.getByRole('region', { name: /Redact/ });
+  const form = page.getByRole('region', { name: /Permanent redaction/ });
   await expect(form).toBeVisible({ timeout: 30_000 });
   await form.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(form.getByRole('alert')).toHaveText(

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
+import { statusRotate } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import {
@@ -182,7 +183,10 @@ test('a redaction box removes the text under it from the exported file', async (
   await page.mouse.up();
 
   await page.getByRole('tab', { name: 'Redaction', exact: true }).click();
-  await page.getByRole('button', { name: 'Permanent redaction', exact: true }).click();
+  await page
+    .getByRole('tabpanel', { name: 'Redaction' })
+    .getByRole('button', { name: 'Permanent redaction', exact: true })
+    .click();
   const form = page.getByRole('region', { name: 'Permanent redaction' });
   await form.getByRole('button', { name: 'Preview', exact: true }).click();
   await form.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -200,7 +204,7 @@ test('closing an edited document asks first, and the recent list names its contr
 }) => {
   await open(page, 'recent.pdf', toolFixturePdf());
   await useAdvancedMode(page);
-  await page.getByRole('button', { name: /Rotate page/i }).click();
+  await statusRotate(page).click();
   await expect(notice(page, '1 page(s) rotated')).toBeVisible();
 
   await page.keyboard.press('Control+k');

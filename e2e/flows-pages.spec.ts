@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Download, Page } from 'playwright/test';
+import { statusRotate } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { labelledPdf, readProducedEntry, readProducedPageTexts } from './tool-fixture';
@@ -456,7 +457,7 @@ test('thumbnails follow the page: a turn of an already-turned page, an insert, a
   await open(page, 'turned.pdf', labelledPdf('Turned', 4, { rotations: [0, 90, 180, 270] }));
   for (const index of [1, 2]) {
     await thumbs(page).nth(index).click();
-    await page.getByRole('button', { name: 'Rotate right' }).click();
+    await statusRotate(page).click();
     await expect(notice(page, '1 page(s) rotated')).toBeVisible();
     await expectThumbnailMatchesPage(page, index);
   }

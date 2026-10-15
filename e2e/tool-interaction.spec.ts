@@ -1014,7 +1014,7 @@ test.describe('the marks the tools create', () => {
     // The ruler's commands are the advanced mode's (the simple mode keeps the markup
     // verbs), so the settings' mode choice is the user's way to them.
     await useAdvancedMode(page);
-    await runMenuCommand(page, 'Tools', 'Distance');
+    await runMenuCommand(page, 'Tools', 'Measure distance');
     await expect(page.getByRole('application', { name: 'Measure', exact: true })).toBeVisible();
     await clickPage(page, BAND.measure[0][0], BAND.measure[0][1]);
     await clickPage(page, BAND.measure[1][0], BAND.measure[1][1]);

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
-import { notice } from './app-helpers';
+import { notice, statusRotate } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { encryptedPdf, encryptedToolFixturePdf, readProducedPdf, toolFixturePdf } from './tool-fixture';
@@ -99,7 +99,7 @@ test('arming any tool and posting a notice leave the document where it is', asyn
   await rail(page).getByRole('button', { name: 'Selection Tool', exact: true }).click();
 
   // A page operation raises progress and a notice: both float, neither moves the page.
-  await page.getByRole('button', { name: /Rotate page/i }).click();
+  await statusRotate(page).click();
   await expect(page.locator('[role="status"]').filter({ hasText: 'rotated' })).toBeVisible();
   expect((await viewerBox(page)).top).toBe(start.top);
 });
@@ -111,7 +111,7 @@ test('the status-bar rotate turns the page on screen when no page is selected', 
   if (portrait === null) throw new Error('no page box');
   expect(portrait.height).toBeGreaterThan(portrait.width);
 
-  await page.getByRole('button', { name: /Rotate page/i }).click();
+  await statusRotate(page).click();
   await expect(page.locator('[role="status"]').filter({ hasText: '1 page(s) rotated' })).toBeVisible();
   await expect
     .poll(async () => {

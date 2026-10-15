@@ -106,7 +106,7 @@ test('Export Options opens the export dialog and the footer button opens the com
   await expect(dialog).toBeHidden();
 
   await panel(page)
-    .getByRole('button', { name: /Search All Commands/ })
+    .getByRole('button', { name: /Search all commands/ })
     .click();
   await expect(page.getByRole('combobox')).toBeVisible();
 });

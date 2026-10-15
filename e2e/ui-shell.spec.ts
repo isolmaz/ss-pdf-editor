@@ -189,7 +189,7 @@ test('command palette: the simple mode names what it hides and offers the advanc
   await way.click();
   // Back on the input, with the hidden command now listed.
   await expect(input).toBeFocused();
-  await expect(page.getByRole('option', { name: /Optimize/ }).first()).toBeVisible();
+  await expect(page.getByRole('option', { name: /Reduce file size/ }).first()).toBeVisible();
 });
 
 test('settings: theme and language choices persist and change the page', async ({ page }) => {

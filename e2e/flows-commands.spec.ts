@@ -271,7 +271,7 @@ test('compare, accessibility and redaction audit: each panel reports on the open
 
 test('page numbering: the template is stamped on every page but the skipped first one', async ({ page }) => {
   await open(page, 'bates.pdf', labelledPdf('Base', 3));
-  const form = await openForm(page, 'Header / Footer', 'Page numbers and headers/footers');
+  const form = await openForm(page, 'header', 'Page numbers and headers/footers');
   await form.getByRole('textbox', { name: 'Format' }).fill('BATES-{page}/{total}');
   await form.getByRole('checkbox', { name: 'Skip first page' }).check();
   // The count starts at the first stamped page, so the second page is the one that shows 2.
@@ -660,7 +660,8 @@ test('export options: the compression level chosen in the dialog fills the Optim
 }) => {
   await open(page);
   const viaExportDialog = async (level: string) => {
-    await page.getByRole('button', { name: 'Export options', exact: true }).click();
+    // The header button comes first; the Tools panel has a row of the same name.
+    await page.getByRole('button', { name: 'Export options', exact: true }).first().click();
     const dialog = page.getByRole('dialog', { name: 'Export options' });
     await dialog.getByRole('radio', { name: 'Compressed PDF' }).check();
     await dialog.getByRole('combobox').first().selectOption(level);

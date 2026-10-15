@@ -617,7 +617,7 @@ test('signing the open document adds a row that says self-signed', async ({ page
   const container = makeSignerContainer(test.info().outputPath('signer'));
   await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Sign document' }).click();
-  const form = page.getByRole('region', { name: /Sign Document/ });
+  const form = page.getByRole('region', { name: /Sign document/ });
   await form.locator('input[type="file"]').setInputFiles(container);
   await form.getByRole('textbox', { name: 'PKCS#12 password' }).fill(SIGNER.password);
   await form.getByRole('button', { name: 'Sign', exact: true }).click();

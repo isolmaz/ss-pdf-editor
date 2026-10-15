@@ -714,6 +714,8 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'stamp.title',
       group: 'tools',
       disabled: noEdit,
+      // The names it had before the label said what it stamps: still how people search for it.
+      keywords: ['header', 'footer', 'page number', 'bates', 'ustbilgi', 'altbilgi', 'sayfa numarasi'],
       run: dialog('page-numbers'),
     },
     {
@@ -728,6 +730,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       labelKey: 'optimize.title',
       group: 'tools',
       disabled: noEdit,
+      keywords: ['optimize', 'compress', 'shrink', 'optimize et', 'sikistir', 'kucult'],
       run: dialog('compress'),
     },
     { id: 'tools.impose', labelKey: 'impose.title', group: 'tools', disabled: noEdit, run: dialog('impose') },
@@ -868,6 +871,7 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       group: 'tools',
       disabled: noEdit,
       checked: host.activeTool === 'strikeout',
+      keywords: ['strikeout', 'strike out', 'cross out', 'ustu cizili'],
       run: tool('strikeout'),
     },
     {

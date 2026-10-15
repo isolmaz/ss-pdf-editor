@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Page } from 'playwright/test';
+import { statusRotate } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { makeSignerContainer, readSignature, SIGNER } from './signer-fixture';
 import { expect, test } from './test';
@@ -199,7 +200,7 @@ async function signOpenDocument(page: Page, dir: string): Promise<void> {
   const container = makeSignerContainer(dir);
   await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Sign document' }).click();
-  const form = page.getByRole('region', { name: /Sign Document/ });
+  const form = page.getByRole('region', { name: /Sign document/ });
   await form.locator('input[type="file"]').setInputFiles(container);
   await form.getByRole('textbox', { name: 'PKCS#12 password' }).fill(SIGNER.password);
   await form.getByRole('button', { name: 'Sign', exact: true }).click();
@@ -267,7 +268,7 @@ test('editing after signing warns before the save, and saving anyway breaks the 
   const dir = test.info().outputPath('signer');
   await open(page, 'resign.pdf', toolFixturePdf());
   await signOpenDocument(page, dir);
-  await page.getByRole('button', { name: 'Rotate right' }).click();
+  await statusRotate(page).click();
   await expect(notice(page, '1 page(s) rotated')).toBeVisible();
 
   await page.getByRole('button', { name: 'Export', exact: true }).click();

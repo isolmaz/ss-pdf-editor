@@ -165,7 +165,7 @@ test('All tools: the search narrows the grid, and a tool picked with no document
   await stageFile(page, 'open', 'tool.pdf', labelledPdf('Tool', 2));
   await tiles.first().click();
   await settled(page);
-  await expect(page.getByRole('region', { name: /Watermark/ })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('region', { name: /watermark/i })).toBeVisible({ timeout: 30_000 });
 });
 
 test('All tools with a document open: its name is shown and a tool runs on it', async ({ page }) => {
