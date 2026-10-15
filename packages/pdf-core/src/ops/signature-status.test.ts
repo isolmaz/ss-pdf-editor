@@ -25,7 +25,7 @@ import {
   type IssueOptions,
   issueCertificate,
 } from '../signature-trust.fixtures';
-import { countSignedFields, verifySignatures } from './signature-status';
+import { countSignedFields, scanRaw, verifySignatures } from './signature-status';
 import {
   algorithmIdentifier,
   appendRevision,
@@ -57,6 +57,7 @@ import {
   seal,
   sequence,
   set,
+  sidOf,
   signatureDictionary,
   signedAttributesBlock,
   signedData,
@@ -754,6 +755,8 @@ async function cmsWith(
     over.signerInfos === undefined
       ? [
           signerInfo({
+            // The SignerInfo names the first certificate the set carries, as the product signer does.
+            sid: sidOf(over.certificates?.[0] ?? signer.der),
             attributes,
             signatureAlgorithm:
               over.signatureAlgorithm === undefined
@@ -913,6 +916,7 @@ describe('a CMS that is not what it should be never reads as valid', () => {
     const signer = await identity();
     const bytes = await signedPdf(async (covered) => {
       const good = signerInfo({
+        sid: sidOf(signer.der),
         attributes: signedAttributesBlock(await digest('SHA-256', covered)),
         signatureAlgorithm: algorithmIdentifier(OID.ecdsaSha256, 'none'),
         signature: JUNK_SIGNATURE,
@@ -1461,11 +1465,13 @@ describe('trust, revocation evidence and the time a signature is judged at', () 
 
 /** An indirect stream object of raw bytes. */
 /** A stream stored deflated, so a few kilobytes in the file read back as `data`. */
-function deflatedObject(number: number, data: Uint8Array): PdfObjectSource {
+function deflatedObject(number: number, data: Uint8Array, declaresLength = false): PdfObjectSource {
   const packed = deflateSync(data);
+  // `/DL` is the decoded length a producer may state (ISO 32000-2 §7.3.8.2).
+  const declared = declaresLength ? ` /DL ${data.length}` : '';
   return {
     number,
-    body: `<< /Length ${packed.length} /Filter /FlateDecode >>\nstream\n${latin1(packed)}\nendstream`,
+    body: `<< /Length ${packed.length}${declared} /Filter /FlateDecode >>\nstream\n${latin1(packed)}\nendstream`,
   };
 }
 
@@ -1611,15 +1617,29 @@ describe('document timestamps (ETSI.RFC3161)', () => {
     });
     expect(untrusted.timestamp).toMatchObject({ kind: 'document', status: 'valid', trusted: false });
 
-    const trusted = await onlyVerdict(bytes, [root.der]);
-    expect(trusted).toMatchObject({
+    // The authority reaches the imported root, but no list on the device speaks for its
+    // certificate: unknown is never clean, so its time is shown and not relied on.
+    const unlisted = await onlyVerdict(bytes, [root.der]);
+    expect(unlisted).toMatchObject({
       integrity: 'valid',
       trust: 'trusted',
       trustPath: ['Test TSA', 'Root CA'],
       trustReason: null,
-      validationTimeSource: 'timestamp',
+      validationTimeSource: 'timestamp-untrusted',
     });
-    expect(trusted.timestamp?.trusted).toBe(true);
+    expect(unlisted.timestamp).toMatchObject({ trusted: false });
+    expect(unlisted.revocationChecks[0]).toMatchObject({ status: 'unknown', unknownReason: 'no-list' });
+
+    // A CRL from the root that names nothing clears it: now its time is the one relied on.
+    const crl = await issueCrl({ issuer: root, thisUpdate: day(5, 1), nextUpdate: day(7, 1) });
+    const [cleared] = await verifySignatures(bytes, undefined, { now: NOW, roots: [root.der], crls: [crl] });
+    expect(cleared).toMatchObject({
+      integrity: 'valid',
+      trust: 'trusted',
+      validationTimeSource: 'timestamp',
+      revocation: 'not-revoked',
+    });
+    expect(cleared?.timestamp).toMatchObject({ trusted: true });
   });
 
   it('calls a token from a TSA that reaches no imported root untrusted', async () => {
@@ -1986,6 +2006,165 @@ describe('what stops a verification', () => {
     const bytes = await signedPdf(cmsBy(signer));
     await expect(verifySignatures(bytes, abortsAtRead(2))).rejects.toMatchObject({ name: 'AbortError' });
     expect(await verifySignatures(bytes, new AbortController().signal, { now: NOW })).toHaveLength(1);
+  });
+});
+
+describe('which certificate of the CMS signed it', () => {
+  it('verifies a signature whose certificate set lists the CA before the signer, and names the signer', async () => {
+    const { leaf, root } = await pki();
+    const bytes = await signedPdf(
+      async (covered) => await handSignedCms({ signer: leaf, covered, before: [root.der] }),
+    );
+    expect(await onlyVerdict(bytes, [root.der])).toMatchObject({
+      integrity: 'valid',
+      signer: 'Leaf Signer',
+      trust: 'trusted',
+      trustPath: ['Leaf Signer', 'Root CA'],
+    });
+  });
+
+  it('leaves a signature unchecked, not invalid, when its sid names no certificate the CMS carries', async () => {
+    const { leaf, root, other } = await pki();
+    const bytes = await signedPdf(
+      async (covered) =>
+        await handSignedCms({ signer: leaf, covered, chain: [root.der], sid: sidOf(other.der) }),
+    );
+    // The first certificate in the set is the real signer's, and would have verified: it must not
+    // stand in for a certificate the SignerInfo does not name.
+    expect(await onlyVerdict(bytes)).toMatchObject({ integrity: 'unchecked', signer: null });
+  });
+});
+
+describe('what the /ByteRange gap is', () => {
+  const dictionary = `<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /ByteRange ${BYTE_RANGE_PLACEHOLDER} /Contents ${contentsPlaceholder(CAPACITY, 'hex')} /M (D:20260601120000Z) >>`;
+  const claimed = ' /M (D:20260601120000Z)';
+
+  it('is exactly the /Contents string for a signature that covers the whole document', async () => {
+    const signer = await identity();
+    const bytes = await signedPdf(cmsBy(signer), { dictionary });
+    expect(await onlyVerdict(bytes)).toMatchObject({ integrity: 'valid', coverage: 'covers-whole-document' });
+  });
+
+  it('covers only part of the file when the gap also leaves out bytes beside the /Contents string', async () => {
+    const signer = await identity();
+    // The range ends the gap after `/M (...)`: the signing date is outside the signed bytes, so
+    // it can be rewritten without breaking the signature. The signed bytes themselves still verify.
+    const bytes = await signedPdf(cmsBy(signer), { dictionary, seal: { gapAfter: claimed.length } });
+    expect(await onlyVerdict(bytes)).toMatchObject({ integrity: 'valid', coverage: 'covers-partial' });
+  });
+});
+
+describe('the raw scan of a file', () => {
+  /** `bytes` that count every element read through them. */
+  function counted(bytes: Uint8Array): { readonly view: Uint8Array; readonly reads: () => number } {
+    let reads = 0;
+    const view = new Proxy(bytes, {
+      get(target, property) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) reads += 1;
+        const value: unknown = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    return { view, reads: () => reads };
+  }
+
+  it('finds the signature ranges and the last startxref in one pass over the bytes', async () => {
+    const signer = await identity();
+    const bytes = await signedPdf(cmsBy(signer), {
+      extraObjects: [streamObject(6, new Uint8Array(128 * 1024))],
+    });
+    const { view, reads } = counted(bytes);
+    const scan = scanRaw(view);
+    expect(scan.mentionsByteRange).toBe(true);
+    expect(scan.ranges).toHaveLength(1);
+    expect(scan.ranges[0]?.gapIsContents).toBe(true);
+    expect(scan.lastStartxref).toBe(latin1(bytes).lastIndexOf('startxref'));
+    // One pass, plus the /Contents string the one signature's parse walks: never a second sweep.
+    expect(reads()).toBeLessThan(bytes.length * 1.2);
+  });
+
+  it('pairs at most 64 ranges however many a file names, and still sees the ones after them', () => {
+    // 70 dictionaries, each with a /Contents string inside its own gap, then a startxref.
+    const pad = (value: number): string => String(value).padStart(10, '0');
+    const head = '/ByteRange [0000000000 0000000000 0000000000 0000000001] /Contents ';
+    let text = '';
+    for (let index = 0; index < 70; index += 1) {
+      const contentsAt = text.length + head.length;
+      const range = `[${pad(0)} ${pad(contentsAt)} ${pad(contentsAt + 6)} ${pad(1)}]`;
+      text += `${head.replace(/\[[^\]]*\]/, range)}<abcd>\n`;
+    }
+    text += 'startxref\n0\n%%EOF\n';
+    const scan = scanRaw(fromLatin1(text));
+    expect(scan.mentionsByteRange).toBe(true);
+    expect(scan.ranges).toHaveLength(64);
+    expect(scan.ranges.every((entry) => entry.gapIsContents)).toBe(true);
+    expect(scan.lastStartxref).toBe(text.indexOf('startxref'));
+  });
+
+  it('answers a file with no /ByteRange and no startxref with nothing', () => {
+    expect(scanRaw(fromLatin1('%PDF-1.7\n1 0 obj\n<< >>\nendobj\n%%EOF\n'))).toEqual({
+      mentionsByteRange: false,
+      ranges: [],
+      lastStartxref: -1,
+    });
+  });
+});
+
+describe('the /DSS byte budget', () => {
+  it('does not decode a stream whose stored bytes alone are more than what is left of the budget', async () => {
+    const mupdf = await import('mupdf');
+    const { tsaUnder, intermediate, root } = await pki();
+    // 9 MiB of the 16 MiB are spent by the first entry; the second one is stored unfiltered,
+    // with no /DL, and its 8 MiB are past the 7 MiB that remain.
+    const bytes = await signedPdf(
+      async (covered) => await issueTimestampToken({ tsa: tsaUnder, covered, genTime: day(3, 1) }),
+      {
+        dictionary: timestampDictionary(),
+        document: { catalogExtra: ' /DSS 6 0 R' },
+        extraObjects: [
+          { number: 6, body: '<< /Certs [7 0 R 8 0 R 9 0 R] >>' },
+          deflatedObject(7, new Uint8Array(9 * 1024 * 1024)),
+          streamObject(8, new Uint8Array(8 * 1024 * 1024)),
+          streamObject(9, intermediate.der),
+        ],
+      },
+    );
+    const opened = vi.spyOn(mupdf.PDFObject.prototype, 'readStream');
+    try {
+      // The certificate behind the oversized entry is dropped with it: the budget is spent for good.
+      expect(await onlyVerdict(bytes, [root.der])).toMatchObject({ trust: 'untrusted' });
+      // Only the first entry was ever decoded.
+      expect(opened).toHaveBeenCalledTimes(1);
+    } finally {
+      opened.mockRestore();
+    }
+  });
+
+  it('does not decode a stream that declares more than what is left of the budget', async () => {
+    const mupdf = await import('mupdf');
+    const { tsaUnder, intermediate, root } = await pki();
+    // 20 MiB of zeros deflate to a few kilobytes, and its /DL says so: past the 16 MiB budget.
+    const bomb = deflatedObject(7, new Uint8Array(20 * 1024 * 1024), true);
+    const bytes = await signedPdf(
+      async (covered) => await issueTimestampToken({ tsa: tsaUnder, covered, genTime: day(3, 1) }),
+      {
+        dictionary: timestampDictionary(),
+        document: { catalogExtra: ' /DSS 6 0 R' },
+        extraObjects: [
+          { number: 6, body: '<< /Certs [7 0 R 9 0 R] >>' },
+          bomb,
+          streamObject(9, intermediate.der),
+        ],
+      },
+    );
+    const opened = vi.spyOn(mupdf.PDFObject.prototype, 'readStream');
+    try {
+      // The certificate behind it is never read either: the budget is spent for good.
+      expect(await onlyVerdict(bytes, [root.der])).toMatchObject({ trust: 'untrusted' });
+      expect(opened).not.toHaveBeenCalled();
+    } finally {
+      opened.mockRestore();
+    }
   });
 });
 

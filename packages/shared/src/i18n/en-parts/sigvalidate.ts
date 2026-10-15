@@ -57,9 +57,9 @@ export const sigValidatePart = {
   'props.sig.ts.detail': '{kind}: {time}, issued by {tsa} ({hash}).',
   'props.sig.ts.tsaUnknown': 'unknown',
   'props.sig.ts.trust.trusted':
-    'The time-stamping authority chains to an imported root and none of its certificates is revoked: its time was used to judge this signature.',
+    'The time-stamping authority chains to an imported root and a list on this device shows none of its certificates revoked: its time was used to judge this signature.',
   'props.sig.ts.trust.untrusted':
-    'The time-stamping authority does not chain to an imported root, or one of its certificates is revoked: the time is shown but not relied on, since anyone can run a timestamp server.',
+    'The time-stamping authority does not chain to an imported root, one of its certificates is revoked, or no list on this device clears one of them: the time is shown but not relied on, since anyone can run a timestamp server.',
   'props.sig.ts.reason.malformed': 'The token could not be read as an RFC 3161 timestamp.',
   'props.sig.ts.reason.imprint-mismatch':
     'The hash in the token does not match the data it should stamp: the data may have changed after the timestamp.',

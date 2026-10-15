@@ -26,23 +26,26 @@
  * `status` says whether the token is cryptographically what it claims; `trusted` says whether
  * its **time** may be used to judge the signature it stamps. They differ on purpose: a token
  * from a TSA nobody imported verifies, and shows its time, but anyone can run such a TSA — so
- * it does not earn the claim "the signature existed before the certificate was revoked".
+ * it does not earn the claim "the signature existed before the certificate was revoked". The
+ * same holds for a TSA nobody has cleared: with no list on the device that speaks for one of its
+ * certificates its revocation is *unknown*, and unknown is not "not revoked" (the rule the
+ * signer's own certificates follow), so its time is shown and not relied on either.
  */
 
-import { type BaseBlock, ObjectIdentifier, OctetString } from 'asn1js';
-import type { Certificate, SignerInfo } from 'pkijs';
-import { IssuerAndSerialNumber, Certificate as PkijsCertificate, TSTInfo } from 'pkijs';
-import { readSignedData } from './signature-evidence';
+import { ObjectIdentifier, OctetString } from 'asn1js';
+import type { SignerInfo } from 'pkijs';
+import { TSTInfo } from 'pkijs';
+import { certificateFor, certificatesOf, octets, readSignedData, sameBytes } from './signature-evidence';
 import {
   checkRevocation,
   extendedKeyUsage,
   type RevocationCertCheck,
   type RevocationSources,
+  summarizeRevocation,
 } from './signature-revocation';
 import {
   certificateName,
   checkTrust,
-  parseAsn1,
   type TrustReason,
   type TrustVerdict,
   validityOf,
@@ -53,7 +56,6 @@ const OID_TST_INFO = '1.2.840.113549.1.9.16.1.4';
 const OID_KP_TIME_STAMPING = '1.3.6.1.5.5.7.3.8';
 const OID_CONTENT_TYPE = '1.2.840.113549.1.9.3';
 const OID_MESSAGE_DIGEST = '1.2.840.113549.1.9.4';
-const OID_SUBJECT_KEY_IDENTIFIER = '2.5.29.14';
 const OID_EXT_KEY_USAGE = '2.5.29.37';
 
 const HASHES: Readonly<Record<string, string>> = {
@@ -99,7 +101,11 @@ export interface TimestampCheck {
   readonly tsaSelfSigned: boolean;
   /** The TSA certificate chain's revocation answers, from the lists on the device. */
   readonly tsaRevocation: readonly RevocationCertCheck[];
-  /** The token is valid, its TSA reaches an imported root and none of its certificates is revoked. */
+  /**
+   * The token is valid, its TSA reaches an imported root and a verified list on the device
+   * clears every one of its certificates. A certificate no list speaks for does **not** count
+   * as cleared: unknown is never clean (`signature-revocation.ts`).
+   */
   readonly trusted: boolean;
 }
 
@@ -132,57 +138,6 @@ function buffer(bytes: Uint8Array): ArrayBuffer {
   const out = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(out).set(bytes);
   return out;
-}
-
-function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  for (let index = 0; index < left.length; index += 1) if (left[index] !== right[index]) return false;
-  return true;
-}
-
-/** The content octets of an OCTET STRING, or of a block tagged in its place, joining the segments of a constructed (BER) one. */
-function octets(value: BaseBlock): Uint8Array {
-  if (!value.idBlock.isConstructed) {
-    return new Uint8Array((value.valueBlock as unknown as { valueHexView: Uint8Array }).valueHexView);
-  }
-  const parts = (value.valueBlock as unknown as { value: OctetString[] }).value.map(octets);
-  const out = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
-  let at = 0;
-  for (const part of parts) {
-    out.set(part, at);
-    at += part.length;
-  }
-  return out;
-}
-
-/** The key identifier a certificate declares, or `null`. */
-function subjectKeyIdentifier(certificate: Certificate): Uint8Array | null {
-  const extension = certificate.extensions?.find((entry) => entry.extnID === OID_SUBJECT_KEY_IDENTIFIER);
-  if (extension === undefined) return null;
-  const parsed = parseAsn1(new Uint8Array(extension.extnValue.valueBlock.valueHexView));
-  return parsed !== null && parsed.result instanceof OctetString ? octets(parsed.result) : null;
-}
-
-/** The certificate a `SignerInfo` names (`IssuerAndSerialNumber` or `[0]` key identifier). */
-function certificateFor(signer: SignerInfo, certificates: readonly Certificate[]): Certificate | null {
-  // `SignerIdentifier` is a CHOICE of those two, and the pkijs schema admits nothing else. A
-  // `[0]` key identifier stays the tagged block it was read as: it is never an `OctetString`.
-  const sid = signer.sid as IssuerAndSerialNumber | BaseBlock;
-  if (sid instanceof IssuerAndSerialNumber) {
-    return (
-      certificates.find(
-        (candidate) =>
-          candidate.issuer.isEqual(sid.issuer) && candidate.serialNumber.isEqual(sid.serialNumber),
-      ) ?? null
-    );
-  }
-  const wanted = octets(sid);
-  return (
-    certificates.find((candidate) => {
-      const identifier = subjectKeyIdentifier(candidate);
-      return identifier !== null && sameBytes(identifier, wanted);
-    }) ?? null
-  );
 }
 
 /** The value of one signed attribute of `signer`, as the asn1js node. */
@@ -237,9 +192,7 @@ export async function verifyTimestampToken(input: VerifyTimestampInput): Promise
   }
 
   // 3. The CMS signature, with the TSA certificate the token carries.
-  const certificates: Certificate[] = [];
-  for (const entry of signedData.certificates ?? [])
-    if (entry instanceof PkijsCertificate) certificates.push(entry);
+  const certificates = certificatesOf(signedData);
   const signer = signedData.signerInfos[0];
   const tsa = signer === undefined ? null : certificateFor(signer, certificates);
   if (signer === undefined || tsa === null) return failure(kind, 'unchecked', 'no-tsa-certificate', named);
@@ -318,6 +271,11 @@ export async function verifyTimestampToken(input: VerifyTimestampInput): Promise
     tsaNotAfter: tsa.notAfter.value.toISOString(),
     tsaSelfSigned: tsa.issuer.isEqual(tsa.subject),
     tsaRevocation,
-    trusted: trust.verdict === 'trusted' && !tsaRevocation.some((check) => check.status === 'revoked'),
+    // The signer's own certificates follow the same rule (`signature-revocation.ts`): an
+    // `unknown` is never read as "not revoked". Asked as if this token's time were the trusted
+    // one — which is what `trusted` decides — only a verified list that names nothing, issued
+    // after `genTime`, for every certificate checked, clears the TSA. A revoked certificate,
+    // whenever it was revoked, and one no list speaks for both keep the time unrelied-on.
+    trusted: trust.verdict === 'trusted' && summarizeRevocation(tsaRevocation, true) === 'not-revoked',
   };
 }

@@ -16,7 +16,7 @@ import {
   SignedAndUnsignedAttributes,
 } from 'pkijs';
 import { describe, expect, it } from 'vitest';
-import { readSignatureEvidence, readSignedData } from './signature-evidence';
+import { readSignatureEvidence, readSignedData, signerCertificate } from './signature-evidence';
 import {
   extKeyUsageExtension,
   issueCrl,
@@ -124,6 +124,29 @@ describe('readSignatureEvidence', () => {
   });
 });
 
+describe('signerCertificate', () => {
+  it('names the certificate the SignerInfo points at by its position, wherever the set lists it', async () => {
+    const { ca, signer } = await pki();
+    const base = await signedCms(signer, [ca], day(3, 1));
+    expect(signerCertificate(base)).toEqual({ status: 'found', index: 0 });
+
+    const caFirst = withEditedCms(base, (signedData) => {
+      signedData.certificates = [ca.parsed, signer.parsed];
+    });
+    expect(signerCertificate(caFirst)).toEqual({ status: 'found', index: 1 });
+  });
+
+  it('says absent when the sid names none of the certificates, and unreadable for bytes that are no CMS', async () => {
+    const { ca, signer } = await pki();
+    const base = await signedCms(signer, [ca], day(3, 1));
+    const withoutSigner = withEditedCms(base, (signedData) => {
+      signedData.certificates = [ca.parsed];
+    });
+    expect(signerCertificate(withoutSigner)).toEqual({ status: 'absent' });
+    expect(signerCertificate(new Uint8Array([1, 2, 3]))).toEqual({ status: 'unreadable' });
+  });
+});
+
 describe('readSignatureEvidence on unusual structures', () => {
   it('reads an OCSP response from SignedData.crls and ignores another other-revocation format', async () => {
     const { ca, signer } = await pki();
@@ -191,6 +214,30 @@ describe('readSignatureEvidence on unusual structures', () => {
     const evidence = readSignatureEvidence(cms);
     expect(evidence?.timestampTokens).toEqual([]);
     expect(evidence?.signingTime).toBeNull();
+  });
+
+  it('keeps at most 64 timestamp tokens in all, however many attributes carry them', async () => {
+    const { ca, signer } = await pki();
+    const cms = withEditedCms(await signedCms(signer, [ca], day(3, 1)), (signedData) => {
+      const [info] = signedData.signerInfos;
+      if (info === undefined) throw new Error('fixture has no signer');
+      // Three attributes of 30 values each: 90 tokens, none of them over the per-attribute 64.
+      info.unsignedAttrs = new SignedAndUnsignedAttributes({
+        type: 1,
+        attributes: [0, 1, 2].map(
+          () =>
+            new Attribute({
+              type: '1.2.840.113549.1.9.16.2.14',
+              values: Array.from({ length: 30 }, (_unused, index) => new Integer({ value: index })),
+            }),
+        ),
+      });
+    });
+    const tokens = readSignatureEvidence(cms)?.timestampTokens ?? [];
+    expect(tokens).toHaveLength(64);
+    // The first two attributes in full (60), then the first four values of the third.
+    expect(Array.from(tokens[59] ?? [])).toEqual([0x02, 0x01, 29]);
+    expect(Array.from(tokens[63] ?? [])).toEqual([0x02, 0x01, 3]);
   });
 
   it('reads only the CRL and OCSP sections of the Adobe archive, whatever else it holds', async () => {

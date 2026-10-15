@@ -526,7 +526,9 @@ nothing leaving the browser.
   - RFC 3161 timestamps are verified offline, both a signature's own timestamp and
     document timestamps (`ETSI.RFC3161`): the hash it covers, its signature, the authority's
     time-stamping certificate and, with a root you imported, its chain. A timestamp from an
-    authority you trust is the time the signature is judged at.
+    authority you trust is the time the signature is judged at, once a revocation list on your
+    device shows none of the authority's certificates revoked; with no such list its time is
+    shown but not relied on.
 
 ### OCR, accessibility, comparison, batch
 
