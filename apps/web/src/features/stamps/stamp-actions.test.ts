@@ -235,6 +235,14 @@ describe('onImagePicked', () => {
     expect(coreStore.get().notice).toBe(t('img.add.failed', { name: 'logo.png' }));
     expect(coreStore.get().pendingStamp).toBeNull();
   });
+
+  it('says so, and rejects nothing, when reading the picture throws', async () => {
+    // The picker's change handler never awaits this: a rejection would be unhandled and silent.
+    pdfCore.imageFromFile.mockRejectedValue(new Error('canvas.toBlob failed'));
+    await expect(onImagePicked(file, t)).resolves.toBeUndefined();
+    expect(coreStore.get().notice).toBe(t('img.add.failed', { name: 'logo.png' }));
+    expect(coreStore.get()).toMatchObject({ canvasTool: 'select', pendingStamp: null });
+  });
 });
 
 describe('placeSignature', () => {

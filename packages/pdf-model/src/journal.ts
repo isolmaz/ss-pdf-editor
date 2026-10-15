@@ -14,6 +14,8 @@
  *  - persistence and restore are lossless for entries plus the cursor.
  */
 
+import { ToolError } from 'pdf-shared';
+
 export type JournalEngine = 'model' | 'pdfjs-editor' | 'mupdf';
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -163,7 +165,10 @@ export class OperationJournal {
 
   static fromJSON(snapshot: JournalSnapshot): OperationJournal {
     if (snapshot.schema !== JOURNAL_SCHEMA) {
-      throw new Error(`journal schema ${snapshot.schema} is not readable by this build`);
+      throw new ToolError('corrupt-document', {
+        engine: 'model',
+        engineMessage: `journal schema ${snapshot.schema} is not readable by this build`,
+      });
     }
     // A cursor outside the array is corruption, not something to clamp: clamping it would
     // silently move the restored document to a different state than the one the user left.
@@ -174,7 +179,10 @@ export class OperationJournal {
       snapshot.cursor < 0 ||
       snapshot.cursor > snapshot.entries.length
     ) {
-      throw new Error(`journal cursor ${snapshot.cursor} is outside 0…${snapshot.entries.length}`);
+      throw new ToolError('corrupt-document', {
+        engine: 'model',
+        engineMessage: `journal cursor ${snapshot.cursor} is outside 0…${snapshot.entries.length}`,
+      });
     }
     const journal = new OperationJournal();
     journal.#entries = [...snapshot.entries];

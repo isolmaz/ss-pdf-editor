@@ -210,9 +210,27 @@ function withIsolationHeaders(response, isNavigate = false) {
   });
 }
 
+const OFFLINE_MISSING_TEXT = {
+  tr: 'Çevrimdışı: Bu paket henüz hazırlanmadı.',
+  en: 'Offline: this package has not been prepared yet.',
+};
+
+/**
+ * The language of the offline answer: the first of the browser's languages the interface has,
+ * else Turkish, the interface's default. A worker has no `localStorage`, so the language the
+ * user chose in the editor is not known here; the browser's own list is the nearest thing.
+ */
+function offlineLanguage() {
+  for (const tag of self.navigator.languages) {
+    const primary = String(tag).split('-')[0].toLowerCase();
+    if (primary === 'tr' || primary === 'en') return primary;
+  }
+  return 'tr';
+}
+
 /** The one offline answer: an explicit, un-cacheable failure rather than a hang. */
 function offlineMissing() {
-  return new Response('Çevrimdışı: Bu paket henüz hazırlanmadı.', {
+  return new Response(OFFLINE_MISSING_TEXT[offlineLanguage()], {
     status: 503,
     statusText: 'Service Unavailable (Offline Missing)',
     headers: {

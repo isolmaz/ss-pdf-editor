@@ -2,7 +2,8 @@
  * Two-tier limits and budgets.
  *
  * Desktop: warn at 1500 pages, hard ceiling 2000 pages / 300 MB.
- * Mobile: above ~300 pages / 64 MB the app switches to viewing mode.
+ * Mobile: above ~300 pages / 64 MB the app switches to viewing mode, so it has no warning
+ * of its own: a page count that would warn is already past the viewing-only line.
  * The 300 MB desktop ceiling is a *measured* number: revise the limits explicitly,
  * never silently.
  */
@@ -10,7 +11,8 @@
 export type DeviceTier = 'desktop' | 'mobile';
 
 export interface DocumentLimits {
-  readonly warnPages: number;
+  /** Above this the document opens with a warning; a tier that goes viewing-only first has none. */
+  readonly warnPages?: number;
   readonly maxPages: number;
   readonly maxBytes: number;
   /** Render cache budget in bytes (LRU ceiling). */
@@ -30,7 +32,6 @@ export const LIMITS: Record<DeviceTier, DocumentLimits> = {
     renderCacheBytes: 512 * MIB,
   },
   mobile: {
-    warnPages: 300,
     maxPages: 2000,
     maxBytes: 300 * MIB,
     renderCacheBytes: 128 * MIB,
@@ -70,15 +71,26 @@ export function checkDocumentLimits(tier: DeviceTier, pageCount: number, byteLen
     return { kind: 'viewing-only', reason: 'pages' };
   if (viewingBytes !== undefined && byteLength > viewingBytes)
     return { kind: 'viewing-only', reason: 'bytes' };
-  if (pageCount > limits.warnPages) return { kind: 'warn', reason: 'pages' };
+  const warnPages = limits.warnPages;
+  if (warnPages !== undefined && pageCount > warnPages) return { kind: 'warn', reason: 'pages' };
   return { kind: 'ok' };
 }
 
-/** Mobile Safari-class detection is advisory only; the UI always shows the tier. */
+/**
+ * Mobile Safari-class detection is advisory only; the UI always shows the tier.
+ *
+ * A mobile user agent is mobile. Without one, a touch-only screen is — its *primary* pointer
+ * is coarse and no pointer it has is fine — but a touch-screen laptop is not: a mouse or
+ * trackpad is a fine pointer, and `(pointer: coarse)` alone would put the whole desktop
+ * session into the mobile tier (viewing-only above 300 pages / 64 MB).
+ */
 export function detectDeviceTier(): DeviceTier {
   if (typeof navigator === 'undefined') return 'desktop';
   const ua = navigator.userAgent;
   const isMobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-  const coarsePointer = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  return isMobileUa || coarsePointer ? 'mobile' : 'desktop';
+  const touchOnly =
+    typeof matchMedia === 'function' &&
+    matchMedia('(pointer: coarse)').matches &&
+    !matchMedia('(any-pointer: fine)').matches;
+  return isMobileUa || touchOnly ? 'mobile' : 'desktop';
 }

@@ -3,6 +3,7 @@
 
 import { act, renderHook } from '@testing-library/react';
 import { SessionStore } from 'pdf-model';
+import { LIMITS } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   diagnosticsStore,
@@ -44,6 +45,19 @@ describe('sampleMemory', () => {
     heap = 10 * MIB;
     expect(sampleMemory(session, 'desktop')).toEqual({ usedBytes: 10 * MIB, budgetBytes: 512 * MIB });
     expect(sampleMemory(session, 'mobile')).toEqual({ usedBytes: 10 * MIB, budgetBytes: 128 * MIB });
+  });
+
+  it("takes the budget from the tier's limits, so a revised limit moves the gauge with it", () => {
+    heap = 10 * MIB;
+    const limits = LIMITS.mobile as { renderCacheBytes: number };
+    const original = limits.renderCacheBytes;
+    limits.renderCacheBytes = 96 * MIB;
+    try {
+      expect(sampleMemory(session, 'mobile').budgetBytes).toBe(96 * MIB);
+      expect(sampleMemory(session, 'desktop').budgetBytes).toBe(512 * MIB);
+    } finally {
+      limits.renderCacheBytes = original;
+    }
   });
 
   it('estimates from the open documents plus the engine when the browser reports no heap', () => {

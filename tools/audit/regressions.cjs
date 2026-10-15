@@ -299,7 +299,7 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
   };
 }
 
-function swHarness({ online = true, cacheFailure = false, networkStatus = 200 } = {}) {
+function swHarness({ online = true, cacheFailure = false, networkStatus = 200, languages = ['tr-TR'] } = {}) {
   const handlers = new Map();
   const cached = new Map();
   const deleted = [];
@@ -327,6 +327,7 @@ function swHarness({ online = true, cacheFailure = false, networkStatus = 200 } 
     console,
     self: {
       location: { origin: 'https://local.test' },
+      navigator: { languages },
       addEventListener: (kind, fn) => handlers.set(kind, fn),
       clients: { claim: async () => {} },
       skipWaiting: async () => {},
@@ -621,6 +622,30 @@ async function main() {
     });
     const response = await event.response();
     assert.equal(response.status, 503);
+  });
+  await check('the offline answer is worded in the first browser language the interface has', async () => {
+    const answer = async (languages) => {
+      const h = swHarness({ online: false, languages });
+      const event = h.dispatch('fetch', {
+        request: {
+          method: 'GET',
+          url: 'https://local.test/editor/missing.js',
+          cache: 'reload',
+          mode: 'cors',
+        },
+      });
+      const response = await event.response();
+      assert.equal(response.status, 503);
+      assert.equal(response.headers.get('X-Offline-Missing'), 'true');
+      return response.text();
+    };
+    const turkish = 'Çevrimdışı: Bu paket henüz hazırlanmadı.';
+    const english = 'Offline: this package has not been prepared yet.';
+    assert.equal(await answer(['en-GB', 'tr']), english);
+    assert.equal(await answer(['de-DE', 'EN-us', 'tr']), english);
+    assert.equal(await answer(['tr-TR', 'en']), turkish);
+    assert.equal(await answer(['de', 'fr']), turkish);
+    assert.equal(await answer([]), turkish);
   });
   await check('offline hard refresh preserves cached content and isolation', async () => {
     const h = swHarness({ online: false });
