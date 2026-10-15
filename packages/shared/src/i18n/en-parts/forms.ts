@@ -30,6 +30,7 @@ export const formsPart = {
   'form.note.flagged': 'Lock / required status updated for {count} field(s).',
   'form.note.flattened': '{count} form field(s) flattened into page content.',
   'form.note.flattenFieldsGone': 'Flattening removes interactive fields: values become static page content.',
+  'form.note.flattenHidden': '{count} hidden widget(s) were not drawn into the page; they were removed.',
   'form.note.calculated': '{count} calculation field(s) updated.',
   'form.dialog.fields.title': 'Fill form fields',
   'form.dialog.fields.intro': 'Field list read from document; enter assignments as "name=value" lines.',

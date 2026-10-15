@@ -147,6 +147,21 @@ const FF = {
   comb: 1 << 24,
 } as const;
 
+/** Annotation flags (ISO 32000-2 §12.5.3) that keep a widget off the screen. */
+const ANNOT_HIDDEN = 1 << 1;
+const ANNOT_NO_VIEW = 1 << 5;
+
+/**
+ * Characters as a person counts them — Unicode code points, so an emoji is one. `/MaxLen` is
+ * measured with this everywhere (the refusal on fill and the validator), never with
+ * `String.length`, which counts UTF-16 units and sees an emoji as two.
+ */
+function characterCount(value: string): number {
+  let count = 0;
+  for (const _character of value) count += 1;
+  return count;
+}
+
 // ---------------------------------------------------------------------------
 // the field tree
 // ---------------------------------------------------------------------------
@@ -161,6 +176,19 @@ interface FieldNode {
   readonly holder: PDFObject;
   /** Widget annotations: the kids that carry no `/T`, or the field itself when merged. */
   readonly widgets: readonly { readonly dict: PDFObject; readonly entry: PDFObject }[];
+  /**
+   * The non-terminal fields above this one, nearest first, each with the entry and the array
+   * that name it: what a flatten must also take out once its `/Kids` run empty.
+   */
+  readonly ancestors: readonly FieldAncestor[];
+}
+
+/** A non-terminal field the walk passed through on its way to a terminal one. */
+interface FieldAncestor {
+  /** Its `/Kids` array, which the walk found it by. */
+  readonly kids: PDFObject;
+  readonly entry: PDFObject;
+  readonly holder: PDFObject;
 }
 
 function acroFormOf(doc: PDFDocument): PDFObject | null {
@@ -192,7 +220,13 @@ function collectFields(doc: PDFDocument): FieldNode[] {
   if (fields === null || !fields.isArray()) return [];
   const out: FieldNode[] = [];
   const seen = new Set<number>();
-  const walk = (holder: PDFObject, index: number, prefix: string, depth: number): void => {
+  const walk = (
+    holder: PDFObject,
+    index: number,
+    prefix: string,
+    depth: number,
+    ancestors: readonly FieldAncestor[],
+  ): void => {
     const entry = holder.get(index);
     const dict = resolved(entry);
     if (dict === null || !dict.isDictionary() || depth > 32) return;
@@ -205,21 +239,22 @@ function collectFields(doc: PDFDocument): FieldNode[] {
     const kids = resolved(dict.get('Kids'));
     const widgets: { dict: PDFObject; entry: PDFObject }[] = [];
     if (kids?.isArray() === true) {
+      const lineage: readonly FieldAncestor[] = [{ kids, entry, holder }, ...ancestors];
       for (let kid = 0; kid < kids.length; kid += 1) {
         const kidDict = resolved(kids.get(kid));
         if (kidDict === null || !kidDict.isDictionary()) continue;
         if (kidDict.get('T').isNull()) widgets.push({ dict: kidDict, entry: kids.get(kid) });
-        else walk(kids, kid, name, depth + 1);
+        else walk(kids, kid, name, depth + 1, lineage);
       }
     } else if (readName(dict.get('Subtype')) === 'Widget') {
       widgets.push({ dict, entry });
     }
     const hasChildFields = kids?.isArray() === true && widgets.length < kids.length;
     if (partial !== null && (!hasChildFields || widgets.length > 0)) {
-      out.push({ name, dict, entry, holder, widgets });
+      out.push({ name, dict, entry, holder, widgets, ancestors });
     }
   };
-  for (let index = 0; index < fields.length; index += 1) walk(fields, index, '', 0);
+  for (let index = 0; index < fields.length; index += 1) walk(fields, index, '', 0, []);
   return out;
 }
 
@@ -373,46 +408,63 @@ function optionsOf(field: FieldNode): readonly string[] | null {
   return null;
 }
 
-/** Page object number → 0-based index. */
-function pageIndexMap(doc: PDFDocument): Map<number, number> {
-  const map = new Map<number, number>();
-  for (const [index, page] of pageObjects(doc).entries()) {
-    if (page.isIndirect()) map.set(page.asIndirect(), index);
-  }
-  return map;
-}
+/**
+ * Where the pages are: each page object, its number → index, and — read on the first widget
+ * that needs it, once — which page's `/Annots` holds each annotation. Placing the widgets
+ * that carry no usable `/P` is one walk over the pages' `/Annots` per operation, not one per
+ * widget.
+ */
+class PageIndex {
+  private readonly pages: PDFObject[];
+  private readonly byObject = new Map<number, number>();
+  private byAnnotation: Map<number, number> | null = null;
 
-/** The page a widget sits on: its `/P`, else the page whose `/Annots` holds it. */
-function widgetPage(
-  doc: PDFDocument,
-  pages: Map<number, number>,
-  widget: { dict: PDFObject; entry: PDFObject },
-): number | null {
-  const holder = widget.dict.get('P');
-  if (holder.isIndirect()) {
-    const index = pages.get(holder.asIndirect());
-    if (index !== undefined) return index;
-  }
-  if (!widget.entry.isIndirect()) return null;
-  const number = widget.entry.asIndirect();
-  for (const [index, page] of pageObjects(doc).entries()) {
-    const annots = annotsOf(doc, page);
-    if (annots === null) continue;
-    for (let position = 0; position < annots.length; position += 1) {
-      const entry = annots.get(position);
-      if (entry.isIndirect() && entry.asIndirect() === number) return index;
+  constructor(private readonly doc: PDFDocument) {
+    this.pages = pageObjects(doc);
+    for (const [index, page] of this.pages.entries()) {
+      if (page.isIndirect()) this.byObject.set(page.asIndirect(), index);
     }
   }
-  return null;
+
+  /** The page object at an index {@link of} returned. */
+  at(index: number): PDFObject {
+    return this.pages[index] as PDFObject;
+  }
+
+  /** The page a widget sits on: its `/P`, else the first page whose `/Annots` holds it. */
+  of(widget: { readonly dict: PDFObject; readonly entry: PDFObject }): number | null {
+    const holder = widget.dict.get('P');
+    if (holder.isIndirect()) {
+      const index = this.byObject.get(holder.asIndirect());
+      if (index !== undefined) return index;
+    }
+    if (!widget.entry.isIndirect()) return null;
+    return this.annotated().get(widget.entry.asIndirect()) ?? null;
+  }
+
+  private annotated(): Map<number, number> {
+    if (this.byAnnotation !== null) return this.byAnnotation;
+    const map = new Map<number, number>();
+    for (const [index, page] of this.pages.entries()) {
+      const annots = annotsOf(this.doc, page);
+      if (annots === null) continue;
+      for (let position = 0; position < annots.length; position += 1) {
+        const entry = annots.get(position);
+        if (entry.isIndirect() && !map.has(entry.asIndirect())) map.set(entry.asIndirect(), index);
+      }
+    }
+    this.byAnnotation = map;
+    return map;
+  }
 }
 
-function describeField(doc: PDFDocument, pages: Map<number, number>, field: FieldNode): FormFieldInfo {
+function describeField(pages: PageIndex, field: FieldNode): FormFieldInfo {
   const flags = flagsOf(field.dict);
   const kind = kindOf(field);
   const maxLength = kind === 'text' ? inherited(field.dict, 'MaxLen') : null;
   let pageIndex: number | null = null;
   for (const widget of field.widgets) {
-    pageIndex = widgetPage(doc, pages, widget);
+    pageIndex = pages.of(widget);
     if (pageIndex !== null) break;
   }
   return {
@@ -571,7 +623,7 @@ function textAppearance(field: FieldNode, frame: WidgetFrame, style: Style, valu
   const flags = flagsOf(field.dict);
   const pad = 2 + frame.border;
   const inner = { width: Math.max(1, frame.width - 2 * pad), height: Math.max(1, frame.height - 2 * pad) };
-  const shown = (flags & FF.password) !== 0 ? '•'.repeat([...value].length) : value;
+  const shown = (flags & FF.password) !== 0 ? '•'.repeat(characterCount(value)) : value;
   const alignment = inherited(field.dict, 'Q');
   const quadding = alignment?.isNumber() === true ? alignment.asNumber() : 0;
   const lineRatio = style.face.heightAtSize(1);
@@ -800,11 +852,11 @@ export async function readFormFields(
   signal?: AbortSignal,
 ): Promise<readonly FormFieldInfo[]> {
   return await withDocument(bytes, 'form.read', async ({ doc }) => {
-    const pages = pageIndexMap(doc);
+    const pages = new PageIndex(doc);
     const result: FormFieldInfo[] = [];
     for (const field of collectFields(doc)) {
       if (signal?.aborted === true) break;
-      result.push(describeField(doc, pages, field));
+      result.push(describeField(pages, field));
     }
     return result;
   });
@@ -839,7 +891,7 @@ export async function readFormWidgets(
   signal?: AbortSignal,
 ): Promise<readonly FormWidgetInfo[]> {
   return await withDocument(bytes, 'form.read', async ({ doc }) => {
-    const pages = pageIndexMap(doc);
+    const pages = new PageIndex(doc);
     const result: FormWidgetInfo[] = [];
     for (const field of collectFields(doc)) {
       if (signal?.aborted === true) break;
@@ -849,7 +901,7 @@ export async function readFormWidgets(
         widgets: field.widgets.map((widget) => {
           const [ax = 0, ay = 0, bx = 0, by = 0] = readNumbers(widget.dict.get('Rect'));
           return {
-            pageIndex: widgetPage(doc, pages, widget),
+            pageIndex: pages.of(widget),
             rect: [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)] as const,
           };
         }),
@@ -871,8 +923,8 @@ function writeValue(doc: PDFDocument, field: FieldNode, { value, stateName }: Fo
   const kind = kindOf(field);
   if (kind === 'text' && typeof value === 'string') {
     const maxLength = inherited(field.dict, 'MaxLen');
-    if (maxLength?.isNumber() === true && [...value].length > maxLength.asNumber()) {
-      refuseValue(field.name, `${[...value].length} characters exceed /MaxLen ${maxLength.asNumber()}`);
+    if (maxLength?.isNumber() === true && characterCount(value) > maxLength.asNumber()) {
+      refuseValue(field.name, `${characterCount(value)} characters exceed /MaxLen ${maxLength.asNumber()}`);
     }
     field.dict.put('V', pdfText(doc, value));
     return true;
@@ -1062,6 +1114,9 @@ export async function createFormFields(
     const pageCount = pages.length;
     const created: string[] = [];
     const fonts = new FormFace(opened);
+    // Every name in use, read once: a created field's name is its whole qualified name (a period
+    // is refused below), so adding it here is what the form would report for it.
+    const taken = new Set(fieldNamesOf(doc));
 
     for (const [index, spec] of fields.entries()) {
       throwIfAborted(context.signal);
@@ -1085,7 +1140,7 @@ export async function createFormFields(
           engineMessage: `field name "${spec.name}" is empty or contains a period`,
         });
       }
-      if (collectFields(doc).some((field) => field.name === spec.name)) {
+      if (taken.has(spec.name)) {
         throw new ToolError('value-out-of-range', {
           engine: 'mupdf',
           engineMessage: `a field named ${spec.name} already exists`,
@@ -1215,8 +1270,10 @@ export async function createFormFields(
         entry,
         holder: arrayIn(doc, form, 'Fields'),
         widgets: widgets.map((kid) => ({ dict: kid.resolve(), entry: kid })),
+        ancestors: [],
       });
       created.push(spec.name);
+      taken.add(spec.name);
       context.onProgress?.({
         phase: 'forms',
         labelKey: 'op.progress.forms',
@@ -1299,17 +1356,79 @@ function shownAppearance(widget: PDFObject): PDFObject | null {
   return chosen.isStream() ? chosen : null;
 }
 
-/** Remove the entry numbered `number` from an array; `true` when it was there. */
-function removeEntry(array: PDFObject | null, number: number): boolean {
-  if (array === null || !array.isArray()) return false;
+/** Remove every entry of an array that references one of `numbers`, in one pass; how many went. */
+function removeEntries(array: PDFObject | null, numbers: ReadonlySet<number>): number {
+  if (array === null || !array.isArray()) return 0;
+  let removed = 0;
   for (let index = array.length - 1; index >= 0; index -= 1) {
     const entry = array.get(index);
-    if (entry.isIndirect() && entry.asIndirect() === number) {
+    if (entry.isIndirect() && numbers.has(entry.asIndirect())) {
       array.delete(index);
-      return true;
+      removed += 1;
     }
   }
+  return removed;
+}
+
+/** A widget a reader never shows: the Hidden or the NoView annotation flag is set. */
+function isHiddenWidget(widget: PDFObject): boolean {
+  const flags = resolved(widget.get('F'));
+  return flags?.isNumber() === true && (flags.asNumber() & (ANNOT_HIDDEN | ANNOT_NO_VIEW)) !== 0;
+}
+
+/** Whether `/Kids` still names a dictionary: a field with none is a field of nothing. */
+function hasKidDictionary(kids: PDFObject): boolean {
+  for (let index = 0; index < kids.length; index += 1) {
+    if (resolved(kids.get(index))?.isDictionary() === true) return true;
+  }
   return false;
+}
+
+/**
+ * The decoded text of a stream, `null` when it cannot be read. `entry` is the stream's own
+ * reference: a stream is only a stream by reference, not through `resolve()`.
+ */
+function streamText(entry: PDFObject): string | null {
+  try {
+    const buffer = entry.readStream();
+    try {
+      return buffer.asString();
+    } finally {
+      buffer.destroy();
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether an appearance draws nothing a value could be: no text-showing operator (`Tj`, `TJ`,
+ * or a string followed by `'` or `"`) and no nested form. The empty `/AP` another tool leaves
+ * behind on a field it filled by `/V` alone. An appearance that cannot be read is taken as
+ * drawn: it is kept as it is.
+ */
+function appearanceIsBlank(appearance: PDFObject): boolean {
+  const content = streamText(appearance);
+  return content !== null && !/(?:^|[^A-Za-z0-9])(?:Tj|TJ|Do)(?![A-Za-z0-9])|[)>]\s*['"]/.test(content);
+}
+
+/**
+ * A text or choice field (`kind`) that holds a value while a widget of it draws none. Buttons
+ * are not asked: their state is `/AS`.
+ */
+function hasStaleAppearance(
+  field: FieldNode,
+  kind: FormFieldKind,
+  widgets: readonly { readonly dict: PDFObject }[],
+): boolean {
+  const value = inherited(field.dict, 'V');
+  const filled =
+    kind === 'text' ? (readText(value) ?? '') !== '' : textsOf(value).some((text) => text !== '');
+  if (!filled) return false;
+  return widgets.some((widget) => {
+    const appearance = shownAppearance(widget.dict);
+    return appearance !== null && appearanceIsBlank(appearance);
+  });
 }
 
 /**
@@ -1334,11 +1453,17 @@ export async function flattenForm(
     if (hasXfa && fields.length === 0) {
       throw new ToolError('xfa-dynamic', { engine: 'mupdf', engineMessage: 'dynamic XFA form' });
     }
+    const byName = new Map<string, FieldNode>();
+    if (names !== null) {
+      for (const field of fields) {
+        if (!byName.has(field.name)) byName.set(field.name, field);
+      }
+    }
     const selected =
       names === null
         ? fields
         : [...new Set(names)].map((name) => {
-            const field = fields.find((candidate) => candidate.name === name);
+            const field = byName.get(name);
             if (field === undefined) {
               throw new ToolError('selection-empty', {
                 engine: 'mupdf',
@@ -1356,30 +1481,64 @@ export async function flattenForm(
       });
     }
 
-    const pages = pageObjects(doc);
-    const pageNumbers = pageIndexMap(doc);
+    const pageIndex = new PageIndex(doc);
+    const flag = resolved(acroFormOf(doc)?.get('NeedAppearances'));
+    // `/NeedAppearances true`: whoever wrote the form says its drawn values are not to be trusted.
+    const needAppearances = flag?.isBoolean() === true && flag.asBoolean();
     const fonts = new FormFace(opened);
     let appearancesUpdated = false;
+    let hiddenCount = 0;
+    // Everything a page gains and loses is collected first and written once per page, and every
+    // array entry that goes is removed in one pass per array.
+    const pageChanges = new Map<number, { page: PDFObject; painted: string[]; widgets: Set<number> }>();
+    const changesOf = (index: number) => {
+      const existing = pageChanges.get(index);
+      if (existing !== undefined) return existing;
+      const created = { page: pageIndex.at(index), painted: [] as string[], widgets: new Set<number>() };
+      pageChanges.set(index, created);
+      return created;
+    };
+    const detached = new Map<PDFObject, Set<number>>();
     for (const field of selected) {
       throwIfAborted(context.signal);
-      // Existing appearances carry document-specific styling; only missing ones are
-      // drawn, with the face that can encode Turkish values.
-      if (field.widgets.some((widget) => shownAppearance(widget.dict) === null)) {
-        await updateAppearances(doc, fonts, field);
-        appearancesUpdated = true;
-      }
       if (field.widgets.length === 0) {
         throw new ToolError('unsupported', {
           engine: 'mupdf',
           engineMessage: 'Field has no visible widgets',
         });
       }
+      // A hidden widget is not drawn, so it needs no appearance either.
+      const visible = field.widgets.filter((widget) => !isHiddenWidget(widget.dict));
+      // Appearances carry document-specific styling and are kept. They are drawn again, with the
+      // face that can encode Turkish values, where there is none to keep and — for text and
+      // choice fields, whose drawn value is what `/V` says — where the form says they are stale
+      // (`/NeedAppearances`) or a value sits under an empty one. A button's state is `/AS`,
+      // which that flag does not speak for.
+      const kind = kindOf(field);
+      const textual = kind === 'text' || kind === 'dropdown' || kind === 'optionlist';
+      if (
+        visible.some((widget) => shownAppearance(widget.dict) === null) ||
+        (visible.length > 0 && textual && (needAppearances || hasStaleAppearance(field, kind, visible)))
+      ) {
+        await updateAppearances(doc, fonts, field);
+        appearancesUpdated = true;
+      }
       for (const widget of field.widgets) {
-        const pageIndex = widgetPage(doc, pageNumbers, widget);
-        const page = pageIndex === null ? undefined : pages[pageIndex];
-        if (page === undefined) {
+        const pageNumber = pageIndex.of(widget);
+        if (isHiddenWidget(widget.dict)) {
+          // Nothing is painted, and the widget goes with its field. One that no page holds has
+          // nothing to come off.
+          hiddenCount += 1;
+          if (pageNumber !== null && widget.entry.isIndirect()) {
+            changesOf(pageNumber).widgets.add(widget.entry.asIndirect());
+          }
+          continue;
+        }
+        if (pageNumber === null) {
           throw new ToolError('corrupt-document', { engine: 'mupdf', engineMessage: 'Widget page missing' });
         }
+        const changes = changesOf(pageNumber);
+        const page = changes.page;
         const appearance = shownAppearance(widget.dict);
         // An off-state button with no drawn off appearance simply shows nothing.
         if (appearance !== null) {
@@ -1418,15 +1577,31 @@ export async function flattenForm(
           const sx = rect.width / width;
           const sy = rect.height / height;
           const key = addPageResource(doc, page, 'XObject', 'FlatWidget', appearance);
-          appendPageContent(
-            doc,
-            page,
+          changes.painted.push(
             `q ${num(sx)} 0 0 ${num(sy)} ${num(rect.x - sx * x0)} ${num(rect.y - sy * y0)} cm /${key} Do Q`,
           );
         }
-        if (widget.entry.isIndirect()) removeEntry(annotsOf(doc, page), widget.entry.asIndirect());
+        if (widget.entry.isIndirect()) changes.widgets.add(widget.entry.asIndirect());
       }
-      if (field.entry.isIndirect()) removeEntry(field.holder, field.entry.asIndirect());
+      if (field.entry.isIndirect()) {
+        const numbers = detached.get(field.holder) ?? new Set<number>();
+        numbers.add(field.entry.asIndirect());
+        detached.set(field.holder, numbers);
+      }
+    }
+    for (const { page, painted, widgets } of pageChanges.values()) {
+      if (painted.length > 0) appendPageContent(doc, page, painted.join('\n'));
+      removeEntries(annotsOf(doc, page), widgets);
+    }
+    for (const [holder, numbers] of detached) removeEntries(holder, numbers);
+    // A parent whose last child field went is a field of nothing: it leaves `/Fields` (or its own
+    // parent's `/Kids`) too, all the way up, so the form does not list a phantom and a second
+    // "flatten all" has nothing to refuse.
+    for (const field of selected) {
+      for (const ancestor of field.ancestors) {
+        if (hasKidDictionary(ancestor.kids) || !ancestor.entry.isIndirect()) break;
+        if (removeEntries(ancestor.holder, new Set([ancestor.entry.asIndirect()])) === 0) break;
+      }
     }
     throwIfAborted(context.signal);
     // The XFA would redraw every field from its data, flattened or not: it goes.
@@ -1441,6 +1616,7 @@ export async function flattenForm(
         notes: [
           note('changed', 'form.note.flattened', { count: selected.length }),
           note('lost', 'form.note.flattenFieldsGone'),
+          ...(hiddenCount > 0 ? [note('changed', 'form.note.flattenHidden', { count: hiddenCount })] : []),
           ...(hasXfa ? [note('lost', 'xfa.note.removed')] : []),
           ...(appearancesUpdated ? [note('preserved', 'form.note.appearanceNoto')] : []),
         ],
@@ -1618,6 +1794,83 @@ function tokenize(expression: string): string[] {
   return tokens;
 }
 
+/**
+ * The separators of Acrobat's `AFNumber_Format(nDec, sepStyle, …)`: `0` is `1,234.56`, `1` is
+ * `1234.56`, `2` is `1.234,56`, `3` is `1234,56` and `4` is `1'234.56`. `shape` is what a
+ * number written in that style looks like.
+ */
+export type SeparatorStyle = 0 | 1 | 2 | 3 | 4;
+const SEPARATOR_STYLES: Record<
+  SeparatorStyle,
+  { readonly shape: RegExp; readonly thousands: string; readonly decimal: string }
+> = {
+  0: { shape: /^(?:\d+|[1-9]\d{0,2}(?:,\d{3})+)(?:\.\d+)?$/, thousands: ',', decimal: '.' },
+  1: { shape: /^\d+(?:\.\d+)?$/, thousands: '', decimal: '.' },
+  2: { shape: /^(?:\d+|[1-9]\d{0,2}(?:\.\d{3})+)(?:,\d+)?$/, thousands: '.', decimal: ',' },
+  3: { shape: /^\d+(?:,\d+)?$/, thousands: '', decimal: ',' },
+  4: { shape: /^(?:\d+|[1-9]\d{0,2}(?:['’]\d{3})+)(?:\.\d+)?$/, thousands: "'’", decimal: '.' },
+};
+
+/**
+ * The number a form field's text holds, `NaN` when it starts with none (trailing text is
+ * ignored, as `parseFloat` does).
+ *
+ * With the field's `AFNumber_Format` separator style the text is read in that style, so
+ * `1.234,56` under style 2 is 1234.56 and `1.234` is 1234; a grouped number never starts with a
+ * zero, so `0.125` is a fraction under every style. Text that is not written in the
+ * style (a calculation stored `1235.56` in a style-2 field) and every field without a style
+ * go by the separators the text itself shows: when both `.` and `,` appear the **last** one is
+ * the decimal separator and the other groups thousands; one kind that repeats groups
+ * thousands (`1,234,567`); one kind that appears once is the decimal separator (`12,5`).
+ */
+export function parseFormNumber(text: string, style: SeparatorStyle | null = null): number {
+  const found = /^\s*([-+]?)(\d[\d.,'’]*|[.,]\d+)/.exec(text);
+  if (found === null) return Number.NaN;
+  const sign = found[1] === '-' ? -1 : 1;
+  const token = found[2] as string;
+
+  const styled = style === null ? undefined : SEPARATOR_STYLES[style];
+  if (styled?.shape.test(token)) {
+    const plain = [...token]
+      .filter((character) => !styled.thousands.includes(character))
+      .map((character) => (character === styled.decimal ? '.' : character))
+      .join('');
+    return sign * Number.parseFloat(plain);
+  }
+
+  const bare = token.replace(/['’]/g, '');
+  const lastDot = bare.lastIndexOf('.');
+  const lastComma = bare.lastIndexOf(',');
+  let decimalAt = Math.max(lastDot, lastComma);
+  if (decimalAt >= 0 && (lastDot < 0 || lastComma < 0)) {
+    // One kind of separator only: it repeats (thousands) or it stands alone (the decimal one).
+    const only = lastDot >= 0 ? '.' : ',';
+    if (bare.indexOf(only) !== bare.lastIndexOf(only)) decimalAt = -1;
+  }
+  const integer = (decimalAt < 0 ? bare : bare.slice(0, decimalAt)).replace(/[.,]/g, '');
+  const fraction = decimalAt < 0 ? '' : bare.slice(decimalAt + 1);
+  return sign * Number.parseFloat(`${integer === '' ? '0' : integer}.${fraction === '' ? '0' : fraction}`);
+}
+
+/** `AFNumber_Format(nDec, sepStyle, …)` in a format action's script: captures `sepStyle`. */
+const NUMBER_FORMAT_CALL = /AFNumber_Format\s*\(\s*\d+\s*,\s*([0-4])\b/;
+
+/** The `sepStyle` of a field's `AFNumber_Format` (its format action), or `null` without one. */
+function separatorStyleOf(field: FieldNode): SeparatorStyle | null {
+  for (const dict of [field.dict, ...field.widgets.map((widget) => widget.dict)]) {
+    const actions = resolved(dict.get('AA'));
+    const format = actions === null ? null : resolved(actions.get('F'));
+    const script = format === null ? null : format.get('JS');
+    if (script === null || script.isNull()) continue;
+    // The script is a string or a stream; a stream that cannot be read says nothing about the
+    // style, and the text's own separators decide.
+    const source = script.isStream() ? streamText(script) : readText(script);
+    const style = source === null ? undefined : NUMBER_FORMAT_CALL.exec(source)?.[1];
+    if (style !== undefined) return Number(style) as SeparatorStyle;
+  }
+  return null;
+}
+
 /** Read the current values as numbers, then write each target's result. */
 export async function applyCalculations(
   bytes: Uint8Array,
@@ -1631,7 +1884,8 @@ export async function applyCalculations(
     for (const field of fields) {
       const raw = readFieldValue(field);
       const text = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw.join('') : '';
-      const parsed = Number.parseFloat(text.replace(',', '.'));
+      // The field's own separator style is looked up only for a text that has separators.
+      const parsed = parseFormNumber(text, /[.,'’]/.test(text) ? separatorStyleOf(field) : null);
       values[field.name] = Number.isFinite(parsed) ? parsed : 0;
     }
 
@@ -1702,7 +1956,7 @@ export function validateField(
   if (field.kind === 'text') {
     const text = typeof value === 'string' ? value : '';
     if (field.required && text.trim().length === 0) return { ok: false, reasonKey: 'form.reason.required' };
-    if (field.maxLength !== null && text.length > field.maxLength) {
+    if (field.maxLength !== null && characterCount(text) > field.maxLength) {
       return { ok: false, reasonKey: 'form.reason.maxLength' };
     }
     return { ok: true };

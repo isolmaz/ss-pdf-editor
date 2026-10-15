@@ -1007,7 +1007,12 @@ writer does, and the steps it reports:
   not used: measured, it places the baseline outside the widget box. A field whose dictionary
   is also its widget reports its page, and a created text field gets a `/DA`. A calculation's numbers follow the
   documented grammar (`[0-9]+('.'[0-9]+)?`) and a malformed one (`1.2.3`, `1..2`) is refused, not read as a
-  shorter number;
+  shorter number. A field's value is read as a number by its `AFNumber_Format` separator style, else by
+  the separators it shows (`1.234,56`, `1,234.56` and `12,5` are numbers), and `/MaxLen` counts Unicode
+  code points on every path. Flattening draws a text or choice field again from its `/V` when the form
+  says `/NeedAppearances true` or a value sits under an empty appearance, leaves Hidden and NoView
+  widgets out, writes the widgets of a page as one content stream, and takes a parent field out of
+  `/Fields` once its last child is flattened;
 - the OCR text layer (`ops/ocr.ts` `writeOcrLayer`, step `ocr.layer`), one content stream per
   page. A word Noto Sans can spell uses it; any other uses Tesseract's glyph-less design
   rebuilt in `engines/glyphless-font.ts` (Type 0 over Identity-H, every CID drawing one empty

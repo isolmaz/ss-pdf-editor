@@ -178,7 +178,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   size of the document as it is now, not as it was opened. Firefox and Safari offer Export
   only.
 - **Forms.** The editor lists the AcroForm fields. You can create fields, set flags,
-  flatten them and add simple calculations. Form data can be imported or exported as FDF
+  flatten them and add simple calculations. Flattening draws each field's value into the
+  page: a form another tool filled in (`/NeedAppearances`) is redrawn from its values first
+  so nothing is lost, and hidden fields are left out. Calculations read `1.234,56`,
+  `1,234.56` and `12,5` as numbers. Form data can be imported or exported as FDF
   or JSON; exporting downloads only the data file. An FDF export writes a checkbox or a
   radio group under the name of its own on-state (`/On`, `/1`, `/Evet`, not always `/Yes`),
   and an FDF import reads fields in any key order, under `/Kids` as `parent.child`, with

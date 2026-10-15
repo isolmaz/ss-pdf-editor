@@ -47,6 +47,7 @@ export const formsPart = {
   'form.note.flattened': '{count} form alanı sayfa içeriğine gömüldü (düzleştirildi).',
   'form.note.flattenFieldsGone':
     'Düzleştirme alanları kaldırır: değerler sayfanın parçası olur, artık düzenlenemez.',
+  'form.note.flattenHidden': '{count} gizli pencere öğesi sayfaya çizilmedi; kaldırıldı.',
   'form.note.calculated': '{count} hesaplama alanı güncellendi.',
 
   'form.dialog.fields.title': 'Form alanlarını doldur',
