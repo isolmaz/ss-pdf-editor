@@ -24,4 +24,11 @@ describe('formatPercent', () => {
     expect(formatPercent(1.4, 'tr')).toBe('%140');
     expect(formatPercent(0.25, 'tr')).toBe('%25');
   });
+
+  it('keeps the decimals asked for, with the mark of the locale', () => {
+    expect(formatPercent(0.0037, 'en', 2)).toBe('0.37%');
+    expect(formatPercent(0.0037, 'tr', 2)).toBe('%0,37');
+    expect(formatPercent(0.125, 'tr', 2)).toBe('%12,50');
+    expect(formatPercent(0.0037, 'tr')).toBe('%0');
+  });
 });

@@ -5,13 +5,17 @@
 
 const FORMATS = new Map<string, Intl.NumberFormat>();
 
-function numberFormat(locale: string, style: 'oneDecimal' | 'percent'): Intl.NumberFormat {
-  const key = `${locale}:${style}`;
+function numberFormat(locale: string, style: 'oneDecimal' | 'percent', digits = 0): Intl.NumberFormat {
+  const key = `${locale}:${style}:${digits}`;
   let format = FORMATS.get(key);
   if (format === undefined) {
     format =
       style === 'percent'
-        ? new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 })
+        ? new Intl.NumberFormat(locale, {
+            style: 'percent',
+            minimumFractionDigits: digits,
+            maximumFractionDigits: digits,
+          })
         : new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     FORMATS.set(key, format);
   }
@@ -26,7 +30,10 @@ export function formatBytes(bytes: number, locale: string): string {
   return `${oneDecimal.format(bytes / (1024 * 1024))} MB`;
 }
 
-/** A fraction as a whole percent in the locale's own form: `1.4` is `140%` in English, `%140` in Turkish. */
-export function formatPercent(fraction: number, locale: string): string {
-  return numberFormat(locale, 'percent').format(fraction);
+/**
+ * A fraction as a percent in the locale's own form: `1.4` is `140%` in English, `%140` in Turkish.
+ * Whole percents unless `digits` asks for decimals (`0.0037` with 2 is `0.37%` and `%0,37`).
+ */
+export function formatPercent(fraction: number, locale: string, digits = 0): string {
+  return numberFormat(locale, 'percent', digits).format(fraction);
 }

@@ -75,6 +75,13 @@ describe('createTranslator', () => {
     expect(createTranslator('tr')('ann.tool.opacityValue', { value: 40 })).toBe('%40');
     expect(createTranslator('en')('ann.tool.opacityValue', { value: 40 })).toBe('40%');
   });
+
+  it('writes a {name:percent} param as a share in its own language', () => {
+    const kept = { recall: 0.5, pages: 3 };
+    expect(createTranslator('en')('op.note.pdfa.textKept', kept)).toContain('50% of the original words');
+    expect(createTranslator('tr')('op.note.pdfa.textKept', kept)).toContain('metnin %50 kadarı');
+    expect(createTranslator('tr')('op.note.pdfa.textKept', { pages: 3 })).toContain('{recall:percent}');
+  });
 });
 
 describe('a partial locale', () => {

@@ -358,6 +358,23 @@ describe('ComparePanel pixel comparison', () => {
     expect(screen.getByText('Comparison capped: pixel raster cap')).toBeTruthy();
   });
 
+  it('writes the difference the way Turkish writes a percent', async () => {
+    const tr = createTranslator('tr');
+    compareVisual.mockResolvedValue(
+      visualResult([
+        visualPage(0, { status: 'changed', differencePercent: 12.5, differingTiles: 3 }),
+        visualPage(1, { status: 'changed', differencePercent: 0.37, differingTiles: 1 }),
+      ]),
+    );
+    const { user, container } = show({ t: tr });
+    await user.upload(pickerOf(container), new File([RIGHT], 'diger.pdf', { type: 'application/pdf' }));
+    await screen.findByText(tr('compare.picked', { name: 'diger.pdf' }));
+    await user.click(screen.getByRole('button', { name: tr('compare.runPixels') }));
+    await screen.findByRole('table');
+    expect(cellsOf(rowOf('pixels', 1))[3]).toBe('%12,50 · 3/16');
+    expect(cellsOf(rowOf('pixels', 2))[3]).toBe('%0,37 · 1/16');
+  });
+
   it('gives the renderer a fresh canvas for every page it asks for', async () => {
     let created: unknown[] = [];
     compareVisual.mockImplementation(

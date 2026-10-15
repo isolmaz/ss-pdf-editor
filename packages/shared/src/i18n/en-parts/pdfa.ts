@@ -58,11 +58,11 @@ export const pdfaPart = {
   'op.note.pdfa.producer':
     'The Producer field is now “{producer}”: the conversion writes this field itself and it cannot be changed.',
   'op.note.pdfa.textKept':
-    'On the {pages} sampled page(s), {percent} of the original words can still be extracted from the output.',
+    'On the {pages} sampled page(s), {recall:percent} of the original words can still be extracted from the output.',
   'op.note.pdfa.textLoss':
-    'The text does not extract the same on some pages ({percent} of the original words were found; pages: {pages}). Search and copy may be missing or different on those pages.',
+    'The text does not extract the same on some pages ({recall:percent} of the original words were found; pages: {pages}). Search and copy may be missing or different on those pages.',
   'op.note.pdfa.pictureKept':
-    'The {pages} sampled page(s) were rendered in grey before and after and compared; the largest mean difference is {difference}.',
+    'The {pages} sampled page(s) were rendered in grey before and after and compared; the largest mean difference is {difference:percent}.',
   'op.note.pdfa.pictureDiffers':
     'These pages look different from the original: {pages}. Look at them before saving the output.',
   'op.note.pdfa.verified': 'The output was checked against {rules} {level} rule(s) and none was broken.',

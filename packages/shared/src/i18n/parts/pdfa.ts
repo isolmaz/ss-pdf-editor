@@ -66,11 +66,11 @@ export const pdfaPart = {
   'op.note.pdfa.producer':
     'Üretici (Producer) alanı artık “{producer}”: dönüştürme bu alanı kendisi yazar, değiştirilemez.',
   'op.note.pdfa.textKept':
-    'Örneklenen {pages} sayfada, özgün metnin {percent} kadarı çıktıda aynen çıkarılabiliyor.',
+    'Örneklenen {pages} sayfada, özgün metnin {recall:percent} kadarı çıktıda aynen çıkarılabiliyor.',
   'op.note.pdfa.textLoss':
-    'Metin bazı sayfalarda aynı çıkarılamıyor (özgün sözcüklerin {percent} kadarı bulundu; sayfalar: {pages}). Arama ve kopyalama bu sayfalarda eksik ya da farklı olabilir.',
+    'Metin bazı sayfalarda aynı çıkarılamıyor (özgün sözcüklerin {recall:percent} kadarı bulundu; sayfalar: {pages}). Arama ve kopyalama bu sayfalarda eksik ya da farklı olabilir.',
   'op.note.pdfa.pictureKept':
-    'Örneklenen {pages} sayfa önce ve sonra gri tonlamada çizilip karşılaştırıldı; en büyük ortalama fark {difference}.',
+    'Örneklenen {pages} sayfa önce ve sonra gri tonlamada çizilip karşılaştırıldı; en büyük ortalama fark {difference:percent}.',
   'op.note.pdfa.pictureDiffers':
     'Şu sayfaların görüntüsü özgününden fark ediyor: {pages}. Çıktıyı kaydetmeden önce bu sayfalara bakın.',
   'op.note.pdfa.verified': 'Çıktı {level} için {rules} kurala karşı denetlendi ve hiçbiri ihlal edilmedi.',
