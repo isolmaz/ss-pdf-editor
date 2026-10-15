@@ -642,7 +642,9 @@ The limits are defined once, in
   a touch-screen laptop with a mouse or trackpad stays on the desktop column. Mobile has no
   warning of its own: viewing-only starts at 300 pages, where a warning would.
 - **Memory gauge.** The status bar measures what the open documents hold against the render
-  cache figure of the column that applies.
+  cache figure of the column that applies. The gauge and the name of the column ("Desktop
+  limits" or "Mobile limits") appear only when they matter: when a document is over a limit
+  or the gauge reaches 75 %. They are hidden below 768 px.
 - **Viewing-only.** Above this threshold the document still opens and renders, but editing
   is disabled and the UI says why.
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two

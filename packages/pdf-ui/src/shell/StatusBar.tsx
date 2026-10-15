@@ -9,8 +9,13 @@ import type { ReactNode } from 'react';
  *
  * The memory/limit readout is the honest surface — a
  * viewing-only downgrade or a size warning is stated here, never applied
- * silently. The memory budget indicator provides live feedback on memory consumption.
+ * silently. The limit profile and the memory budget meter are diagnostics: they appear when
+ * they matter (a limit verdict other than ok, or memory use at 75 % of the budget or more) and
+ * stay out of the way otherwise.
  */
+
+/** The share of the budget from which the memory meter is worth the user's attention. */
+const MEMORY_ATTENTION_RATIO = 0.75;
 
 type SignatureBadgeKey = 'status.signatureBroken' | 'status.signatureModified' | 'status.signatures';
 
@@ -87,6 +92,7 @@ export function StatusBar({
       ? 0
       : memoryUsage.usedBytes / memoryUsage.budgetBytes;
   const memPercent = Math.min(100, Math.max(0, Math.round(memRatio * 100)));
+  const diagnosticsMatter = limits.kind !== 'ok' || memRatio >= MEMORY_ATTENTION_RATIO;
 
   return (
     <footer className="flex h-[var(--spacing-pdf-statusbar)] items-center gap-3 overflow-hidden border-t border-kumo-line bg-kumo-base px-3 text-xs text-kumo-subtle">
@@ -106,20 +112,22 @@ export function StatusBar({
       {/* Diagnostics yield first on a narrow viewport: the tier badge and the memory
           meter describe the session, while the privacy line states the product's
           central claim and the warnings below report something the user must act on.
-          Below `sm` only the claim and the warnings are allowed to spend the width. */}
+          Below `md` only the claim and the warnings are allowed to spend the width. */}
       {/* The limit profile the document limits were chosen from — a device-memory fact,
-          not the window width, so it is named as a limit profile and kept for wide bars. */}
-      <span
-        className="hidden shrink-0 lg:inline-flex"
-        title={t(tier === 'mobile' ? 'shell.deviceTier.mobileHint' : 'shell.deviceTier.desktopHint')}
-      >
-        <Badge>{t(tier === 'mobile' ? 'shell.deviceTier.mobile' : 'shell.deviceTier.desktop')}</Badge>
-      </span>
+          not the window width, so it is named as a limit profile. */}
+      {diagnosticsMatter ? (
+        <span
+          className="hidden shrink-0 md:inline-flex"
+          title={t(tier === 'mobile' ? 'shell.deviceTier.mobileHint' : 'shell.deviceTier.desktopHint')}
+        >
+          <Badge>{t(tier === 'mobile' ? 'shell.deviceTier.mobile' : 'shell.deviceTier.desktop')}</Badge>
+        </span>
+      ) : null}
 
       {/* Memory budget meter */}
-      {memoryUsage === undefined ? null : (
+      {memoryUsage === undefined || !diagnosticsMatter ? null : (
         <div
-          className="hidden items-center gap-1.5 xl:flex"
+          className="hidden items-center gap-1.5 md:flex"
           title={`${t('shell.status.memory')}: ${formatBytes(memoryUsage.usedBytes, t.locale)} / ${formatBytes(memoryUsage.budgetBytes, t.locale)} (${formatPercent(memPercent / 100, t.locale)})`}
         >
           <Cpu size={12} aria-hidden="true" className="shrink-0 text-kumo-subtle" />

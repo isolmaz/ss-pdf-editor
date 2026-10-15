@@ -93,6 +93,17 @@ test('the editor header fits every width from a phone to a wide screen and keeps
   for (const width of [320, 768, 1024, 1280, 1536]) await expectHeaderFits(page, width, turkish);
 });
 
+test('the status bar keeps the limit profile and the memory meter out of sight while they do not matter', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openPdf(page);
+  const bar = page.getByRole('contentinfo');
+  await expect(bar.getByText('The document never leaves your device.')).toBeVisible();
+  await expect(bar.getByText('Desktop limits')).toHaveCount(0);
+  await expect(bar.locator('[title^="Memory:"]')).toHaveCount(0);
+});
+
 const palette = (page: Page) => page.getByRole('dialog').filter({ has: page.getByRole('combobox') });
 const count = (page: Page) => palette(page).getByText(/^\d+ command\(s\)$/);
 
