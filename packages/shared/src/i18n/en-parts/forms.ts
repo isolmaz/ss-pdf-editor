@@ -81,4 +81,9 @@ export const formsPart = {
   'form.reason.required': 'This field is required.',
   'form.reason.maxLength': 'Entered text exceeds field maximum length.',
   'form.reason.notAnOption': 'Selected value is not among allowed options.',
+  'form.reason.unknownField': 'The document has no field with this name.',
+  'form.note.violation': '{name}: {reason}',
+  'form.note.invalid': '{count} value(s) or field(s) break the rules; details are in the report.',
+  'form.note.flattenSkipped':
+    '{count} field(s) could not be flattened (push button or signature field) and stay in the document: {names}',
 } as const;
