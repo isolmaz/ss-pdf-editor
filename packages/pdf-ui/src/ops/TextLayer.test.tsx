@@ -19,6 +19,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ViewerApi } from '../viewer/PdfViewerPane';
 import { displayedBox, TextLayer, type TextLayerProps } from './TextLayer';
 
+// The real reader, wrapped so a test can see the signal each read was started with.
+vi.mock('pdf-core/text-source', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('pdf-core/text-source')>();
+  return { ...actual, readPageText: vi.fn(actual.readPageText) };
+});
+
 const publicDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../public');
 const fontFile = (path: string) => new Uint8Array(readFileSync(resolve(publicDir, `.${path}`)));
 
@@ -136,6 +142,25 @@ describe('a read that is overtaken', () => {
     await new Promise((settle) => setTimeout(settle, 300));
     expect(failure()).not.toBeNull();
     expect(blocks()).toHaveLength(0);
+  });
+});
+
+describe('the page read of a layer', () => {
+  const signals = () => vi.mocked(readPageText).mock.calls.map(([, , context]) => context.signal);
+
+  it('is aborted when the layer moves to other bytes, and again when it is left', async () => {
+    vi.mocked(readPageText).mockClear();
+    const first = await textPage('First');
+    const { view, props } = show(first);
+    await waitFor(() => expect(blocks().length).toBeGreaterThan(0));
+    expect(signals().map((signal) => signal.aborted)).toEqual([false]);
+
+    view.rerender(<TextLayer {...props} bytes={await textPage('Second')} />);
+    await waitFor(() => expect(blockWith('Second')).toBeTruthy());
+    expect(signals().map((signal) => signal.aborted)).toEqual([true, false]);
+
+    view.unmount();
+    expect(signals().map((signal) => signal.aborted)).toEqual([true, true]);
   });
 });
 

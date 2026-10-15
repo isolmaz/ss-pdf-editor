@@ -57,6 +57,72 @@ test('the menu without a selection offers the page actions, stays inside the win
   );
 });
 
+test('the menu takes focus as it opens, walks with the arrow keys and closes on Escape or Tab', async ({
+  page,
+}) => {
+  await openPdf(page);
+  await rightClick(page, 300, 300);
+  const menu = page.getByRole('menu');
+  const items = menu.getByRole('menuitem');
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(items.nth(1)).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  // Up from the first entry wraps to the last, Down from the last to the first.
+  await expect(items.last()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(items.last()).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(items.first()).toBeFocused();
+
+  // Enter runs the focused entry (Add Text, the fourth) and the menu goes.
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await expect(items.nth(3)).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(menu).toHaveCount(0);
+  await expect(rail(page, 'Add Text')).toHaveAttribute('aria-pressed', 'true');
+
+  await rightClick(page, 300, 300);
+  await page.keyboard.press('Tab');
+  await expect(menu).toHaveCount(0);
+});
+
+test('a menu asked for with the keyboard opens beside the focused element, and gives focus back to it', async ({
+  page,
+}) => {
+  await openPdf(page);
+  await page.keyboard.press('Control+f');
+  const bar = page.getByRole('search');
+  const box = bar.getByRole('textbox', { name: 'Find in document' });
+  await expect(box).toBeFocused();
+  const field = await box.boundingBox();
+  if (field === null) throw new Error('the find field has no box');
+
+  // What the Menu key sends: a context menu event with no pointer position.
+  await box.evaluate((element) => {
+    element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 0, clientY: 0 }),
+    );
+  });
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  const shown = await menu.boundingBox();
+  expect(shown?.x).toBeCloseTo(field.x, 0);
+  expect(shown?.y).toBeCloseTo(field.y + field.height, 0);
+  await expect(menu.getByRole('menuitem').first()).toBeFocused();
+
+  // Escape belongs to the menu: it closes, the find bar stays, and the field has focus again.
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(bar).toBeVisible();
+  await expect(box).toBeFocused();
+});
+
 test('rotate, delete and the tool entries run the page action or arm the tool, and close the menu', async ({
   page,
 }) => {

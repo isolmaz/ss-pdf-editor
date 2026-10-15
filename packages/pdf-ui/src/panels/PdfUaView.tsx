@@ -32,6 +32,7 @@ import { toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { PanelLoading, PanelMessage } from './PanelParts';
+import { useAbortableRuns } from './useAbortableRuns';
 
 const key = (value: string): MessageKey => value as MessageKey;
 
@@ -112,38 +113,32 @@ export function PdfUaView({
   const [filter, setFilter] = useState<Filter>('all');
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [drafts, setDrafts] = useState<Readonly<Record<string, string>>>({});
-  const alive = useRef(true);
+  const runs = useAbortableRuns();
   const handlers = useRef({ onNotice, t });
   handlers.current = { onNotice, t };
 
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-
+  // A view that closes while the check or a fix is working stops the engine and says nothing:
+  // a run the closing cut short is abandoned (`useAbortableRuns`).
   const check = useCallback(async () => {
-    const controller = new AbortController();
+    const controller = runs.begin();
     setBusy(true);
     setFailure(null);
     try {
       const context: OperationContext = { signal: controller.signal };
       const result = await checkPdfUa(await read(context), context);
-      if (!alive.current) return;
+      if (controller.signal.aborted) return;
       setReport(result);
       // Failing rules open by themselves: that is what the user came to read.
       setOpen(new Set(result.rules.filter((rule) => rule.state === 'fail').map((rule) => rule.id)));
     } catch (error) {
-      if (!alive.current) return;
+      if (controller.signal.aborted) return;
       const mapped = toToolError(error, 'ui');
       setFailure(mapped.messageKey);
       handlers.current.onNotice?.(handlers.current.t(mapped.messageKey));
     } finally {
-      controller.abort();
-      if (alive.current) setBusy(false);
+      if (!runs.end(controller)) setBusy(false);
     }
-  }, [read]);
+  }, [read, runs]);
 
   useEffect(() => {
     void check();
@@ -151,25 +146,24 @@ export function PdfUaView({
 
   const fix = useCallback(
     async (fixes: readonly UaFix[]) => {
-      const controller = new AbortController();
+      const controller = runs.begin();
       setBusy(true);
       setFailure(null);
       try {
         const context: OperationContext = { signal: controller.signal };
         const outcome = await fixPdfUa(await read(context), fixes, context);
-        if (!alive.current) return;
+        if (controller.signal.aborted) return;
         onWritten?.({ bytes: outcome.bytes, notes: outcome.report.notes, steps: outcome.report.steps });
       } catch (error) {
-        if (!alive.current) return;
+        if (controller.signal.aborted) return;
         const mapped = toToolError(error, 'ui');
         setFailure(mapped.messageKey);
         handlers.current.onNotice?.(handlers.current.t(mapped.messageKey));
       } finally {
-        controller.abort();
-        if (alive.current) setBusy(false);
+        if (!runs.end(controller)) setBusy(false);
       }
     },
-    [onWritten, read],
+    [onWritten, read, runs],
   );
 
   const toggle = (id: string) =>

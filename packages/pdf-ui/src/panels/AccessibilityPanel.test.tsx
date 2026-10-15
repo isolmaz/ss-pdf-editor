@@ -247,6 +247,17 @@ describe('AccessibilityPanel: the report view', () => {
     expect(screen.queryByText('4 page(s) · 0 issue(s) · 0 unknown')).toBeNull();
   });
 
+  it('stops the audit on the engine when the panel closes while it is running', async () => {
+    engine.checkAccessibility.mockReturnValue(new Promise<AccessibilityReport>(() => {}));
+    const { user, unmount } = show();
+    await audit(user);
+    await waitFor(() => expect(engine.checkAccessibility).toHaveBeenCalledOnce());
+    const [, { signal }] = engine.checkAccessibility.mock.calls[0] as [unknown, { signal: AbortSignal }];
+    expect(signal.aborted).toBe(false);
+    unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
   it('tells the shell nothing about a failure that arrives after the panel closed', async () => {
     let reject: (cause: unknown) => void = () => {};
     engine.checkAccessibility.mockReturnValue(

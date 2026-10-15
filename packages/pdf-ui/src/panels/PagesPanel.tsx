@@ -629,9 +629,22 @@ export function PagesPanel({
 }
 
 /**
- * One page's canvas, drawn the first time the item becomes visible and never
- * eagerly: the whole point of the observer is that a 2000-page document costs
- * 2000 cheap placeholders, not 2000 render tasks.
+ * A canvas given up: a canvas keeps its pixel buffer until the element is collected, and
+ * a thumbnail list of a long document scrolled end to end holds hundreds of them (a
+ * 2000-page file at a high pixel density is an estimated half a gigabyte). Zero size drops
+ * the buffer now.
+ */
+function releaseCanvas(canvas: HTMLCanvasElement): void {
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
+/**
+ * One page's canvas, drawn when the item becomes visible and never eagerly: the whole
+ * point of the observer is that a 2000-page document costs 2000 cheap placeholders, not
+ * 2000 render tasks. It works the other way round too: an item that scrolls away stops
+ * its render and gives its canvas up, keeping its height so the list does not move, and is
+ * drawn again when it comes back — so what the list holds is what is near the window.
  */
 function PageThumbnail({
   document,
@@ -665,8 +678,18 @@ function PageThumbnail({
       canvas.className = 'max-w-full';
       canvas.width = THUMBNAIL_WIDTH;
       canvas.height = Math.round(page.height * scale);
-      await document.renderPage(pageIndex, canvas, { scale, signal });
-      if (signal.aborted) return;
+      try {
+        await document.renderPage(pageIndex, canvas, { scale, signal });
+      } catch (error) {
+        releaseCanvas(canvas);
+        throw error;
+      }
+      if (signal.aborted) {
+        releaseCanvas(canvas);
+        return;
+      }
+      // The picture of an earlier document or revision gives its buffer up as it is replaced.
+      for (const previous of holder.querySelectorAll('canvas')) releaseCanvas(previous);
       holder.replaceChildren(canvas);
       const [x0, y0, x1, y1] = page.viewBox;
       setFrame(
@@ -695,21 +718,36 @@ function PageThumbnail({
     // the previous document's picture on screen.
     paintedRef.current = false;
     setFrame(null);
-    const controller = new AbortController();
+    /** The render of the current visit; every visit has its own, so leaving stops exactly that one. */
+    let attempt: AbortController | null = null;
     // Lazy, and **staying** lazy: the observer is not disconnected after the first
-    // hit, so a thumbnail whose first attempt was aborted is drawn when it next
+    // hit, so a thumbnail whose attempt was aborted is drawn when it next
     // becomes visible instead of staying blank forever.
     const observer = new IntersectionObserver(
       (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting) || paintedRef.current) return;
-        void draw(holder, controller.signal).catch(() => undefined);
+        // One target: the last report is where the item is now.
+        if ((entries.at(-1) as { isIntersecting: boolean }).isIntersecting) {
+          if (paintedRef.current) return;
+          attempt?.abort();
+          attempt = new AbortController();
+          void draw(holder, attempt.signal).catch(() => undefined);
+          return;
+        }
+        // Out of reach: stop a render still running, and give a finished picture's buffer up.
+        attempt?.abort();
+        attempt = null;
+        if (!paintedRef.current) return;
+        for (const canvas of holder.querySelectorAll('canvas')) releaseCanvas(canvas);
+        holder.replaceChildren();
+        paintedRef.current = false;
+        setFrame(null);
       },
       { rootMargin: '120px' },
     );
     observer.observe(holder);
     return () => {
       observer.disconnect();
-      controller.abort();
+      attempt?.abort();
     };
   }, [draw]);
 

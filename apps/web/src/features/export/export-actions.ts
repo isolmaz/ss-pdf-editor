@@ -51,17 +51,30 @@ export function createExportChoice(deps: ExportDeps): (choice: ExportOptions) =>
   };
 }
 
-/** Open the context menu where the pointer is, carrying the words the browser has selected. */
+/**
+ * Open the context menu where the pointer is, carrying the words the browser has selected.
+ *
+ * A menu asked for with the keyboard (the Menu key, Shift+F10) has no pointer: its event
+ * carries no position (0, 0), which would put the menu in the window's top-left corner,
+ * away from what the reader is working on. It opens under the element that has focus
+ * instead, and the menu keeps itself inside the window from there.
+ */
 export function showContextMenu(event: {
   readonly preventDefault: () => void;
   readonly clientX: number;
   readonly clientY: number;
+  readonly target?: EventTarget | null;
 }): void {
   event.preventDefault();
   const selection = window.getSelection()?.toString().trim() ?? '';
+  const { target } = event;
+  const focusBox =
+    event.clientX === 0 && event.clientY === 0 && target instanceof Element
+      ? target.getBoundingClientRect()
+      : null;
   openContextMenu({
-    x: event.clientX,
-    y: event.clientY,
+    x: focusBox === null ? event.clientX : focusBox.left,
+    y: focusBox === null ? event.clientY : focusBox.bottom,
     hasSelection: selection.length > 0,
     selectedText: selection,
   });

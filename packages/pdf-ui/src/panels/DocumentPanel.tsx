@@ -1,13 +1,14 @@
 import type { PdfDocumentHandle } from 'pdf-core';
 import type { AnnotationMark } from 'pdf-core/ops/annotations';
 import type { LayerWriteRequest } from 'pdf-core/ops/layer-write';
-import type { MessageKey, Translator } from 'pdf-shared';
+import { type MessageKey, type ToolError, type Translator, toToolError } from 'pdf-shared';
 import { useEffect, useState } from 'react';
 import { Button } from '../components/Button';
 import { Dock } from '../shell/Dock';
 import { AttachmentsPanel } from './AttachmentsPanel';
 import { LayersPanel } from './LayersPanel';
 import { type PageMoveAction, PagesPanel } from './PagesPanel';
+import { PanelMessage } from './PanelParts';
 import { SearchResultsPanel } from './SearchResultsPanel';
 import { SignaturesPanel } from './SignaturesPanel';
 
@@ -32,6 +33,17 @@ export interface OutlineEntry {
   readonly pageIndex: number | null;
   readonly children: readonly OutlineEntry[];
 }
+
+/**
+ * What the outline tab shows: `null` entries while the document has not answered, the list
+ * once it has, or the reason it could not be read.
+ */
+interface OutlineState {
+  readonly entries: readonly OutlineEntry[] | null;
+  readonly failure: ToolError | null;
+}
+
+const OUTLINE_PENDING: OutlineState = { entries: null, failure: null };
 
 export interface DocumentPanelProps {
   readonly document: PdfDocumentHandle;
@@ -148,13 +160,20 @@ export function DocumentPanel({
     setOwnTab(next);
     onTabChange?.(next);
   };
-  const [outline, setOutline] = useState<readonly OutlineEntry[] | null>(null);
+  const [outline, setOutline] = useState<OutlineState>(OUTLINE_PENDING);
 
   useEffect(() => {
     let disposed = false;
-    void document.getOutline().then((entries) => {
-      if (!disposed) setOutline(entries);
-    });
+    // A document whose outline cannot be read says so in the tab: without the second
+    // handler the rejection was unhandled and the tab said "reading" for good.
+    void document.getOutline().then(
+      (entries) => {
+        if (!disposed) setOutline({ entries, failure: null });
+      },
+      (error: unknown) => {
+        if (!disposed) setOutline({ entries: [], failure: toToolError(error, 'ui') });
+      },
+    );
     return () => {
       disposed = true;
     };
@@ -191,7 +210,7 @@ export function DocumentPanel({
               {t('panel.outline.edit')}
             </Button>
           )}
-          <OutlineList t={t} entries={outline} currentPage={currentPage} onGoToPage={onGoToPage} />
+          <OutlineList t={t} outline={outline} currentPage={currentPage} onGoToPage={onGoToPage} />
         </div>
       ) : null}
       {tab === 'attachments' ? (
@@ -233,15 +252,17 @@ export function DocumentPanel({
 
 function OutlineList({
   t,
-  entries,
+  outline,
   currentPage,
   onGoToPage,
 }: {
   t: Translator;
-  entries: readonly OutlineEntry[] | null;
+  outline: OutlineState;
   currentPage: number;
   onGoToPage: (pageIndex: number) => void;
 }) {
+  const { entries, failure } = outline;
+  if (failure !== null) return <PanelMessage text={t(failure.messageKey)} />;
   if (entries === null) {
     return <p className="p-3 text-xs text-kumo-subtle">{t('panel.outline.loading')}</p>;
   }
@@ -253,6 +274,22 @@ function OutlineList({
       <OutlineLevel t={t} entries={entries} depth={0} currentPage={currentPage} onGoToPage={onGoToPage} />
     </nav>
   );
+}
+
+/**
+ * The entries of one level with a key each. A title and a page do not identify an entry
+ * (documents carry several "Untitled" or "Figure" bookmarks to the same page), so a repeat
+ * of the same pair is numbered: two siblings never share a key, and an entry keeps its key
+ * for as long as the list is the same.
+ */
+function keyed(entries: readonly OutlineEntry[]): (readonly [string, OutlineEntry])[] {
+  const seen = new Map<string, number>();
+  return entries.map((entry) => {
+    const base = `${entry.title}-${entry.pageIndex ?? -1}`;
+    const repeats = seen.get(base) ?? 0;
+    seen.set(base, repeats + 1);
+    return [repeats === 0 ? base : `${base}#${repeats}`, entry] as const;
+  });
 }
 
 function OutlineLevel({
@@ -270,10 +307,10 @@ function OutlineLevel({
 }) {
   return (
     <ul className={depth === 0 ? '' : 'ms-3 border-s border-kumo-line ps-2'}>
-      {entries.map((entry) => {
+      {keyed(entries).map(([key, entry]) => {
         const { pageIndex } = entry;
         return (
-          <li key={`${entry.title}-${pageIndex ?? -1}`} className="my-0.5">
+          <li key={key} className="my-0.5">
             <button
               type="button"
               disabled={pageIndex === null}
