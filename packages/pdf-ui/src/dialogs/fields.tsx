@@ -479,11 +479,15 @@ export function FieldList({
           </Select>
         );
 
-      case 'number':
+      case 'number': {
+        // The unit is part of the label: it is read out with the field's name and is on
+        // screen beside it.
+        const named =
+          field.unitKey === undefined ? label : t('dialog.field.withUnit', { label, unit: t(field.unitKey) });
         return (
           <NumberField
             key={field.id}
-            label={label}
+            label={named}
             hint={hint}
             error={error}
             min={field.min}
@@ -493,6 +497,7 @@ export function FieldList({
             onValue={(next) => set(field.id, next)}
           />
         );
+      }
 
       case 'text':
         return (

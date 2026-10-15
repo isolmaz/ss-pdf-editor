@@ -204,6 +204,21 @@ describe('OperationForm while running', () => {
     expect(screen.queryByRole('meter')).toBeNull();
   });
 
+  it('fills a phase sentence`s own counters with whole numbers instead of printing {done} or a fraction', async () => {
+    const probe = job();
+    show(probe.spec);
+    await click('Apply to document');
+
+    // OCR reports `position + fraction`: 2.4 is the third page, part-way through.
+    probe.tick({ phase: 'ocr', labelKey: 'ocr.running', done: 2.4, total: 10 });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Recognizing page 3/10'));
+    expect(screen.getByText('2/10 page(s)')).toBeTruthy();
+
+    probe.tick({ phase: 'ocr', labelKey: 'ocr.running', done: 10, total: 10 });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Recognizing page 10/10'));
+    expect(screen.getByText('10/10 page(s)')).toBeTruthy();
+  });
+
   it('cancels the job on request, keeps the fields for a retry and says it was cancelled', async () => {
     const probe = job();
     const { onRunningChange, onClose } = show(probe.spec);

@@ -711,6 +711,25 @@ describe('BatchDialog running', () => {
     expect(screen.getByText('Optimize / Compress', { selector: 'p' })).toBeTruthy();
     expect(screen.getByText('1/2')).toBeTruthy();
   });
+
+  it('fills an OCR step`s own page counters instead of showing {done}', async () => {
+    seam.before = async (_items, _rules, options) => {
+      options.onProgress?.({
+        itemIndex: 0,
+        itemName: 'a.pdf',
+        doneItems: 0,
+        totalItems: 1,
+        stepIndex: 0,
+        step: 'ocr',
+        operation: { phase: 'ocr', labelKey: 'ocr.running', done: 2.4, total: 10 },
+      });
+      await new Promise<void>(() => {});
+    };
+    show();
+    await user.upload(pdfInput(), [await pdfFile('a.pdf')]);
+    await user.click(screen.getByRole('button', { name: 'Run batch' }));
+    expect(await screen.findByText('Recognizing page 3/10', { selector: 'p' })).toBeTruthy();
+  });
 });
 
 describe('BatchDialog rulesets from a file', () => {

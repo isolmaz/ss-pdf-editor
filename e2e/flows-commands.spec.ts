@@ -150,10 +150,10 @@ test('page boxes and labels: a set CropBox and a Roman label range reach the fil
   await open(page);
   let form = await openForm(page, 'Page boxes', 'Page boxes & dimensions');
   await form.getByRole('radio', { name: 'Set box values' }).check();
-  await form.getByRole('spinbutton', { name: 'X', exact: true }).fill('10');
-  await form.getByRole('spinbutton', { name: 'Y', exact: true }).fill('20');
-  await form.getByRole('spinbutton', { name: 'Width', exact: true }).fill('300');
-  await form.getByRole('spinbutton', { name: 'Height', exact: true }).fill('400');
+  await form.getByRole('spinbutton', { name: 'X (pt)', exact: true }).fill('10');
+  await form.getByRole('spinbutton', { name: 'Y (pt)', exact: true }).fill('20');
+  await form.getByRole('spinbutton', { name: 'Width (pt)', exact: true }).fill('300');
+  await form.getByRole('spinbutton', { name: 'Height (pt)', exact: true }).fill('400');
   await applyForm(form);
 
   form = await openForm(page, 'Page labels', 'Page labels');
@@ -178,10 +178,10 @@ test('new form field and form data: a created field exports, and an imported val
   await open(page);
   let form = await openForm(page, 'New form field', 'New form field');
   await form.getByRole('textbox', { name: 'Field name' }).fill('email');
-  await form.getByRole('spinbutton', { name: 'Left (x)' }).fill('72');
-  await form.getByRole('spinbutton', { name: 'Bottom (y)' }).fill('300');
-  await form.getByRole('spinbutton', { name: 'Width' }).fill('200');
-  await form.getByRole('spinbutton', { name: 'Height' }).fill('24');
+  await form.getByRole('spinbutton', { name: 'Left (x) (pt)' }).fill('72');
+  await form.getByRole('spinbutton', { name: 'Bottom (y) (pt)' }).fill('300');
+  await form.getByRole('spinbutton', { name: 'Width (pt)' }).fill('200');
+  await form.getByRole('spinbutton', { name: 'Height (pt)' }).fill('24');
   await applyForm(form);
   const created = (await readProducedPdf(await exported(page, 'field.pdf'))).annotations.find(
     (annotation) => annotation.fieldName === 'email',

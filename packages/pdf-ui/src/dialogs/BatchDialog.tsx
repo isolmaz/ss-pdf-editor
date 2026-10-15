@@ -48,8 +48,8 @@ import {
   runBatch,
   serializeRuleSet,
 } from 'pdf-core/ops/batch';
-import type { OutputFile } from 'pdf-core/ops/types';
-import { type MessageKey, ToolError, type Translator, toToolError } from 'pdf-shared';
+import type { OperationProgress, OutputFile } from 'pdf-core/ops/types';
+import { type MessageKey, progressLabel, ToolError, type Translator, toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import { parsePageRange } from '../printing/pageRange';
@@ -610,7 +610,8 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
     item: string;
     done: number;
     total: number;
-    label: MessageKey | null;
+    /** What the running operation itself reported, `null` between files. */
+    step: OperationProgress | null;
   } | null>(null);
   const [report, setReport] = useState<BatchReport | null>(null);
   const [failure, setFailure] = useState<FailureText | null>(null);
@@ -764,7 +765,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
     const abort = new AbortController();
     controller.current = abort;
     setStatus('running');
-    setProgress({ item: '', done: 0, total: queue.length, label: null });
+    setProgress({ item: '', done: 0, total: queue.length, step: null });
     try {
       const result = await runBatch(queue, built, {
         signal: abort.signal,
@@ -773,7 +774,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
             item: entry.itemName,
             done: entry.doneItems,
             total: entry.totalItems,
-            label: entry.operation?.labelKey ?? null,
+            step: entry.operation,
           }),
       });
       setReport(result);
@@ -1016,7 +1017,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
           {progress === null ? null : (
             <div className="flex flex-col gap-1.5">
               <p role="status" aria-live="polite" className="text-xs text-kumo-subtle">
-                {progress.label === null ? t('batch.progress') : t(progress.label)}
+                {progress.step === null ? t('batch.progress') : progressLabel(t, progress.step)}
               </p>
               <Meter
                 label={t('batch.progress')}

@@ -13,7 +13,7 @@
  */
 
 import { Dialog } from '@cloudflare/kumo/components/dialog';
-import type { Translator } from 'pdf-shared';
+import { type Translator, toToolError } from 'pdf-shared';
 import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -149,6 +149,7 @@ export function SignatureDialog({
   const [remember, setRemember] = useState(false);
   const [strokeCount, setStrokeCount] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [placeError, setPlaceError] = useState<string | null>(null);
   const [fontsReady, setFontsReady] = useState(false);
   const padRef = useRef<HTMLCanvasElement | null>(null);
   const typedRef = useRef<HTMLCanvasElement | null>(null);
@@ -214,12 +215,18 @@ export function SignatureDialog({
 
   const place = async () => {
     setBusy(true);
+    setPlaceError(null);
     try {
       let source: StampSource | null = null;
       if (tab === 'draw' && padRef.current) source = await trimmedPng(padRef.current, role);
       if (tab === 'type' && typedRef.current) source = await trimmedPng(typedRef.current, role);
       if (tab === 'upload' && photoSource !== null) source = { ...photoSource, role };
       if (source !== null) onPlace(source, canRemember && remember);
+    } catch (error) {
+      // The picture could not be made (the canvas would not encode): say so in the dialog,
+      // which stays open for another try, instead of a rejected promise nobody reads.
+      const toolError = toToolError(error, 'ui');
+      setPlaceError(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     } finally {
       setBusy(false);
     }
@@ -534,6 +541,12 @@ export function SignatureDialog({
         <p className="rounded-md bg-kumo-recessed px-3 py-2 text-[11px] text-kumo-subtle">
           {t('sig.notCertified')}
         </p>
+
+        {placeError === null ? null : (
+          <p role="alert" className="text-xs text-kumo-danger">
+            {placeError}
+          </p>
+        )}
 
         <div className="flex items-center justify-end gap-2 border-t border-kumo-line/60 pt-3">
           {ready ? null : <span className="me-auto text-[11px] text-kumo-subtle">{t('sig.empty')}</span>}

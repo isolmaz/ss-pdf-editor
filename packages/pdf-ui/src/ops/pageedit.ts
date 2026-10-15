@@ -188,7 +188,7 @@ async function buildReplacements(
     source.kind === 'document'
       ? firstOf(pickedFiles(params.document)).name
       : source.kind === 'blank'
-        ? 'blank replacement pages'
+        ? context.t('replace.sourceName.blank')
         : firstOf(source.files).name;
   const indices =
     source.kind === 'document'

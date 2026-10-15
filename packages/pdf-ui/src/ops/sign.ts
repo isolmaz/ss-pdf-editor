@@ -216,7 +216,7 @@ export const signDialog: OperationDialogSpec = {
       files: [{ name: context.name, bytes: outcome.bytes, mime: 'application/pdf' }],
       report: outcome.report,
       noticeKey: 'sign.done',
-      noticeParams: { signer: described.commonName ?? '', expires: described.notAfter },
+      noticeParams: { signer: described.commonName ?? '' },
     };
   },
 };

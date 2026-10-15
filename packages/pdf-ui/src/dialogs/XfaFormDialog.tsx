@@ -60,6 +60,9 @@ export function XfaFormDialog({ t, bytes, onClose, onSave, onExport }: XfaFormDi
   // what was typed), so the translator is not an effect dependency.
   const tRef = useRef(t);
   tRef.current = t;
+  // The verification of a save in flight: closing the dialog (or leaving it) stops it.
+  const saveRef = useRef<AbortController | null>(null);
+  useEffect(() => () => saveRef.current?.abort(), []);
 
   useEffect(() => {
     if (container === null || viewerElement === null) return undefined;
@@ -132,18 +135,24 @@ export function XfaFormDialog({ t, bytes, onClose, onSave, onExport }: XfaFormDi
   const save = async () => {
     setBusy(true);
     setStatus(null);
+    const controller = new AbortController();
+    saveRef.current = controller;
     try {
       const saved = await savedBytes();
-      const outcome = await finishXfaFill(bytes, saved, { signal: new AbortController().signal });
+      const outcome = await finishXfaFill(bytes, saved, { signal: controller.signal });
       if (outcome.changed === 0) {
         setStatus(t('xfa.fill.nothing'));
         return;
       }
       await onSave(outcome);
     } catch (error) {
+      // A save the user walked away from has nobody to tell.
+      if (controller.signal.aborted) return;
       const toolError = toToolError(error, 'pdfjs');
       setStatus(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
     } finally {
+      // The save button is disabled while `busy`, so no second save can have replaced this one.
+      saveRef.current = null;
       setBusy(false);
     }
   };
@@ -154,6 +163,7 @@ export function XfaFormDialog({ t, bytes, onClose, onSave, onExport }: XfaFormDi
       setStatus(t('xfa.fill.unsaved'));
       return;
     }
+    saveRef.current?.abort();
     onClose();
   };
 

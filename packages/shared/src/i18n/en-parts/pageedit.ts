@@ -52,6 +52,7 @@ export const pageeditPart = {
   'replace.sizeHint':
     '“Same as current page” generates each replacement page at the exact dimensions of the page it replaces.',
   'replace.progress.prepare': 'Preparing replacement pages',
+  'replace.sourceName.blank': 'blank replacement pages',
   'replace.progress.replace': 'Replacing pages',
   'replace.note.replaced': '{count} page(s) replaced.',
 

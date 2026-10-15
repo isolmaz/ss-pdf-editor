@@ -286,6 +286,27 @@ test('document properties written in the browser reach the exported file', async
   expect(produced.producer).toBe('SsPdfEditor (MuPDF 1.28)');
 });
 
+test('document properties with nothing changed say so and close, instead of staying on the report', async ({
+  page,
+}) => {
+  await open(page, 'properties-unchanged.pdf', toolFixturePdf());
+  await useAdvancedMode(page);
+  await page.keyboard.press('Control+k');
+  await page.getByRole('combobox').fill('Document properties');
+  await page.keyboard.press('Enter');
+  const form = page.getByRole('region', { name: 'Document properties' });
+  await expect(form).toBeVisible({ timeout: 30_000 });
+  await form.getByRole('button', { name: 'Preview', exact: true }).click();
+  // The report is still shown: the run found nothing to write and says so there too.
+  await expect(form.getByRole('heading', { name: 'Operation report' })).toBeVisible({ timeout: 60_000 });
+  await expect(form.getByText('No changes to write; document untouched.').first()).toBeVisible();
+  await form.getByRole('button', { name: 'Apply to document', exact: true }).click();
+
+  // A result with no file has nothing to apply: the notice is the answer and the panel closes.
+  await expect(form).toBeHidden({ timeout: 30_000 });
+  await expect(notice(page, 'No changes to write; document untouched.')).toBeVisible();
+});
+
 test('an attachment added and removed in the panel is in, then out of, the exported file', async ({
   page,
 }) => {
