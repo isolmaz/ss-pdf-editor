@@ -567,7 +567,7 @@ describe('verifyForWrite: the steps a redaction reports', () => {
         imageMethod: 0,
         textMethod: 0,
         cleanMetadata: true,
-        cleanAttachments: ['secret.txt'],
+        cleanAttachments: true,
       },
       SIGNAL,
     );

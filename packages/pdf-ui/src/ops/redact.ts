@@ -19,7 +19,7 @@
  * marks carry their own page, and `RedactOptions` has no page set to fill.
  */
 
-import { listPdfAttachments, note, openWithPdfjs, type PdfAttachment, redactDocument } from 'pdf-core';
+import { note, redactDocument } from 'pdf-core';
 import { ToolError } from 'pdf-shared';
 import type { OperationDialogSpec } from '../dialogs/types';
 
@@ -90,20 +90,6 @@ export const redactDialog: OperationDialogSpec = {
     }
 
     const clean = Array.isArray(params.clean) ? (params.clean as readonly string[]) : [];
-    const dropAttachments = clean.includes('attachments');
-
-    // The engine answers with the document's own attachment table, so "clean the
-    // attachments" means the attachments that are actually there — never a list
-    // the dialog guessed at load time.
-    let attachments: readonly PdfAttachment[] = [];
-    if (dropAttachments) {
-      const handle = await openWithPdfjs(context.bytes, { signal: context.signal });
-      try {
-        attachments = await listPdfAttachments(handle);
-      } finally {
-        await handle.destroy();
-      }
-    }
 
     const outcome = await redactDocument(
       context.bytes,
@@ -112,7 +98,9 @@ export const redactDialog: OperationDialogSpec = {
         imageMethod: IMAGE_METHOD[String(params.imageMethod)] ?? 0,
         textMethod: TEXT_METHOD,
         cleanMetadata: clean.includes('info'),
-        cleanAttachments: attachments.map((attachment) => attachment.id),
+        // "Attachments (all)": every attached file of the document, wherever it lives — the
+        // engine finds them in the file itself, not through a list this dialog would read first.
+        cleanAttachments: clean.includes('attachments'),
       },
       { signal: context.signal, onProgress: context.onProgress },
     );

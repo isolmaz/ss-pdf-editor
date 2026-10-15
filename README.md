@@ -467,6 +467,16 @@ nothing leaving the browser.
   - The verification covers the marked areas only. Document properties and bookmark titles
     are not checked; the metadata option clears the title, author, subject, keywords and
     creator fields and the XMP packet, and the notices say exactly that.
+  - The attachments option removes every attached file of the document, wherever it lives, not
+    only the ones the Attachments list shows: the name tree, every `/AF` list (the document's
+    and each page's) and every file-attachment annotation with its popup, with the file
+    objects behind them. A document whose only attachment is an annotation is cleaned too.
+    The report counts each file once and counts only a file that was there.
+  - Each page that carried a mark also loses its thumbnail, and the text its tags repeat: the
+    `/Alt`, `/ActualText` and `/E` of the structure elements that belong to the page, and the
+    same entries in the marked-content properties of its content stream, in its resources and in
+    the forms it draws (a form is cleaned as a copy that only that page uses). The report counts
+    them.
   - A staged mark stays an intent until you apply it. While marks are still staged, saving
     is refused, and so is every tool whose result leaves the tab (Word, text, split,
     PDF/A, a protected copy), every tool that moves pages, and printing and Snapshot: each
@@ -786,6 +796,10 @@ The limits are defined once, in
   - The XFA of a hybrid form is dropped whole, not edited, when a field under a mark goes; the
     remaining AcroForm fields keep their values. A dynamic XFA form has no widgets to remove,
     and its XFA data is not touched.
+- **Redaction and tags.**
+  - The scope is the page, not the rectangle: every alt text and replacement text of the
+    tags on a page that carried a mark goes, because the tags do not say which one sat under
+    the mark. Annotation appearance streams are not read for tag text.
 - **PDF/A.**
   - The checker is a subset of veraPDF. A clean result is not a certificate: font programs,
     ICC profile bodies, exact file syntax, XMP value formats and the accessibility rules of

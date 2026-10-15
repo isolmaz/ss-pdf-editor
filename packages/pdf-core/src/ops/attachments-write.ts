@@ -23,7 +23,10 @@
  *      correct.
  *   3. `/EmbeddedFiles /Names` is walked as repeated `(key, value)` pairs. A pair is
  *      removed when its key's decoded text equals the requested name; a duplicated key
- *      loses every copy.
+ *      loses every copy. The names the attachment panel holds come from pdf.js, which reads
+ *      a key differently from MuPDF where a string has a language escape or bytes
+ *      PDFDocEncoding leaves undefined, so a key also matches when pdf.js's reading of its
+ *      bytes (`pdfjsText`) equals the name.
  *   4. The file specification behind the pair is deleted together with the `/EF /F`
  *      and `/EF /UF` streams it reaches, and its reference is dropped from `/Root /AF`.
  *   5. The pair is cut out of the array. When the array ends up empty, the shells it
@@ -113,8 +116,76 @@ function ensureNameTree(
 }
 
 /** The indirect object number an entry refers to, or `null` for a direct value. */
-function objectNumber(object: PDFObject): number | null {
+export function objectNumber(object: PDFObject): number | null {
   return object.isIndirect() ? object.asIndirect() : null;
+}
+
+/**
+ * PDFDocEncoding bytes that are not Latin-1, as pdf.js tabulates them (`PDFStringTranslateTable`):
+ * 0x18–0x1F and 0x80–0xA0, where 0x9F is undefined and stays the byte it is.
+ */
+const PDF_DOC = new Map<number, number>([
+  ...[0x2d8, 0x2c7, 0x2c6, 0x2d9, 0x2dd, 0x2db, 0x2da, 0x2dc].map((point, index): [number, number] => [
+    0x18 + index,
+    point,
+  ]),
+  ...[
+    0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x192, 0x2044, 0x2039, 0x203a, 0x2212, 0x2030, 0x201e,
+    0x201c, 0x201d, 0x2018, 0x2019, 0x201a, 0x2122, 0xfb01, 0xfb02, 0x141, 0x152, 0x160, 0x178, 0x17d, 0x131,
+    0x142, 0x153, 0x161, 0x17e, 0, 0x20ac,
+  ]
+    .map((point, index): [number, number] => [0x80 + index, point])
+    .filter(([, point]) => point !== 0),
+]);
+
+/** The byte-order marks pdf.js reads a PDF text string by. */
+const UNICODE_MARKS = [
+  { label: 'utf-16be', mark: [0xfe, 0xff] },
+  { label: 'utf-16le', mark: [0xff, 0xfe] },
+  { label: 'utf-8', mark: [0xef, 0xbb, 0xbf] },
+];
+
+/**
+ * A name-tree key read the way pdf.js reads it (`stringToPDFString(key, true)`, what its
+ * `getAttachments()` keys are made of): UTF-16BE, UTF-16LE or UTF-8 behind a byte-order mark,
+ * otherwise PDFDocEncoding — with every escape sequence kept and no replacement character for an
+ * undefined byte. MuPDF's `asString()` drops a language escape (`ESC tr ESC`) inside UTF-16 and
+ * writes U+FFFD for an undefined PDFDocEncoding byte, so the two readings of one key can differ.
+ */
+export function pdfjsText(bytes: Uint8Array): string {
+  const unicode = UNICODE_MARKS.find(({ mark }) => mark.every((byte, index) => bytes[index] === byte));
+  if (unicode !== undefined) {
+    // pdf.js drops the dangling last byte of an odd-length UTF-16 string.
+    const whole = unicode.label !== 'utf-8' && bytes.length % 2 === 1 ? bytes.subarray(0, -1) : bytes;
+    try {
+      return new TextDecoder(unicode.label, { fatal: true }).decode(whole);
+    } catch {
+      // Malformed UTF: pdf.js falls through to PDFDocEncoding, and so does this.
+    }
+  }
+  return Array.from(bytes, (code) => String.fromCharCode(PDF_DOC.get(code) ?? code)).join('');
+}
+
+/** Whether a name-tree key is `name`: MuPDF's text reading of the key, or pdf.js's (`pdfjsText`). */
+function keyMatches(key: PDFObject, name: string): boolean {
+  const target = resolved(key);
+  return (
+    target?.isString() === true && (target.asString() === name || pdfjsText(target.asByteString()) === name)
+  );
+}
+
+/** The objects a file specification stands on: its own number (when indirect) and its `/EF` streams. */
+export function fileSpecObjects(pair: PDFObject): Set<number> {
+  const numbers = new Set<number>();
+  const ef = dictionaryAt(resolved(pair), 'EF');
+  for (const key of ['F', 'UF']) {
+    const stream = ef?.get(key);
+    const number = stream === undefined ? null : objectNumber(stream);
+    if (number !== null) numbers.add(number);
+  }
+  const spec = objectNumber(pair);
+  if (spec !== null) numbers.add(spec);
+  return numbers;
 }
 
 /**
@@ -123,16 +194,9 @@ function objectNumber(object: PDFObject): number | null {
  * array without this would leave the attachment's bytes in the file.
  */
 function discardFileSpec(doc: PDFDocument, tree: EmbeddedFilesTree, pair: PDFObject): void {
-  const doomed = new Set<number>();
-  const ef = dictionaryAt(resolved(pair), 'EF');
-  for (const key of ['F', 'UF']) {
-    const stream = ef?.get(key);
-    const number = stream === undefined ? null : objectNumber(stream);
-    if (number !== null) doomed.add(number);
-  }
+  const doomed = fileSpecObjects(pair);
   const spec = objectNumber(pair);
   if (spec !== null) {
-    doomed.add(spec);
     const af = resolved(tree.catalog.get('AF'));
     if (af?.isArray() === true) {
       for (let index = af.length - 1; index >= 0; index -= 1) {
@@ -155,7 +219,7 @@ function removeEntries(doc: PDFDocument, tree: EmbeddedFilesTree, name: string):
   const pairs: number[] = [];
   // A trailing key without a value is malformed; the loop simply never reaches it.
   for (let index = 0; index + 1 < entries.length; index += 2) {
-    if (readText(entries.get(index)) === name) pairs.push(index);
+    if (keyMatches(entries.get(index), name)) pairs.push(index);
   }
   if (pairs.length === 0) return false;
 
@@ -188,7 +252,7 @@ function insertEntry(doc: PDFDocument, entries: PDFObject, name: string, spec: P
   for (const value of tail) entries.push(value);
 }
 
-function isEmptyDictionary(object: PDFObject): boolean {
+export function isEmptyDictionary(object: PDFObject): boolean {
   let empty = true;
   object.forEach(() => {
     empty = false;

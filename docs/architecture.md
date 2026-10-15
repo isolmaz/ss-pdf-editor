@@ -1339,6 +1339,7 @@ sequenceDiagram
     M->>M: structured-text coverage probe (empty marks are reported)
     M->>M: applyRedactions(black_boxes=false, lineArt=remove-if-touched, image/text method)
     M->>M: sweep annotations + form fields under the marks (ops/redact-annots.ts)
+    M->>M: marked pages' thumbnails + tag text, and (option) every attached file (ops/redact-leaks.ts)
     M->>M: save garbage=compact,compress,clean (single revision, no /Prev)
     M->>V: produced bytes
     V-->>UI: re-opened, per-glyph check, annotation check; a glyph >=50% covered, or any annotation under a mark, fails verification
@@ -1386,6 +1387,32 @@ Details that matter:
   its `save(garbage=…)`) with `formFieldCount`/`formFieldValues` for `applyRedactions`, so the
   save-time check measures a removed field as a declared change instead of calling the run
   unverified.
+- `applyRedactions` does not touch three more things that kept the erased words or a file the
+  user asked to clear, and `ops/redact-leaks.ts` cleans them. *Attachments:* MuPDF's
+  `deleteEmbeddedFile` left `/Root /AF`, a page's `/AF` and every `/FileAttachment` annotation, and an
+  empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
+  reads from the Attachments panel — that list is empty for a file that is attached only as an
+  annotation or in `/AF` — and the step removes every attached file: each file specification of the
+  name tree (walked through `/Kids` as well; the tree and a `/Names` that holds nothing else leave
+  the catalog), every `/AF` entry (catalog and pages), and every file-attachment annotation
+  (through `sweepWhere` of `redact-annots.ts`: popup and replies included), with the file
+  specification and `/EF` streams behind each (`fileSpecObjects` of `ops/attachments-write.ts`).
+  A file reachable two ways counts once, and a reference to nothing not at all. *Thumbnails:* each marked page's
+  `/Thumb` is deleted. *Tag text:* `/Alt`, `/ActualText` and `/E` leave the structure elements of a
+  marked page (its `/Pg`, one of its `/MCR`/`/OBJR` references, or its `/ParentTree` entry names the
+  element) and the property dictionaries of the `BDC`/`DP` operators of its content stream, read
+  by `ops/marked-content.ts` — a reader that, unlike the accessibility tokenizer, steps over a string
+  inside `<<…>>` (`/ActualText<FEFF…>>>`) — and every property dictionary and form XObject (nested
+  ones too) in its resources, used by the content or not. Nothing is edited in place, because the
+  originals can be shared with pages that carried no mark: the page's content is written as a new
+  stream, its resources and `/Properties` groups are copied, and a changed form is a new stream
+  (with copied resources) that the marked page's `/XObject` entry points at. The structure,
+  parent-tree and form walks are iterative and read each indirect object once, so a cycle or a
+  node listed twice ends them. The report counts the files (`op.note.redact.attachmentsRemoved`, only those that were there)
+  and the tag text entries (`op.note.redact.tagTextRemoved`). The attachment panel's own removal
+  (`removeAttachments`) matches a name against pdf.js's reading of the key as well as MuPDF's
+  (`pdfjsText`): the two differ for a language escape inside UTF-16 and for the undefined
+  PDFDocEncoding bytes, and the names the panel holds are pdf.js's.
 - The write uses `garbage=compact,compress,clean`, measured to leave a single revision
   with the erased stream's object dropped and the survivors renumbered.
 - `verifyRedaction()` re-opens the **produced** bytes, inverts the page's actual transform

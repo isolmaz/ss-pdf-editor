@@ -4,7 +4,8 @@
  * Redaction erases rather than rasterising the touched page (which would lose the text
  * layer, the metadata and the neighbouring content): MuPDF redaction annotations over the marked
  * rectangles, `applyRedactions`, a sweep of the annotations and form fields under the marks
- * (`applyRedactions` leaves those alone — `redact-annots.ts`), then a full (`garbage`) write.
+ * (`applyRedactions` leaves those alone — `redact-annots.ts`), the marked pages' thumbnails and
+ * tag text and, when asked, every attached file (`redact-leaks.ts`), then a full (`garbage`) write.
  *
  * Measured behaviour this file depends on:
  * redaction is **glyph-level** — the glyph run inside the box goes, the
@@ -45,6 +46,7 @@ import {
   newTally,
   sweepPage,
 } from './redact-annots';
+import { purgeAttachments, scrubRedactedPages } from './redact-leaks';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 /** The XFA writers bring an XML parser with them: they load only for a form that has XFA. */
@@ -64,7 +66,11 @@ export interface RedactOptions {
   readonly imageMethod: 0 | 1 | 2;
   readonly textMethod: 0 | 1;
   readonly cleanMetadata: boolean;
-  readonly cleanAttachments: readonly string[];
+  /**
+   * Remove every attached file of the document: the embedded-file name tree, every `/AF` list
+   * (catalog and pages) and every file-attachment annotation, with the file objects behind them.
+   */
+  readonly cleanAttachments: boolean;
 }
 
 export interface RedactVerification {
@@ -122,6 +128,7 @@ export async function redactDocument(
   const emptyMarks: number[] = [];
   const removed = newTally();
   let cleanedAttachments = 0;
+  let scrubbedTagText = 0;
   let cleanedMetadata = false;
   let xfaDropped = false;
   let pageCount: number;
@@ -158,12 +165,13 @@ export async function redactDocument(
     }
     throwIfAborted(context.signal);
 
+    // The marked pages' thumbnails and tag text — `applyRedactions` leaves both (`redact-leaks.ts`).
+    scrubbedTagText = scrubRedactedPages(doc, [...byPage.keys()]);
+
     if (options.cleanMetadata) {
       cleanedMetadata = cleanInfoAndXmp(mupdf, doc);
     }
-    for (const name of options.cleanAttachments) {
-      if (removeEmbeddedFile(doc, name)) cleanedAttachments += 1;
-    }
+    if (options.cleanAttachments) cleanedAttachments = purgeAttachments(doc);
 
     context.onProgress?.({ phase: 'redact', labelKey: 'op.progress.redact.save', done: 0, total: 1 });
     produced = savePdf(doc, MUPDF_FULL_SAVE_OPTIONS);
@@ -214,6 +222,9 @@ export async function redactDocument(
         ...(xfaDropped ? [note('lost', 'op.note.redact.xfaDropped')] : []),
         ...(removed.annotations > 0
           ? [note('lost', 'op.note.redact.annotationsRemoved', { count: removed.annotations })]
+          : []),
+        ...(scrubbedTagText > 0
+          ? [note('lost', 'op.note.redact.tagTextRemoved', { count: scrubbedTagText })]
           : []),
         // An empty mark erases nothing while the count still claims a redaction:
         // state it instead of letting a clean verification speak for it.
@@ -469,12 +480,4 @@ function cleanInfoAndXmp(mupdf: Mupdf, doc: PDFDocument): boolean {
   // Product policy: the producer line is merged back, never stripped.
   doc.setMetaData(Document.META_INFO_PRODUCER, PRODUCER_LINE);
   return cleaned;
-}
-
-/** Remove one embedded file by name; returns whether it existed. */
-function removeEmbeddedFile(doc: PDFDocument, name: string): boolean {
-  const files = doc.getEmbeddedFiles();
-  if (files[name] === undefined) return false;
-  doc.deleteEmbeddedFile(name);
-  return true;
 }
