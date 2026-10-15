@@ -250,6 +250,22 @@ describe('a simple font', () => {
     );
   });
 
+  it('keeps /Widths positional: an entry that is not a number leaves its own code at /MissingWidth, not the next ones shifted', () => {
+    const map = stream(cmap('3 beginbfchar <41> <0041> <42> <0042> <43> <0043> endbfchar'));
+    withDocument(
+      {
+        // Code 65 → 500, code 66 → a hole, code 67 → 700.
+        10: '<</Type/Font/Subtype/TrueType/BaseFont/W/ToUnicode 11 0 R/FirstChar 65/Widths[500 null 700]/FontDescriptor 12 0 R>>',
+        11: map,
+        12: '<</Type/FontDescriptor/FontName/Face/MissingWidth 333>>',
+      },
+      (_doc, ref) => {
+        const font = readDocumentFont(ref(10));
+        expect([font?.width(65), font?.width(66), font?.width(67)]).toEqual([500, 333, 700]);
+      },
+    );
+  });
+
   it('answers the default metrics for a descriptor with an ascent below zero or a descent above it', () => {
     withDocument(
       {

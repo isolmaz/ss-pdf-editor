@@ -154,16 +154,42 @@ export function readName(object: PDFObject | null | undefined): string | null {
   return target?.isName() === true ? target.asName() : null;
 }
 
-/** Every number of an array, in order; non-numbers are skipped. */
-export function readNumbers(object: PDFObject | null | undefined): number[] {
+/**
+ * An array read slot by slot: the number the file has at each position, `null` where it
+ * has anything else (a name, a PDF null, a dangling reference). Nothing is skipped, so
+ * index `n` here is index `n` in the file — which is what a table keyed by position
+ * (`/Widths`, indexed by character code) needs. `[]` when the entry is not an array.
+ */
+export function readNumberSlots(object: PDFObject | null | undefined): (number | null)[] {
   const target = resolved(object);
   if (target === null || !target.isArray()) return [];
-  const out: number[] = [];
+  const slots: (number | null)[] = [];
   for (let index = 0; index < target.length; index += 1) {
     const entry = resolved(target.get(index));
-    if (entry?.isNumber() === true) out.push(entry.asNumber());
+    slots.push(entry?.isNumber() === true ? entry.asNumber() : null);
   }
-  return out;
+  return slots;
+}
+
+/**
+ * Every number of an array, in order — or `[]` when the entry is not an array **or holds
+ * anything but numbers**.
+ *
+ * The callers read what they get by position (`/Rect`, `/BBox`, `/MediaBox`, `/Matrix`,
+ * `/ByteRange`: the third value *is* the third corner), so an array with a hole in it is
+ * no array of numbers at all. Dropping the hole instead would close the gap and shift
+ * every later value one place down, turning `[0 0 null 612 792]` into the valid-looking
+ * box `[0 0 612 792]`. A table that stays meaningful with a hole in it reads through
+ * `readNumberSlots`.
+ */
+export function readNumbers(object: PDFObject | null | undefined): number[] {
+  const slots = readNumberSlots(object);
+  const numbers: number[] = [];
+  for (const slot of slots) {
+    if (slot === null) return [];
+    numbers.push(slot);
+  }
+  return numbers;
 }
 
 /** A PDF date string (`D:YYYYMMDDHHmmSSZ`) in UTC. */
@@ -182,10 +208,30 @@ export function pageObjects(doc: PDFDocument): PDFObject[] {
   return pages;
 }
 
+type CornerBox = readonly [number, number, number, number];
+
 /**
- * The page's visible box — `/CropBox`, `/MediaBox` when there is none, both inheritable —
- * normalised to `{ x, y, width, height }` in PDF user space. A page with neither is US
- * Letter, the default MuPDF itself applies.
+ * A page-box entry as `[x0, y0, x1, y1]` in ascending order, or `null` when it is not four
+ * numbers describing an area (a missing entry, a hole in the array, a box with no width or
+ * no height).
+ */
+function boxCorners(value: PDFObject | null | undefined): CornerBox | null {
+  const numbers = readNumbers(value);
+  if (numbers.length < 4) return null;
+  const [a = 0, b = 0, c = 0, d = 0] = numbers;
+  const box: CornerBox = [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
+  return box[2] > box[0] && box[3] > box[1] ? box : null;
+}
+
+/**
+ * The page's visible box in PDF user space, normalised to `{ x, y, width, height }`: the
+ * `/CropBox` **intersected with the `/MediaBox`** (ISO 32000-1 §14.11.2: the page is what
+ * lies inside both — a crop box that sticks out of the media box shows nothing past the
+ * media box), both inheritable.
+ *
+ * The same fallbacks MuPDF applies when it loads the page: a page with no usable
+ * `/MediaBox` is US Letter, and a `/CropBox` that is unusable or lies entirely outside
+ * the media box leaves the media box as the visible one.
  */
 export function visibleBox(page: PDFObject): {
   readonly x: number;
@@ -193,12 +239,48 @@ export function visibleBox(page: PDFObject): {
   readonly width: number;
   readonly height: number;
 } {
-  const corners = [
-    readNumbers(page.getInheritable('CropBox')),
-    readNumbers(page.getInheritable('MediaBox')),
-  ].find((values) => values.length >= 4) ?? [0, 0, 612, 792];
-  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = corners;
-  return { x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0) };
+  const media = boxCorners(page.getInheritable('MediaBox')) ?? [0, 0, 612, 792];
+  const crop = boxCorners(page.getInheritable('CropBox'));
+  let [x0, y0, x1, y1] = media;
+  if (crop !== null) {
+    const left = Math.max(x0, crop[0]);
+    const bottom = Math.max(y0, crop[1]);
+    const right = Math.min(x1, crop[2]);
+    const top = Math.min(y1, crop[3]);
+    if (right > left && top > bottom) [x0, y0, x1, y1] = [left, bottom, right, top];
+  }
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
+/**
+ * The box around the four corners of `box` (`[x0, y0, x1, y1]`) after `matrix` — a PDF
+ * `[a b c d e f]`, `x' = a·x + c·y + e`, `y' = b·x + d·y + f`. A matrix that is not six
+ * numbers is the identity, as a reader treats a malformed `/Matrix`.
+ *
+ * This is the first step of ISO 32000-1 §12.5.5 (algorithm 8.1) for an appearance stream:
+ * the form's `/BBox` is *transformed by its `/Matrix`* and the bounding box of the result is
+ * what the reader maps onto the annotation's `/Rect`. A quarter-turned appearance
+ * (`/Matrix [0 1 -1 0 …]`) therefore has the box of its turned self — its width and height
+ * swapped — not that of the stored `/BBox`.
+ */
+export function transformedBounds(
+  box: readonly [number, number, number, number],
+  matrix: readonly number[],
+): [number, number, number, number] {
+  const [a = 1, b = 0, c = 0, d = 1, e = 0, f = 0] = matrix.length === 6 ? matrix : [1, 0, 0, 1, 0, 0];
+  const [x0, y0, x1, y1] = box;
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const [x, y] of [
+    [x0, y0],
+    [x1, y0],
+    [x0, y1],
+    [x1, y1],
+  ] as const) {
+    xs.push(a * x + c * y + e);
+    ys.push(b * x + d * y + f);
+  }
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
 /** The page's `/Annots` array, created when `create` is set and it is missing. */

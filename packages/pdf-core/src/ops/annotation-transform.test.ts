@@ -11,7 +11,7 @@
  * expectations are computed from what the file had, through the same public
  * helpers the renderer and the planner use.
  */
-import type { PDFDocument, PDFObject } from 'mupdf';
+import type { PDFDocument, PDFObject, Pixmap } from 'mupdf';
 import { ColorSpace, Document as RasterDocument, PDFDocument as RasterPdfDocument } from 'mupdf';
 import { isToolError, type ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
@@ -967,6 +967,130 @@ describe('transformPdfAnnotations on unusual appearances', () => {
     expect(rectOf(dictOf(after, 0, 'bad ap'))).toEqual([104, 100, 204, 150]);
     before.destroy();
     after.destroy();
+  });
+});
+
+/** The inclusive pixel box of the pixels `match` accepts, or `null` when there are none. */
+function pixelBox(
+  pixmap: Pixmap,
+  match: (red: number, green: number, blue: number) => boolean,
+): MarkBox | null {
+  const pixels = pixmap.getPixels();
+  const stride = pixmap.getStride();
+  const components = pixmap.getNumberOfComponents();
+  let box: [number, number, number, number] | null = null;
+  for (let y = 0; y < pixmap.getHeight(); y += 1) {
+    for (let x = 0; x < pixmap.getWidth(); x += 1) {
+      const at = y * stride + x * components;
+      if (!match(pixels[at] ?? 0, pixels[at + 1] ?? 0, pixels[at + 2] ?? 0)) continue;
+      box =
+        box === null
+          ? [x, y, x, y]
+          : [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)];
+    }
+  }
+  return box;
+}
+
+describe('transformPdfAnnotations on an appearance with a /Matrix', () => {
+  /** What the page shows of the red and of the blue paint: inclusive pixel boxes, y down from the page top. */
+  function painted(bytes: Uint8Array): { readonly red: MarkBox | null; readonly blue: MarkBox | null } {
+    const document = new RasterPdfDocument(bytes.slice());
+    const page = document.loadPage(0);
+    const pixmap = page.toPixmap([1, 0, 0, 1, 0, 0], ColorSpace.DeviceRGB, false, true);
+    try {
+      return {
+        red: pixelBox(pixmap, (red, green, blue) => red > 200 && green < 60 && blue < 60),
+        blue: pixelBox(pixmap, (red, green, blue) => blue > 200 && red < 60 && green < 60),
+      };
+    } finally {
+      pixmap.destroy();
+      page.destroy();
+      document.destroy();
+    }
+  }
+
+  /**
+   * A stamp whose 100×40 appearance is red with a blue 20×20 square at its BBox origin, and
+   * whose own `/Matrix [0 1 -1 0 100 0]` turns it a quarter counter-clockwise (`x' = 100 − y`,
+   * `y' = x`) the way pdf.js writes a rotated stamp. The turned appearance is 40 wide and 100
+   * tall (`[60 0 100 100]`), `/Rect` is 80×100, so a reader stretches it 2:1 across and the
+   * blue square — the BBox's lower-left corner — ends up in the *lower-right* of the rect.
+   */
+  function turnedStamp(): Uint8Array {
+    return pdfWith(({ doc, attach }) => {
+      const form = doc.addStream('1 0 0 rg 0 0 100 40 re f 0 0 1 rg 0 0 20 20 re f', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        FormType: 1,
+        BBox: [0, 0, 100, 40],
+        Matrix: [0, 1, -1, 0, 100, 0],
+      });
+      attach({
+        Type: 'Annot',
+        Subtype: 'Stamp',
+        Rect: [100, 100, 180, 200],
+        F: 4,
+        Contents: 'turned stamp',
+        AP: { N: form },
+      });
+    });
+  }
+
+  async function transformed(bytes: Uint8Array, transform: MarkTransform): Promise<Uint8Array> {
+    const before = open(bytes);
+    const id = idOf(before, 0, 'turned stamp');
+    before.destroy();
+    const outcome = await transformPdfAnnotations(
+      bytes,
+      { targets: [{ pageIndex: 0, id }], transform },
+      CONTEXT,
+    );
+    return outcome.bytes;
+  }
+
+  it('is drawn by MuPDF as the spec says: the BBox turned by the Matrix fills the rect', () => {
+    // Page 500 pt tall: user y 100..200 is pixel rows 300..399, and the blue square (user y 100..120) rows 380..399.
+    expect(painted(turnedStamp())).toEqual({
+      red: [100, 300, 179, 399],
+      blue: [140, 380, 179, 399],
+    });
+  });
+
+  it('moves the stamp so that it is drawn at the new rect, the blue corner still the lower-right one', async () => {
+    const out = await transformed(turnedStamp(), { dx: 30, dy: 20, rotation: 0 });
+    const after = open(out);
+    // App space is y-down: dy 20 is 20 pt *down*, so the rect's user y falls by 20.
+    expect(rectOf(dictOf(after, 0, 'turned stamp'))).toEqual([130, 80, 210, 180]);
+    after.destroy();
+    expect(painted(out)).toEqual({
+      red: [130, 320, 209, 419],
+      blue: [170, 400, 209, 419],
+    });
+  });
+
+  it('turns the stamp a quarter clockwise about the rect centre, content and all', async () => {
+    const out = await transformed(turnedStamp(), { dx: 0, dy: 0, rotation: 90 });
+    const after = open(out);
+    // 80×100 about (140, 150) is 100×80: user [90 110 190 190].
+    expect(rectOf(dictOf(after, 0, 'turned stamp'))).toEqual([90, 110, 190, 190]);
+    after.destroy();
+    // The lower-right blue corner of the stamp turns clockwise into its lower-left one.
+    expect(painted(out)).toEqual({
+      red: [90, 310, 189, 389],
+      blue: [90, 350, 109, 389],
+    });
+  });
+
+  it('turns it half way and moves it in one go: the blue corner ends up at the upper-left', async () => {
+    const out = await transformed(turnedStamp(), { dx: -20, dy: 10, rotation: 180 });
+    const after = open(out);
+    expect(rectOf(dictOf(after, 0, 'turned stamp'))).toEqual([80, 90, 160, 190]);
+    after.destroy();
+    expect(painted(out)).toEqual({
+      red: [80, 310, 159, 409],
+      blue: [80, 310, 119, 329],
+    });
   });
 });
 

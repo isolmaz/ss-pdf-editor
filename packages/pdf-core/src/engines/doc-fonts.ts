@@ -21,7 +21,7 @@
  */
 
 import type { PDFObject } from 'mupdf';
-import { readName, readNumbers, resolved } from './mupdf-write';
+import { readName, readNumberSlots, resolved } from './mupdf-write';
 
 /** The face id prefix of a document font in a text-edit request: `doc:<name>`. */
 export const DOCUMENT_FONT_PREFIX = 'doc:';
@@ -139,7 +139,9 @@ export function readDocumentFont(ref: PDFObject): DocumentFont | null {
   const codes = toUnicodeCodes(font.get('ToUnicode'), 1) ?? encodingCodes(font.get('Encoding'));
   if (codes === null || codes.size === 0) return null;
   const first = resolved(font.get('FirstChar'))?.asNumber() ?? 0;
-  const widths = readNumbers(font.get('Widths'));
+  // By position: entry `n` is the width of code `FirstChar + n`. A hole (a name, a null) stays
+  // a hole — that code gets `/MissingWidth` — instead of closing up and shifting every code after it.
+  const widths = readNumberSlots(font.get('Widths'));
   const missing = resolved(resolved(font.get('FontDescriptor'))?.get('MissingWidth'))?.asNumber() ?? 0;
   return {
     names,

@@ -98,6 +98,7 @@ import {
   readNumbers,
   resolved,
   saveRewrite,
+  transformedBounds,
 } from '../engines/mupdf-write';
 import type { AnnotationMark, MarkBox } from './annotations';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
@@ -681,8 +682,11 @@ function entriesOf(dict: PDFObject): [string, PDFObject][] {
  * annotation's dictionary changes. The wrapper's matrix is the composition that
  * matters:
  *
- *  1. the reader's own mapping of that stream's `/BBox` onto the annotation's
- *     `/Rect` (a scale and a translate — how the appearance is displayed today),
+ *  1. the reader's own mapping of that stream's `/BBox` — as the stream's `/Matrix`
+ *     turns it (ISO 32000-1 §12.5.5), the way pdf.js's rotated stamps and this app's
+ *     stamps on a rotated page carry one — onto the annotation's `/Rect` (a scale and
+ *     a translate — how the appearance is displayed today); the stream's own `/Matrix`
+ *     is applied by `Do` on top of it and is not part of the wrapper's,
  *  2. this operation's turn and offset in page space,
  *  3. a shift into the new annotation's space, whose origin is the new `/Rect`.
  *
@@ -740,7 +744,12 @@ function wrapStream(
   source: PDFObject,
   frame: AppearanceFrame,
 ): { readonly ref: PDFObject; readonly wrapped: WrappedAppearance } {
-  const box = boxOf(source.resolve().get('BBox')) ?? frame.rect;
+  const form = source.resolve();
+  // The box a reader maps onto `/Rect` is the `/BBox` *as the form's own `/Matrix` turns it*
+  // (ISO 32000-1 §12.5.5, algorithm 8.1). `Do` applies that `/Matrix` itself when the wrapper
+  // paints the stream, so the wrapper's matrix only has to carry the box-to-rect mapping.
+  const stored = boxOf(form.get('BBox'));
+  const box = stored === null ? frame.rect : transformedBounds(stored, numbersOf(form.get('Matrix')) ?? []);
   const boxWidth = box[2] - box[0];
   const boxHeight = box[3] - box[1];
   const rectWidth = frame.rect[2] - frame.rect[0];
