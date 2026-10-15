@@ -99,7 +99,7 @@ test('a session note is edited, answered, given a status, deleted and cleared; t
   await expect(page.getByText('1 mark(s) selected')).toBeVisible();
   await pick.click();
   await expect(pick).not.toHaveAttribute('aria-current', 'true');
-  await expect(page.getByText('No marks selected')).toBeVisible();
+  await expect(page.getByText('1 mark(s) selected')).toBeHidden();
   await pick.click();
   await expect(pick).toHaveAttribute('aria-current', 'true');
   await expect(page.getByText('1 mark(s) selected')).toBeVisible();

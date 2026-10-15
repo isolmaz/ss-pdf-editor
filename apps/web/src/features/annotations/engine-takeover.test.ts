@@ -12,13 +12,7 @@ import { pendingOverlays } from '../../operations';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { adoptHandle, dropHandle } from '../core/handles';
 import { writeAnnotations } from './annotation-marks';
-import {
-  annotationsStore,
-  chooseAuthor,
-  chooseColor,
-  chooseOpacity,
-  initialAnnotationsState,
-} from './annotations-store';
+import { annotationsStore, chooseAuthor, chooseStyle, initialAnnotationsState } from './annotations-store';
 import { takeEngineAnnotations } from './engine-takeover';
 
 const t = createTranslator('en');
@@ -128,8 +122,7 @@ describe('takeEngineAnnotations', () => {
 
   it('draws with the style as it is when the entry is taken, not as it was when the handler was built', () => {
     const build = host(viewerFor(handle));
-    chooseColor('#123456');
-    chooseOpacity(0.7);
+    chooseStyle('highlight', { color: '#123456', opacity: 0.7 });
     chooseAuthor('Grace');
     const [mark] = takeEngineAnnotations(build);
     expect([mark?.color, mark?.opacity, mark?.author]).toEqual(['#123456', 0.7, 'Grace']);

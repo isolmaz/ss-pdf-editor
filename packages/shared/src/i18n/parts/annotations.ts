@@ -61,7 +61,6 @@ export const annotationsPart = {
   'ann.tool.color': 'Renk',
   'ann.tool.opacity': 'Saydamlık',
   'ann.tool.thickness': 'Kalınlık',
-  'ann.tool.author': 'Yazar',
   'ann.tool.stop': 'Aracı kapat',
 
   // The active tool's property strip (`tools/ToolProperties.tsx`): what the next
@@ -70,7 +69,6 @@ export const annotationsPart = {
   // colour, a thickness and an opacity, so those three are what a mark tool offers.
   'ann.tool.selection': 'Seçim',
   'ann.tool.selection.count': '{count} işaret seçili',
-  'ann.tool.selection.none': 'Seçili işaret yok',
   'ann.tool.deleteSelection': 'Seçilenleri sil',
   'ann.tool.rotateSelection': '90° döndür',
   'ann.tool.moveSelection': 'Seçimi taşı',

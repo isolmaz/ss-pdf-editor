@@ -1,7 +1,6 @@
 import type { Page } from 'playwright/test';
 import { CANVAS, notice, openApp, rotateCurrentPage } from './app-helpers';
 import { fixturePdf } from './fixture-pdf';
-import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
 
@@ -99,19 +98,6 @@ async function liveWindows(page: Page, count: number): Promise<void> {
     .toBe(count);
 }
 
-/** Run a palette command by name, leaving the simple mode first when it is hidden. */
-async function runCommand(page: Page, label: string): Promise<void> {
-  // The default mode is simple, and the vault commands are advanced-only. Switching
-  // through the settings is the real user path, not a back door.
-  await useAdvancedMode(page);
-  await page.keyboard.press('Control+k');
-  // The palette's own combobox only: "the first text input" is another control (the page
-  // field), which silently swallowed the query and ran no command at all.
-  await page.getByRole('combobox').fill(label);
-  await page.getByRole('option', { name: label, exact: true }).click();
-  await expect(page.getByRole('combobox')).toBeHidden();
-}
-
 test.describe('two windows on one vault', () => {
   test('two tabs that open the same document share one source blob', async ({ context }) => {
     const first = await context.newPage();
@@ -141,7 +127,7 @@ test.describe('two windows on one vault', () => {
     await second.close();
   });
 
-  test('a sweep in one tab keeps the blob only the other tab announces, and sweeps it once that tab is gone', async ({
+  test('the start-up sweep keeps the blob only the other tab announces, and sweeps it once that tab is gone', async ({
     context,
   }) => {
     // The keeper opens a document the sweeper never opens: the two tabs hold different
@@ -172,49 +158,52 @@ test.describe('two windows on one vault', () => {
     }, keeperManifests[0] as string);
     expect((await readVault(sweeper)).drafts).not.toContain(keeperManifests[0]);
 
-    // A real orphan: a stored source no manifest, no open document and no peer references.
-    // Without it a sweep that never ran and a sweep that ran look the same from outside.
-    const orphan = 'src-orphan0000000000000000.pdf';
-    await sweeper.evaluate(async (name) => {
+    // Real orphans: stored sources no manifest, no open document and no peer references. One
+    // sorts before the keeper's key and one after it, so the sweep has deleted both only once
+    // it has walked past the keeper's blob. Without them a sweep that never ran and a sweep
+    // that ran look the same from outside.
+    const orphans = ['src-0orphan000000000000000.pdf', 'src-zorphan000000000000000.pdf'];
+    await sweeper.evaluate(async (names) => {
       const root = await navigator.storage.getDirectory();
       const app = await root.getDirectoryHandle('pdf-editor');
       const sources = await app.getDirectoryHandle('sources', { create: true });
-      const handle = await sources.getFileHandle(name, { create: true });
-      const writable = await handle.createWritable();
-      await writable.write(new Uint8Array([37, 80, 68, 70]));
-      await writable.close();
-    }, orphan);
-    expect((await readVault(sweeper)).sources).toContain(orphan);
+      for (const name of names) {
+        const handle = await sources.getFileHandle(name, { create: true });
+        const writable = await handle.createWritable();
+        await writable.write(new Uint8Array([37, 80, 68, 70]));
+        await writable.close();
+      }
+    }, orphans);
+    for (const orphan of orphans) expect((await readVault(sweeper)).sources).toContain(orphan);
 
-    await runCommand(sweeper, 'Clean Up Orphaned Vault Copies');
-
-    // The sweep ran and removed exactly the orphan (the notice counts it) ...
-    await expect(
-      sweeper.locator('[role="status"]').filter({ hasText: '1 record(s) no other document references' }),
-    ).toBeVisible({ timeout: 30_000 });
+    // Nothing is clicked: the sweep runs when a window starts, after its drafts are back.
+    await sweeper.goto('/editor/');
+    await expect
+      .poll(async () => (await readVault(sweeper)).sources.some((key) => orphans.includes(key)), {
+        timeout: 30_000,
+      })
+      .toBe(false);
     const after = await readVault(sweeper);
-    expect(after.sources).not.toContain(orphan);
     // The keeper never rewrote its manifest, so the peer announcement is what protected it ...
     expect(after.drafts).not.toContain(keeperManifests[0]);
     // ... while the blob only the keeper's announcement protects is still there: losing it
     // is the failure this test exists to catch.
     for (const key of keeperKeys) expect(after.sources, key).toContain(key);
 
-    // Once the keeper is gone, a window that never heard its announcement has nothing
-    // protecting the blob: the next sweep removes it and says so.
+    // Once the keeper is gone, a window that starts has nothing protecting the blob: its
+    // sweep removes it.
     await keeper.close();
     await liveWindows(sweeper, 1);
     const third = await context.newPage();
     await openFixture(third, 'third.pdf');
     await settle(third, 2);
-    await runCommand(third, 'Clean Up Orphaned Vault Copies');
-    await expect(
-      third.locator('[role="status"]').filter({ hasText: '1 record(s) no other document references' }),
-    ).toBeVisible({ timeout: 30_000 });
-    const last = await readVault(third);
-    for (const key of keeperKeys) expect(last.sources, key).not.toContain(key);
+    await expect
+      .poll(async () => (await readVault(third)).sources.some((key) => keeperKeys.includes(key)), {
+        timeout: 30_000,
+      })
+      .toBe(false);
     // The two windows still open keep the blob they share.
-    expect(last.sources.filter((key) => key.startsWith('src-')).length).toBe(1);
+    expect((await readVault(third)).sources.filter((key) => key.startsWith('src-')).length).toBe(1);
 
     await sweeper.close();
     await third.close();

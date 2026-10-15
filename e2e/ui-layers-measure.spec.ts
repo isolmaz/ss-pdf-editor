@@ -6,6 +6,7 @@
  */
 
 import type { Locator, Page } from 'playwright/test';
+import { useAuthor } from './settings';
 import { expect, test } from './test';
 import { exportBytes, menuItem, openPdf } from './ui-helpers';
 import {
@@ -122,8 +123,10 @@ test('the strip edits scale, unit, grid, snapping and style; the exported line c
   page,
 }) => {
   await openPdf(page);
+  await useAuthor(page, 'Ada');
   await armMeasure(page, 'Distance');
   const bar = strip(page);
+  await expect(bar.getByRole('textbox', { name: 'Author', exact: true })).toHaveCount(0);
 
   // A scale the strip cannot read is named, and the previous scale stays in force.
   const scale = bar.getByRole('textbox', { name: 'Scale', exact: true });
@@ -164,7 +167,6 @@ test('the strip edits scale, unit, grid, snapping and style; the exported line c
   await bar.locator('input[type="color"]').fill('#ff0000');
   await bar.locator('input[type="range"]').fill('0.5');
   await bar.locator('input[type="number"]').fill('6');
-  await bar.getByRole('textbox', { name: 'Author', exact: true }).fill('Ada');
   await clickAt(page, 263, 342);
   await page.keyboard.press('Enter');
   await expect(page.locator('button[data-measure]')).toContainText('91.50 ft');
@@ -184,9 +186,12 @@ test('the strip edits scale, unit, grid, snapping and style; the exported line c
 test('a grid denser than a few pixels is not drawn', async ({ page }) => {
   await openPdf(page);
   // 75 %: one page point is exactly one CSS pixel, so 5 pt lines are 5 px apart.
-  await page.keyboard.press('Control+1');
-  await page.keyboard.press('Control+-');
-  await expect(page.getByRole('button', { name: /^Fit width \(75%\)$/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Zoom level \(\d+%\)$/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Zoom level' })
+    .getByRole('button', { name: '75%', exact: true })
+    .click();
+  await expect(page.getByRole('button', { name: /^Zoom level \(75%\)$/ })).toBeVisible();
   await armMeasure(page, 'Distance');
   const bar = strip(page);
   await bar.getByRole('checkbox', { name: 'Grid', exact: true }).check();

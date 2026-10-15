@@ -199,8 +199,14 @@ test('the page number box takes a valid page, and an unusable or out-of-range en
   for (const entry of ['99', '0', 'abc', '']) {
     await pageBox(page).fill(entry);
     await pageBox(page).press('Enter');
+    // The box says so, and keeps what was typed until the focus leaves it.
+    await expect(pageBox(page)).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByRole('alert').filter({ hasText: 'Enter 1–3' })).toBeVisible();
+    await expect(pageBox(page)).toHaveValue(entry);
     await pageBox(page).blur();
     await expect(pageBox(page)).toHaveValue('1');
+    await expect(pageBox(page)).toHaveAttribute('aria-invalid', 'false');
+    await expect(page.getByRole('alert').filter({ hasText: 'Enter 1–3' })).toHaveCount(0);
   }
   await pageBox(page).fill('3');
   await pageBox(page).press('Enter');
@@ -210,13 +216,17 @@ test('the page number box takes a valid page, and an unusable or out-of-range en
 
 test('Fit Width puts the zoom back to the page width after zooming out', async ({ page }) => {
   await openApp(page, 'zoom.pdf', labelledPdf('Zoom', 1), { advanced: false });
-  const fit = page.getByRole('button', { name: /^Fit width \(\d+%\)$/ });
-  const fitted = await fit.getAttribute('aria-label');
+  const level = page.getByRole('button', { name: /^Zoom level \(\d+%\)$/ });
+  const fitted = await level.getAttribute('aria-label');
   await page.getByRole('button', { name: 'Zoom out (-)' }).click();
   await page.getByRole('button', { name: 'Zoom out (-)' }).click();
-  await expect(fit).not.toHaveAttribute('aria-label', fitted ?? '');
-  await fit.click();
-  await expect(fit).toHaveAttribute('aria-label', fitted ?? '');
+  await expect(level).not.toHaveAttribute('aria-label', fitted ?? '');
+  await level.click();
+  await page
+    .getByRole('dialog', { name: 'Zoom level' })
+    .getByRole('button', { name: 'Fit width', exact: true })
+    .click();
+  await expect(level).toHaveAttribute('aria-label', fitted ?? '');
 });
 
 test('the header lists the open documents; Escape and a press outside close the list, and a choice switches document', async ({
@@ -254,7 +264,7 @@ test('pressing the armed tool on the rail a second time puts the pointer back in
 }) => {
   await openApp(page, 'rail.pdf', labelledPdf('Rail', 1), { advanced: false });
   const rectangle = page.getByRole('button', { name: 'Draw shape', exact: true });
-  const select = page.getByRole('button', { name: 'Selection Tool', exact: true });
+  const select = page.getByRole('button', { name: 'Selection tool', exact: true });
   await expect(select).toHaveAttribute('aria-pressed', 'true');
   await rectangle.click();
   await expect(rectangle).toHaveAttribute('aria-pressed', 'true');

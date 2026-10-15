@@ -44,6 +44,13 @@ export interface Command {
   readonly shortcut?: string;
   readonly icon?: ReactNode;
   readonly disabled?: boolean;
+  /** Why the command is unavailable: shown on its menu entry while it is disabled, and only then. */
+  readonly disabledReason?: MessageKey;
+  /**
+   * The menu section the command belongs to: two neighbouring entries of one menu with different
+   * sections have a rule drawn between them.
+   */
+  readonly section?: number;
   readonly checked?: boolean;
   /** Rendered with the danger role; reserved for irreversible operations. */
   readonly danger?: boolean;

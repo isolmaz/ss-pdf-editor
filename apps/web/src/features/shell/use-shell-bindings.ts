@@ -5,10 +5,11 @@
  */
 
 import { type SessionStore, workingPageCount } from 'pdf-model';
+import { nextZoomStop } from 'pdf-shared';
 import { isPresenting } from 'pdf-ui/tools';
 import { useMemo } from 'react';
 import { useShellShortcuts } from '../../useShortcuts';
-import { toggleLeftDock, toggleRightDock } from '../core/core-store';
+import { pressTool, toggleLeftDock, toggleRightDock } from '../core/core-store';
 import { canEdit } from '../core/document';
 import { openExportDialog } from '../export/export-store';
 import { toggleReading } from '../reading/reading-store';
@@ -57,8 +58,8 @@ export function useShellBindings({ session, actions }: ShellBindingHost): void {
         // one: the key is not swallowed to mean nothing.
         deleteSelection: deleteMarkSelection,
         print: openPrint,
-        zoomIn: () => currentViewer()?.setZoom(Math.min(4, saveStore.get().zoom + 0.25)),
-        zoomOut: () => currentViewer()?.setZoom(Math.max(0.25, saveStore.get().zoom - 0.25)),
+        zoomIn: () => currentViewer()?.setZoom(nextZoomStop(saveStore.get().zoom, 'in')),
+        zoomOut: () => currentViewer()?.setZoom(nextZoomStop(saveStore.get().zoom, 'out')),
         zoomReset: () => currentViewer()?.setZoom(1),
         fitWidth: () => currentViewer()?.setZoom('page-width'),
         nextPage: () => turnPage(() => saveStore.get().currentPage + 1),
@@ -74,6 +75,15 @@ export function useShellBindings({ session, actions }: ShellBindingHost): void {
         palette: summonPalette,
         toggleLeftDock,
         toggleRightDock,
+        armTool: (tool) => {
+          // The rail disables the writing tools without an editable document; the letter declines
+          // in the same cases instead of arming a tool that cannot draw.
+          if (session.active === null || (tool !== 'select' && tool !== 'hand' && !canEdit(session))) {
+            return false;
+          }
+          pressTool(tool);
+          return true;
+        },
         reading: toggleReading,
         documentProperties: () => openDialog('properties'),
         findReplace: () => {

@@ -220,7 +220,7 @@ const SCENES = {
     await pace(300);
     await page.keyboard.type('Approved by legal', { delay: 60 });
     await page.keyboard.press('Control+Enter');
-    await press(page, page.getByRole('button', { name: 'Selection Tool', exact: true }), 1400);
+    await press(page, page.getByRole('button', { name: 'Selection tool', exact: true }), 1400);
   },
 
   async pages(page, mark) {
@@ -350,7 +350,7 @@ const SCENES = {
     await press(page, form.getByRole('button', { name: 'Apply', exact: true }), 300);
     await settle(page, form, { timeout: 180_000, cut });
     await form.waitFor({ state: 'hidden', timeout: 60_000 });
-    await press(page, page.getByRole('button', { name: 'Selection Tool', exact: true }), 2200);
+    await press(page, page.getByRole('button', { name: 'Selection tool', exact: true }), 2200);
   },
 
   async watermark(page, mark) {
@@ -468,7 +468,7 @@ const SCENES = {
     await openDemo(page);
     mark();
     const dialog = await settings(page);
-    await press(page, dialog.getByRole('button', { name: 'Dark Theme', exact: true }), 900);
+    await press(page, dialog.getByRole('button', { name: 'Dark theme', exact: true }), 900);
     await press(page, dialog.getByRole('button', { name: 'Türkçe', exact: true }), 900);
     await press(page, dialog.getByRole('button', { name: 'Kapat', exact: true }), 1800);
   },

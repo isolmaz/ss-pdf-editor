@@ -81,13 +81,15 @@ test('page stepper, page field and zoom move the view', async ({ page }) => {
   await field.press('Enter');
   await expect(field).toHaveValue('1');
 
-  const level = page.getByRole('button', { name: /Fit width/ });
+  const level = page.getByRole('button', { name: /^Zoom level \(\d+%\)$/ });
   const percent = async () => Number.parseInt((await level.textContent()) ?? '0', 10);
   const before = await percent();
   await page.getByRole('button', { name: 'Zoom in (+)' }).click();
   await expect.poll(percent).toBeGreaterThan(before);
+  const zoomedIn = await percent();
+  // The steps land on the standard stops (90, 100, 110 …), so out from the stop is the stop below it.
   await page.getByRole('button', { name: 'Zoom out (-)' }).click();
-  await expect.poll(percent).toBe(before);
+  await expect.poll(percent).toBeLessThan(zoomedIn);
 });
 
 test('duplicating, moving and deleting pages reach the file, and undo takes them back', async ({ page }) => {

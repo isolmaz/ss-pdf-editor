@@ -11,6 +11,7 @@ import { SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import type { Command } from 'pdf-ui';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { annotationsStore, initialAnnotationsState } from '../annotations/annotations-store';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
 import { hideStartScreen, initialOpenState, openStore } from '../open/open-store';
@@ -52,26 +53,30 @@ vi.mock('pdf-ui/dialog', async () => {
   return {
     SettingsDialog: (props: {
       mode: string;
+      author: string;
+      onAuthorChange: (author: string) => void;
       sensitive: boolean | null;
       onClose: () => void;
       onModeChange: (mode: string) => void;
       onToggleSensitive: () => void;
-      onSaveDraft: () => void;
       onPurgeDocument: () => void;
-      onSweepVault: () => void;
       onPrepareOffline: () => void;
       onCheckOffline: () => void;
       onShowShortcuts: () => void;
     }) =>
       createElement(
         'section',
-        { 'aria-label': 'settings', 'data-mode': props.mode, 'data-sensitive': String(props.sensitive) },
+        {
+          'aria-label': 'settings',
+          'data-mode': props.mode,
+          'data-author': props.author,
+          'data-sensitive': String(props.sensitive),
+        },
+        createElement('button', { type: 'button', onClick: () => props.onAuthorChange('Ada') }, 'author'),
         createElement('button', { type: 'button', onClick: props.onClose }, 'close settings'),
         createElement('button', { type: 'button', onClick: () => props.onModeChange('advanced') }, 'mode'),
         createElement('button', { type: 'button', onClick: props.onToggleSensitive }, 'sensitive'),
-        createElement('button', { type: 'button', onClick: props.onSaveDraft }, 'save draft'),
         createElement('button', { type: 'button', onClick: props.onPurgeDocument }, 'purge'),
-        createElement('button', { type: 'button', onClick: props.onSweepVault }, 'sweep'),
         createElement('button', { type: 'button', onClick: props.onPrepareOffline }, 'prepare offline'),
         createElement('button', { type: 'button', onClick: props.onCheckOffline }, 'check offline'),
         createElement('button', { type: 'button', onClick: props.onShowShortcuts }, 'shortcuts'),
@@ -99,6 +104,7 @@ function command(id: string, run: () => void = vi.fn()): Command {
 afterEach(cleanup);
 
 beforeEach(() => {
+  annotationsStore.set(initialAnnotationsState());
   coreStore.set(initialCoreState());
   shellStore.set(initialShellState());
   openStore.set(initialOpenState());
@@ -167,9 +173,7 @@ describe('SettingsHost', () => {
     return {
       changeMode: vi.fn(),
       toggleSensitiveSession: vi.fn(),
-      opfsSave: vi.fn(async () => undefined),
       purgeActiveDocument: vi.fn(async () => undefined),
-      sweepVault: vi.fn(async () => undefined),
       prepareOfflinePackages: vi.fn(async () => undefined),
       checkOffline: vi.fn(async () => undefined),
       showShortcuts: vi.fn(),
@@ -197,6 +201,18 @@ describe('SettingsHost', () => {
     expect(shellStore.get().settingsOpen).toBe(false);
   });
 
+  it('shows the global author and a change sets it for the marks to come and for the next visit', async () => {
+    const user = userEvent.setup();
+    annotationsStore.set({ ...initialAnnotationsState(), author: 'Grace' });
+    mount(actions());
+    act(() => openSettings());
+    expect((await screen.findByLabelText('settings')).getAttribute('data-author')).toBe('Grace');
+    await user.click(screen.getByRole('button', { name: 'author' }));
+    expect(annotationsStore.get().author).toBe('Ada');
+    expect(screen.getByLabelText('settings').getAttribute('data-author')).toBe('Ada');
+    expect(localStorage.getItem('pdf_editor_author_v1')).toBe('Ada');
+  });
+
   it("shows the active document's sensitive flag", async () => {
     const tab = session.openDocument({
       name: 'a.pdf',
@@ -222,12 +238,8 @@ describe('SettingsHost', () => {
     expect(given.changeMode).toHaveBeenCalledWith('advanced');
     await user.click(screen.getByRole('button', { name: 'sensitive' }));
     expect(given.toggleSensitiveSession).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole('button', { name: 'save draft' }));
-    expect(given.opfsSave).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: 'purge' }));
     expect(given.purgeActiveDocument).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole('button', { name: 'sweep' }));
-    expect(given.sweepVault).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: 'prepare offline' }));
     expect(given.prepareOfflinePackages).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: 'check offline' }));

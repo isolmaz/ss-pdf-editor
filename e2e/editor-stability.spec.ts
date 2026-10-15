@@ -41,7 +41,7 @@ async function open(page: Page, name: string, bytes: Uint8Array): Promise<void> 
 function rail(page: Page) {
   return page
     .locator('nav')
-    .filter({ has: page.getByRole('button', { name: 'Selection Tool', exact: true }) });
+    .filter({ has: page.getByRole('button', { name: 'Selection tool', exact: true }) });
 }
 
 /** The scroll container's top edge in the viewport, and its scroll offset. */
@@ -97,7 +97,7 @@ test('arming any tool and posting a notice leave the document where it is', asyn
     expect((await viewerBox(page)).top).toBe(start.top);
   }
   await page.keyboard.press('Escape');
-  await rail(page).getByRole('button', { name: 'Selection Tool', exact: true }).click();
+  await rail(page).getByRole('button', { name: 'Selection tool', exact: true }).click();
 
   // A page operation raises progress and a notice: both float, neither moves the page.
   await statusRotate(page).click();

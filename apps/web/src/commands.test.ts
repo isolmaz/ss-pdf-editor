@@ -13,6 +13,8 @@ import {
   type CommandHost,
   commandKeywords,
   isCommandVisible,
+  MENU_SECTIONS,
+  menuCommands,
   SOURCE_URL,
   STANDALONE_COMMAND_IDS,
   visibleCommands,
@@ -88,9 +90,7 @@ function recordingHost(overrides: Partial<CommandHost> = {}) {
     setTheme: rec('setTheme'),
     sensitiveSession: false,
     toggleSensitiveSession: rec('toggleSensitiveSession'),
-    opfsSave: rec('opfsSave'),
     purgeActiveDocument: rec('purgeActiveDocument'),
-    sweepVault: rec('sweepVault'),
     checkOffline: rec('checkOffline'),
     prepareOfflinePackages: rec('prepareOfflinePackages'),
     ...overrides,
@@ -123,8 +123,8 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'edit.select-all-marks': ['selectAllMarks'],
   'edit.find-replace': dialog('find-replace'),
   'edit.rename': ['rename'],
-  'view.zoom-in': ['setZoom', 1.25],
-  'view.zoom-out': ['setZoom', 0.75],
+  'view.zoom-in': ['setZoom', 1.1],
+  'view.zoom-out': ['setZoom', 0.9],
   'view.zoom-reset': ['setZoom', 1],
   'view.fit-width': ['setZoom', 'page-width'],
   'view.fit-page': ['setZoom', 'page-fit'],
@@ -199,9 +199,7 @@ const EXPECTED: Readonly<Record<string, Call>> = {
   'settings.theme.dark': ['setTheme', 'dark'],
   'settings.theme.system': ['setTheme', 'system'],
   'settings.sensitive-session': ['toggleSensitiveSession'],
-  'settings.opfs-save': ['opfsSave'],
   'settings.purge-document': ['purgeActiveDocument'],
-  'settings.sweep-vault': ['sweepVault'],
   'help.palette': ['palette'],
   'help.shortcuts': ['showShortcuts'],
   'help.offline': ['checkOffline'],
@@ -259,7 +257,10 @@ describe('buildCommands', () => {
       for (const command of withShortcut) {
         const label = translate(command.labelKey);
         expect(label, command.id).not.toMatch(/Ctrl|⌘|Alt\+|Shift\+/);
-        expect(label, command.id).not.toContain(command.shortcut as string);
+        const shortcut = command.shortcut as string;
+        // A single tool letter is a substring of many labels ("Hand"), so for it the printed form
+        // that matters is the parenthesised one the rail tooltip uses.
+        expect(label, command.id).not.toContain(shortcut.length === 1 ? `(${shortcut})` : shortcut);
       }
       expect(translate(byId(commands, 'help.palette').labelKey)).toBe(
         locale === 'tr' ? 'Komut ara' : 'Search commands',
@@ -319,12 +320,15 @@ describe('buildCommands', () => {
     expect(opened).toEqual([[SOURCE_URL, '_blank', 'noopener,noreferrer']]);
   });
 
-  it('zooms in and out by a quarter, never past 400% or under 25%', () => {
+  it('zooms in and out to the standard stops, never past 400% or under 25%', () => {
     const zoomed = (id: string, zoom: number) => {
       const { host, calls } = recordingHost({ zoom: () => zoom });
       byId(buildCommands(host), id).run();
       return calls[0]?.[1];
     };
+    expect(zoomed('view.zoom-in', 0.65)).toBe(0.67);
+    expect(zoomed('view.zoom-in', 0.9)).toBe(1);
+    expect(zoomed('view.zoom-out', 1)).toBe(0.9);
     expect(zoomed('view.zoom-in', 3.9)).toBe(4);
     expect(zoomed('view.zoom-in', 4)).toBe(4);
     expect(zoomed('view.zoom-out', 0.3)).toBe(0.25);
@@ -449,6 +453,46 @@ describe('buildCommands', () => {
     ).toEqual(['cmd.measureDistance.label', 'cmd.measurePerimeter.label', 'cmd.measureArea.label']);
   });
 
+  it('says why a command is unavailable: no document, no right to edit, nothing selected', () => {
+    const reason = (commands: readonly Command[], id: string) => byId(commands, id).disabledReason;
+    const none = buildCommands(recordingHost({ hasDocument: false, canEdit: false }).host);
+    for (const id of ['page.rotate-left', 'edit.rename', 'edit.find-replace', 'edit.select-all-pages']) {
+      expect(reason(none, id), id).toBe('cmd.reason.noDocument');
+    }
+    const viewing = buildCommands(recordingHost({ canEdit: false }).host);
+    expect(reason(viewing, 'page.delete')).toBe('cmd.reason.cannotEdit');
+    expect(reason(viewing, 'edit.find-replace')).toBe('cmd.reason.cannotEdit');
+    expect(reason(viewing, 'edit.clear-selection')).toBe('cmd.reason.cannotEdit');
+    expect(reason(viewing, 'edit.delete-mark')).toBe('cmd.reason.cannotEdit');
+    expect(reason(viewing, 'tools.form-detect')).toBe('cmd.reason.cannotEdit');
+
+    const idle = buildCommands(
+      recordingHost({
+        canUndo: false,
+        canRedo: false,
+        selectedPages: [],
+        selectedMarkCount: 0,
+        activeTool: 'ink',
+      }).host,
+    );
+    expect(reason(idle, 'edit.undo')).toBe('cmd.reason.nothingToUndo');
+    expect(reason(idle, 'edit.redo')).toBe('cmd.reason.nothingToRedo');
+    expect(reason(idle, 'edit.clear-selection')).toBe('cmd.reason.noPages');
+    expect(reason(idle, 'edit.delete-mark')).toBe('cmd.reason.noMarks');
+    expect(reason(idle, 'edit.select-all-marks')).toBe('cmd.reason.selectTool');
+    expect(reason(none, 'edit.select-all-marks')).toBe('cmd.reason.noDocument');
+
+    // An available command that needs a document or the right to edit carries no reason, and
+    // neither does a disabled one with no reason to give.
+    const ready = buildCommands(recordingHost().host);
+    for (const id of ['edit.undo', 'edit.redo', 'page.delete', 'edit.rename']) {
+      expect(reason(ready, id), id).toBeUndefined();
+    }
+    const noDetect = buildCommands(recordingHost({ detectFormFields: undefined }).host);
+    expect(byId(noDetect, 'tools.form-detect').disabled).toBe(true);
+    expect(reason(noDetect, 'tools.form-detect')).toBeUndefined();
+  });
+
   it('checks the measure, theme and tool entries from the host state', () => {
     const commands = buildCommands(
       recordingHost({ measureMode: 'area', theme: 'dark', activeTool: 'ink' }).host,
@@ -461,6 +505,48 @@ describe('buildCommands', () => {
     const perimeter = buildCommands(recordingHost({ measureMode: 'perimeter', theme: 'system' }).host);
     expect(byId(perimeter, 'tools.measure-perimeter').checked).toBe(true);
     expect(byId(perimeter, 'settings.theme.system').checked).toBe(true);
+  });
+});
+
+describe('menu layout', () => {
+  const commands = buildCommands(recordingHost().host);
+
+  it('places every command in a section, and no section names a command nothing builds', () => {
+    const laid = MENU_SECTIONS.flat();
+    expect(new Set(laid).size).toBe(laid.length);
+    expect([...laid].sort()).toEqual(commands.map((command) => command.id).sort());
+    for (const command of commands) {
+      expect(command.section, command.id).toBe(MENU_SECTIONS.findIndex((ids) => ids.includes(command.id)));
+    }
+  });
+
+  it('lists the commands in menu order, one group after another, a section never split', () => {
+    expect(commands.map((command) => command.id)).toEqual(MENU_SECTIONS.flat());
+    const groups = commands.map((command) => command.group);
+    expect(groups).toEqual([...groups].sort((a, b) => groups.indexOf(a) - groups.indexOf(b)));
+    for (const ids of MENU_SECTIONS) {
+      expect(new Set(ids.map((id) => byId(commands, id).group)).size, ids.join()).toBe(1);
+    }
+    expect(groups.filter((group, index) => group !== groups[index - 1])).toEqual([
+      'file',
+      'edit',
+      'view',
+      'page',
+      'tools',
+      'settings',
+      'help',
+    ]);
+  });
+
+  it('keeps the settings entry out of the simple mode menu, where the header button is its twin', () => {
+    const ids = (mode: 'simple' | 'advanced') => menuCommands(commands, mode).map((command) => command.id);
+    expect(ids('simple')).not.toContain('settings.open');
+    expect(menuCommands(commands, 'simple').some((command) => command.group === 'settings')).toBe(false);
+    // The palette still offers it, and the advanced menu has more in the group.
+    expect(visibleCommands(commands, 'simple').map((command) => command.id)).toContain('settings.open');
+    expect(ids('advanced')).toContain('settings.open');
+    expect(ids('advanced')).toHaveLength(commands.length);
+    expect(ids('simple')).toHaveLength(visibleCommands(commands, 'simple').length - 1);
   });
 });
 

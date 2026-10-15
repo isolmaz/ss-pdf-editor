@@ -6,6 +6,7 @@ import { pruneRecentHandles } from '../../recent-handles';
 import { showNotice } from '../core/core-store';
 import { hideStartScreen } from '../open/open-store';
 import { claimWithPatience, type RestoreHost, restoreDraft } from './draft-restore';
+import { sweepVault } from './draft-vault';
 import { draftStorage } from './persistence-store';
 
 export interface RecoveryHost extends RestoreHost {
@@ -86,6 +87,9 @@ export function useDraftRecovery({ store, translator, openAndFingerprint }: Reco
       }
       // Handles whose recent entry is gone are forgotten — after the restore, which reads them.
       if (!disposed) await pruneRecentHandles(new Set(loadRecentDocuments().map((item) => item.id)));
+      // Blobs nothing references any more (a document closed in another session, a draft deleted
+      // by hand) are swept once the drafts that do reference blobs are back.
+      if (!disposed) await sweepVault(store);
     })().catch(() => {
       // The vault could not be read at all (not one draft: those are guarded above): the
       // failure is the user's to know, and never an unhandled rejection with no notice.

@@ -517,29 +517,24 @@ async function readVault(page: Page): Promise<{ drafts: string[]; sources: strin
   });
 }
 
-test('browser storage: save, delete the stored copies, and the sensitive session that keeps nothing', async ({
+test('browser storage: the draft saves itself, the stored copies go on request, and the sensitive session keeps nothing', async ({
   page,
 }) => {
   await open(page);
-  await runCommand(page, 'Save to Browser Storage');
-  await expect(notice(page, 'Draft saved to browser storage')).toBeVisible({ timeout: 30_000 });
-  await expect.poll(async () => (await readVault(page)).drafts.length).toBe(1);
+  await expect.poll(async () => (await readVault(page)).drafts.length, { timeout: 30_000 }).toBe(1);
   expect((await readVault(page)).sources).toHaveLength(1);
 
-  await runCommand(page, 'Delete Stored Copies');
+  await runCommand(page, 'Delete stored copies');
   await expect.poll(async () => (await readVault(page)).drafts.length).toBe(0);
   expect((await readVault(page)).sources).toHaveLength(0);
 
-  await runCommand(page, 'Sensitive Session');
-  await expect(notice(page, 'Sensitive session: persistent draft disabled.')).toBeVisible();
-  await runCommand(page, 'Save to Browser Storage');
+  await runCommand(page, 'Sensitive session');
   await expect(notice(page, 'Sensitive session: persistent draft disabled.')).toBeVisible();
   expect((await readVault(page)).drafts).toHaveLength(0);
 
-  await runCommand(page, 'Sensitive Session');
+  await runCommand(page, 'Sensitive session');
   await expect(notice(page, 'Sensitive session disabled.')).toBeVisible();
-  await runCommand(page, 'Save to Browser Storage');
-  await expect.poll(async () => (await readVault(page)).drafts.length).toBe(1);
+  await expect.poll(async () => (await readVault(page)).drafts.length, { timeout: 30_000 }).toBe(1);
 });
 
 test('underline, strikeout and squiggly: each look reaches the file over the text it was dragged across', async ({

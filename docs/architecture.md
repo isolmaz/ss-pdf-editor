@@ -2527,13 +2527,29 @@ only hides entry points: the shortcuts still arm the tools, and a right-dock tab
 hides but the store still names (the mode changed while it was open) shows the tools tab
 instead, without writing the store, so switching back finds the tab as it was.
 
+The menu bar's layout is `commands.ts` too. `MENU_SECTIONS` lists the commands section by section,
+group after group; `buildCommands` returns them in that order, each carrying its `section`, and
+`MenuBar` draws a rule between two neighbouring entries of a menu whose sections differ, so a
+section that the simple mode hides entirely leaves no rule behind. An entry that is disabled
+because of the state of the document says why: `Command.disabledReason` (no document open, the
+document cannot be edited, no pages or marks selected, nothing to undo) is the entry's native
+tooltip and its `aria-description`, and only while it is disabled. `menuCommands` is what the
+menu bar renders: the commands of the mode, without a command the editor header already has a
+button for when it would be the only entry of its menu (Settings in the simple mode); the command
+stays in the palette.
+
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
 the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.ts` that
 dispatches keyboard actions, keeping the displayed bindings and their behavior together. A chord
-names the modifiers it needs and ignores the rest (`F4` answers with `Shift` held), except a `bare`
-chord: `F5` toggles the tools dock only with no modifier down, so `Ctrl+F5` and `Shift+F5` stay the
-browser's reloads instead of being swallowed. The page keys (`PageUp`, `PageDown`,
+names the modifiers it needs and ignores the rest (`F4` answers with `Ctrl` or `Alt` held; the
+`Shift+F4` row ahead of it toggles the tools dock), except a `bare` chord: the eleven tool
+letters (`V`, `H`, `E`, `T`, `U`, `D`, `R`, `N`, `K`, `M`, `X`, rows with a `tool`) answer only
+with no modifier down, so `Ctrl+R`, `Ctrl+D` and the like stay the browser's, and `F5` is not bound
+at all, so it reloads. A bare chord also stands aside in a composite widget and in a dialog, where
+typed letters belong to the widget, and ignores key repeat; `armTool` declines (`false`) without
+a document, or for a tool that writes while the document cannot be edited, and `pressTool`
+(`features/core/core-store.ts`) is the one toggle the rail's click and the letter share. The page keys (`PageUp`, `PageDown`,
 `Home`, `End`) stand aside while focus is inside a composite widget (menu bar, menu, listbox,
 tree, grid, tab list, or a list marked `data-owns-page-keys` such as the form panel's field
 list), which owns them. They stand aside for a full-screen presentation too: its own key
@@ -2583,7 +2599,9 @@ pointer rests on it.
 (`COMPACT_VIEW_QUERY`, `(max-width: 1023px)`) both docks start collapsed and reopen as
 overlaid panels, so the canvas keeps the width and the tools stay one click away. The page
 and view controls (`PageNavigation`) live in the status bar's navigation slot, never over
-the page. On a touch screen (`(pointer: coarse)`) the status bar grows from 32 to 44 px (the `--spacing-pdf-statusbar` token), its buttons are at least 40 px and the bar scrolls sideways when they do not fit, and the rail's buttons are 40 px. The header keeps identity, menus, five task buttons (three toggles that show real state — tools
+the page. Zoom in and out walk `ZOOM_STOPS` (`pdf-shared`'s `zoom.ts`, shared by the buttons,
+the shortcuts and the commands), and the percentage opens `ZoomMenu` (a popover, so the status bar's
+clipping cannot hide it) with the stops, fit width, fit page and a typed value. On a touch screen (`(pointer: coarse)`) the status bar grows from 32 to 44 px (the `--spacing-pdf-statusbar` token), its buttons are at least 40 px and the bar scrolls sideways when they do not fit, and the rail's buttons are 40 px. The header keeps identity, menus, five task buttons (three toggles that show real state — tools
 panel, reading pane, text-edit tool — and the one-shot convert and sign actions), the document
 switcher, the file actions and one settings button — language, theme, the interface mode,
 privacy, storage and offline preparation are in `SettingsDialog`. The header never overflows the bar at
@@ -2605,8 +2623,8 @@ them once rather than twice.
 
 `apps/web/src/App.tsx` is the composition root: the wiring between the feature modules,
 `pdf-model`, `pdf-core` and `pdf-ui`, the link-region and image-list state its hosts share,
-the six one-line callbacks
-(`saveActive`, `persistTabDraft`, `opfsSave`, `prepareOutput`, `forgetTabDraft`, `discardTab`,
+the five one-line callbacks
+(`saveActive`, `persistTabDraft`, `prepareOutput`, `forgetTabDraft`, `discardTab`,
 thin bindings of feature functions that `tools/audit/regressions.cjs` exercises directly), the
 drop target, and the feature hosts. UI state that several surfaces share
 lives in feature stores under `apps/web/src/features/`, each made with `createStore` from
@@ -2630,7 +2648,7 @@ testable logic lives:
 | `features/measure/` | Measuring: the ruler mode, scale, grid, snapping and live reading (`measure-store.ts`), adding a measurement as one undoable step (`measure-marks.ts`), and the settings strip and overlay hosts |
 | `features/results/` | Print, scan and accessibility: the print and scan dialogs' open state and the operation progress (`results-store.ts`), applying accessibility fixes, scanning a document and opening a printable result (`results-actions.ts`), and the print, scan, accessibility and PDF/A hosts (`ResultsSurfaces.tsx`) |
 | `features/pages/` | Page actions and undo/redo: the pure planner (`history-plan.ts`: the operation gate, the page selection, whether a history press is declined, refused or queued, and its notices) and the runner (`page-actions.ts`, `usePageActions`; a press with no step on that side of the journal's cursor does nothing and says nothing, the menu's disabled item in key form, while a step whose snapshot is missing says `op.undo.unavailable`) |
-| `features/annotations/` | Annotations: the style, the engine values held across a step, the known existing annotations and the orphan sweep (`annotations-store.ts`), XFDF/FDF/JSON import and export (`annotation-data.ts`), taking over the engine's own annotations (`engine-takeover.ts`), settling native editors and sweeping orphans (`orphans.ts`), run through `useAnnotationActions` |
+| `features/annotations/` | Annotations: the style each tool draws with and its persistence (`annotation-style.ts`), the author, the engine values held across a step, the known existing annotations and the orphan sweep (`annotations-store.ts`), XFDF/FDF/JSON import and export (`annotation-data.ts`), taking over the engine's own annotations (`engine-takeover.ts`), settling native editors and sweeping orphans (`orphans.ts`), run through `useAnnotationActions` |
 | `features/forms/` | Forms and XFA: the form and annotation inventories, the inspection revision, the selected field, form-field detection and the XFA state (`forms-store.ts`), filling, flattening and detecting fields (`form-actions.ts`), the inventory read (`use-form-inventory.ts`), and the XFA banner, field-candidate layer, forms panel and XFA dialog hosts (`FormsSurface.tsx`) |
 | `features/marks/` | Marks: the mark targets (`marks-store.ts`, `mark-targets.ts`), the visible and editable overlays (`overlays.ts`), removing and transforming marks, writing a file annotation, the writer pipeline (`writer.ts`: a writer's outcome and layer writes), and redaction (the erased words per tab in `redaction-store.ts`, the redaction marks and writer in `redaction.ts`, and `RedactionSurfaces.tsx`), run through `useWriterActions` and `useMarkActions` |
 | `features/dialogs/` | The dialog runner: the batch, operation, start and shortcuts dialogs' state (`dialogs-store.ts`), opening them and handling their results (`dialog-actions.ts`), dismissing a dialog whose tab or working version changed (`use-dialog-dismissal.ts`), and the hosts (`DialogSurfaces.tsx`) |
@@ -2864,9 +2882,11 @@ deletes, and when" need answers that span windows. `vault-channel.ts` uses
 manager the work runs unserialised (every vault operation is idempotent, so the worst case
 is a repeated `removeEntry`, not a lost document), a draft cannot be claimed (every claim is
 granted) and a probe reports `false`, so a sweep deletes nothing; and only when **both** channels are
-unavailable does `canReachPeers()` return false — and then the sweep refuses to run,
+unavailable does `canReachPeers()` return false — and then the sweep does not run,
 because without peer knowledge "delete everything unreferenced" would delete another
-window's only copy.
+window's only copy. The sweep runs by itself, once per start-up, after the drafts are
+restored (`use-draft-recovery.ts`); it has no button and no command, and it says nothing,
+whether it deleted blobs, found none or refused.
 
 References are only ever **added**. A window that answers once and dies leaves its keys
 pinned, which costs space; forgetting a live window's keys would cost a document.
@@ -2879,7 +2899,7 @@ waits, the probe asks the lock manager again every 250 ms and stops waiting for 
 whose lock is gone: a tab closed a moment before the sweep can still be listed by the first
 query, and it will never answer. A window the lock manager lists but that stays silent for
 10 s (a frozen tab) makes `probe()` resolve `false` and the sweep refuses
-(`vault.peerSilent`: nothing is deleted). Without a lock manager, or when it cannot be asked,
+(nothing is deleted, nothing is said; the next start tries again). Without a lock manager, or when it cannot be asked,
 the probe still collects the answers that arrive within 250 ms but reports `false`: a timer
 cannot prove that no window is missing, so the sweep refuses (fail closed).
 
@@ -2895,8 +2915,9 @@ lists a snapshot blob between its write and its manifest.
 
 ### 8.5 Sensitive sessions, drafts and cleanup
 
-Persistence is a shared callback used by both the manual OPFS save and the automatic draft
-path, so the two cannot disagree about what was persisted. A restore does not rerun just
+Persistence is one callback, `persistDraft`, which the autosave and the flush on the crash screen
+both go through; there is no manual "save the draft now" command, and Settings only deletes the
+stored copies of the open document. A restore does not rerun just
 because the UI language changed, one draft whose source cannot be read is reported and skipped (each draft has its own
 guard, and a vault that cannot be read at all is said on the notice line) while the others
 recover, a draft whose document was opened meanwhile (from the recent list, say) is

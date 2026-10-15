@@ -204,7 +204,7 @@ test('a picture can be remembered like a drawn signature and used again from the
 
 test('a sensitive session offers no remembering, and nothing is stored', async ({ page }) => {
   await openPdf(page);
-  await runCommand(page, 'Sensitive Session');
+  await runCommand(page, 'Sensitive session');
   const dialog = await openDialog(page);
   await expect(dialog.getByRole('checkbox', { name: /Remember on this device/ })).toHaveCount(0);
   await drawStroke(page, [0.1, 0.7], [0.9, 0.3]);

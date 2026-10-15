@@ -104,6 +104,14 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     `Home` and `End` go to the first and last page. `Esc` ends it, and so does the browser
     leaving full screen. A browser that refuses full screen still shows the presentation
     layout in the page. Leaving restores the zoom you had.
+- **Page box.** The status bar's page box goes to the page typed. A number outside the document,
+  or text that is not a number, is marked invalid with a short message beside the box (for
+  example “Enter 1–5”) and the page stays where it was.
+- **Zoom.** `Ctrl+=` and `Ctrl+-` (and the status bar's plus and minus) step through the
+  standard levels, 25 · 33 · 50 · 67 · 75 · 90 · 100 · 110 · 125 · 150 · 175 · 200 · 250 · 300 ·
+  400 %, from wherever fit width left the page. The percentage in the status bar opens a menu
+  with those levels, fit width, fit page and a box for a typed value (25 to 400). The rotate
+  button next to it turns the current page in the document; it is one undoable step.
 - **Reading mode.** The page is shown as a text column. Read-aloud speaks it a sentence at a
   time, with pause, stop and a speed control, and uses only a speech voice installed on the
   device for the document's own language (the catalog `/Lang`, matched on its primary
@@ -120,11 +128,22 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   for it, then opens read-only. "Create unlocked copy" opens an editable copy in a new tab,
   and the password is kept in memory only. A file that only an owner password restricts
   opens without a prompt, is stored like any other and keeps its encryption when saved.
+- **Menus.** Each menu groups its entries into sections with a rule between them. An entry
+  that cannot be used says why when you hover it (for example "Open a document first." or
+  "Select a mark first."), and screen readers read the same text. The simple mode has no
+  Settings menu, since the header already has a Settings button; the palette still lists it.
 - **Shortcut list.** It is available in both languages from Help or `Ctrl+K`, even with no
   document open. The list is the binding table itself, so every chord it prints works.
   `Home`, `End`, `PageUp` and `PageDown` turn the document's page, except while the focus is
   in a menu bar or menu, a list, tree or grid, a tab strip or the form panel's field list:
   those keep the keys to move inside themselves.
+- **Tool letters.** A plain letter arms a tool, and the same letter puts it away again: `V`
+  select, `H` hand, `E` edit text, `T` add text, `U` markup (highlight, underline, strike-out,
+  squiggly: the look used last), `D` freehand draw, `R` shapes, `N` note, `K` link, `M`
+  measure, `X` redact. They work only without `Ctrl`, `Alt` or `Shift` held, outside a text
+  field, a menu, a list and a dialog, and only on an open document (the tools that write also
+  need it to be editable). Each tool's letter is in its rail tooltip and in the shortcut list.
+  `F4` toggles the page panel and `Shift+F4` the tools dock; `F5` is the browser's reload.
 
 ### Annotating, forms, measuring
 
@@ -145,7 +164,12 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Then delete, rotate 90°, drag, or nudge by 5 pt. Every edit can be undone.
   - Selection deletes whole marks only, never page content. To remove page content
     securely, use redaction.
-- **Style.** The app sets colour, opacity, thickness and author. Multiply blending keeps
+- **Style.** The tool strip sets colour, opacity and thickness for the armed tool. Each tool
+  keeps its own style (a translucent yellow marker, solid underline, strike-out, squiggly, pen
+  and shape strokes, a yellow note, black typed text, the ruler), so changing the pen's colour
+  does not repaint the marker, and the styles are remembered on this device between visits. The
+  author a new mark carries is one setting (Settings → Marks), remembered the same way.
+  Multiply blending keeps
   text readable, and freehand strokes stay continuous in the exported file. A rectangle,
   circle or line writes its thickness as the annotation's border width (`/BS /W` and
   `/Border`), so other readers draw it and this editor reads the same thickness back.

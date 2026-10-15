@@ -112,12 +112,6 @@ describe('tool names', () => {
   });
 });
 
-/**
- * Keys another change is rewriting at the same time (the settings dialog and the tool strips);
- * their wording is theirs to fix, so these checks leave them out until that lands.
- */
-const IN_FLIGHT = [/^setting\./, /^theme\./, /^toolbar\.select$/];
-
 /** Capitalised words that are names, not title case: products, keyboard keys, PDF terms, languages. */
 const NAMES = new Set([
   'Word',
@@ -167,9 +161,7 @@ describe.each([
   ['Turkish', tr],
   ['English', en],
 ] as const)('%s labels', (_name, catalogue) => {
-  const labels = (Object.entries(catalogue) as [Key, string][]).filter(
-    ([key, text]) => isLabel(text) && !IN_FLIGHT.some((skip) => skip.test(key)),
-  );
+  const labels = (Object.entries(catalogue) as [Key, string][]).filter(([, text]) => isLabel(text));
 
   it('are written in sentence case, not Title Case', () => {
     expect(
@@ -185,9 +177,9 @@ describe.each([
 
 describe('Turkish suffixes after an abbreviation', () => {
   it('follow how PDF is said ("pe-de-fe", ending in a vowel): PDF’ye, PDF’yi, PDF’nin, PDF’de, PDF’den', () => {
-    const wrong = (Object.entries(tr) as [Key, string][])
-      .filter(([key]) => !IN_FLIGHT.some((skip) => skip.test(key)))
-      .filter(([, text]) => /PDF’(e|i|in|te|teki|ten)(?![a-zçğıöşüâ])/.test(text));
+    const wrong = (Object.entries(tr) as [Key, string][]).filter(([, text]) =>
+      /PDF’(e|i|in|te|teki|ten)(?![a-zçğıöşüâ])/.test(text),
+    );
     expect(wrong.map(([key, text]) => `${key}: ${text}`)).toEqual([]);
   });
 });
@@ -221,9 +213,7 @@ describe('the copy people read before they decide', () => {
   });
 
   it('does not name the libraries or the storage behind a feature', () => {
-    // The settings dialog's own text is being rewritten by another change.
     const named = entries
-      .filter(([, key]) => !/^settings?\./.test(key))
       .filter(([, , text]) =>
         /Ghostscript|MuPDF|pdf\.js|pdfjs|\bmotor|\bengine|katalog|\bcatalog|\bOCG\b|\bOPFS\b|AcroForm|\/ByteRange/i.test(
           text,

@@ -39,7 +39,7 @@ test.use({ viewport: { width: 1440, height: 1000 } });
 
 /** The rail's own accessible names, from the shipped English catalogue. */
 const RAIL = {
-  select: 'Selection Tool',
+  select: 'Selection tool',
   hand: 'Hand tool',
   // One button for the four text-markup looks; the strip picks the look.
   highlight: 'Mark up text',
@@ -59,7 +59,7 @@ const KIND = {
 /** The selection row's own words: the readout, and the actions next to it. */
 const SELECTION = {
   status: 'Selection',
-  none: 'No marks selected',
+  hint: 'Click or drag to select marks.',
   remove: 'Delete selected',
   rotate: 'Rotate 90°',
   moveGroup: 'Move selection',
@@ -551,10 +551,11 @@ test.describe('saved annotations and the page they sit on', () => {
     await expectSameBaseCanvas(page, canvas);
 
     // An empty click clears the selection again, and the row goes back to being a readout:
-    // with nothing selected there is nothing to delete, turn or move.
+    // with nothing selected there is nothing to delete, turn or move, and only the hint is left.
     await clickPage(page, 20, 830);
     await expect(page.locator('[data-mark-selection]')).toHaveCount(0);
-    await expect(selectionStatus(page)).toHaveText(SELECTION.none);
+    await expect(selectionStatus(page)).toHaveCount(0);
+    await expect(page.getByText(SELECTION.hint, { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: SELECTION.remove, exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: SELECTION.rotate, exact: true })).toHaveCount(0);
 
@@ -730,7 +731,8 @@ test.describe('the marks the tools create', () => {
 
     // The select tool is armed by default and nothing is selected yet: the row is a
     // readout, and every action it could offer is absent rather than disabled.
-    await expect(selectionStatus(page)).toHaveText(SELECTION.none);
+    await expect(selectionStatus(page)).toHaveCount(0);
+    await expect(page.getByText(SELECTION.hint, { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: SELECTION.remove, exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: SELECTION.rotate, exact: true })).toHaveCount(0);
     await expect(moveGroup(page)).toHaveCount(0);
@@ -1302,12 +1304,13 @@ test.describe('tooltips', () => {
     await openFixture(page);
 
     /** The chip's own geometry and paint: inside the viewport, opaque, legible. */
-    const assertChip = async (label: string): Promise<void> => {
+    const assertChip = async (label: string, key?: string): Promise<void> => {
       const tip = chip(page, label);
       // One chip carries these words: a second one is a defect, not an ambiguity.
       await expect(tip).toHaveCount(1);
       await expect(tip).toBeVisible();
-      await expect(tip).toHaveText(label);
+      // A tool's chip ends with the letter that arms it.
+      await expect(tip).toHaveText(key === undefined ? label : `${label} (${key})`);
       const box = await tip.boundingBox();
       const viewport = page.viewportSize();
       if (box === null || viewport === null) throw new Error('the tooltip rendered no box');
@@ -1329,7 +1332,7 @@ test.describe('tooltips', () => {
 
     // Hover, at the rail's own edge: the chip names the tool the pointer is over.
     await rail(page, RAIL.note).hover();
-    await assertChip(RAIL.note);
+    await assertChip(RAIL.note, 'N');
 
     // Keyboard focus opens it without a pointer at all. Focus arrives from the button
     // beside it on the keyboard's own route — a scripted `focus()` is not what the
@@ -1337,7 +1340,7 @@ test.describe('tooltips', () => {
     await rail(page, RAIL.hand).focus();
     await page.keyboard.press('Shift+Tab');
     await expect(rail(page, RAIL.select)).toBeFocused();
-    await assertChip(RAIL.select);
+    await assertChip(RAIL.select, 'V');
 
     // The page and view controls sit in the status bar at the bottom edge; their tips have to
     // flip or shift rather than run off it.
@@ -1348,13 +1351,13 @@ test.describe('tooltips', () => {
     await useDarkTheme(page);
     await expect.poll(() => page.evaluate(() => document.documentElement.dataset.mode)).toBe('dark');
     await rail(page, RAIL.ink).hover();
-    await assertChip(RAIL.ink);
+    await assertChip(RAIL.ink, 'D');
 
     // Phone width: the rail is a scrollable column at the left edge and the tips still
     // stay inside the viewport.
     await page.setViewportSize({ width: 390, height: 780 });
     await rail(page, RAIL.shapes).hover();
-    await assertChip(RAIL.shapes);
+    await assertChip(RAIL.shapes, 'R');
     await page
       .getByRole('group', { name: 'Page and view controls', exact: true })
       .getByRole('button', { name: 'Page panel', exact: true })

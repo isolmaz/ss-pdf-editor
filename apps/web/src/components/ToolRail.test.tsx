@@ -91,6 +91,29 @@ describe('ToolRail', () => {
     );
   });
 
+  it('names each tool`s letter in its tooltip and to assistive technology, and takes it from the key table', async () => {
+    const user = userEvent.setup();
+    render(<ToolRail t={t} canEdit />);
+
+    await user.hover(button('ann.tool.ink'));
+
+    expect((await screen.findByRole('tooltip')).textContent).toBe(`${t('ann.tool.ink')} (D)`);
+    const keys = screen
+      .getAllByRole('button')
+      .map((item) => [item.getAttribute('aria-label'), item.getAttribute('aria-keyshortcuts')]);
+    expect(keys).toEqual([
+      [t('toolbar.select'), 'V'],
+      [t('toolbar.hand'), 'H'],
+      [t('toolbar.text'), 'E'],
+      [t('toolbar.freetext'), 'T'],
+      [t('toolbar.markup'), 'U'],
+      [t('ann.tool.ink'), 'D'],
+      [t('toolbar.shape'), 'R'],
+      [t('toolbar.comment'), 'N'],
+      [t('link.tool'), 'K'],
+    ]);
+  });
+
   it('disables the tools that write to the document while it cannot be edited', () => {
     render(<ToolRail t={t} canEdit={false} />);
     expect(button('toolbar.text')).toHaveProperty('disabled', true);

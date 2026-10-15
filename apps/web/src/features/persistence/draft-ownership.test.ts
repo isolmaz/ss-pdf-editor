@@ -10,7 +10,7 @@ import { type Draft, SessionStore } from 'pdf-model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { adoptHandle, dropHandle } from '../core/handles';
-import { persistDraft, saveDraft } from './draft-persist';
+import { persistDraft } from './draft-persist';
 import { claimWithPatience, type RestoreHost, restoreDraft } from './draft-restore';
 import { forgetDraft, syncDraftClaims } from './draft-vault';
 import {
@@ -36,7 +36,6 @@ vi.mock('../../recent-handles', () => ({
 }));
 vi.mock('../../recent', () => ({ addRecentDocument: outside.addRecentDocument }));
 
-const t = ((key: string) => key) as never;
 let storage: MemoryStorage;
 
 function openRendered(session: SessionStore, sha256 = 'one') {
@@ -134,7 +133,7 @@ describe('what this window writes', () => {
       events.push('manifest');
       await writeDraft(draft);
     };
-    await saveDraft(session, (id) => persistDraft(session, id, 'desktop'), t);
+    await queueVaultWrite(() => persistDraft(session, tab.id, 'desktop'));
     expect(events).toEqual(['lock', 'manifest', 'unlock']);
     dropHandle(tab.id);
   });

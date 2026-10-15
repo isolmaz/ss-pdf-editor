@@ -27,7 +27,9 @@ test('PageDown, PageUp, End and Home move through the pages and the page field f
   await expect(pageField(page)).toHaveValue('1');
 });
 
-test('Ctrl+= , Ctrl+-, Ctrl+1 and Ctrl+0 change the zoom the status bar reports', async ({ page }) => {
+test('Ctrl+= , Ctrl+-, Ctrl+1 and Ctrl+0 step the zoom through the standard stops the status bar reports', async ({
+  page,
+}) => {
   await openApp(page, 'zoom.pdf', labelledPdf('Zoom', 1), { advanced: false });
   const zoom = (value: RegExp) => page.getByRole('button', { name: value });
   // The scale pdf.js draws the pages at (its `--scale-factor` is in CSS pixels per point).
@@ -43,22 +45,63 @@ test('Ctrl+= , Ctrl+-, Ctrl+1 and Ctrl+0 change the zoom the status bar reports'
   // the viewer had already applied fit width.
   const fit = await drawn();
   expect(fit).not.toBe(100);
-  await expect(zoom(new RegExp(`^Fit width \\(${fit}%\\)$`))).toBeVisible();
+  await expect(zoom(new RegExp(`^Zoom level \\(${fit}%\\)$`))).toBeVisible();
   await page.keyboard.press('Control+1');
-  await expect(zoom(/^Fit width \(100%\)$/)).toBeVisible();
+  await expect(zoom(/^Zoom level \(100%\)$/)).toBeVisible();
   expect(await drawn()).toBe(100);
   await page.keyboard.press('Control+=');
-  await expect(zoom(/^Fit width \(125%\)$/)).toBeVisible();
+  await expect(zoom(/^Zoom level \(110%\)$/)).toBeVisible();
   await page.keyboard.press('Control+-');
   await page.keyboard.press('Control+-');
-  await expect(zoom(/^Fit width \(75%\)$/)).toBeVisible();
-  expect(await drawn()).toBe(75);
+  await expect(zoom(/^Zoom level \(90%\)$/)).toBeVisible();
+  expect(await drawn()).toBe(90);
   await page.keyboard.press('Control+0');
-  await expect(zoom(new RegExp(`^Fit width \\(${fit}%\\)$`))).toBeVisible();
+  await expect(zoom(new RegExp(`^Zoom level \\(${fit}%\\)$`))).toBeVisible();
   expect(await drawn()).toBe(fit);
 });
 
-test('F4 and F5 toggle the page panel and the tools dock, F9 the reading pane, Escape closes it', async ({
+test('the zoom button opens a menu of the standard stops, fit width, fit page and a typed value', async ({
+  page,
+}) => {
+  await openApp(page, 'menu.pdf', labelledPdf('Menu', 1), { advanced: false });
+  const button = page.getByRole('button', { name: /^Zoom level \(\d+%\)$/ });
+  const fitWidth = (await button.textContent()) ?? '';
+  const panel = page.getByRole('dialog', { name: 'Zoom level' });
+
+  await button.click();
+  await panel.getByRole('button', { name: '150%', exact: true }).click();
+  await expect(panel).toBeHidden();
+  await expect(button).toHaveText('150%');
+
+  await button.click();
+  await expect(panel.getByRole('button', { name: '150%', exact: true })).toHaveAttribute(
+    'aria-current',
+    'true',
+  );
+  const typed = panel.getByRole('textbox', { name: 'Zoom (%)' });
+  await typed.fill('600');
+  await typed.press('Enter');
+  await expect(panel.getByRole('alert')).toHaveText('Enter a value from 25 to 400.');
+  await expect(typed).toHaveAttribute('aria-invalid', 'true');
+  await typed.fill('80');
+  await typed.press('Enter');
+  await expect(button).toHaveText('80%');
+
+  await button.click();
+  await panel.getByRole('button', { name: 'Fit page', exact: true }).click();
+  await expect(button).not.toHaveText('80%');
+  await button.click();
+  await panel.getByRole('button', { name: 'Fit width', exact: true }).click();
+  await expect(button).toHaveText(fitWidth);
+
+  await button.click();
+  await expect(panel).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(panel).toBeHidden();
+  await expect(button).toBeFocused();
+});
+
+test('F4 and Shift+F4 toggle the page panel and the tools dock, F9 the reading pane, Escape closes it', async ({
   page,
 }) => {
   await openApp(page, 'docks.pdf', labelledPdf('Dock', 2), { advanced: false });
@@ -71,9 +114,10 @@ test('F4 and F5 toggle the page panel and the tools dock, F9 the reading pane, E
 
   const history = page.getByRole('tab', { name: 'History' });
   await expect(history).toBeVisible();
-  await page.keyboard.press('F5');
+  await page.keyboard.press('Shift+F4');
   await expect(history).toHaveCount(0);
-  await page.keyboard.press('F5');
+  await expect(thumbnails.first()).toBeVisible();
+  await page.keyboard.press('Shift+F4');
   await expect(history).toBeVisible();
 
   await page.keyboard.press('F9');
@@ -83,6 +127,64 @@ test('F4 and F5 toggle the page panel and the tools dock, F9 the reading pane, E
   await expect(reading).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('F9');
   await expect(reading).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('F5 is not the shell`s: the key reaches the browser unhandled and the tools dock stays', async ({
+  page,
+}) => {
+  await openApp(page, 'reload.pdf', labelledPdf('Reload', 1), { advanced: false });
+  await page.evaluate(() => {
+    Object.assign(window, { f5: [] as boolean[] });
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'F5') (window as unknown as { f5: boolean[] }).f5.push(event.defaultPrevented);
+    });
+  });
+  await page.keyboard.press('F5');
+  await page.keyboard.press('Control+F5');
+  expect(await page.evaluate(() => (window as unknown as { f5: boolean[] }).f5)).toEqual([false, false]);
+  await expect(page.getByRole('tab', { name: 'History' })).toBeVisible();
+});
+
+test('the tool letters arm the rail tools and put them away again, the rail names each letter, and a field keeps its letters', async ({
+  page,
+}) => {
+  await openApp(page, 'letters.pdf', labelledPdf('Letters', 2));
+  const pressed = (name: string) => rail(page, name).and(page.locator('[aria-pressed="true"]'));
+  const select = 'Selection tool';
+  const letters: readonly (readonly [string, string])[] = [
+    ['h', 'Hand / Pan Tool'],
+    ['e', 'Edit Text'],
+    ['t', 'Add Text'],
+    ['u', 'Mark Up Text (highlight, underline, strike)'],
+    ['d', 'Freehand drawing'],
+    ['r', 'Draw Shape (Rectangle)'],
+    ['n', 'Add comment / Note'],
+    ['k', 'Add link'],
+    ['m', 'Measure'],
+    ['x', 'Redact (permanent removal)'],
+  ];
+  for (const [letter, name] of letters) {
+    await page.keyboard.press(letter);
+    await expect(pressed(name), letter).toHaveCount(1);
+    await page.keyboard.press(letter);
+    await expect(pressed(select), letter).toHaveCount(1);
+  }
+  await page.keyboard.press('d');
+  await page.keyboard.press('v');
+  await expect(pressed(select)).toHaveCount(1);
+
+  // A modified letter is not the tool's, and neither is a letter typed into a field.
+  await page.keyboard.press('Shift+D');
+  await page.keyboard.press('Alt+d');
+  await expect(pressed(select)).toHaveCount(1);
+  await pageField(page).focus();
+  await page.keyboard.press('d');
+  await expect(pressed(select)).toHaveCount(1);
+  await pageField(page).blur();
+
+  await rail(page, 'Freehand drawing').hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Freehand drawing (D)');
+  await expect(rail(page, 'Freehand drawing')).toHaveAttribute('aria-keyshortcuts', 'D');
 });
 
 test('Ctrl+Shift+D opens the document properties form and Ctrl+H the find and replace form', async ({
@@ -197,7 +299,7 @@ test('with a mark drawn, select-all selects it and Delete removes it with one un
   await rail(page, 'Draw shape').click();
   await dragOnPage(page, [100, 600], [260, 700]);
   // Back in the select tool the common layer is ready once the inventory is read.
-  await expect(rail(page, 'Selection Tool')).toHaveAttribute('aria-pressed', 'true');
+  await expect(rail(page, 'Selection tool')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('.pdfViewer[data-active-viewer]').click({ position: { x: 5, y: 5 } });
   await page.keyboard.press('Control+a');
   await expect(page.getByText('1 mark(s) selected')).toBeVisible({ timeout: 30_000 });

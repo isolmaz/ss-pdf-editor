@@ -61,7 +61,7 @@ test('typed text is committed by Ctrl+Enter or by a press elsewhere; Escape and 
   // Disarming the tool with a box open drops the box.
   await clickAt(page, 100, 300);
   await expect(editor).toBeVisible();
-  await rail(page, 'Selection Tool').click();
+  await rail(page, 'Selection tool').click();
   await expect(editor).toHaveCount(0);
 
   const texts = ofSubtype(await readAnnotations(await exportBytes(page, 'text.pdf')), 'FreeText').filter(

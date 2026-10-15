@@ -6,10 +6,11 @@
  * docks. It shows **only the properties the armed tool actually has**, because a
  * control that cannot reach the engine is worse than no control:
  *
- * - Highlight carries colour, thickness and the shared opacity: the marks this app
+ * - Highlight carries colour, thickness and its opacity: the marks this app
  *   creates are drawn by the controlled creators, which take all three, so the row
- *   is the truth for every tool that paints a fill or a stroke.
- * - Note carries the icon colour and the author that the writer puts in `/T`.
+ *   is the truth for every tool that paints a fill or a stroke. The shell keeps one
+ *   style per tool, so these values are the armed tool's own.
+ * - Note carries the icon colour; the author the writer puts in `/T` is the settings dialog's one global value.
  * - Shapes choose their geometry here.
  * - Typed text ("Metin ekle") carries its own colour and size: it is ink on the page,
  *   not a translucent mark, so the marker's colour and opacity would be the wrong truth.
@@ -62,7 +63,6 @@ export interface ToolPropertiesProps {
   readonly color: string;
   readonly opacity: number;
   readonly thickness: number;
-  readonly author: string;
   readonly shape: CanvasShapeKind;
   /** Typed text: its colour and its size in points. */
   readonly textColor?: string;
@@ -78,7 +78,6 @@ export interface ToolPropertiesProps {
   readonly onColor: (color: string) => void;
   readonly onOpacity: (opacity: number) => void;
   readonly onThickness: (thickness: number) => void;
-  readonly onAuthor: (author: string) => void;
   readonly onShape: (shape: CanvasShapeKind) => void;
   /** Picks another text-markup look; only offered while one of the four is armed. */
   readonly onTool?: (tool: CanvasToolId) => void;
@@ -150,7 +149,6 @@ interface ToolStyleSpec {
   readonly color: boolean;
   readonly opacity: boolean;
   readonly thickness: boolean;
-  readonly author: boolean;
   readonly shape: boolean;
 }
 
@@ -158,7 +156,6 @@ const NO_STYLE: ToolStyleSpec = {
   color: false,
   opacity: false,
   thickness: false,
-  author: false,
   shape: false,
 };
 
@@ -166,7 +163,6 @@ const STROKE_STYLE: ToolStyleSpec = {
   color: true,
   opacity: true,
   thickness: true,
-  author: true,
   shape: false,
 };
 
@@ -201,21 +197,20 @@ const TOOL_STYLES: Record<CanvasToolId, ToolStyleSpec> = {
   hand: NO_STYLE,
   // Highlight was the one tool the engine's own editor owned, and that editor takes
   // a colour and a thickness and nothing else (`HighlightEditor.typesMap`). The
-  // controlled creators draw it now, so the shared opacity control is its truth too.
-  highlight: { color: true, opacity: true, thickness: true, author: false, shape: false },
+  // controlled creators draw it now, so the opacity control is its truth too.
+  highlight: { color: true, opacity: true, thickness: true, shape: false },
   underline: STROKE_STYLE,
   strikeout: STROKE_STYLE,
   squiggly: STROKE_STYLE,
   ink: STROKE_STYLE,
   shapes: { ...STROKE_STYLE, shape: true },
-  // A note is its icon colour plus the `/T` the writer stamps on it.
-  note: { color: true, opacity: false, thickness: false, author: true, shape: false },
+  note: { color: true, opacity: false, thickness: false, shape: false },
   redact: NO_STYLE,
   measure: NO_STYLE,
   link: NO_STYLE,
   text: NO_STYLE,
   // Typed text has its own colour and size (below), not the marker's style.
-  freetext: { color: false, opacity: false, thickness: false, author: true, shape: false },
+  freetext: { color: false, opacity: false, thickness: false, shape: false },
   // The picture is the style: its colours were chosen in the signature dialog.
   stamp: NO_STYLE,
 };
@@ -226,7 +221,6 @@ export function ToolProperties({
   color,
   opacity,
   thickness,
-  author,
   shape,
   textColor = '#000000',
   fontSize = 12,
@@ -239,7 +233,6 @@ export function ToolProperties({
   onColor,
   onOpacity,
   onThickness,
-  onAuthor,
   onShape,
   onTool,
   onDeleteSelection,
@@ -248,10 +241,10 @@ export function ToolProperties({
   onClearSelection,
 }: ToolPropertiesProps) {
   const style = TOOL_STYLES[tool];
-  // The selection row is the select tool's own readout, and it follows the
-  // selection everywhere else: a panel row, a marquee or a canvas click leaves marks
-  // selected, and the count is how the user sees what these actions would take.
-  const showSelection = selectedCount > 0 || tool === 'select';
+  // The selection row appears with a selection, under any tool: a panel row, a marquee or a
+  // canvas click leaves marks selected, and the count is how the user sees what these actions
+  // would take. With nothing selected the select tool shows only its hint.
+  const showSelection = selectedCount > 0;
   const hint = TOOL_HINTS[tool];
   const markup = MARKUP_LOOKS.some((look) => look.tool === tool);
 
@@ -407,25 +400,10 @@ export function ToolProperties({
         </label>
       ) : null}
 
-      {style.author ? (
-        <label className="flex items-center gap-1">
-          {t('ann.tool.author')}
-          <input
-            type="text"
-            value={author}
-            aria-label={t('ann.tool.author')}
-            onChange={(event) => onAuthor(event.target.value)}
-            className={`${FIELD_CLASS} w-24`}
-          />
-        </label>
-      ) : null}
-
       {showSelection ? (
         <span className="flex items-center gap-1">
           <output aria-live="polite" aria-label={t('ann.tool.selection')} className={READOUT_CLASS}>
-            {selectedCount > 0
-              ? t('ann.tool.selection.count', { count: selectedCount })
-              : t('ann.tool.selection.none')}
+            {t('ann.tool.selection.count', { count: selectedCount })}
           </output>
           {selectedCount > 0 && onDeleteSelection !== undefined ? (
             <button type="button" onClick={onDeleteSelection} className={BUTTON_CLASS}>

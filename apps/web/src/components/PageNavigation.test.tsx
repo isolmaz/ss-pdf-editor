@@ -4,7 +4,7 @@
  * (core store) and reading mode (reading store).
  */
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
 import type { ComponentProps } from 'react';
@@ -40,6 +40,16 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('PageNavigation', () => {
+  // First in the file on purpose: the zoom menu is a lazy chunk, and only the first render of the
+  // file can see it not yet loaded.
+  it('draws the zoom as plain text until the zoom menu has loaded, then as its button', async () => {
+    render(bar());
+    expect(screen.queryByRole('button', { name: /^Zoom level/ })).toBeNull();
+    expect(screen.getByText('100%')).toBeTruthy();
+
+    expect(await screen.findByRole('button', { name: 'Zoom level (100%)' })).toBeTruthy();
+  });
+
   it('toggles the page dock, pressed while it is open', async () => {
     const user = userEvent.setup();
     render(bar());
@@ -85,11 +95,12 @@ describe('PageNavigation page and zoom controls', () => {
     expect(toggle('nav.nextPage').hasAttribute('disabled')).toBe(true);
   });
 
-  it('goes to the page typed, and ignores one out of range or not a number', async () => {
+  it('goes to the page typed, and not to one out of range or not a number', async () => {
     const user = userEvent.setup();
     const onGoToPage = vi.fn();
     render(bar({ onGoToPage }));
     expect(pageField().value).toBe('2');
+    expect(pageField().getAttribute('aria-invalid')).toBe('false');
 
     await user.click(pageField());
     await user.clear(pageField());
@@ -97,12 +108,68 @@ describe('PageNavigation page and zoom controls', () => {
     expect(onGoToPage).toHaveBeenLastCalledWith(3);
     expect(pageField().value).toBe('2');
 
-    for (const typed of ['9', '0', 'x']) {
+    for (const typed of ['9', '0', 'x', '4x', '-1', '']) {
       await user.click(pageField());
       await user.clear(pageField());
       await user.type(pageField(), `${typed}{Enter}`);
     }
     expect(onGoToPage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['9', '0', 'x', '4x', ''])(
+    'says so, and keeps %j in the box, when the page typed is not 1 to 5',
+    async (typed) => {
+      const user = userEvent.setup();
+      render(bar());
+      await user.click(pageField());
+      await user.clear(pageField());
+      await user.type(pageField(), `${typed}{Enter}`);
+
+      expect(pageField().getAttribute('aria-invalid')).toBe('true');
+      expect(pageField().value).toBe(typed);
+      const alert = screen.getByRole('alert');
+      expect(alert.textContent).toBe('Enter 1–5');
+      expect(pageField().getAttribute('aria-describedby')).toBe(alert.id);
+    },
+  );
+
+  it('takes the message back when the reader types again, leaves the box, or goes to a valid page', async () => {
+    const user = userEvent.setup();
+    const onGoToPage = vi.fn();
+    render(bar({ onGoToPage }));
+    const fail = async (typed: string) => {
+      await user.click(pageField());
+      await user.clear(pageField());
+      await user.type(pageField(), `${typed}{Enter}`);
+      expect(screen.getByRole('alert')).toBeTruthy();
+    };
+
+    await fail('9');
+    await user.type(pageField(), '1');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(pageField().getAttribute('aria-invalid')).toBe('false');
+
+    await fail('9');
+    await user.tab();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(pageField().value).toBe('2');
+
+    await fail('9');
+    await user.clear(pageField());
+    await user.type(pageField(), '3{Enter}');
+    expect(onGoToPage).toHaveBeenCalledExactlyOnceWith(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(pageField().getAttribute('aria-invalid')).toBe('false');
+  });
+
+  it('writes the message in Turkish too', async () => {
+    const tr = createTranslator('tr');
+    const user = userEvent.setup();
+    render(bar({ t: tr }));
+    const field = screen.getByRole('textbox', { name: tr('nav.pageNumber') });
+    await user.click(field);
+    await user.type(field, '9{Enter}');
+    expect(screen.getByRole('alert').textContent).toBe('1–5 arası yazın');
   });
 
   it('submits the shown page unchanged without typing, and drops a half-typed one on blur', async () => {
@@ -128,15 +195,20 @@ describe('PageNavigation page and zoom controls', () => {
     expect(onGoToPage).not.toHaveBeenCalled();
   });
 
-  it('zooms a quarter at a time inside the range, and fits the width', async () => {
+  it('zooms to the next standard stop inside the range, from a zoom that is on none too', async () => {
     const user = userEvent.setup();
     const onZoomChange = vi.fn();
     const { rerender } = render(bar({ onZoomChange, zoom: 1 }));
 
     await user.click(toggle('nav.zoomOut'));
     await user.click(toggle('nav.zoomIn'));
-    await user.click(screen.getByRole('button', { name: `${t('nav.fitWidth')} (100%)` }));
-    expect(onZoomChange.mock.calls).toEqual([[0.75], [1.25], ['page-width']]);
+    expect(onZoomChange.mock.calls).toEqual([[0.9], [1.1]]);
+
+    onZoomChange.mockClear();
+    rerender(bar({ onZoomChange, zoom: 0.6347 }));
+    await user.click(toggle('nav.zoomOut'));
+    await user.click(toggle('nav.zoomIn'));
+    expect(onZoomChange.mock.calls).toEqual([[0.5], [0.67]]);
 
     rerender(bar({ onZoomChange, zoom: 0.25 }));
     expect(toggle('nav.zoomOut').hasAttribute('disabled')).toBe(true);
@@ -144,11 +216,27 @@ describe('PageNavigation page and zoom controls', () => {
     expect(toggle('nav.zoomIn').hasAttribute('disabled')).toBe(true);
   });
 
-  it('writes the zoom the way the interface language does: the sign first in Turkish', () => {
+  it('shows the zoom on the button that opens the zoom menu, written the way the language does', async () => {
+    render(bar({ zoom: 1.4 }));
+    expect((await screen.findByRole('button', { name: 'Zoom level (140%)' })).textContent).toBe('140%');
+    cleanup();
     const tr = createTranslator('tr');
     render(bar({ t: tr, zoom: 1.4 }));
-    const fit = screen.getByRole('button', { name: `${tr('nav.fitWidth')} (%140)` });
-    expect(fit.textContent).toBe('%140');
+    const trButton = await screen.findByRole('button', { name: `${tr('nav.zoomMenu')} (%140)` });
+    expect(trButton.textContent).toBe('%140');
+  });
+
+  it('opens the zoom menu from the bar and hands the choice to the viewer', async () => {
+    const user = userEvent.setup();
+    const onZoomChange = vi.fn();
+    render(bar({ onZoomChange }));
+    await user.click(await screen.findByRole('button', { name: 'Zoom level (100%)' }));
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Zoom level' })).getByRole('button', {
+        name: 'Fit page',
+      }),
+    );
+    expect(onZoomChange).toHaveBeenCalledExactlyOnceWith('page-fit');
   });
 
   it('offers rotate only while the document can be edited, and always offers fullscreen', async () => {
@@ -159,6 +247,8 @@ describe('PageNavigation page and zoom controls', () => {
     expect(screen.queryByRole('button', { name: t('nav.rotate') })).toBeNull();
 
     rerender(bar({ onToggleFullscreen, onRotate }));
+    // The tooltip and the description say what a press does to the document, and that it can be undone.
+    expect(toggle('nav.rotate').getAttribute('aria-description')).toBe(t('nav.rotate.hint'));
     await user.click(toggle('nav.rotate'));
     await user.click(toggle('nav.fullscreen'));
     expect(onRotate).toHaveBeenCalledTimes(1);

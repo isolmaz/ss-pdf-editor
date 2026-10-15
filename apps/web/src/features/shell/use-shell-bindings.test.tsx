@@ -93,7 +93,7 @@ describe('shell bindings', () => {
     shortcuts.zoomOut();
     shortcuts.zoomReset();
     shortcuts.fitWidth();
-    expect(viewer.setZoom.mock.calls).toEqual([[1.25], [4], [0.75], [0.25], [1], ['page-width']]);
+    expect(viewer.setZoom.mock.calls).toEqual([[1.1], [4], [0.9], [0.25], [1], ['page-width']]);
   });
 
   it('walks pages from the page the viewer reports now', () => {
@@ -167,6 +167,36 @@ describe('shell bindings', () => {
     const reading = readingStore.get().reading;
     shortcuts.reading();
     expect(readingStore.get().reading).toBe(!reading);
+  });
+
+  it('arms the tool a letter names when a document is open, and puts it away on the next press', () => {
+    session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1]), sha256: 'a', pageCount: 5 });
+    const shortcuts = mount();
+    expect(shortcuts.armTool('ink')).toBe(true);
+    expect(coreStore.get().canvasTool).toBe('ink');
+    expect(shortcuts.armTool('ink')).toBe(true);
+    expect(coreStore.get().canvasTool).toBe('select');
+    shortcuts.armTool('markup');
+    expect(coreStore.get().canvasTool).toBe('highlight');
+  });
+
+  it('declines a tool letter with no document open', () => {
+    expect(mount().armTool('select')).toBe(false);
+    expect(mount().armTool('ink')).toBe(false);
+    expect(coreStore.get().canvasTool).toBe('select');
+  });
+
+  it('declines the tools that write while the document cannot be edited, but not select and hand', () => {
+    session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1]), sha256: 'a', pageCount: 5 });
+    const shortcuts = mount();
+    gate.editing = false;
+    expect(shortcuts.armTool('ink')).toBe(false);
+    expect(shortcuts.armTool('markup')).toBe(false);
+    expect(coreStore.get().canvasTool).toBe('select');
+    expect(shortcuts.armTool('hand')).toBe(true);
+    expect(coreStore.get().canvasTool).toBe('hand');
+    expect(shortcuts.armTool('select')).toBe(true);
+    expect(coreStore.get().canvasTool).toBe('select');
   });
 
   it('declines find and replace unless editing is allowed when the key is pressed', () => {

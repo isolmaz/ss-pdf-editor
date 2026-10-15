@@ -252,26 +252,18 @@ async function readVault(page: Page): Promise<{ drafts: string[]; sources: strin
   });
 }
 
-test('Settings saves the draft now, deletes the stored copies, and sweeps nothing when nothing is orphaned', async ({
+test('Settings deletes the stored copies of the open document, and carries no row for saving or sweeping', async ({
   page,
 }) => {
   await openPdf(page, 'stored.pdf', labelledPdf('Stored', 2));
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: /Settings/ });
-  await expect(dialog).toBeVisible();
-
-  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(async () => (await readVault(page)).drafts.length, { timeout: 30_000 }).toBe(1);
   expect((await readVault(page)).sources).toHaveLength(1);
 
-  await dialog.getByRole('button', { name: 'Clean up', exact: true }).click();
-  await expect(
-    notice(page, /No orphaned copies in the vault|record\(s\) no other document references/),
-  ).toBeVisible({
-    timeout: 30_000,
-  });
-  // The document being edited is not an orphan: its copies stay.
-  expect((await readVault(page)).drafts).toHaveLength(1);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /Settings/ });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Save draft now')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Clean up', exact: true })).toHaveCount(0);
 
   await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect.poll(async () => (await readVault(page)).drafts.length, { timeout: 30_000 }).toBe(0);

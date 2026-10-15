@@ -144,7 +144,7 @@ test('rotate, delete and the tool entries run the page action or arm the tool, a
 
   await rightClick(page, 300, 300);
   await menu.getByRole('menuitem', { name: 'Fit width' }).click();
-  await expect(page.getByRole('button', { name: /^Fit width \(\d+%\)$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Zoom level \(\d+%\)$/ })).toBeVisible();
 
   await rightClick(page, 300, 300);
   await menu.getByRole('menuitem', { name: 'Rotate right' }).click();

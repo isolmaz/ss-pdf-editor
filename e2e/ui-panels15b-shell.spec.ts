@@ -45,14 +45,14 @@ test('the dark theme chosen in Settings applies to the page and is still there a
 
   await page.getByRole('button', { name: 'Settings' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Settings' });
-  await expect(dialog.getByRole('button', { name: 'Dark Theme' })).toHaveAttribute('aria-pressed', 'true');
-  await dialog.getByRole('button', { name: 'Light Theme' }).click();
+  await expect(dialog.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true');
+  await dialog.getByRole('button', { name: 'Light theme' }).click();
   expect(await attr(page, 'data-mode')).toBe('light');
-  await expect(dialog.getByRole('button', { name: 'Light Theme' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(dialog.getByRole('button', { name: 'Dark Theme' })).toHaveAttribute('aria-pressed', 'false');
-  await dialog.getByRole('button', { name: 'System Theme' }).click();
+  await expect(dialog.getByRole('button', { name: 'Light theme' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'false');
+  await dialog.getByRole('button', { name: 'System theme' }).click();
   expect(await page.evaluate(() => localStorage.getItem('pdf-editor.theme'))).toBeNull();
-  await expect(dialog.getByRole('button', { name: 'System Theme' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByRole('button', { name: 'System theme' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 /** The editor header at `width`: nothing scrolls sideways, the file actions are on screen, the name keeps room. */
@@ -178,7 +178,7 @@ test('from 640 px the tool rail is a column beside the document, with buttons a 
   const box = await rail.boundingBox();
   expect(box?.width).toBe(48);
   expect(box?.height ?? 0).toBeGreaterThan(300);
-  const select = await rail.getByRole('button', { name: 'Selection Tool' }).boundingBox();
+  const select = await rail.getByRole('button', { name: 'Selection tool' }).boundingBox();
   expect([select?.width, select?.height]).toEqual([36, 36]);
 });
 

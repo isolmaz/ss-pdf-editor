@@ -13,10 +13,12 @@ import {
   type ShellShortcuts,
   shortcutHint,
   shortcutLabel,
+  toolShortcutHint,
+  withShortcut,
 } from './useShortcuts';
 
 /** The shell action each binding stands for. A binding must reach its own action and no other. */
-const ACTION_OF: Readonly<Record<string, keyof ShellShortcuts>> = {
+const ACTION_OF: Readonly<Record<string, string>> = {
   'file.open': 'open',
   'file.export': 'exportDocument',
   'file.save': 'save',
@@ -34,6 +36,17 @@ const ACTION_OF: Readonly<Record<string, keyof ShellShortcuts>> = {
   'view.left-dock': 'toggleLeftDock',
   'view.right-dock': 'toggleRightDock',
   'tools.properties': 'documentProperties',
+  'tools.select': 'armTool:select',
+  'tools.hand': 'armTool:hand',
+  'tools.text-edit': 'armTool:text',
+  'tools.freetext': 'armTool:freetext',
+  'tools.markup': 'armTool:markup',
+  'tools.ink': 'armTool:ink',
+  'tools.shapes': 'armTool:shapes',
+  'tools.note': 'armTool:note',
+  'tools.link': 'armTool:link',
+  'tools.measure': 'armTool:measure',
+  'tools.redact-area': 'armTool:redact',
   'page.next': 'nextPage',
   'page.previous': 'previousPage',
   'page.first': 'firstPage',
@@ -66,6 +79,10 @@ function recorder(answers: { optional?: boolean } = {}) {
     palette: make('palette'),
     toggleLeftDock: make('toggleLeftDock'),
     toggleRightDock: make('toggleRightDock'),
+    armTool: (tool) => {
+      calls.push(`armTool:${tool}`);
+      return true;
+    },
     reading: make('reading'),
     documentProperties: make('documentProperties'),
     ...(answers.optional === true
@@ -127,6 +144,51 @@ describe('SHELL_SHORTCUTS', () => {
     const order = SHELL_SHORTCUTS.map((row) => row.id);
     expect(order.indexOf('file.export')).toBeLessThan(order.indexOf('file.save'));
     expect(order.indexOf('edit.redo')).toBeLessThan(order.indexOf('edit.undo'));
+    expect(order.indexOf('view.right-dock')).toBeLessThan(order.indexOf('view.left-dock'));
+  });
+
+  it('puts the tools dock on Shift+F4 and leaves F5 unbound, so the browser reloads', () => {
+    expect(shortcutHint('view.right-dock')).toBe('Shift+F4');
+    expect(shortcutHint('view.left-dock')).toBe('F4');
+    const keys = SHELL_SHORTCUTS.flatMap((row) => row.chords.map((chord) => chord.key));
+    expect(keys).not.toContain('F5');
+  });
+
+  it('gives each tool one plain letter, no two the same, in the one tools group of the help list', () => {
+    const tools = SHELL_SHORTCUTS.filter((row) => row.tool !== undefined);
+    expect(Object.fromEntries(tools.map((row) => [row.tool, shortcutLabel(row)]))).toEqual({
+      select: 'V',
+      hand: 'H',
+      text: 'E',
+      freetext: 'T',
+      markup: 'U',
+      ink: 'D',
+      shapes: 'R',
+      note: 'N',
+      link: 'K',
+      measure: 'M',
+      redact: 'X',
+    });
+    for (const row of tools)
+      expect(
+        row.chords.every((chord) => chord.bare === true),
+        row.id,
+      ).toBe(true);
+    const groups = SHELL_SHORTCUT_GROUPS.filter((group) => group.group === 'tools');
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.rows.map((row) => row.id)).toContain('tools.properties');
+  });
+
+  it('prints a tool letter for the rail tooltip, and nothing for a tool without one', () => {
+    expect(toolShortcutHint('ink')).toBe('D');
+    expect(toolShortcutHint('markup')).toBe('U');
+    expect(toolShortcutHint('stamp')).toBeUndefined();
+    expect(shortcutHint('tools.select')).toBe('V');
+  });
+
+  it('puts the shortcut after the name in a tooltip, and leaves a name without one alone', () => {
+    expect(withShortcut('Freehand draw', 'D')).toBe('Freehand draw (D)');
+    expect(withShortcut('Stamp', undefined)).toBe('Stamp');
   });
 });
 

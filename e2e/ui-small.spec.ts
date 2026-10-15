@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from 'playwright/test';
+import { useAuthor } from './settings';
 import { expect, test } from './test';
 import { readProducedPageTexts, readProducedPdf, toolFixturePdf } from './tool-fixture';
 import {
@@ -352,9 +353,9 @@ test('the sensitive session says so in the status bar until it is switched off',
   await openPdf(page, 'secret.pdf', toolFixturePdf());
   const flag = statusBar(page).getByText('Sensitive session: persistent draft disabled.');
   await expect(flag).toHaveCount(0);
-  await runCommand(page, 'Sensitive Session');
+  await runCommand(page, 'Sensitive session');
   await expect(flag).toBeVisible();
-  await runCommand(page, 'Sensitive Session');
+  await runCommand(page, 'Sensitive session');
   await expect(flag).toHaveCount(0);
 });
 
@@ -679,7 +680,7 @@ test('on a page turned a quarter the picture keeps the size it shows on screen',
 
 const settingsStrip = (page: Page) => page.getByRole('group', { name: 'Tool settings' });
 
-test('Add Text settings: the size is kept between 6 and 72 pt, an empty field keeps the last size, colour and author are taken', async ({
+test('Add Text settings: the size is kept between 6 and 72 pt, an empty field keeps the last size, the colour is taken and there is no author field', async ({
   page,
 }) => {
   await openPdf(page);
@@ -700,9 +701,7 @@ test('Add Text settings: the size is kept between 6 and 72 pt, an empty field ke
   const colour = strip.getByLabel('Color');
   await colour.fill('#0000ff');
   await expect(colour).toHaveValue('#0000ff');
-  const author = strip.getByRole('textbox', { name: 'Author' });
-  await author.fill('Ada Lovelace');
-  await expect(author).toHaveValue('Ada Lovelace');
+  await expect(strip.getByLabel('Author')).toHaveCount(0);
 });
 
 test('shape settings: thickness stays between 1 and 20, opacity is read out, and the chosen kind is what is drawn', async ({
@@ -731,6 +730,39 @@ test('shape settings: thickness stays between 1 and 20, opacity is read out, and
   const produced = await readProducedPdf(await exportBytes(page, 'circle.pdf'));
   const circles = produced.annotations.filter((mark) => mark.subtype === 'Circle');
   expect(circles).toHaveLength(1);
+});
+
+test('each tool keeps its own style, a new shape starts solid, and the styles are remembered after a reload', async ({
+  page,
+}) => {
+  await openPdf(page);
+  const strip = settingsStrip(page);
+  await rail(page, 'Freehand drawing').click();
+  await expect(strip.getByRole('slider', { name: 'Opacity' })).toHaveValue('1');
+  await strip.getByLabel('Color').fill('#00aa00');
+  await rail(page, 'Draw Shape (Rectangle)').click();
+  await expect(strip.getByRole('slider', { name: 'Opacity' })).toHaveValue('1');
+  await expect(strip.getByLabel('Color')).not.toHaveValue('#00aa00');
+  await rail(page, 'Mark Up Text (highlight, underline, strike)').click();
+  await expect(strip.getByLabel('Color')).toHaveValue('#ffd400');
+  await expect(strip.getByRole('slider', { name: 'Opacity' })).toHaveValue('0.4');
+
+  await openPdf(page);
+  await rail(page, 'Freehand drawing').click();
+  await expect(strip.getByLabel('Color')).toHaveValue('#00aa00');
+});
+
+test('the author is one setting of the Settings dialog, kept after a reload', async ({ page }) => {
+  await openPdf(page);
+  await useAuthor(page, 'Ada Lovelace');
+  await openPdf(page);
+  await page
+    .getByRole('button', { name: /^(Ayarlar|Settings)$/ })
+    .first()
+    .click();
+  await expect(
+    page.getByRole('dialog', { name: /Ayarlar|Settings/ }).getByRole('textbox', { name: /^(Yazar|Author)$/ }),
+  ).toHaveValue('Ada Lovelace');
 });
 
 test('redaction settings count the marked areas and Apply redaction removes the covered text from the file', async ({

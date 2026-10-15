@@ -17,6 +17,7 @@ import type { ViewerApi } from 'pdf-ui/viewer';
 import { Profiler, type ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { pendingOverlays } from '../../operations';
+import { defaultToolStyles } from '../annotations/annotation-style';
 import { annotationsStore, initialAnnotationsState } from '../annotations/annotations-store';
 import { coreStore, initialCoreState } from '../core/core-store';
 import { adoptHandle } from '../core/handles';
@@ -438,28 +439,29 @@ describe('ViewerArea', () => {
     expect(attribute('measure overlay', 'data-can-edit')).toBe('false');
   });
 
-  it('draws the annotation style on the measurements and the annotation layer', () => {
+  it('draws each layer with its own style: the ruler with the measure style, the armed tool with its own', () => {
     openTab();
     viewerChanged(viewer);
     annotationsStore.set({
-      style: {
-        color: '#abcdef',
-        textColor: '#123456',
-        fontSize: 14,
-        opacity: 0.5,
-        thickness: 3,
-        author: 'Zed',
+      styles: {
+        ...defaultToolStyles(),
+        measure: { color: '#abcdef', opacity: 0.5, thickness: 3, fontSize: 12 },
+        shapes: { color: '#123456', opacity: 0.8, thickness: 6, fontSize: 14 },
       },
+      author: 'Zed',
     });
-    coreStore.set({ shape: 'circle' });
+    coreStore.set({ canvasTool: 'shapes', shape: 'circle' });
     writeOverlay(session, 'measures', [{ id: 'm1' } as never], 'panel.comments');
     mount();
     expect(attribute('measure overlay', 'data-marks')).toBe('1');
     expect(attribute('measure overlay', 'data-can-edit')).toBe('true');
+    expect(attribute('measure overlay', 'data-color')).toBe('#abcdef');
+    expect(attribute('measure overlay', 'data-opacity')).toBe('0.5');
+    expect(attribute('measure overlay', 'data-thickness')).toBe('3');
+    expect(attribute('annotation layer', 'data-color')).toBe('#123456');
+    expect(attribute('annotation layer', 'data-opacity')).toBe('0.8');
+    expect(attribute('annotation layer', 'data-thickness')).toBe('6');
     for (const layer of ['measure overlay', 'annotation layer']) {
-      expect(attribute(layer, 'data-color'), layer).toBe('#abcdef');
-      expect(attribute(layer, 'data-opacity'), layer).toBe('0.5');
-      expect(attribute(layer, 'data-thickness'), layer).toBe('3');
       expect(attribute(layer, 'data-author'), layer).toBe('Zed');
     }
     expect(attribute('annotation layer', 'data-shape')).toBe('circle');

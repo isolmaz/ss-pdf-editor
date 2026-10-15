@@ -327,12 +327,43 @@ test('view and settings commands from the menu bar act and are named in the inte
   await menu('View', 'Magnifier', 'menuitemcheckbox');
 
   // The dark theme reaches the document element, then the light one takes it back.
-  await menu('Settings', 'Dark Theme', 'menuitemcheckbox');
+  await menu('Settings', 'Dark theme', 'menuitemcheckbox');
   await expect(page.locator('html')).toHaveAttribute('data-mode', 'dark');
-  await menu('Settings', 'Light Theme', 'menuitemcheckbox');
+  await menu('Settings', 'Light theme', 'menuitemcheckbox');
   await expect(page.locator('html')).not.toHaveAttribute('data-mode', 'dark');
 
   // The batch dialog opens in the interface language.
   await menu('File', 'Batch operations');
   await expect(page.getByRole('dialog', { name: 'Batch operations' })).toBeVisible();
+});
+
+test('menus rule off their sections, say why an entry is unavailable and drop the Settings menu in the simple mode', async ({
+  page,
+}) => {
+  await open(page, 'sections.pdf', toolFixturePdf());
+  // The header has a Settings button, so a menu holding only "Settings" would say it twice.
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Settings', exact: true })).toHaveCount(0);
+
+  await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
+  const menu = page.getByRole('menu');
+  // Undo, redo | pages | marks | find, rename: three rules between four sections.
+  await expect(menu.getByRole('separator')).toHaveCount(3);
+  const undo = menu.getByRole('menuitem', { name: /^Undo/ });
+  await expect(undo).toBeDisabled();
+  await expect(undo).toHaveAttribute('aria-description', 'Nothing to undo.');
+  await expect(undo).toHaveAttribute('title', 'Nothing to undo.');
+  // Nothing is selected, so deleting a mark says what to do first.
+  await expect(menu.getByRole('menuitem', { name: /^Delete/ })).toHaveAttribute(
+    'aria-description',
+    'Select a mark first.',
+  );
+  // An available entry has no such text.
+  await expect(menu.getByRole('menuitem', { name: /^Rename/ })).not.toHaveAttribute('aria-description');
+  await page.keyboard.press('Escape');
+
+  await useAdvancedMode(page);
+  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+  // Settings | theme | privacy.
+  await expect(page.getByRole('menu').getByRole('separator')).toHaveCount(2);
 });

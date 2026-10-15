@@ -63,12 +63,12 @@ test('fit width fills the pane, fit page fits the whole page in it, and actual s
   expect(whole.height).toBeGreaterThan(clientHeight - 60);
   expect(whole.width / whole.height).toBeCloseTo(595 / 842, 2);
 
-  // Actual size: a point is 96/72 CSS pixels, and zooming in 25 % more is 25 % wider.
+  // Actual size: a point is 96/72 CSS pixels, and zooming in is one standard stop up: 110 %.
   await page.keyboard.press('Control+1');
   await expect.poll(async () => Math.round((await firstPage(page)).width)).toBe(Math.round((595 * 96) / 72));
   await page.keyboard.press('Control+=');
   await expect
-    .poll(async () => Math.abs((await firstPage(page)).width - ((595 * 96) / 72) * 1.25) < 1.5)
+    .poll(async () => Math.abs((await firstPage(page)).width - ((595 * 96) / 72) * 1.1) < 1.5)
     .toBe(true);
 });
 
