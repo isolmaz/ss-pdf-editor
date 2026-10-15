@@ -364,9 +364,9 @@ export const en: Record<MessageKey, string> = {
   'export.downloadCompressed': 'Download compressed PDF',
   'export.downloadImages': 'Download images',
   'export.downloadText': 'Download text file',
-  'export.levelHigh': 'High',
-  'export.levelMedium': 'Medium',
-  'export.levelLow': 'Low',
+  'export.levelHigh': 'Smaller file',
+  'export.levelMedium': 'Balanced',
+  'export.levelLow': 'Higher quality',
 
   // Context Menu
   'context.selection': 'Text selection actions',

@@ -223,7 +223,7 @@ test('export options: the image format chosen in the export dialog is the one th
   await page.getByRole('button', { name: 'Export options' }).click();
   const dialog = page.getByRole('dialog', { name: 'Export options' });
   await dialog.getByRole('radio', { name: 'Image format' }).check();
-  await dialog.getByRole('combobox').nth(1).selectOption('jpg');
+  await dialog.getByRole('combobox').nth(1).selectOption('jpeg');
   await dialog.getByRole('button', { name: 'Download images' }).click();
   const form = page.getByRole('region', { name: 'Export pages as images' });
   await expect(form).toBeVisible({ timeout: 30_000 });
@@ -234,6 +234,20 @@ test('export options: the image format chosen in the export dialog is the one th
   );
   expect(file?.name).toBe('choice-001.jpg');
   expect([...(file?.bytes.slice(0, 3) ?? [])]).toEqual([0xff, 0xd8, 0xff]);
+});
+
+test('export options: Markdown chosen in the export dialog is the format the text form starts with', async ({
+  page,
+}) => {
+  await open(page, 'notes.pdf', labelledPdf('Note', 1));
+  await page.getByRole('button', { name: 'Export options' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Export options' });
+  await dialog.getByRole('radio', { name: 'Text format' }).check();
+  await dialog.getByRole('combobox', { name: 'Text format' }).selectOption('markdown');
+  await dialog.getByRole('button', { name: 'Download text file' }).click();
+  const form = page.getByRole('region', { name: 'Export text' });
+  await expect(form).toBeVisible({ timeout: 30_000 });
+  await expect(form.getByRole('radio', { name: 'Markdown' })).toBeChecked();
 });
 
 test('print: the chosen range is rendered into the print sheet and handed to the browser', async ({

@@ -368,9 +368,9 @@ export const tr = {
   'export.downloadCompressed': 'Sıkıştırılmış PDF indir',
   'export.downloadImages': 'Görselleri indir',
   'export.downloadText': 'Metin dosyasını indir',
-  'export.levelHigh': 'Yüksek',
-  'export.levelMedium': 'Orta',
-  'export.levelLow': 'Düşük',
+  'export.levelHigh': 'Daha küçük dosya',
+  'export.levelMedium': 'Dengeli',
+  'export.levelLow': 'Daha yüksek kalite',
 
   // Context Menu
   'context.selection': 'Seçili metin işlemleri',

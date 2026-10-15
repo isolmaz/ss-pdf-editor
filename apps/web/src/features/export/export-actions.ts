@@ -36,10 +36,10 @@ export function createExportChoice(deps: ExportDeps): (choice: ExportOptions) =>
       deps.openDialog('compress', compressionPresets(choice.compressionLevel));
     } else if (choice.kind === 'images') {
       // The choice made in the export dialog is the form's starting value; dropping it
-      // made a JPG request open a PNG form.
-      deps.openDialog('export-images', { format: choice.imageFormat === 'jpg' ? 'jpeg' : 'png' });
+      // made a JPEG request open a PNG form.
+      deps.openDialog('export-images', { format: choice.imageFormat ?? 'png' });
     } else if (choice.kind === 'text') {
-      deps.openDialog('export-text');
+      deps.openDialog('export-text', { format: choice.textFormat ?? 'text' });
     } else {
       // The Word layout is the form's own field only while Word is the format.
       const format = choice.officeFormat ?? 'docx';

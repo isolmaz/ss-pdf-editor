@@ -51,17 +51,21 @@ describe('createExportChoice', () => {
   });
 
   it('opens the images form starting from the format the dialog chose', () => {
-    choose({ kind: 'images', imageFormat: 'jpg' });
+    choose({ kind: 'images', imageFormat: 'jpeg' });
     expect(openDialog).toHaveBeenLastCalledWith('export-images', { format: 'jpeg' });
+    choose({ kind: 'images', imageFormat: 'webp' });
+    expect(openDialog).toHaveBeenLastCalledWith('export-images', { format: 'webp' });
     choose({ kind: 'images', imageFormat: 'png' });
     expect(openDialog).toHaveBeenLastCalledWith('export-images', { format: 'png' });
     choose({ kind: 'images' });
     expect(openDialog).toHaveBeenLastCalledWith('export-images', { format: 'png' });
   });
 
-  it('opens the text form with no starting values', () => {
+  it('opens the text form starting from the format the dialog chose', () => {
+    choose({ kind: 'text', textFormat: 'markdown' });
+    expect(openDialog).toHaveBeenLastCalledWith('export-text', { format: 'markdown' });
     choose({ kind: 'text' });
-    expect(openDialog).toHaveBeenCalledWith('export-text');
+    expect(openDialog).toHaveBeenLastCalledWith('export-text', { format: 'text' });
   });
 
   it('opens the office form with the layout only while Word is the format', () => {

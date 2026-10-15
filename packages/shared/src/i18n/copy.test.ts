@@ -104,6 +104,12 @@ describe('tool names', () => {
     ]).toEqual(['Mesafe ölç', 'Çevre ölç', 'Alan ölç']);
     expect(tr['toolbar.measure']).toBe('Ölç');
   });
+
+  it('names the quick-export compression levels by what they give, not by a grade', () => {
+    const levels = ['export.levelHigh', 'export.levelMedium', 'export.levelLow'] as const;
+    expect(levels.map((key) => tr[key])).toEqual(['Daha küçük dosya', 'Dengeli', 'Daha yüksek kalite']);
+    expect(levels.map((key) => en[key])).toEqual(['Smaller file', 'Balanced', 'Higher quality']);
+  });
 });
 
 /**

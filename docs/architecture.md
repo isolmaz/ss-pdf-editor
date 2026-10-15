@@ -2629,7 +2629,7 @@ testable logic lives:
 | `notices.ts` | Turns notice descriptors, verification results and failures into sentences (i18n keys and params only, no English literals) |
 | `main.tsx` | Entry: creates the one `SessionStore`, awaits the interface language's catalogue, renders `App` inside the root error boundary (`recovery.tsx`), then warms the engine, editor, printer and palette chunks on idle (§2) |
 | `lazy-ops.ts` | Same-signature wrappers that load the writers and readers the shell runs only on an action (§2) |
-| `export-presets.ts`, `signature-store.ts` | What the export dialog's "Compressed PDF" level fills into the Optimize form, and the remembered simple signature (§8.7) |
+| `export-presets.ts`, `signature-store.ts` | What the export dialog's compression level ("Smaller file", "Balanced", "Higher quality") fills into the Optimize form, and the remembered simple signature (§8.7) |
 | `drafts.ts` | The OPFS half of draft storage |
 | `vault-channel.ts` | Cross-window vault coordination |
 | `offline.ts` | Capability manifests and readiness |
