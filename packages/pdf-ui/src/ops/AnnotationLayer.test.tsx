@@ -17,7 +17,6 @@ import {
   type AnnotationLayerProps,
   type AnnotationTool,
   markVisual,
-  selectionBoxes,
 } from './AnnotationLayer';
 import { clientOf, type FakePage, fakeViewer } from './layer-viewer.fixtures';
 import { markPageFrameOf } from './mark-interaction';
@@ -483,114 +482,6 @@ describe('what the layer draws for held marks', () => {
     expect(container.querySelectorAll('span')).toHaveLength(1);
     expect(container.textContent).toBe('x');
   });
-});
-
-describe('what a selection measures', () => {
-  it('has nothing to measure without a selection, a collapsed one or one with no ranges', () => {
-    const viewer = fakeViewer();
-    vi.spyOn(window, 'getSelection').mockReturnValueOnce(null);
-    expect(selectionBoxes(viewer)).toEqual([]);
-    vi.spyOn(window, 'getSelection').mockReturnValueOnce({ isCollapsed: true, rangeCount: 1 } as Selection);
-    expect(selectionBoxes(viewer)).toEqual([]);
-    vi.spyOn(window, 'getSelection').mockReturnValueOnce({ isCollapsed: false, rangeCount: 0 } as Selection);
-    expect(selectionBoxes(viewer)).toEqual([]);
-  });
-
-  it('skips empty rects and rects off the pages or across a page break', () => {
-    selectText([
-      { left: 120, top: 100, right: 120, bottom: 120 },
-      { left: 120, top: 100, right: 160, bottom: 100 },
-      { left: 5, top: 5, right: 20, bottom: 20 },
-      { left: 120, top: 440, right: 160, bottom: 520 },
-    ]);
-    expect(selectionBoxes(fakeViewer())).toEqual([]);
-  });
-
-  it('merges the spans of one line, keeps lines apart and splits per page', () => {
-    vi.spyOn(window, 'getSelection').mockReturnValue({
-      isCollapsed: false,
-      rangeCount: 2,
-      getRangeAt: (index: number) => ({
-        getClientRects: () =>
-          (index === 0
-            ? [rectOf(300, 300, 400, 320), rectOf(100, 100, 200, 120), rectOf(200, 102, 300, 122)]
-            : [rectOf(100, 100, 200, 120, 1), rectOf(100, 130, 150, 150)]
-          ).map((rect) => ({ ...rect, width: rect.right - rect.left, height: rect.bottom - rect.top })),
-      }),
-      removeAllRanges: vi.fn(),
-    } as unknown as Selection);
-    expect(selectionBoxes(fakeViewer())).toEqual([
-      {
-        pageIndex: 0,
-        boxes: [
-          [100, 100, 300, 122],
-          [100, 130, 150, 150],
-          [300, 300, 400, 320],
-        ],
-      },
-      { pageIndex: 1, boxes: [[100, 100, 200, 120]] },
-    ]);
-  });
-
-  it('orders boxes that start on the same height from left to right', () => {
-    selectText([rectOf(300, 100, 400, 120), rectOf(100, 100, 200, 120)]);
-    expect(selectionBoxes(fakeViewer())).toEqual([{ pageIndex: 0, boxes: [[100, 100, 400, 120]] }]);
-  });
-
-  it('measures a page whose geometry the viewer does not give as an upright one', () => {
-    const { viewer, state } = switchable();
-    state.noGeometry = true;
-    selectText([rectOf(100, 100, 200, 120), rectOf(200, 102, 300, 122)]);
-    expect(selectionBoxes(viewer)).toEqual([{ pageIndex: 0, boxes: [[100, 100, 300, 122]] }]);
-  });
-
-  /**
-   * A page turned a quarter, with the real projection: the page is 600 × 800 pt, drawn 400 × 300
-   * px, so a screen line runs along the page's own y axis and the lines are stacked along its x.
-   */
-  function turnedViewer(rotation: 90 | 270): ViewerApi {
-    const page: FakePage = {
-      rect: { x: 100, y: 50, width: 400, height: 300 },
-      box: { x: 0, y: 0, width: 600, height: 800 },
-      rotation,
-    };
-    const base = fakeViewer({ pages: [page] });
-    return {
-      ...base,
-      pointToPage: (clientX: number, clientY: number) => {
-        const frame = markPageFrameOf(base, 0);
-        const inside =
-          clientX >= page.rect.x &&
-          clientX <= page.rect.x + page.rect.width &&
-          clientY >= page.rect.y &&
-          clientY <= page.rect.y + page.rect.height;
-        return frame === null || !inside ? null : { pageIndex: 0, ...frame.toPage(clientX, clientY) };
-      },
-    } as ViewerApi;
-  }
-
-  it.each<[90 | 270]>([[90], [270]])(
-    'keeps the lines of a page turned %s° apart and merges the spans of each',
-    (rotation) => {
-      // Two screen lines (y 100–120 and 150–170), two spans each along x 120–200 and 200–300.
-      selectText([
-        { left: 120, top: 100, right: 200, bottom: 120 },
-        { left: 200, top: 101, right: 300, bottom: 121 },
-        { left: 120, top: 150, right: 200, bottom: 170 },
-        { left: 200, top: 151, right: 300, bottom: 171 },
-      ]);
-      const [selection] = selectionBoxes(turnedViewer(rotation));
-      const boxes = selection?.boxes ?? [];
-      expect(boxes).toHaveLength(2);
-      for (const box of boxes) {
-        // One line is 21 px thick across the page's x (42 pt) and 180 px long along its y (360 pt).
-        expect(box[2] - box[0]).toBeCloseTo(42, 6);
-        expect(box[3] - box[1]).toBeCloseTo(360, 6);
-      }
-      // The two lines are 50 px (100 pt) apart across x, and do not touch.
-      expect(Math.abs((boxes[1]?.[0] ?? 0) - (boxes[0]?.[0] ?? 0))).toBeCloseTo(100, 6);
-    },
-  );
 });
 
 describe('text marks', () => {

@@ -32,11 +32,7 @@ export type {
   OpRunResult,
 } from './dialogs/types';
 export { DIALOG_IDS, dialogById, hasDialog, isStandaloneDialog } from './ops';
-export {
-  AnnotationLayer,
-  type AnnotationLayerProps,
-  type TextSelection,
-} from './ops/AnnotationLayer';
+export { AnnotationLayer, type AnnotationLayerProps } from './ops/AnnotationLayer';
 export {
   MeasureLayer,
   type MeasureLayerProps,

@@ -56,9 +56,9 @@ export {
   AnnotationLayer,
   type AnnotationLayerProps,
   type AnnotationTool,
-  type TextSelection,
 } from '../ops/AnnotationLayer';
 export { RedactionLayer, type RedactionLayerProps } from '../ops/RedactionLayer';
+export type { TextSelection } from '../ops/selection-boxes';
 export type { DocumentPanelTab } from '../panels/DocumentPanel';
 export { DocumentPanel, type DocumentPanelProps, type OutlineEntry } from '../panels/DocumentPanel';
 export { HistoryPanel, type HistoryPanelProps } from '../panels/HistoryPanel';
