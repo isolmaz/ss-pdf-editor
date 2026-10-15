@@ -31,21 +31,35 @@ const execution = {
   plan: { incremental: true },
 };
 
-/** A file the browser would hand back: reads and writes go through the same bytes. */
+/**
+ * A file the browser would hand back: reads and writes go through the same bytes, and every write
+ * moves the modified time the way a disk does. `reads()` counts the times the contents were read.
+ */
 function fakeFile(initial: readonly number[] = [1, 2, 3]) {
   let stored: Uint8Array = new Uint8Array(initial);
+  let modified = 1_000;
+  let reads = 0;
   const writable = {
     write: vi.fn(async (value: Uint8Array) => {
       pending = value;
     }),
     close: vi.fn(async () => {
       stored = pending;
+      modified += 1;
     }),
     abort: vi.fn(async () => undefined),
   };
   let pending: Uint8Array = stored;
   const file = {
-    getFile: vi.fn(async () => new Blob([stored as BlobPart])),
+    getFile: vi.fn(async () => {
+      const snapshot = new File([stored as BlobPart], 'target.pdf', { lastModified: modified });
+      const read = snapshot.arrayBuffer.bind(snapshot);
+      snapshot.arrayBuffer = async () => {
+        reads += 1;
+        return read();
+      };
+      return snapshot;
+    }),
     createWritable: vi.fn(async () => writable),
   };
   return {
@@ -53,8 +67,15 @@ function fakeFile(initial: readonly number[] = [1, 2, 3]) {
     writable,
     createWritable: file.createWritable,
     bytes: () => stored,
+    reads: () => reads,
+    /** Someone else writes the file: other bytes, a later modified time. */
     replace: (value: readonly number[]) => {
       stored = new Uint8Array(value);
+      modified += 1;
+    },
+    /** Someone else saves the file again without changing a byte. */
+    touch: () => {
+      modified += 1;
     },
   };
 }
@@ -285,16 +306,45 @@ describe('saveDocument', () => {
     const tab = await open();
     const target = fakeFile([5, 5, 5]);
     vi.stubGlobal('window', { showSaveFilePicker: async () => target.file });
-    let changed = false;
     prepareOutput.mockImplementation(async () => {
-      // Someone else writes the chosen destination while the document is prepared.
-      if (changed) target.replace([6]);
+      // Someone else writes the chosen destination while the document is prepared: the same
+      // number of bytes, so only the contents can tell.
+      target.replace([6, 6, 6]);
       return prepared(tab);
     });
-    changed = true;
     expect(await saveDocument(host, tab.id)).toBe(false);
     expect(coreStore.get().notice).toContain('error.conflict.message');
+    expect(target.createWritable).not.toHaveBeenCalled();
     expect(session.getSnapshot().tabs[0]?.source.handle).toBeUndefined();
+  });
+
+  it('reads a Save As destination once when nothing touched it while the document was prepared', async () => {
+    const tab = await open();
+    // A destination the user picked that is not the opened file, and is not empty either.
+    const target = fakeFile([5, 5, 5]);
+    vi.stubGlobal('window', { showSaveFilePicker: async () => target.file });
+    prepareOutput.mockResolvedValue(prepared(tab));
+
+    expect(await saveDocument(host, tab.id)).toBe(true);
+
+    expect(target.reads()).toBe(1);
+    expect(target.bytes()).toEqual(output);
+  });
+
+  it('still writes a Save As destination that was touched but holds the same bytes', async () => {
+    const tab = await open();
+    const target = fakeFile([5, 5, 5]);
+    vi.stubGlobal('window', { showSaveFilePicker: async () => target.file });
+    prepareOutput.mockImplementation(async () => {
+      target.touch();
+      return prepared(tab);
+    });
+
+    expect(await saveDocument(host, tab.id)).toBe(true);
+
+    // The baseline, then the check of the file whose modified time moved.
+    expect(target.reads()).toBe(2);
+    expect(target.bytes()).toEqual(output);
   });
 
   it('leaves the tab dirty and writes nothing when the preparation says no', async () => {
@@ -424,11 +474,54 @@ describe('exportDocument', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(created);
   });
 
-  it('reports a saved copy when the document has a file of its own', async () => {
+  it('names the download as a PDF, as Save does', async () => {
+    const tab = await open('report');
+    prepareOutput.mockResolvedValue(prepared(tab));
+    await exportDocument(host, tab.id);
+    expect(anchor.download).toBe('report.pdf');
+  });
+
+  it('is the save where a download is the only way to save: the version is recorded and the tab is clean', async () => {
+    const tab = await open('report');
+    session.setOverlays(tab.id, { annotations: ['edit'] }, 'ann.engineEdit');
+    expect(session.getSnapshot().tabs[0]?.dirty).toBe(true);
+    prepareOutput.mockImplementation(async () => prepared(tab));
+
+    await exportDocument(host, tab.id);
+
+    const exported = session.getSnapshot().tabs[0];
+    expect(exported?.outputs).toHaveLength(1);
+    expect(exported?.outputs[0]).toMatchObject({
+      fromWorkingVersion: exported?.working.id,
+      fromState: exported?.working.stateId,
+      steps: ['pdfjs:saveDocument'],
+      appliedSteps: ['mupdf:rotate'],
+      incremental: true,
+      verification,
+      writtenTo: { fileName: 'report', sha256: 'output-hash' },
+    });
+    expect(exported?.dirty).toBe(false);
+  });
+
+  it('stays a copy where the browser can write files: the document is as unsaved as it was', async () => {
+    vi.stubGlobal('window', { showSaveFilePicker: vi.fn() });
+    const tab = await open('report');
+    session.setOverlays(tab.id, { annotations: ['edit'] }, 'ann.engineEdit');
+    prepareOutput.mockImplementation(async () => prepared(tab));
+
+    await exportDocument(host, tab.id);
+
+    expect(anchor.click).toHaveBeenCalledTimes(1);
+    expect(session.getSnapshot().tabs[0]?.outputs).toHaveLength(0);
+    expect(session.getSnapshot().tabs[0]?.dirty).toBe(true);
+  });
+
+  it('reports a saved copy when the document has a file of its own, and records nothing', async () => {
     const tab = await open('copy.pdf', fakeFile().file);
     prepareOutput.mockResolvedValue(prepared(tab));
     await exportDocument(host, tab.id);
     expect(coreStore.get().notice).toContain('save.done copy.pdf');
+    expect(session.getSnapshot().tabs[0]?.outputs).toHaveLength(0);
   });
 
   it('downloads nothing when the preparation says no', async () => {

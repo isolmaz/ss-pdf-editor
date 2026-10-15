@@ -142,18 +142,18 @@ describe('PropertiesFacts', () => {
     expect(screen.getByText('lists:CRL A')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'import root' }));
-    expect(screen.getByText(/^roots:Root A,Root B$/)).toBeTruthy();
+    expect(await screen.findByText(/^roots:Root A,Root B$/)).toBeTruthy();
     expect(coreStore.get().notice).toBe(t('props.sig.roots.added', { count: 1 }));
 
     await user.click(screen.getByRole('button', { name: 'remove root' }));
-    expect(screen.getByText('roots:Root B')).toBeTruthy();
+    expect(await screen.findByText('roots:Root B')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'import list' }));
-    expect(screen.getByText('lists:CRL A,CRL B')).toBeTruthy();
+    expect(await screen.findByText('lists:CRL A,CRL B')).toBeTruthy();
     expect(coreStore.get().notice).toBe(t('props.sig.crls.added', { count: 1 }));
 
     await user.click(screen.getByRole('button', { name: 'remove list' }));
-    expect(screen.getByText('lists:CRL B')).toBeTruthy();
+    expect(await screen.findByText('lists:CRL B')).toBeTruthy();
     expect(files.write).toHaveBeenCalledTimes(4);
   });
 

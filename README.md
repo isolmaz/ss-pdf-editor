@@ -163,9 +163,16 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   unsaved changes, a signature warning, export, print or settings, plus the XFA form
   viewer, which needs the room.
 - **Save versus Export.** *Save* writes over the file you opened; this needs Chromium
-  and its File System Access API. *Export* always downloads a copy; its dialog shows the
-  size of the document as it is now, not as it was opened. Firefox and Safari offer Export
-  only.
+  and its File System Access API, and a document with no file yet asks where to save it
+  first. The header's Save button and the Save entry of the menu and the palette are offered
+  under the same conditions; where the browser cannot write files there is no Save button
+  (`Ctrl+S` downloads there). *Export* always downloads a copy, named as a PDF;
+  its dialog shows the size of the document as it is now, not as it was opened. Firefox and
+  Safari offer Export only, and there the download is the only way to keep your work, so it
+  also counts as saving: the document is no longer marked as having unsaved changes. In
+  Chromium an export is a copy and leaves the document as unsaved as it was. Saving to a file
+  you pick with *Save as* reads that file once; it is read again only if its size or modified
+  time changed while the document was being prepared, and a changed file is never overwritten.
 - **Forms.** The editor lists the AcroForm fields. You can create fields, set flags,
   flatten them and add simple calculations. Form data can be imported or exported as FDF
   or JSON; exporting downloads only the data file.
@@ -494,6 +501,10 @@ nothing leaving the browser.
     with the stored one leaves the signature unchecked.
   - Trust is checked only against certificates you imported. A certificate that is not yet
     valid is reported with the date it becomes valid; any other shows its expiry date.
+  - What you import is stored on this device, and a change is applied only once the write
+    succeeded: if the browser's storage refuses it, the root or list is neither added nor
+    removed and the notice says why. A stored list the browser cannot read is reported too,
+    instead of showing an empty list.
   - Revocation is read from lists already on your device, never fetched: CRLs you import in
     the signature panel (DER or PEM, kept in the app's own storage until you remove them) and
     the CRLs and OCSP responses stored in the PDF (the `/DSS` and the signature's own

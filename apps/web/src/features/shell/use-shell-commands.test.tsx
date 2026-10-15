@@ -37,8 +37,14 @@ let viewer: {
   setSpreadMode: ReturnType<typeof vi.fn>;
 };
 
-function openReadyTab() {
-  const tab = session.openDocument({ name: 'a.pdf', bytes: new Uint8Array([1]), sha256: 'a', pageCount: 4 });
+function openReadyTab(fileHandle?: FileSystemFileHandle) {
+  const tab = session.openDocument({
+    name: 'a.pdf',
+    bytes: new Uint8Array([1]),
+    sha256: 'a',
+    pageCount: 4,
+    ...(fileHandle === undefined ? {} : { handle: fileHandle }),
+  });
   adoptHandle(tab.id, handle);
   hideStartScreen();
   factsRead({
@@ -79,7 +85,10 @@ function run(result: { current: ReturnType<typeof useShellCommands> }, id: strin
   act(() => command.run());
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -261,13 +270,44 @@ describe('useShellCommands', () => {
     openReadyTab();
     openStore.set({ showHomeScreen: true });
     const { result } = mount();
-    // The tab was not opened from a file handle, so "Save" is disabled.
-    expect(result.current.commands.find((item) => item.id === 'file.save')?.disabled).toBe(true);
-    act(() => result.current.runHomeCommand('file.save'));
-    expect(actions.saveActive).not.toHaveBeenCalled();
+    // A fresh document has nothing to undo.
+    expect(result.current.commands.find((item) => item.id === 'edit.undo')?.disabled).toBe(true);
+    act(() => result.current.runHomeCommand('edit.undo'));
+    expect(actions.stepHistoryNow).not.toHaveBeenCalled();
     expect(openStore.get().showHomeScreen).toBe(true);
     expect(openStore.get().pendingHomeCommand).toBeNull();
     expect(actions.openViaPicker).not.toHaveBeenCalled();
+  });
+
+  it('offers Save for a document with no file yet when the browser can ask where, as the header does', () => {
+    vi.stubGlobal('showSaveFilePicker', vi.fn());
+    openReadyTab();
+    const { result } = mount();
+    const save = result.current.commands.find((item) => item.id === 'file.save');
+    expect(save?.disabled).toBeFalsy();
+    run(result, 'file.save');
+    expect(actions.saveActive).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Save for a document that has its own file, whatever the browser can ask', () => {
+    openReadyTab({} as FileSystemFileHandle);
+    const { result } = mount();
+    expect(result.current.commands.find((item) => item.id === 'file.save')?.disabled).toBeFalsy();
+  });
+
+  it('offers no Save where the browser cannot write files and the tab has no file', () => {
+    openReadyTab();
+    const { result } = mount();
+    expect(result.current.commands.find((item) => item.id === 'file.save')?.disabled).toBe(true);
+    expect(result.current.commands.find((item) => item.id === 'file.export')?.disabled).toBeFalsy();
+  });
+
+  it('disables Save and Export together while an operation holds the document', () => {
+    openReadyTab({} as FileSystemFileHandle);
+    coreStore.set({ busy: true });
+    const { result } = mount();
+    expect(result.current.commands.find((item) => item.id === 'file.save')?.disabled).toBe(true);
+    expect(result.current.commands.find((item) => item.id === 'file.export')?.disabled).toBe(true);
   });
 
   it('ignores an unknown tool', () => {
