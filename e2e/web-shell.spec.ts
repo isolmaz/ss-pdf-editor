@@ -199,8 +199,14 @@ test('the page number box takes a valid page, and an unusable or out-of-range en
   for (const entry of ['99', '0', 'abc', '']) {
     await pageBox(page).fill(entry);
     await pageBox(page).press('Enter');
+    // The box says so, and keeps what was typed until the focus leaves it.
+    await expect(pageBox(page)).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByRole('alert').filter({ hasText: 'Enter 1–3' })).toBeVisible();
+    await expect(pageBox(page)).toHaveValue(entry);
     await pageBox(page).blur();
     await expect(pageBox(page)).toHaveValue('1');
+    await expect(pageBox(page)).toHaveAttribute('aria-invalid', 'false');
+    await expect(page.getByRole('alert').filter({ hasText: 'Enter 1–3' })).toHaveCount(0);
   }
   await pageBox(page).fill('3');
   await pageBox(page).press('Enter');

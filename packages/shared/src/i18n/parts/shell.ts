@@ -11,6 +11,7 @@ export const shellPart = {
   'toolbar.comment': 'Yorum / Not Ekle',
   'nav.togglePages': 'Sayfa Paneli',
   'nav.pageNumber': 'Sayfa numarası',
+  'nav.pageInvalid': '1–{count} arası yazın',
   'nav.prevPage': 'Önceki Sayfa',
   'nav.nextPage': 'Sonraki Sayfa',
   'nav.zoomOut': 'Uzaklaştır (-)',

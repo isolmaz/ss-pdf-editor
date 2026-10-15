@@ -6,6 +6,7 @@ export const shellPart = {
   'toolbar.comment': 'Add comment / Note',
   'nav.togglePages': 'Page Panel',
   'nav.pageNumber': 'Page number',
+  'nav.pageInvalid': 'Enter 1–{count}',
   'nav.prevPage': 'Previous Page',
   'nav.nextPage': 'Next Page',
   'nav.zoomOut': 'Zoom Out (-)',

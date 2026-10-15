@@ -102,6 +102,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     `Home` and `End` go to the first and last page. `Esc` ends it, and so does the browser
     leaving full screen. A browser that refuses full screen still shows the presentation
     layout in the page. Leaving restores the zoom you had.
+- **Page box.** The status bar's page box goes to the page typed. A number outside the document,
+  or text that is not a number, is marked invalid with a short message beside the box (for
+  example “Enter 1–5”) and the page stays where it was.
 - **Zoom.** `Ctrl+=` and `Ctrl+-` (and the status bar's plus and minus) step through the
   standard levels, 25 · 33 · 50 · 67 · 75 · 90 · 100 · 110 · 125 · 150 · 175 · 200 · 250 · 300 ·
   400 %, from wherever fit width left the page. The percentage in the status bar opens a menu

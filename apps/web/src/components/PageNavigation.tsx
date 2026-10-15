@@ -19,7 +19,7 @@ import {
 } from 'pdf-shared';
 import { Tooltip } from 'pdf-ui/ui';
 import type { ZoomRequest } from 'pdf-ui/zoom';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useId, useState } from 'react';
 import { toggleLeftDock, useCore } from '../features/core/core-store';
 import { toggleReading, useReading } from '../features/reading/reading-store';
 
@@ -109,6 +109,8 @@ export function PageNavigation({
   onToggleFullscreen,
 }: PageNavigationProps) {
   const [pageInput, setPageInput] = useState<string | null>(null);
+  const [pageInvalid, setPageInvalid] = useState(false);
+  const pageMessageId = useId();
   const thumbnailsOpen = useCore((state) => state.leftDock);
   const readingActive = useReading((state) => state.reading);
   const label = (key: MessageKey) => t(key);
@@ -126,9 +128,17 @@ export function PageNavigation({
         className="flex items-center gap-1"
         onSubmit={(event) => {
           event.preventDefault();
-          const page = Number.parseInt(pageInput ?? '', 10);
-          if (!Number.isNaN(page) && page >= 1 && page <= pageCount) onGoToPage(page - 1);
-          setPageInput(null);
+          // Nothing typed: nothing to check.
+          if (pageInput === null) return;
+          const typed = pageInput.trim();
+          const page = /^\d+$/.test(typed) ? Number(typed) : Number.NaN;
+          if (page >= 1 && page <= pageCount) {
+            onGoToPage(page - 1);
+            setPageInput(null);
+          } else {
+            // Say so and keep what was typed, so the mistake is in front of the reader.
+            setPageInvalid(true);
+          }
         }}
       >
         <input
@@ -136,15 +146,28 @@ export function PageNavigation({
           inputMode="numeric"
           aria-label={label('nav.pageNumber')}
           value={pageInput ?? String(currentPage + 1)}
-          onChange={(event) => setPageInput(event.target.value)}
+          aria-invalid={pageInvalid}
+          aria-describedby={pageInvalid ? pageMessageId : undefined}
+          onChange={(event) => {
+            setPageInput(event.target.value);
+            setPageInvalid(false);
+          }}
           onFocus={(event) => {
             setPageInput(String(currentPage + 1));
             event.currentTarget.select();
           }}
-          onBlur={() => setPageInput(null)}
-          className="h-5 w-8 rounded-sm border border-kumo-line bg-kumo-base px-0.5 text-center text-xs tabular-nums text-kumo-strong focus:border-pdf-accent focus:outline-hidden"
+          onBlur={() => {
+            setPageInput(null);
+            setPageInvalid(false);
+          }}
+          className="h-5 w-8 rounded-sm border border-kumo-line bg-kumo-base px-0.5 text-center text-xs tabular-nums text-kumo-strong aria-invalid:border-kumo-danger focus:border-pdf-accent focus:outline-hidden"
         />
         <span className="tabular-nums text-kumo-subtle">/ {pageCount}</span>
+        {pageInvalid ? (
+          <span id={pageMessageId} role="alert" className="whitespace-nowrap text-kumo-danger">
+            {t('nav.pageInvalid', { count: pageCount })}
+          </span>
+        ) : null}
       </form>
       <IconButton
         label={label('nav.nextPage')}

@@ -95,11 +95,12 @@ describe('PageNavigation page and zoom controls', () => {
     expect(toggle('nav.nextPage').hasAttribute('disabled')).toBe(true);
   });
 
-  it('goes to the page typed, and ignores one out of range or not a number', async () => {
+  it('goes to the page typed, and not to one out of range or not a number', async () => {
     const user = userEvent.setup();
     const onGoToPage = vi.fn();
     render(bar({ onGoToPage }));
     expect(pageField().value).toBe('2');
+    expect(pageField().getAttribute('aria-invalid')).toBe('false');
 
     await user.click(pageField());
     await user.clear(pageField());
@@ -107,12 +108,68 @@ describe('PageNavigation page and zoom controls', () => {
     expect(onGoToPage).toHaveBeenLastCalledWith(3);
     expect(pageField().value).toBe('2');
 
-    for (const typed of ['9', '0', 'x']) {
+    for (const typed of ['9', '0', 'x', '4x', '-1', '']) {
       await user.click(pageField());
       await user.clear(pageField());
       await user.type(pageField(), `${typed}{Enter}`);
     }
     expect(onGoToPage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['9', '0', 'x', '4x', ''])(
+    'says so, and keeps %j in the box, when the page typed is not 1 to 5',
+    async (typed) => {
+      const user = userEvent.setup();
+      render(bar());
+      await user.click(pageField());
+      await user.clear(pageField());
+      await user.type(pageField(), `${typed}{Enter}`);
+
+      expect(pageField().getAttribute('aria-invalid')).toBe('true');
+      expect(pageField().value).toBe(typed);
+      const alert = screen.getByRole('alert');
+      expect(alert.textContent).toBe('Enter 1–5');
+      expect(pageField().getAttribute('aria-describedby')).toBe(alert.id);
+    },
+  );
+
+  it('takes the message back when the reader types again, leaves the box, or goes to a valid page', async () => {
+    const user = userEvent.setup();
+    const onGoToPage = vi.fn();
+    render(bar({ onGoToPage }));
+    const fail = async (typed: string) => {
+      await user.click(pageField());
+      await user.clear(pageField());
+      await user.type(pageField(), `${typed}{Enter}`);
+      expect(screen.getByRole('alert')).toBeTruthy();
+    };
+
+    await fail('9');
+    await user.type(pageField(), '1');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(pageField().getAttribute('aria-invalid')).toBe('false');
+
+    await fail('9');
+    await user.tab();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(pageField().value).toBe('2');
+
+    await fail('9');
+    await user.clear(pageField());
+    await user.type(pageField(), '3{Enter}');
+    expect(onGoToPage).toHaveBeenCalledExactlyOnceWith(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(pageField().getAttribute('aria-invalid')).toBe('false');
+  });
+
+  it('writes the message in Turkish too', async () => {
+    const tr = createTranslator('tr');
+    const user = userEvent.setup();
+    render(bar({ t: tr }));
+    const field = screen.getByRole('textbox', { name: tr('nav.pageNumber') });
+    await user.click(field);
+    await user.type(field, '9{Enter}');
+    expect(screen.getByRole('alert').textContent).toBe('1–5 arası yazın');
   });
 
   it('submits the shown page unchanged without typing, and drops a half-typed one on blur', async () => {
