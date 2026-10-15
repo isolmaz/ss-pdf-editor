@@ -18,8 +18,7 @@ What the scripts need that is not in the repository:
 
 - **Fonts.** `build-testset.mjs` draws the synthetic pages in Noto Sans (from `public/fonts/noto/`, which `pnpm fetch:engines`
   fetches) and in eight more faces (Noto Serif, Noto Sans Bold, Liberation Sans, Liberation Sans Italic, Liberation Serif,
-  DejaVu Sans, DejaVu Serif, Carlito). Point `OCRBENCH_FONTS` at a folder with those `.ttf` files (a LibreOffice install's
-  `Fonts` folder has them), or put them in `WORK/fonts`; a missing file stops the script and names it.
+  DejaVu Sans, DejaVu Serif, Carlito). Point `OCRBENCH_FONTS` at a folder with those `.ttf` files, or put them in `WORK/fonts`; a missing file stops the script and names it.
 - **The owner CV (local only).** The `cv` image (and its `.gt.txt` transcript) comes from
   the owner's PDF and `.gt.txt` in e2e/fixtures/local (named in `lib.mjs`). That folder is git-ignored: the CV is private owner data, never
   committed, never uploaded, and the CV rows of `docs/ocr-evaluation.md` cannot be reproduced without it. Without the files
