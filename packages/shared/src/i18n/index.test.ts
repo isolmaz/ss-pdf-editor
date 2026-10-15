@@ -84,6 +84,17 @@ describe('createTranslator', () => {
   });
 });
 
+describe('a {name:degrees} param', () => {
+  it('writes an angle in its own language, and leaves the placeholder when the param is missing', () => {
+    const removed = { page: 3, angle: 1.84 };
+    expect(createTranslator('en')('deskew.note.straightened', removed)).toBe('Page 3: 1.8° of tilt removed.');
+    expect(createTranslator('tr')('deskew.note.straightened', removed)).toBe(
+      'Sayfa 3: 1,8° eğiklik giderildi.',
+    );
+    expect(createTranslator('tr')('deskew.note.straightened', { page: 3 })).toContain('{angle:degrees}');
+  });
+});
+
 describe('a partial locale', () => {
   afterEach(() => {
     vi.doUnmock('./locales');

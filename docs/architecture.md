@@ -209,7 +209,7 @@ CI `verify` job, after `pnpm build`.
 | Module | Responsibility |
 |---|---|
 | `errors.ts` | The single error contract. `ToolError` carries a stable code (39 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
-| `format.ts` | `formatBytes(bytes, locale)` and `formatPercent(fraction, locale)`: sizes and percentages the way the interface language writes them (`1,5 KB` and `%140` in Turkish, `1.5 KB` and `140%` in English), through `Intl.NumberFormat`. Report notes never format a size: they carry the byte counts as numbers and the sentence asks for a size with a `{name:bytes}` placeholder, which `createTranslator` writes in its own locale. |
+| `format.ts` | `formatBytes(bytes, locale)`, `formatPercent(fraction, locale)` and `formatDegrees(degrees, locale)`: sizes, percentages and angles the way the interface language writes them (`1,5 KB`, `%140` and `1,8°` in Turkish, `1.5 KB`, `140%` and `1.8°` in English), through `Intl.NumberFormat`. Report notes never format a size or an angle: they carry the numbers and the sentence asks for them with a `{name:bytes}`, `{name:percent}` or `{name:degrees}` placeholder, which `createTranslator` writes in its own locale. |
 | `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`; the gauge and the limit-profile badge are drawn only while the limit verdict is not `ok` or the gauge is at 75 % or more (from 768 px up). |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
@@ -800,7 +800,8 @@ writer does, and the steps it reports:
          positions move with the frame; `textBoxXml` writes it as a frame turned by `a:xfrm rot`
          like a slanted PDF line, so the text sits on the scan's own lines, which Word draws
          turned and LibreOffice draws level at the same centre. A page read from its own text
-         layer is never turned.
+         layer is never turned. The search itself (`inkPoints`, `skewOfPoints(points, range)`) is
+         shared with the straightening tool (§5.14), which widens the window to ±15°.
        - *Underlines.* Rules under words make Tesseract misread them (a link's underline cuts
          the descenders). `findUnderlines` looks, for every word of at least two letters or
          digits and at least 1.2 × its height wide, at the rows from 0.35 × its height above its
