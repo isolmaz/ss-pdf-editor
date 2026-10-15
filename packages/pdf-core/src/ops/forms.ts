@@ -50,6 +50,7 @@ import {
 } from '../engines/mupdf-write';
 import { type FormDataRecord, parseFdf, parseFormJson, serializeFdf, serializeFormJson } from './form-data';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
+import { dropUsageRights } from './usage-rights';
 import type { XfaFieldSnapshot } from './xfa-data';
 
 export type FormFieldKind =
@@ -954,6 +955,7 @@ export async function fillFormFields(
             new Set(applied.map((field) => field.name)),
           )
         : null;
+    dropUsageRights(doc);
     const saved = saveRewrite(doc, 'form.save');
     notes.push(note('changed', 'form.note.filled', { count: applied.length }));
     notes.push(note('preserved', 'form.note.structure'));
@@ -1167,6 +1169,7 @@ export async function createFormFields(
       });
     }
 
+    dropUsageRights(doc);
     const saved = saveRewrite(doc, 'form.save');
     return {
       bytes: saved,
@@ -1212,6 +1215,7 @@ export async function setFieldFlags(
         total: names.length,
       });
     }
+    dropUsageRights(doc);
     const saved = saveRewrite(doc, 'form.save');
     return {
       bytes: saved,
@@ -1374,6 +1378,7 @@ export async function flattenForm(
     // The XFA would redraw every field from its data, flattened or not: it goes.
     if (hasXfa) (await loadXfa()).removeXfaEntries(doc);
 
+    dropUsageRights(doc);
     const saved = saveRewrite(doc, 'form.save');
     return {
       bytes: saved,
@@ -1610,6 +1615,7 @@ export async function applyCalculations(
       // Same rule as `fillFormFields`: the value lands, the drawn form may lag.
     }
 
+    dropUsageRights(doc);
     const saved = saveRewrite(doc, 'form.save');
     return {
       bytes: saved,

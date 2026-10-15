@@ -809,7 +809,10 @@ The limits are defined once, in
     with `bind match="none"`, a global or explicit data reference, and a radio group read
     back on import, are not mirrored; the report counts them, and they keep their old value
     in the XFA.
-  - Removing the XFA drops its scripts and any usage rights the file carried.
+  - Removing the XFA drops its scripts and any usage rights the file carried. Every other
+    form write that rewrites the file (fill, create fields, flags, calculations, flatten,
+    XFA data import) also drops the Reader Extensions signature (`/Perms /UR3`, `/UR`),
+    which a rewrite would invalidate anyway; a `/DocMDP` certification is left alone.
   - A flattened dynamic form is pictures plus an invisible text layer, drawn with the
     browser's fonts rather than the form's, at the resolution picked when it was drawn.
   - The XFA renderer is pdf.js's: a form that relies on features it does not implement

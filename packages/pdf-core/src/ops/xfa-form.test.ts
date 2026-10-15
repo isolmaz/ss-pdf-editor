@@ -9,6 +9,7 @@
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { ToolError } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fillFormFields, flattenForm, readFormFields } from './forms';
 import type { OperationOutcome } from './types';
@@ -21,7 +22,17 @@ import {
   removeXfa,
   syncXfaDatasets,
 } from './xfa-form';
-import { DATASETS, datasetsOf, editWidgets, TEMPLATE, withPdf, xfaPdf, xfaTexts } from './xfa-form.fixtures';
+import {
+  DATASETS,
+  datasetsOf,
+  editWidgets,
+  permsKeys,
+  TEMPLATE,
+  withPdf,
+  withUsageRights,
+  xfaPdf,
+  xfaTexts,
+} from './xfa-form.fixtures';
 
 const run = { signal: new AbortController().signal };
 
@@ -476,5 +487,72 @@ describe('checking a save of a dynamic form', () => {
       return new Uint8Array(doc.saveToBuffer('').asUint8Array());
     });
     await expect(finishXfaFill(before, twoPages, run)).rejects.toMatchObject({ code: 'verification-failed' });
+  });
+});
+
+describe('exporting data with several data roots', () => {
+  it('exports one XML document that importing it again accepts, with the same data', async () => {
+    const two =
+      '<xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><a>1</a><b>2</b></xfa:data></xfa:datasets>';
+    const bytes = await xfaPdf({ kind: 'dynamic', datasets: two });
+    const exported = await exportXfaData(bytes);
+    expect(exported.values).toBe(2);
+    const imported = await importXfaData(await xfaPdf({ kind: 'dynamic' }), exported.bytes, run);
+    expect(imported.values).toBe(2);
+    const datasets = await datasetsOf(imported.bytes);
+    expect(datasets).toContain('<a>1</a><b>2</b>');
+    expect(datasets).not.toContain('Old');
+  });
+});
+
+describe('importing data nested past the limit', () => {
+  it('refuses a 5000-deep file with a ToolError', async () => {
+    const deep = `${'<a>'.repeat(5000)}x${'</a>'.repeat(5000)}`;
+    const failure = await importXfaData(await xfaPdf({ kind: 'static' }), deep, run).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(ToolError);
+    expect(failure).toMatchObject({ code: 'unsupported' });
+  });
+});
+
+describe('reader-extended forms', () => {
+  const NAME = 'form1[0].#subform[0].Name[0]';
+
+  it('drops the usage-rights signatures when a fill rewrites the file, and keeps the certification', async () => {
+    const extended = await withUsageRights(await xfaPdf({ kind: 'static' }));
+    expect(await permsKeys(extended)).toEqual(['DocMDP', 'UR', 'UR3']);
+    const out = await fillFormFields(extended, [{ name: NAME, value: 'Ece' }], run);
+    expect(await permsKeys(out.bytes)).toEqual(['DocMDP']);
+    expect(await datasetsOf(out.bytes)).toContain('<Name>Ece</Name>');
+  });
+
+  it('drops /Perms altogether when the usage rights were all it held', async () => {
+    const extended = await withUsageRights(await xfaPdf({ kind: 'static' }));
+    const onlyRights = await withPdf(extended, (doc) => {
+      doc.getTrailer().get('Root').get('Perms').resolve().delete('DocMDP');
+      return new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    });
+    expect(await permsKeys(onlyRights)).toEqual(['UR', 'UR3']);
+    const out = await fillFormFields(onlyRights, [{ name: NAME, value: 'Ece' }], run);
+    expect(await permsKeys(out.bytes)).toBeNull();
+  });
+
+  it('drops them when the XFA is removed, the data is imported or the form is flattened', async () => {
+    const extended = await withUsageRights(await xfaPdf({ kind: 'static' }));
+    const removed = await removeXfa(extended, run);
+    expect(await permsKeys(removed.bytes)).toEqual(['DocMDP']);
+    const imported = await importXfaData(extended, '<form1><Name>Zed</Name></form1>', run);
+    expect(await permsKeys(imported.bytes)).toEqual(['DocMDP']);
+    const flat = await flattenForm(extended, null, run);
+    expect(await permsKeys(flat.bytes)).toEqual(['DocMDP']);
+  });
+
+  it('keeps them when the datasets are synced as an appended revision', async () => {
+    const extended = await withUsageRights(await xfaPdf({ kind: 'static' }));
+    const edited = await editWidgets(extended, { 'Name[0]': 'Ali' });
+    const synced = await syncXfaDatasets(edited);
+    expect(synced.changed).toBeGreaterThan(0);
+    expect(await permsKeys(synced.bytes)).toEqual(['DocMDP', 'UR', 'UR3']);
   });
 });
