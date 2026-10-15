@@ -1651,9 +1651,12 @@ with `OpRunResult.deliver` — the form-data **export** uses it to download its 
 the order comes from its dependency phases (`STEP_PHASE`: page composition first,
 encryption last). Page-set changes go
 through `openWithPdfjs` + `composeDocument` — the same route as the interactive page
-actions — so there is no third composition path. Bounds: 256 items, per-item failures are
-captured as mapped `ToolError` codes and the run continues, and cancellation is a report
-rather than an exception.
+actions — so there is no third composition path. Bounds: 256 items and `MAX_BATCH_BYTES` (1 GiB)
+of declared size in total, both checked before any file is read (a `BatchItem` is a name, the
+size `File.size` declares and a reader the runner calls one item at a time; an item over the
+desktop file ceiling fails as `file-too-large` unread); per-item failures, an unreadable
+file included, are captured as mapped `ToolError` codes and the run continues, and cancellation
+is a report rather than an exception.
 
 `ops/compare.ts` offers two independent answers and always names the method: a line-level
 LCS over text extracted by the **existing** text exporter (changes listed in document order, with word-level detail inside

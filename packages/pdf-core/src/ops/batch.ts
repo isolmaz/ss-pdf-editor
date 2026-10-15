@@ -27,8 +27,9 @@
  *     the mapped `ToolError` code, and the remaining items still run.
  *
  * Everything is bounded: an item larger than the desktop document ceiling is
- * refused with `file-too-large`, a rule set longer than `MAX_BATCH_ITEMS` files
- * is refused before any work starts, and the only thing that leaves this module
+ * refused with `file-too-large` (by its declared size, without reading it), a queue
+ * longer than `MAX_BATCH_ITEMS` files or larger than `MAX_BATCH_BYTES` in total is
+ * refused before any file is read, and the only thing that leaves this module
  * is the `ToolError` contract — an engine's raw English
  * message travels in `ToolError.details.engineMessage` for the report and never
  * becomes a user-facing sentence.
@@ -72,13 +73,22 @@ import {
 export const BATCH_TEMPLATE_VERSION = 1;
 
 /**
- * One file in a run. Bytes plus a name: a batch is what the user dropped on the
- * dialog, so the runner never opens a file itself (the caller owns the
- * master copy and hands disposable buffers over).
+ * One file in a run: a name, the size it declares, and the way to read it. The
+ * runner never opens a file itself and never holds more than one unread file's
+ * bytes: a batch is what the user dropped on the dialog, so the caller owns the
+ * master copy and hands over a reader that returns a disposable buffer. Keeping the
+ * size apart from the bytes is what lets the ceilings be checked before a single
+ * byte of a 300 MB file is read.
  */
 export interface BatchItem {
   readonly name: string;
-  readonly bytes: Uint8Array;
+  /** The size in bytes the source declares (`File.size`), known before anything is read. */
+  readonly size: number;
+  /**
+   * The file's bytes. Called for one item at a time, in queue order, and never for an
+   * item over the ceiling; a rejection fails that item alone.
+   */
+  readonly read: () => Promise<Uint8Array>;
 }
 
 /**
@@ -455,6 +465,15 @@ export function planBatch(steps: readonly BatchStep[]): BatchPlan {
  */
 export const MAX_BATCH_ITEMS = 256;
 
+/**
+ * Bound on the bytes one run reads, in total. The item ceiling alone (300 MB each)
+ * would still let 256 files ask for ~75 GB, and the report keeps what each file
+ * produced, so the queue's declared size is bounded as well — by the same
+ * `File.size` the ceilings use, before any file is read. An item over the item
+ * ceiling is not read and does not count. Revise it explicitly, never silently.
+ */
+export const MAX_BATCH_BYTES = 1024 * 1024 * 1024;
+
 export interface BatchProgress {
   readonly itemIndex: number;
   readonly itemName: string;
@@ -555,7 +574,8 @@ export interface BatchReport {
  * instead of losing it).
  *
  * Throws only for a problem with the *run* itself — a rule set the validator
- * refuses, an empty queue, more items than `MAX_BATCH_ITEMS` — and always as the
+ * refuses, an empty queue, more items than `MAX_BATCH_ITEMS`, more declared bytes
+ * than `MAX_BATCH_BYTES` — and always as the
  * mapped `ToolError` contract.
  */
 export async function runBatch(
@@ -578,6 +598,17 @@ export async function runBatch(
     throw new ToolError('unsupported', {
       engine: 'model',
       engineMessage: `${items.length} files in one run; the bound is ${MAX_BATCH_ITEMS}`,
+    });
+  }
+  // Only what will be read counts: an item over the ceiling fails on its own, unread.
+  const queued = items.reduce(
+    (sum, item) => (item.size > LIMITS.desktop.maxBytes ? sum : sum + item.size),
+    0,
+  );
+  if (queued > MAX_BATCH_BYTES) {
+    throw new ToolError('file-too-large', {
+      engine: 'model',
+      engineMessage: `${queued} bytes in one run; the bound is ${MAX_BATCH_BYTES}`,
     });
   }
 
@@ -665,24 +696,27 @@ async function runItem(
   steps: readonly BatchStep[],
   context: ItemRunContext,
 ): Promise<ItemOutcome> {
-  if (item.bytes.length > LIMITS.desktop.maxBytes) {
-    return {
-      kind: 'failed',
-      item: {
-        status: 'failed',
-        name: item.name,
-        inputBytes: item.bytes.length,
-        code: 'file-too-large',
-        messageKey: 'error.file-too-large.message',
-        hintKey: 'error.file-too-large.hint',
-        detail: `item is ${item.bytes.length} bytes, the ceiling is ${LIMITS.desktop.maxBytes}`,
-        step: null,
-        stepIndex: null,
-      },
-    };
+  if (item.size > LIMITS.desktop.maxBytes) {
+    return failedBeforeSteps(
+      item,
+      new ToolError('file-too-large', {
+        engine: 'model',
+        engineMessage: `item is ${item.size} bytes, the ceiling is ${LIMITS.desktop.maxBytes}`,
+      }),
+    );
   }
 
-  let bytes = item.bytes;
+  let input: Uint8Array;
+  try {
+    input = await item.read();
+  } catch (error) {
+    // The signal is authoritative here as well: a read that gave up after an abort is the
+    // run's own cancellation, not a failure of the file.
+    if (context.options.signal.aborted) return { kind: 'cancelled' };
+    return failedBeforeSteps(item, toToolError(error, 'model'));
+  }
+
+  let bytes = input;
   let pageCount = 0;
   let measured: number | null = null;
   const stepResults: BatchStepResult[] = [];
@@ -733,7 +767,7 @@ async function runItem(
         item: {
           status: 'failed',
           name: item.name,
-          inputBytes: item.bytes.length,
+          inputBytes: input.length,
           code: failure.code,
           messageKey: failure.messageKey,
           hintKey: failure.hintKey,
@@ -752,10 +786,28 @@ async function runItem(
       name: item.name,
       bytes,
       pageCount,
-      inputBytes: item.bytes.length,
+      inputBytes: input.length,
       outputBytes: bytes.length,
       steps: stepResults,
       extras,
+    },
+  };
+}
+
+/** An item that failed before any step ran: too large to read, or unreadable. Names no step. */
+function failedBeforeSteps(item: BatchItem, failure: ToolError): ItemOutcome {
+  return {
+    kind: 'failed',
+    item: {
+      status: 'failed',
+      name: item.name,
+      inputBytes: item.size,
+      code: failure.code,
+      messageKey: failure.messageKey,
+      hintKey: failure.hintKey,
+      detail: failure.details.engineMessage ?? null,
+      step: null,
+      stepIndex: null,
     },
   };
 }
