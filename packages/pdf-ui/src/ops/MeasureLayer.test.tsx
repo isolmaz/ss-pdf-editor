@@ -112,7 +112,7 @@ describe('the marks the session holds', () => {
     expect(line.getAttribute('stroke')).toBe('#0000ff');
     expect(line.getAttribute('stroke-opacity')).toBe('0.5');
     expect(line.getAttribute('stroke-width')).toBe('3');
-    const value = within(mark).getByText('1,00 in');
+    const value = within(mark).getByText('1.00 in');
     expect(value.style.left).toBe('186px');
     expect(value.style.top).toBe('86px');
   });
@@ -134,7 +134,7 @@ describe('the marks the session holds', () => {
     expect(polygon.getAttribute('fill-opacity')).toBe('0.25');
     expect(polygon.getAttribute('stroke-opacity')).toBe('0.9');
     expect(polygon.getAttribute('stroke-width')).toBe('1');
-    expect(within(mark).getByText('1,00 in²')).toBeTruthy();
+    expect(within(mark).getByText('1.00 in²')).toBeTruthy();
   });
 
   it('keeps a polyline one pixel wide when the mark has no thickness, and names a perimeter', () => {
@@ -156,7 +156,7 @@ describe('the marks the session holds', () => {
         }),
       ],
     });
-    expect(within(view.container).getByText('2,00 in')).toBeTruthy();
+    expect(within(view.container).getByText('2.00 in')).toBeTruthy();
   });
 
   it('places a mark on a rotated page through the page’s own rotation and scale', () => {
@@ -217,13 +217,13 @@ describe('measuring with the tool armed', () => {
     const { onReading } = show();
     await clickAt(at(100, 100));
     expect(lastReading(onReading)).toEqual({
-      primary: '0,000 in',
+      primary: '0.000 in',
       secondary: null,
-      angle: '0,0°',
+      angle: '0.0°',
       points: 2,
     });
     await moveTo(at(172, 100));
-    expect(lastReading(onReading)).toEqual({ primary: '1,00 in', secondary: null, angle: '0,0°', points: 2 });
+    expect(lastReading(onReading)).toEqual({ primary: '1.00 in', secondary: null, angle: '0.0°', points: 2 });
   });
 
   it('does not republish a reading the pointer has not changed', async () => {
@@ -239,9 +239,9 @@ describe('measuring with the tool armed', () => {
     await clickAt(at(0, 0));
     await moveTo(at(72, 72));
     expect(lastReading(onReading)).toEqual({
-      primary: '1,00 in²',
-      secondary: '4,00 in',
-      angle: '315,0°',
+      primary: '1.00 in²',
+      secondary: '4.00 in',
+      angle: '315.0°',
       points: 2,
     });
   });
@@ -302,7 +302,7 @@ describe('measuring with the tool armed', () => {
     const { onReading } = show({ mode: 'perimeter', viewer });
     await clickAt(at(0, 0));
     await clickAt(at(72, 0));
-    expect(lastReading(onReading)?.primary).toBe('1,00 in');
+    expect(lastReading(onReading)?.primary).toBe('1.00 in');
     laidOut = false;
     fireEvent.keyDown(window, { key: 'Backspace' });
     expect(lastReading(onReading)).toBeNull();
@@ -326,9 +326,9 @@ describe('measuring with the tool armed', () => {
     await clickAt(at(0, 0));
     await moveTo({ clientX: 5, clientY: 5 });
     expect(lastReading(onReading)).toEqual({
-      primary: '0,000 in',
+      primary: '0.000 in',
       secondary: null,
-      angle: '0,0°',
+      angle: '0.0°',
       points: 2,
     });
   });
@@ -344,7 +344,7 @@ describe('measuring with the tool armed', () => {
     const { onReading, rerender, view } = show();
     await clickAt(at(0, 0));
     await moveTo(at(72, 0));
-    expect(lastReading(onReading)?.primary).toBe('1,00 in');
+    expect(lastReading(onReading)?.primary).toBe('1.00 in');
     rerender({ mode: null });
     expect(lastReading(onReading)).toBeNull();
     expect(view.container.querySelector('circle')).toBeNull();
@@ -369,17 +369,17 @@ describe('snapping', () => {
     await clickAt(at(172, 100));
     await moveTo(at(103, 104));
     // The pointer is within six points of the first vertex and lands on it: 72 pt out, 72 pt back.
-    expect(lastReading(onReading)).toEqual({ primary: '2,00 in', secondary: null, angle: '0,0°', points: 3 });
+    expect(lastReading(onReading)).toEqual({ primary: '2.00 in', secondary: null, angle: '0.0°', points: 3 });
     // Thirty points from the last vertex it is just the pointer: 72 pt out, 30 pt along.
     await moveTo(at(172, 130));
-    expect(lastReading(onReading)?.primary).toBe('1,42 in');
+    expect(lastReading(onReading)?.primary).toBe('1.42 in');
   });
 
   it('leaves the pointer alone with no chain to snap to', async () => {
     const { onReading } = show({ snapPoints: true });
     await clickAt(at(100, 100));
     await moveTo(at(172, 100));
-    expect(lastReading(onReading)?.primary).toBe('1,00 in');
+    expect(lastReading(onReading)?.primary).toBe('1.00 in');
   });
 
   it('rounds the pointer to the grid when both the grid and its snapping are on', async () => {
@@ -387,17 +387,17 @@ describe('snapping', () => {
     await clickAt(at(0, 0));
     await moveTo(at(74, 61));
     // (74, 61) snaps to (50, 50) on the 50 pt grid.
-    expect(lastReading(onReading)?.primary).toBe('0,982 in');
+    expect(lastReading(onReading)?.primary).toBe('0.982 in');
   });
 
   it('leaves the pointer off the grid when only one of the two is on, or the spacing is not positive', async () => {
     const { onReading, rerender } = show({ grid: true, snapGrid: false, gridSpacing: 50 });
     await clickAt(at(0, 0));
     await moveTo(at(72, 0));
-    expect(lastReading(onReading)?.primary).toBe('1,00 in');
+    expect(lastReading(onReading)?.primary).toBe('1.00 in');
     rerender({ grid: true, snapGrid: true, gridSpacing: 0 });
     await moveTo(at(36, 0));
-    expect(lastReading(onReading)?.primary).toBe('0,500 in');
+    expect(lastReading(onReading)?.primary).toBe('0.500 in');
   });
 });
 
@@ -449,6 +449,89 @@ describe('finishing', () => {
         [
           { x: 0, y: 0 },
           { x: 72, y: 72 },
+        ],
+        'area',
+      ),
+    );
+  });
+
+  it('refuses an area whose edges cross, says why in the strip, and finishes once the last point is taken back', async () => {
+    const { onCreate, onReading } = show({ mode: 'area' });
+    // A bow-tie: the edges (0,0)→(72,72) and (72,0)→(0,72) cross.
+    await clickAt(at(0, 0));
+    await clickAt(at(72, 72));
+    await clickAt(at(72, 0));
+    await clickAt(at(0, 72));
+    expect(lastReading(onReading)).toMatchObject({
+      primary: '—',
+      warning: t('tools.measure.selfIntersecting'),
+    });
+    await press('{Enter}');
+    expect(onCreate).not.toHaveBeenCalled();
+    // The polygon is still open: taking the last point back leaves a triangle, which is fine
+    // once the pointer (the preview's last vertex) is not still on the removed corner.
+    await press('{Backspace}');
+    await moveTo(at(36, 0));
+    expect(lastReading(onReading)?.warning).toBeUndefined();
+    await press('{Enter}');
+    expect(onCreate).toHaveBeenCalledExactlyOnceWith(
+      created(
+        [
+          { x: 0, y: 0 },
+          { x: 72, y: 72 },
+          { x: 72, y: 0 },
+        ],
+        'area',
+      ),
+    );
+  });
+
+  it('hands an area over without the crossing check when its page has gone off screen: there is no frame to measure on', async () => {
+    let laidOut = true;
+    const base = viewerOf();
+    const viewer = {
+      ...base,
+      pageRect: (index: number) => (laidOut ? base.pageRect(index) : null),
+    } as unknown as ViewerApi;
+    const { onCreate } = show({ mode: 'area', viewer });
+    await clickAt(at(0, 0));
+    await clickAt(at(72, 0));
+    await clickAt(at(72, 72));
+    laidOut = false;
+    await press('{Enter}');
+    expect(onCreate).toHaveBeenCalledExactlyOnceWith(
+      created(
+        [
+          { x: 0, y: 0 },
+          { x: 72, y: 0 },
+          { x: 72, y: 72 },
+        ],
+        'area',
+      ),
+    );
+  });
+
+  it('hands over an area the geometry cannot measure, for the writer to refuse, instead of throwing out of the key handler', async () => {
+    const base = viewerOf();
+    // Every point lands a million points off the page, beyond what a measurement accepts.
+    const viewer = {
+      ...base,
+      pointToPage: (clientX: number, clientY: number) => {
+        const point = base.pointToPage(clientX, clientY);
+        return point === null ? null : { ...point, x: point.x + 1e6 };
+      },
+    } as unknown as ViewerApi;
+    const { onCreate } = show({ mode: 'area', viewer });
+    await clickAt(at(0, 0));
+    await clickAt(at(72, 0));
+    await clickAt(at(72, 72));
+    await press('{Enter}');
+    expect(onCreate).toHaveBeenCalledExactlyOnceWith(
+      created(
+        [
+          { x: 1e6, y: 0 },
+          { x: 1e6 + 72, y: 0 },
+          { x: 1e6 + 72, y: 72 },
         ],
         'area',
       ),
@@ -508,7 +591,7 @@ describe('the keyboard', () => {
     expect(view.container.querySelectorAll('circle')).toHaveLength(3);
     // Two points are left: the first one and the pointer, still where the last click put it.
     fireEvent.keyDown(window, { key: 'Backspace' });
-    expect(lastReading(onReading)?.primary).toBe('1,41 in');
+    expect(lastReading(onReading)?.primary).toBe('1.41 in');
     fireEvent.keyDown(window, { key: 'Backspace' });
     expect(lastReading(onReading)).toBeNull();
   });

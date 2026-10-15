@@ -168,6 +168,12 @@ declare module 'pdfjs-dist/web/pdf_viewer.mjs' {
     readonly viewBox: number[];
     /** Effective rotation in degrees: the page's own `/Rotate`, one of 0/90/180/270. */
     readonly rotation: number;
+    /**
+     * The page's `/UserUnit`: the size of one user-space unit in 1/72 inch (1 by default).
+     * pdf.js's `PageViewport` stores it (`pdfjs-dist@6.3.289` `types/src/display/page_viewport.d.ts`)
+     * and scales its rendering by it.
+     */
+    readonly userUnit: number;
     readonly width: number;
     readonly height: number;
     /** CSS pixel offset inside the page element → PDF user space point. */
