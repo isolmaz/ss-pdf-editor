@@ -779,9 +779,13 @@ function applyEdit(state: WriteState, edit: StructEdit, current: StructureModel)
       for (const member of inOrder) children.push(member);
       wrapper.put('K', children);
       state.handles.set(edit.newKey, wrapper);
-      for (const member of inOrder) {
+      // Each member keeps its own page: the wrapper has none of its own to inherit, and members
+      // of a group can sit on different pages.
+      // (The model has checked that every key names a child of `parent`.)
+      for (const [at, key] of edit.keys.entries()) {
+        const member = members[at] as PDFObject;
         member.put('P', wrapper);
-        pinPage(state, member, first.node.pageIndex);
+        pinPage(state, member, located(current, key).node.pageIndex);
       }
       const rest = entries.filter((entry) => !inOrder.some((member) => sameObject(entry, member)));
       rest.splice(position, 0, wrapper);

@@ -36,7 +36,8 @@
  *  - scripts: the actions above; `/Names /JavaScript`; XFA packets that contain `<script`
  *    (the XFA is dropped whole — a script cannot be cut out of XML this module does not edit).
  *  - files: `/EF` of every file specification (so the payload stream is no longer reachable),
- *    `/Names /EmbeddedFiles`, every `/AF`, and file-attachment annotations.
+ *    `/Names /EmbeddedFiles`, every `/AF` (each file specification it lists is counted, with or
+ *    without an `/EF` payload), and file-attachment annotations.
  *  - metadata: every Info key but the producer line (product policy: `metadata.ts`), and every
  *    `/Metadata` entry — catalog, pages, XObjects, fonts — that is an XMP packet.
  *  - private data: `/PieceInfo` (and its `/LastModified`), the web-capture `/SpiderInfo` and
@@ -315,6 +316,10 @@ function sweep(
   const inertLinks = new Set<string>();
   const efHolders = new Set<number>();
   const attachmentSpecs: number[] = [];
+  /** File specifications listed by an `/AF` entry (indirect ones, by number), and the dictionaries holding such an entry. */
+  const associatedSpecs = new Set<number>();
+  const associatedOwners: PDFObject[] = [];
+  let bareAssociated = 0;
   let efCount = 0;
   let bareAttachments = 0;
   /** Object-stream and xref-stream containers, and what they point at (their `/Length`): file plumbing, not garbage. */
@@ -418,7 +423,21 @@ function sweep(
             }
             break;
           case 'AF':
-            if (options.files && mutate) dictionary.delete('AF');
+            if (options.files) {
+              // The associated files this entry names are files the document carries, whether or
+              // not they hold a payload (`/EF`): a specification that is only a path or a URL is
+              // counted here, one with a payload through its `/EF`. The key goes after the walk,
+              // so the specifications written directly inside it are still visited.
+              const listed = deref(dictionary.get('AF'));
+              const items = listed?.isArray() === true ? entriesOf(listed) : [dictionary.get('AF')];
+              for (const item of items) {
+                const spec = deref(item);
+                if (spec?.isDictionary() !== true) continue;
+                if (item.isIndirect()) associatedSpecs.add(item.asIndirect());
+                else if (spec.get('EF').isNull()) bareAssociated += 1;
+              }
+              if (mutate) associatedOwners.push(dictionary);
+            }
             break;
           case 'Metadata':
             if (options.metadata) {
@@ -470,7 +489,16 @@ function sweep(
     },
     signal,
   );
-  tally.files = efCount + bareAttachments + attachmentSpecs.filter((spec) => !efHolders.has(spec)).length;
+  for (const owner of associatedOwners) owner.delete('AF');
+  const associatedBare = [...associatedSpecs].filter(
+    (spec) => !efHolders.has(spec) && !attachmentSpecs.includes(spec),
+  ).length;
+  tally.files =
+    efCount +
+    bareAttachments +
+    attachmentSpecs.filter((spec) => !efHolders.has(spec)).length +
+    bareAssociated +
+    associatedBare;
 
   // ---- the catalog and the trailer -------------------------------------------------------
   const catalog = catalogOf(doc);

@@ -40,7 +40,10 @@ export const pdfaPart = {
   'op.note.pdfa.transparencyFlattened':
     'PDF/A-1 saydamlığa izin vermez: saydamlık kullanan sayfalar düzleştirildi; bu sayfalardaki metin ve bağlantılar görüntüye dönüşmüş olabilir.',
   'op.note.pdfa.formsFlattened': '{count} form alanı sayfaya işlendi; artık doldurulabilir değiller.',
-  'op.note.pdfa.widgetsRemoved': '{count} form düğmesi ya da imza alanı kaldırıldı.',
+  'op.note.pdfa.widgetsRemoved':
+    '{count} form öğesi kaldırıldı: düğmeler, imza alanları ya da sayfaya işlenemeyen alanlar.',
+  'op.note.pdfa.filledWidgetsRemoved':
+    'Bunların {count} tanesi bir değer taşıyordu (metin, seçim, onay kutusu ya da radyo düğmesi); bu değer çıktıda yok.',
   'op.note.pdfa.signatures':
     '{count} dijital imza geçersiz oldu: dosya yeniden yazıldığı için imzalar korunamaz.',
   'op.note.pdfa.actionsRemoved':

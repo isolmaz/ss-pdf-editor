@@ -1103,13 +1103,23 @@ function inspectUa(doc: PDFDocument, context: OperationContext): PdfUaReport {
     results.verdict('mcid-references', instances);
   }
 
-  const imageOnly = pageFacts.filter(
-    (entry) => entry.readable && entry.largeImage && (entry.chars ?? 0) === 0 && !entry.hasText,
-  );
-  results.verdict(
-    'image-only',
-    imageOnly.map((entry) => ({ pageIndex: entry.pageIndex })),
-  );
+  // A page whose characters MuPDF could not measure (`chars === null`) is not known to be
+  // without text: it is no verdict, unless another page is a measured picture, which fails.
+  const pictures = pageFacts.filter((entry) => entry.readable && entry.largeImage && !entry.hasText);
+  const imageOnly = pictures.filter((entry) => entry.chars === 0);
+  const unmeasured = pictures.filter((entry) => entry.chars === null);
+  if (imageOnly.length === 0 && unmeasured.length > 0) {
+    results.set(
+      'image-only',
+      'unchecked',
+      unmeasured.map((entry) => ({ pageIndex: entry.pageIndex, reason: 'unreadable' })),
+    );
+  } else {
+    results.verdict(
+      'image-only',
+      imageOnly.map((entry) => ({ pageIndex: entry.pageIndex })),
+    );
+  }
 
   /* ---- annotations, links, forms ---- */
   const annots = readAnnotations(pages, context);

@@ -380,7 +380,7 @@ describe('stream rules over every object', () => {
 });
 
 describe('the object scan limit', () => {
-  it('reports the streams rule unchecked when the file has more objects than the scan walks', async () => {
+  const oversized = (): Uint8Array => {
     const size = 400_002;
     const objects = [
       '1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n',
@@ -401,9 +401,20 @@ describe('the object scan limit', () => {
     ].join('');
     const xref = `${body.length}`;
     const file = `${body}xref\n0 ${size}\n${entries}${free.repeat(size - 4)}trailer\n<</Size ${size}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF\n`;
-    const report = await checkPdfA(fromLatin1(file));
+    return fromLatin1(file);
+  };
+
+  it('reports the streams rule unchecked when the file has more objects than the scan walks', async () => {
+    const report = await checkPdfA(oversized());
     expect(rule(report, 'streams')).toEqual({ id: 'streams', state: 'unchecked', count: 0, samples: [] });
     expect(report.unchecked).toEqual(['streams']);
+  });
+
+  it('reports the structure rule unchecked too in part 1, whose object-stream ban only that scan checks', async () => {
+    const report = await checkPdfA(oversized(), { part: 1 });
+    expect(rule(report, 'structure')).toEqual({ id: 'structure', state: 'unchecked', count: 0, samples: [] });
+    expect(rule(report, 'streams')?.state).toBe('unchecked');
+    expect(report.unchecked).toEqual(['structure', 'streams']);
   });
 });
 
@@ -1952,7 +1963,7 @@ describe('embedded files', () => {
     expect(await embeddedOf((doc) => doc.newIndirect(9999), 1)).toEqual([]);
   });
 
-  it('survives a name tree MuPDF cannot walk', async () => {
+  it('survives a name tree MuPDF cannot walk, and leaves the embedded-files rule unchecked instead of passed', async () => {
     const report = await checkPdfA(
       build({
         catalog: (doc, root) => {
@@ -1962,8 +1973,38 @@ describe('embedded files', () => {
         },
       }),
     );
-    expect(rule(report, 'embedded-files')?.count).toBe(0);
+    // A tree that cannot be walked says nothing about whether it holds files.
+    expect(rule(report, 'embedded-files')).toEqual({
+      id: 'embedded-files',
+      state: 'unchecked',
+      count: 0,
+      samples: [],
+    });
+    expect(report.unchecked).toContain('embedded-files');
     expect(rule(report, 'actions')?.count).toBe(0);
+  });
+
+  it('leaves the rule unchecked when /EmbeddedFiles is not a dictionary, and passes it when the tree is empty', async () => {
+    const withTree = (tree: (doc: PDFDocument) => unknown) =>
+      checkPdfA(
+        build({
+          catalog: (doc, root) => root.put('Names', doc.addObject({ EmbeddedFiles: tree(doc) } as never)),
+        }),
+      );
+    const broken = await withTree(() => 5);
+    expect(rule(broken, 'embedded-files')).toEqual({
+      id: 'embedded-files',
+      state: 'unchecked',
+      count: 0,
+      samples: [],
+    });
+    const empty = await withTree((doc) => doc.addObject({ Names: [] } as never));
+    expect(rule(empty, 'embedded-files')).toEqual({
+      id: 'embedded-files',
+      state: 'pass',
+      count: 0,
+      samples: [],
+    });
   });
 });
 

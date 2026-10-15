@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { loadMupdf, openPdf } from '../engines/mupdf';
+import { blankForm, handPdf } from './forms.fixtures';
 import { convertToPdfA } from './pdfa';
 import { plain, rich, withUnreadableContent } from './pdfa.fixtures';
 import { checkPdfA } from './pdfa-check';
@@ -183,6 +184,22 @@ describe('convertToPdfA', () => {
     expect(kept?.params).toEqual({ percent: '100 %', pages: 1 });
     expect(outcome.measures.wordRecall).toBe(1);
     expect(outcome.measures.pictureDiffers).toEqual([]);
+  });
+
+  it('says that a filled text field it could not flatten was removed, and how many', async () => {
+    // A widget no /AcroForm lists is not flattened; the engine would drop it with its value.
+    const bytes = handPdf({
+      1: '<</Type/Catalog/Pages 2 0 R>>',
+      2: '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+      3: '<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]/Annots[40 0 R]>>',
+      40: '<</Type/Annot/Subtype/Widget/FT/Tx/T(t)/V(typed value)/Rect[150 20 250 40]/F 4/P 3 0 R/AP<</N 60 0 R>>>>',
+      60: blankForm(100, 20),
+    });
+    const outcome = await convertToPdfA(bytes, { part: 2 }, run);
+    const notes = new Map(outcome.report.notes.map((entry) => [entry.key, entry.params]));
+    expect(notes.get('op.note.pdfa.widgetsRemoved')).toEqual({ count: 1 });
+    expect(notes.get('op.note.pdfa.filledWidgetsRemoved')).toEqual({ count: 1 });
+    expect(notes.has('op.note.pdfa.formsFlattened')).toBe(false);
   });
 
   it('says so when the file was written with an owner password only, and has too few words to judge its text', async () => {

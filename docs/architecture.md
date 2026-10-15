@@ -2014,7 +2014,9 @@ values are drawn into the page then).
 **What preparing is for.** Each step exists because a fixture lost something without it. An annotation
 written inline in `/Annots` is first made an object of its own, so it gets its appearance like any other and one
 that cannot be drawn is really removed from the file.
-Ghostscript drops every widget and field value (fields are flattened first, `forms.ts`); it
+Ghostscript drops every widget and field value (fields are flattened first, `forms.ts`; a form the
+flattener fails on stops the conversion with its error instead of being converted blank, and a
+widget left over that held a value is counted in its own note); it
 copied an `OpenAction` script into a stray catalog `/A` key (forbidden actions are removed from
 the catalog, pages, annotations and outline); it drops annotations without the Print flag, links
 and sticky notes included (the flag is set, and a missing appearance is drawn through MuPDF by

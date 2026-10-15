@@ -186,7 +186,7 @@ export function scanContent(
   const open: number[] = [];
   let unbalanced = false;
 
-  const stack: Matrix[] = [];
+  const stack: { ctm: Matrix; leading: number; fontSize: number; renderMode: number }[] = [];
   let ctm: Matrix = IDENTITY;
   let tm: Matrix = IDENTITY;
   let tlm: Matrix = IDENTITY;
@@ -230,11 +230,13 @@ export function scanContent(
         break;
       }
       case 'q':
-        stack.push(ctm);
+        stack.push({ ctm, leading, fontSize, renderMode });
         break;
       case 'Q': {
+        // The text state (`Tf` size, `TL`, `Tr`) is part of the graphics state, so it comes back
+        // with the matrix; the text matrices are not, and stay.
         const saved = stack.pop();
-        if (saved !== undefined) ctm = saved;
+        if (saved !== undefined) ({ ctm, leading, fontSize, renderMode } = saved);
         break;
       }
       case 'cm': {

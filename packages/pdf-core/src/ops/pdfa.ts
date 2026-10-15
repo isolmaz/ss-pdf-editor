@@ -160,6 +160,9 @@ function preparationNotes(counters: PrepareCounters, part: PdfAPart): OperationN
   if (counters.widgetsRemoved > 0) {
     notes.push(note('lost', 'op.note.pdfa.widgetsRemoved', { count: counters.widgetsRemoved }));
   }
+  if (counters.filledWidgetsRemoved > 0) {
+    notes.push(note('lost', 'op.note.pdfa.filledWidgetsRemoved', { count: counters.filledWidgetsRemoved }));
+  }
   if (counters.signaturesInvalidated > 0) {
     notes.push(note('lost', 'op.note.pdfa.signatures', { count: counters.signaturesInvalidated }));
   }
