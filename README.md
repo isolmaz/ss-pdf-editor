@@ -168,7 +168,11 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   only.
 - **Forms.** The editor lists the AcroForm fields. You can create fields, set flags,
   flatten them and add simple calculations. Form data can be imported or exported as FDF
-  or JSON; exporting downloads only the data file.
+  or JSON; exporting downloads only the data file. An FDF export writes a checkbox or a
+  radio group under the name of its own on-state (`/On`, `/1`, `/Evet`, not always `/Yes`),
+  and an FDF import reads fields in any key order, under `/Kids` as `parent.child`, with
+  hex or UTF-16 strings; a data file with no readable value is refused instead of reported as
+  "0 values applied".
   - **Detect fields** (Forms panel, or `Ctrl+K`) prepares a flat form: it proposes text
     fields, checkboxes, radio groups and signature fields from underlines, dotted leaders,
     boxes, cells, comb boxes, circles and colon labels. Fields are named from the nearest

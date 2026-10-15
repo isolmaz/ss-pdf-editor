@@ -81,6 +81,12 @@ export { fieldValueText } from './form-value';
 export interface FormFill {
   readonly name: string;
   readonly value: string | readonly string[] | boolean;
+  /**
+   * `value` is the PDF **name** of a button state as an FDF file wrote it (`/V /2`), not text.
+   * A radio group then picks the widget whose state is called that; without it, `value` is the
+   * text of one of the group's options.
+   */
+  readonly stateName?: string;
 }
 
 export interface FieldCreation {
@@ -277,6 +283,19 @@ function radioOptions(field: FieldNode): { option: string; state: string }[] {
     if (!out.some((entry) => entry.state === state)) out.push({ option, state });
   }
   return out;
+}
+
+/**
+ * A checkbox's on-state names: the ones its widgets' appearances call it (`On`, `1`, `Evet`),
+ * else `Yes`, which is what a checkbox with no appearance to name one is drawn and written as.
+ */
+function checkboxStates(field: FieldNode): readonly string[] {
+  const states = new Set<string>();
+  for (const widget of field.widgets) {
+    const state = onStateOf(widget.dict);
+    if (state !== null) states.add(state);
+  }
+  return states.size > 0 ? [...states] : ['Yes'];
 }
 
 /** `/V` as a list of texts (a choice field's value may be one string or an array). */
@@ -848,7 +867,7 @@ function refuseValue(name: string, message: string): never {
 }
 
 /** Write one fill into its field; `false` when the value does not fit the field's kind. */
-function writeValue(doc: PDFDocument, field: FieldNode, value: FormFill['value']): boolean {
+function writeValue(doc: PDFDocument, field: FieldNode, { value, stateName }: FormFill): boolean {
   const kind = kindOf(field);
   if (kind === 'text' && typeof value === 'string') {
     const maxLength = inherited(field.dict, 'MaxLen');
@@ -859,9 +878,18 @@ function writeValue(doc: PDFDocument, field: FieldNode, value: FormFill['value']
     return true;
   }
   if (kind === 'checkbox' && typeof value === 'boolean') {
-    const state =
-      field.widgets.map((widget) => onStateOf(widget.dict)).find((entry) => entry !== null) ?? 'Yes';
-    field.dict.put('V', value ? state : 'Off');
+    field.dict.put('V', value ? (checkboxStates(field)[0] as string) : 'Off');
+    return true;
+  }
+  if (kind === 'checkbox' && typeof value === 'string') {
+    // A name from a data file (`/V /On`): `Off` is off, and the checkbox's own on-state is on.
+    // Anything else is not a state of this checkbox, so it is not written.
+    if (value === 'Off') {
+      field.dict.put('V', 'Off');
+      return true;
+    }
+    if (!checkboxStates(field).includes(value)) return false;
+    field.dict.put('V', value);
     return true;
   }
   if ((kind === 'dropdown' || kind === 'optionlist') && typeof value !== 'boolean') {
@@ -886,8 +914,26 @@ function writeValue(doc: PDFDocument, field: FieldNode, value: FormFill['value']
     field.dict.delete('I');
     return true;
   }
+  if (kind === 'radio' && typeof value === 'boolean') {
+    // `/V /Off` clears the group; `/V /Yes` (read as `true`) picks the widget whose on-state is `Yes`.
+    if (!value) {
+      field.dict.put('V', 'Off');
+      return true;
+    }
+    if (!radioOptions(field).some((entry) => entry.state === 'Yes')) return false;
+    field.dict.put('V', 'Yes');
+    return true;
+  }
   if (kind === 'radio' && typeof value === 'string') {
-    const option = radioOptions(field).find((entry) => entry.option === value);
+    // A text is an option's text. A **name** (`/V /2`) is a widget's state — which is not the
+    // option of the same spelling when `/Opt` is present (`/Opt [(1)(2)(3)]`, states `/0 /1 /2`) —
+    // and only a name no widget has falls back to an option's text, as it always did.
+    const options = radioOptions(field);
+    const option =
+      stateName === undefined
+        ? options.find((entry) => entry.option === value)
+        : (options.find((entry) => entry.state === stateName) ??
+          options.find((entry) => entry.option === value));
     if (option === undefined) refuseValue(field.name, 'not one of the options');
     field.dict.put('V', option.state);
     return true;
@@ -908,6 +954,15 @@ export async function fillFormFields(
   fills: readonly FormFill[],
   context: OperationContext,
 ): Promise<OperationOutcome> {
+  return (await fillCounted(bytes, fills, context)).outcome;
+}
+
+/** {@link fillFormFields} and how many of the fills were written (not found, or of the wrong kind, are not). */
+async function fillCounted(
+  bytes: Uint8Array,
+  fills: readonly FormFill[],
+  context: OperationContext,
+): Promise<{ readonly outcome: OperationOutcome; readonly written: number }> {
   return await withDocument(bytes, 'form.fill', async (opened) => {
     const { doc } = opened;
     const fields = collectFields(doc);
@@ -918,7 +973,7 @@ export async function fillFormFields(
     for (const [index, fill] of fills.entries()) {
       throwIfAborted(context.signal);
       const field = fields.find((candidate) => candidate.name === fill.name);
-      if (field === undefined || !writeValue(doc, field, fill.value)) {
+      if (field === undefined || !writeValue(doc, field, fill)) {
         missing.push(fill.name);
         continue;
       }
@@ -970,19 +1025,22 @@ export async function fillFormFields(
         : note('warning', 'form.note.appearance'),
     );
     return {
-      bytes: saved,
-      report: {
-        engine: 'mupdf',
-        steps:
-          xfaPlan !== null && xfaPlan.changed.length > 0
-            ? ['load', 'form.setText', 'xfa.datasets', 'save']
-            : ['load', 'form.setText', 'save'],
-        notes,
-        inputBytes: bytes.byteLength,
-        outputBytes: saved.byteLength,
-        pageCount: doc.countPages(),
-        incremental: false,
+      outcome: {
+        bytes: saved,
+        report: {
+          engine: 'mupdf',
+          steps:
+            xfaPlan !== null && xfaPlan.changed.length > 0
+              ? ['load', 'form.setText', 'xfa.datasets', 'save']
+              : ['load', 'form.setText', 'save'],
+          notes,
+          inputBytes: bytes.byteLength,
+          outputBytes: saved.byteLength,
+          pageCount: doc.countPages(),
+          incremental: false,
+        },
       },
+      written: applied.length,
     };
   });
 }
@@ -1677,7 +1735,13 @@ function recordsOf(doc: PDFDocument): readonly FormDataRecord[] {
   for (const field of collectFields(doc)) {
     const value = readFieldValue(field);
     if (value === null) continue;
-    records.push({ name: field.name, value });
+    // A button's FDF value is the name of the state it is in (`/On`, `/1`, the selected radio
+    // widget's), which the JSON form does not carry: it holds `true` / the option text.
+    const kind = kindOf(field);
+    const state = kind === 'checkbox' || kind === 'radio' ? readName(inherited(field.dict, 'V')) : null;
+    records.push(
+      state === null ? { name: field.name, value } : { name: field.name, value, stateName: state },
+    );
   }
   return records;
 }
@@ -1709,7 +1773,15 @@ export async function exportFormData(
       };
 }
 
-/** Import values from an FDF or JSON file; unknown names are reported, not dropped. */
+/**
+ * Import values from an FDF or JSON file; unknown names are reported, not dropped.
+ *
+ * `applied` is the number of values written into a field. A name the form does not have is in
+ * `missing`, and a value the field cannot hold (text for a checkbox that has no such state, an
+ * array for a text field) is neither applied nor missing: the fill reports it as a warning in the
+ * notes. A file from which no value could be read at all is refused with `input-missing`, so
+ * that "0 values applied" is never shown as a success.
+ */
 export async function importFormData(
   bytes: Uint8Array,
   data: Uint8Array | string,
@@ -1720,19 +1792,25 @@ export async function importFormData(
     format === 'fdf'
       ? parseFdf(typeof data === 'string' ? new TextEncoder().encode(data) : data)
       : parseFormJson(typeof data === 'string' ? data : new TextDecoder().decode(data));
+  if (records.length === 0) {
+    throw new ToolError('input-missing', {
+      engine: 'model',
+      engineMessage: 'the form-data file carries no field values',
+    });
+  }
 
   const present = new Set((await readFormFields(bytes)).map((field) => field.name));
   const missing = records.filter((record) => !present.has(record.name)).map((record) => record.name);
-  const outcome = await fillFormFields(
+  const { outcome, written } = await fillCounted(
     bytes,
     records
       .filter((record) => present.has(record.name))
-      .map((record) => ({ name: record.name, value: record.value })),
+      .map((record) => ({ name: record.name, value: record.value, stateName: record.stateName })),
     context,
   );
   return {
     ...outcome,
-    applied: records.length - missing.length,
+    applied: written,
     missing,
   };
 }
