@@ -66,6 +66,9 @@ export const homePart = {
 
   'home.recentTab': 'Recent',
   'home.starredTab': 'Starred',
+  'home.recent.about': 'What does this list keep?',
+  'home.recent.stores':
+    'This list keeps only the file name, size, page count, when it was last opened and whether it is starred.',
   'home.recent.search': 'Search recent documents…',
   'home.recent.sort': 'Sort',
   'home.recent.sort.date': 'Last opened',
@@ -78,8 +81,6 @@ export const homePart = {
   'home.noRecent': 'No recent documents.',
   'home.noStarred': 'No starred documents yet.',
   'home.noMatch': 'No document matches your search.',
-  'home.privacyNotice':
-    'Your documents never leave this device. This list keeps only the file name, size, page count, when it was last opened and whether it is starred.',
   'home.colName': 'Document name',
   'home.colPages': 'Pages',
   'home.colLastOpened': 'Last opened',

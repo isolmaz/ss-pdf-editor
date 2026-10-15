@@ -45,7 +45,6 @@ export function HomeHeader({ t, title, activeDocumentName, onSettings, onPalette
         <span className="hidden shrink-0 text-sm font-semibold text-kumo-strong min-[400px]:inline">
           {title}
         </span>
-        <span className="hidden text-xs text-kumo-subtle md:inline">{t('shell.homeTagline')}</span>
       </div>
       {/* `shrink-0` keeps the controls at their real size: without it flex
           shrinks them below their content and the row overflows the viewport

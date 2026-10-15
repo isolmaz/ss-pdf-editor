@@ -19,6 +19,7 @@ import {
   FilePlus,
   FolderOpen,
   Images,
+  Info,
   MagnifyingGlass,
   Stack,
   Star,
@@ -182,8 +183,10 @@ export function HomeScreen({
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('date');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showStored, setShowStored] = useState(false);
   const fileInputId = useId();
   const startPanelId = useId();
+  const storedId = useId();
   const toolsPanelId = useId();
   const locale = t.locale;
 
@@ -333,21 +336,34 @@ export function HomeScreen({
 
           <div className="mt-10 flex flex-1 flex-col">
             <div className="flex flex-wrap items-end justify-between gap-3 border-b border-kumo-line">
-              <div role="tablist" aria-label={t('home.recentTab')} className="flex items-center gap-6">
-                <TabButton
-                  selected={recentTab === 'recent'}
-                  controls="home-recent"
-                  onSelect={() => setRecentTab('recent')}
+              <div className="flex items-center gap-4">
+                <div role="tablist" aria-label={t('home.recentTab')} className="flex items-center gap-6">
+                  <TabButton
+                    selected={recentTab === 'recent'}
+                    controls="home-recent"
+                    onSelect={() => setRecentTab('recent')}
+                  >
+                    {t('home.recentTab')}
+                  </TabButton>
+                  <TabButton
+                    selected={recentTab === 'starred'}
+                    controls="home-recent"
+                    onSelect={() => setRecentTab('starred')}
+                  >
+                    {t('home.starredTab')}
+                  </TabButton>
+                </div>
+                <button
+                  type="button"
+                  aria-expanded={showStored}
+                  aria-controls={storedId}
+                  aria-label={t('home.recent.about')}
+                  title={t('home.recent.about')}
+                  onClick={() => setShowStored((open) => !open)}
+                  className="mb-2 rounded p-1 text-kumo-subtle transition-colors hover:text-kumo-default focus-visible:outline-2 focus-visible:outline-kumo-focus"
                 >
-                  {t('home.recentTab')}
-                </TabButton>
-                <TabButton
-                  selected={recentTab === 'starred'}
-                  controls="home-recent"
-                  onSelect={() => setRecentTab('starred')}
-                >
-                  {t('home.starredTab')}
-                </TabButton>
+                  <Info size={14} aria-hidden="true" />
+                </button>
               </div>
               {recentItems.length > 0 ? (
                 <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -413,6 +429,12 @@ export function HomeScreen({
               ) : null}
             </div>
 
+            {showStored ? (
+              <p id={storedId} className="mt-3 text-[11px] text-kumo-subtle">
+                {t('home.recent.stores')}
+              </p>
+            ) : null}
+
             <div id="home-recent" role="tabpanel" className="flex flex-1 flex-col">
               {displayedItems.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
@@ -426,7 +448,6 @@ export function HomeScreen({
                         ? t('home.noStarred')
                         : t('home.noRecent')}
                   </p>
-                  <p className="mt-1 max-w-sm text-xs text-kumo-subtle">{t('home.privacyNotice')}</p>
                 </div>
               ) : (
                 <div className="mt-3 overflow-x-auto">
@@ -518,7 +539,6 @@ export function HomeScreen({
                       ))}
                     </tbody>
                   </table>
-                  <p className="mt-4 text-[11px] text-kumo-subtle">{t('home.privacyNotice')}</p>
                 </div>
               )}
             </div>

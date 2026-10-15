@@ -188,6 +188,24 @@ describe('HomeScreen recent list', () => {
     expect(names(container)).toEqual(['Mango notes.pdf']);
   });
 
+  it('keeps what the list stores behind an info button, and repeats no privacy claim', async () => {
+    seed();
+    const user = userEvent.setup();
+    const { container } = render(screenFor());
+    const about = screen.getByRole('button', { name: t('home.recent.about') });
+
+    expect(about.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText(t('home.recent.stores'))).toBeNull();
+    expect(container.textContent).not.toMatch(/never leave/i);
+
+    await user.click(about);
+    expect(about.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(t('home.recent.stores')).id).toBe(about.getAttribute('aria-controls'));
+
+    await user.click(about);
+    expect(screen.queryByText(t('home.recent.stores'))).toBeNull();
+  });
+
   it('says nothing is starred when no entry is', async () => {
     saveRecentDocuments([item('a', 'one.pdf', 1, NOW)]);
     const user = userEvent.setup();

@@ -172,7 +172,6 @@ export const tr = {
   'shell.commandPaletteHint': 'Komut ara (Ctrl+K)',
   'shell.commandPaletteShort': 'Komut ara',
   'shell.backToDocument': 'Belgeye Dön',
-  'shell.homeTagline': '— Belgeniz cihazınızdan ayrılmaz, %100 yerel ve güvenli.',
   'shell.status.memory': 'Bellek',
   'shell.deviceTier.desktop': 'Masaüstü limitleri',
   'shell.deviceTier.mobile': 'Mobil limitleri',

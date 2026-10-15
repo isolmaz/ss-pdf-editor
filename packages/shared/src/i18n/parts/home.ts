@@ -71,6 +71,9 @@ export const homePart = {
 
   'home.recentTab': 'Son kullanılanlar',
   'home.starredTab': 'Yıldızlı',
+  'home.recent.about': 'Bu liste neleri saklar?',
+  'home.recent.stores':
+    'Bu liste yalnızca dosya adını, boyutunu, sayfa sayısını, son açılma zamanını ve yıldızlı olup olmadığını saklar.',
   'home.recent.search': 'Son kullanılanlarda ara…',
   'home.recent.sort': 'Sırala',
   'home.recent.sort.date': 'Son açılma',
@@ -83,8 +86,6 @@ export const homePart = {
   'home.noRecent': 'Son kullanılan belge bulunmuyor.',
   'home.noStarred': 'Henüz yıldızlanan bir belge yok.',
   'home.noMatch': 'Aramanızla eşleşen belge yok.',
-  'home.privacyNotice':
-    'Belgeleriniz bu cihazdan çıkmaz. Bu liste yalnızca dosya adını, boyutunu, sayfa sayısını, son açılma zamanını ve yıldızlı olup olmadığını saklar.',
   'home.colName': 'Belge adı',
   'home.colPages': 'Sayfa',
   'home.colLastOpened': 'Son açılma',

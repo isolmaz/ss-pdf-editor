@@ -179,6 +179,17 @@ test('All tools with a document open: its name is shown and a tool runs on it', 
   await expect(page.getByRole('region', { name: /Document properties/ })).toBeVisible({ timeout: 30_000 });
 });
 
+test('the home screen makes the privacy claim once, in the status bar', async ({ page }) => {
+  await page.goto('/editor/');
+  await expect(page.getByRole('tab', { name: 'Start' })).toHaveAttribute('aria-selected', 'true');
+  const claim = page.getByText(/never leaves? (your|this) device/i);
+  await expect(claim).toHaveCount(1);
+  await expect(page.getByRole('contentinfo').getByText(/never leaves your device/)).toHaveCount(1);
+  await page.getByRole('button', { name: 'What does this list keep?' }).click();
+  await expect(page.getByText(/This list keeps only the file name/)).toBeVisible();
+  await expect(claim).toHaveCount(1);
+});
+
 test('the start cards: a blank document, a picked file and the command palette from the home header', async ({
   page,
 }) => {

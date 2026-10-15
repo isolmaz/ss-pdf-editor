@@ -27,10 +27,12 @@ describe('HomeHeader', () => {
     return handlers;
   }
 
-  it('names the product and says what the start screen is for', () => {
+  it('names the product and leaves the privacy claim to the status bar', () => {
     header();
     expect(screen.getByText('PDF Studio')).toBeTruthy();
-    expect(screen.getByText(t('shell.homeTagline'))).toBeTruthy();
+    // The claim is made once on the start screen, in the status bar; a second copy up here
+    // read as the same sentence three times on one screen.
+    expect(screen.getByRole('banner').textContent).not.toMatch(/device|local|cihaz|yerel/i);
   });
 
   it('opens the settings, the palette and the file picker from their own buttons', async () => {
