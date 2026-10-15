@@ -589,7 +589,9 @@ describe('formDataDialog', () => {
 
   it('keeps a form with nothing flattenable as it is and says which fields stayed', async () => {
     const bytes = await buttonOnlyFixture();
-    const data = new TextEncoder().encode(JSON.stringify({ fields: [] }));
+    // A file with no value at all is refused on import (`input-missing`); one value for a field the
+    // form does not have still reaches the flatten step, which is what these cases are about.
+    const data = new TextEncoder().encode(JSON.stringify({ fields: [{ name: 'ghost', value: 'x' }] }));
     const result = await formDataDialog.run(
       { mode: 'import', format: 'json', flatten: true, file: [fixedFile('data.json', data)] },
       contextFor(bytes),
@@ -604,7 +606,9 @@ describe('formDataDialog', () => {
   });
 
   it('still refuses to flatten a document that has no form fields', async () => {
-    const data = new TextEncoder().encode(JSON.stringify({ fields: [] }));
+    // A file with no value at all is refused on import (`input-missing`); one value for a field the
+    // form does not have still reaches the flatten step, which is what these cases are about.
+    const data = new TextEncoder().encode(JSON.stringify({ fields: [{ name: 'ghost', value: 'x' }] }));
     const error = await failureOf(
       formDataDialog.run(
         { mode: 'import', format: 'json', flatten: true, file: [fixedFile('data.json', data)] },
