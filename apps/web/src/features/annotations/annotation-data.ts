@@ -1,9 +1,9 @@
 /**
  * The review as a file (`ops/annotation-data.ts`). The session's marks leave as JSON
- * (lossless), FDF (the container Acrobat's own comment export uses, carrying the same
- * records) or XFDF, and come back the same way — a mark the engine drew is in the engine's
- * storage and a mark we own is in the session, so neither travels inside the PDF until a save
- * writes it.
+ * (lossless), FDF (the comment container Acrobat's own “export comments” writes: annotation
+ * dictionaries under `/FDF /Annots`, in PDF user space) or XFDF, and come back the same way — a
+ * mark the engine drew is in the engine's storage and a mark we own is in the session, so
+ * neither travels inside the PDF until a save writes it.
  */
 
 import type { AnnotationDataResult } from 'pdf-core/ops/annotation-data';
@@ -11,6 +11,7 @@ import { workingPageCount } from 'pdf-model';
 import { ToolError } from 'pdf-shared';
 import { pendingOverlays } from '../../operations';
 import { showNotice } from '../core/core-store';
+import { handleFor } from '../core/handles';
 import { writeAnnotations } from './annotation-marks';
 import { knownExistingAnnotations } from './annotations-store';
 import type { AnnotationHost } from './host';
@@ -47,6 +48,12 @@ export async function exportAnnotationData(host: DataHost, format: AnnotationDat
   const name = `${tab.name.replace(/\.pdf$/i, '')}-comments.${format}`;
   let bytes: Uint8Array;
   let message: string;
+  // XFDF and FDF carry PDF user space, so a mark leaves through its page's top edge; a page the
+  // viewer cannot measure is not guessed at.
+  const pageTop = (pageIndex: number): number | null => {
+    const geometry = host.viewer.current?.pageGeometry(pageIndex) ?? null;
+    return geometry === null ? null : geometry.y + geometry.height;
+  };
   if (format === 'xfdf') {
     // XFDF is the whole review: the file's own comments and their threads as well as the
     // session's marks, so it is loaded only when asked for.
@@ -54,10 +61,7 @@ export async function exportAnnotationData(host: DataHost, format: AnnotationDat
     const exported = serializeXfdf({
       marks,
       existing: knownExistingAnnotations() ?? [],
-      pageTop: (pageIndex) => {
-        const geometry = host.viewer.current?.pageGeometry(pageIndex) ?? null;
-        return geometry === null ? null : geometry.y + geometry.height;
-      },
+      pageTop,
       fileName: tab.name,
     });
     if (exported.count === 0) {
@@ -69,17 +73,36 @@ export async function exportAnnotationData(host: DataHost, format: AnnotationDat
       exported.skipped === 0
         ? t('ann.data.xfdfExported', { count: exported.count, name })
         : `${t('ann.data.xfdfExported', { count: exported.count, name })} ${t('ann.data.xfdfSkipped', { count: exported.skipped })}`;
+  } else if (format === 'fdf') {
+    const data = await import('pdf-core/ops/annotation-data');
+    // The file's own `/ID` goes into the FDF: the engine's fingerprints are its trailer `/ID`
+    // when the file has one (the permanent half and the changing half). pdf.js leaves either
+    // `null` (no second half), and the writer keeps out one that is not hex.
+    const [first, second] = handleFor(tab.id)?.raw.fingerprints ?? [];
+    const exported = data.serializeAnnotationsFdf({
+      marks,
+      pageTop,
+      fileName: tab.name,
+      ...(typeof first === 'string'
+        ? { fileId: [first, typeof second === 'string' ? second : first] as const }
+        : {}),
+    });
+    if (exported.count === 0) {
+      showNotice(t('ann.data.empty'));
+      return;
+    }
+    bytes = exported.bytes;
+    message =
+      exported.skipped === 0
+        ? t('ann.data.exported', { count: exported.count, name })
+        : `${t('ann.data.exported', { count: exported.count, name })} ${t('ann.data.fdfSkipped', { count: exported.skipped })}`;
   } else {
     if (marks.length === 0) {
       showNotice(t('ann.data.empty'));
       return;
     }
-    const pageCount = workingPageCount(tab);
     const data = await import('pdf-core/ops/annotation-data');
-    bytes =
-      format === 'json'
-        ? data.serializeAnnotationsJson(marks, pageCount)
-        : data.serializeAnnotationsFdf(marks, pageCount);
+    bytes = data.serializeAnnotationsJson(marks, workingPageCount(tab));
     message = t('ann.data.exported', { count: marks.length, name });
   }
   download(bytes, name, format);
@@ -88,11 +111,10 @@ export async function exportAnnotationData(host: DataHost, format: AnnotationDat
 
 /**
  * Import a review file into the active tab as new marks. Ids are reminted at the boundary
- * where a foreign file becomes session state: JSON import mints fresh ids, but FDF carries the
- * `/NM` the file was annotated with, and that name is not unique across documents — two
- * imports of the same review, or an import over a session that already holds the mark, would
- * produce duplicate identities. Duplicate ids break React keys and make one erase delete
- * several marks.
+ * where a foreign file becomes session state. The readers give every mark a fresh id, but a
+ * name a file carries is not unique across documents — two imports of the same review, or an
+ * import over a session that already holds the mark, would produce duplicate identities.
+ * Duplicate ids break React keys and make one erase delete several marks.
  */
 export async function importAnnotationData(host: DataHost, file: File): Promise<void> {
   const { session, t } = host;
@@ -103,9 +125,14 @@ export async function importAnnotationData(host: DataHost, file: File): Promise<
     const head = new TextDecoder('utf-8').decode(bytes.slice(0, 64)).trimStart();
     // Both readers are their own chunks: an import is a user action, not first paint.
     const data = await import('pdf-core/ops/annotation-data');
-    const parsed: AnnotationDataResult = head.startsWith('<')
+    const read: AnnotationDataResult = head.startsWith('<')
       ? await (await import('pdf-core/ops/annotation-xfdf')).parseXfdf(bytes)
       : data.parseAnnotationData(bytes);
+    // A mark on a page this document does not have cannot be written, and one such mark in the
+    // session would fail every save after it: it is counted as skipped here. With no tab there
+    // is no document to hold the marks and nothing to check them against.
+    const target = session.active;
+    const parsed = target === null ? read : data.keepMarksOnPages(read, workingPageCount(target));
     // Acrobat's comments are in PDF user space; the page's own top edge turns them into the
     // app's space. A page the viewer cannot measure is not guessed at: its comments are
     // counted as skipped instead of landing mirrored.

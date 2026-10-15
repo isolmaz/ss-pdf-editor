@@ -24,6 +24,7 @@ export const reviewPart = {
   'ann.data.xfdfExported': '{count} comments exported as XFDF with their replies: {name}',
   'ann.data.xfdfSkipped':
     '{count} annotations are not comments (stamps, links, form fields) and were not exported.',
+  'ann.data.fdfSkipped': '{count} comments are on pages whose size is not known yet and were not exported.',
   'ann.data.repliesImported': '{count} replies and review states were attached to their comments.',
   'op.note.annotate.replies': '{count} replies were written, each linked to the comment it answers (/IRT).',
   'op.note.annotate.states': '{count} review states (/State) were written.',

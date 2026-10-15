@@ -55,7 +55,7 @@ const FDF_HEADER = '%FDF-1.2';
  * (Writing only the non-ASCII characters as UTF-16 units inside an otherwise
  * single-byte string reads `gö` back as `g\0ö` — in every reader, this one included.)
  */
-function escapeFdfString(value: string): string {
+export function escapeFdfString(value: string): string {
   if (/[^\x20-\x7e\t\n\r]/.test(value)) {
     const bytes = ['\\376', '\\377'];
     for (let index = 0; index < value.length; index += 1) {
@@ -301,8 +301,16 @@ export function tokenizePdfSource(source: string, options: TokenizeOptions = {})
     // bare word and is part of it: the scan moves on by at least one.
     let end = index + 1;
     while (end < source.length && !WORD_END.test(source[end] as string)) end += 1;
-    tokens.push({ kind: 'name', text: source.slice(index, end), keyword: true });
+    const word = source.slice(index, end);
+    tokens.push({ kind: 'name', text: word, keyword: true });
     index = end;
+    if (word === 'stream') {
+      // The body of a stream (an appearance stream an Acrobat comment file carries) is binary
+      // data: scanned as tokens it would end inside a `(` or `<` that is only a byte. Only a
+      // bare word reaches here, so a string that says "stream" is never mistaken for one.
+      const close = source.indexOf('endstream', index);
+      index = close === -1 ? source.length : close;
+    }
   }
   return tokens;
 }
@@ -472,20 +480,29 @@ function escapeCharacter(escaped: string): number {
 // FDF objects
 // ---------------------------------------------------------------------------
 
-type FdfObject =
+/**
+ * A PDF object as an FDF file spells it. A dictionary is a `Map`, so a key such as `__proto__`
+ * or `constructor` is an entry like any other and never reaches an object's prototype. The
+ * annotation reader (`annotation-data.ts`) reads comment files through these.
+ */
+export type FdfObject =
   | { readonly type: 'string'; readonly text: string }
   | { readonly type: 'name'; readonly text: string }
+  | { readonly type: 'number'; readonly value: number }
   | { readonly type: 'array'; readonly items: readonly FdfObject[] }
   | { readonly type: 'dict'; readonly entries: ReadonlyMap<string, FdfObject> }
   | { readonly type: 'ref'; readonly number: number }
   | { readonly type: 'other' };
 
-type FdfDictionary = Extract<FdfObject, { readonly type: 'dict' }>;
+export type FdfDictionary = Extract<FdfObject, { readonly type: 'dict' }>;
 
 /** Nesting a real file never reaches; a deeper one is refused instead of overflowing the stack. */
 const MAX_FDF_DEPTH = 64;
 
-interface FdfFile {
+/** A PDF number: an optional sign, digits and at most one point (ISO 32000 §7.3.3). */
+const PDF_NUMBER = /^[-+]?(?:\d+\.?\d*|\.\d+)$/;
+
+export interface FdfFile {
   /** The top-level dictionaries (the catalog, the trailer), in file order. */
   readonly roots: readonly FdfDictionary[];
   /** Indirect objects by number: `/Fields` and a field may be written as `N 0 R`. */
@@ -497,7 +514,7 @@ interface FdfFile {
  * ends inside is what has been read of it, a dictionary entry that is not a key is skipped, and
  * a key without a value has none. (A field with half a `/V` is no field, not a failed file.)
  */
-function readFdfFile(tokens: readonly FdfToken[]): FdfFile {
+export function readFdfFile(tokens: readonly FdfToken[]): FdfFile {
   let position = 0;
   const isInteger = (token: FdfToken | undefined): token is FdfToken =>
     token?.keyword === true && /^\d+$/.test(token.text);
@@ -545,6 +562,7 @@ function readFdfFile(tokens: readonly FdfToken[]): FdfFile {
           position += 2;
           return { type: 'ref', number: Number.parseInt(token.text, 10) };
         }
+        if (PDF_NUMBER.test(token.text)) return { type: 'number', value: Number(token.text) };
         return { type: 'other' };
       }
       default:
@@ -575,7 +593,7 @@ function readFdfFile(tokens: readonly FdfToken[]): FdfFile {
 }
 
 /** An object, with `N 0 R` followed to what it names (a chain, not a cycle). */
-function resolveFdf(file: FdfFile, value: FdfObject | undefined): FdfObject | undefined {
+export function resolveFdf(file: FdfFile, value: FdfObject | undefined): FdfObject | undefined {
   let current = value;
   for (let hops = 0; current?.type === 'ref' && hops < 16; hops += 1) {
     current = file.objects.get(current.number);
@@ -653,7 +671,7 @@ function collectFdfRecords(
  * Byte for byte as characters: `TextDecoder('latin1')` is Windows-1252, which would turn the byte 0x9A of a
  * PDFDocEncoding string into `š` before the tokenizer could read it as `ı`.
  */
-function bytesAsCharacters(bytes: Uint8Array): string {
+export function bytesAsCharacters(bytes: Uint8Array): string {
   const chunks: string[] = [];
   for (let offset = 0; offset < bytes.length; offset += 0x8000) {
     chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));

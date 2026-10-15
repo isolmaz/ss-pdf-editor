@@ -515,6 +515,9 @@ export interface StorageEntry {
  */
 const MARKER_PREFIX = 'pdf-editor-ann:';
 
+/** The marker at the head of a text (white space before it is not words); the id is the capture. */
+const MARKER_HEAD = new RegExp(`^\\s*${MARKER_PREFIX}(\\S*)`);
+
 export function markerFor(id: string): string {
   return `${MARKER_PREFIX}${id}`;
 }
@@ -524,8 +527,8 @@ export function markerFor(id: string): string {
  * `/Contents`: that is an identity, not words, and every other reader printed it.
  */
 export function commentText(contents: string): string {
-  const id = markerId(contents);
-  return id === null ? contents : contents.replace(`${MARKER_PREFIX}${id}`, '').trim();
+  const head = MARKER_HEAD.exec(contents);
+  return head === null ? contents : contents.slice(head[0].length).trim();
 }
 
 /**
@@ -536,13 +539,15 @@ export function markerOf(dict: PDFObject): string | null {
   return markerId(readText(dict.get('NM')) ?? '') ?? markerId(readText(dict.get('Contents')) ?? '');
 }
 
-/** The id inside a marker line, or `null` when the annotation is not ours. */
+/**
+ * The id inside a marker line, or `null` when the annotation is not ours. The marker is
+ * only ever the **head** of the text: the same words further on are something the reader
+ * typed or quoted, and reading them as an identity would give another annotation's id to
+ * (and strip the words from) a comment that merely mentions one.
+ */
 export function markerId(contents: string): string | null {
-  const index = contents.indexOf(MARKER_PREFIX);
-  if (index < 0) return null;
-  const rest = contents.slice(index + MARKER_PREFIX.length);
-  const end = rest.search(/\s/);
-  return end < 0 ? rest : rest.slice(0, end);
+  const head = MARKER_HEAD.exec(contents);
+  return head === null ? null : (head[1] as string);
 }
 
 /**

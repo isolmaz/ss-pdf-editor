@@ -16,15 +16,16 @@ function mount(html = '') {
 }
 
 describe('hideEditorMarkers', () => {
-  it('strips the marker from what is already on the page and leaves the words', () => {
+  it('strips the marker at the head of what is already on the page and leaves the words, quoted markers included', () => {
     const root = mount(
       '<section><p>pdf-editor-ann:abc123 first words</p><p>untouched</p><p>x pdf-editor-ann:q9 y</p></section>',
     );
     const stop = hideEditorMarkers(root);
+    // The marker is the head of a text; the same words in the middle are the reader's own.
     expect([...root.querySelectorAll('p')].map((p) => p.textContent)).toEqual([
       'first words',
       'untouched',
-      'x  y',
+      'x pdf-editor-ann:q9 y',
     ]);
     stop();
   });

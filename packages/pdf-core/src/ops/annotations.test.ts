@@ -13,16 +13,19 @@ import { isToolError, type ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import { openWithPdfjs, type PdfDocumentHandle } from '../engines/pdfjs-handle';
 import { generationFivePdf } from './annotation.fixtures';
+import { keepMarksOnPages, parseAnnotationsJson } from './annotation-data';
 import {
   type AnnotationMark,
   annotationIdsOf,
   annotationKindKey,
   annotationStorageOf,
   boxesOf,
+  commentText,
   type ExistingAnnotation,
   hexToRgb,
   kindForSubtype,
   markerFor,
+  markerId,
   markerTargets,
   markOutlines,
   markQuadPoints,
@@ -252,6 +255,26 @@ describe('hexToRgb', () => {
       expect(error.code).toBe('internal');
       expect(error.details.engineMessage).toBe(`annotation colour is not #rrggbb: ${bad}`);
     }
+  });
+});
+
+describe('markerId and commentText', () => {
+  it('read the marker at the head of a text, with white space before it and whatever words follow', () => {
+    expect(markerId(markerFor('a-1'))).toBe('a-1');
+    expect(markerId(`${markerFor('a-1')} the words`)).toBe('a-1');
+    expect(markerId(`  ${markerFor('a-1')}\nthe words`)).toBe('a-1');
+    expect(commentText(`${markerFor('a-1')} the words`)).toBe('the words');
+    expect(commentText(`  ${markerFor('a-1')}\nthe words`)).toBe('the words');
+  });
+
+  it('do not read the same words further on: they are the reader’s own text', () => {
+    const quoted = `see ${markerFor('a-1')} and ${markerFor('a-2')}`;
+    expect(markerId(quoted)).toBeNull();
+    expect(commentText(quoted)).toBe(quoted);
+    expect(markerId('')).toBeNull();
+    // The head marker is the identity; a second one in the words is kept with them.
+    expect(markerId(`${markerFor('a-1')} ${quoted}`)).toBe('a-1');
+    expect(commentText(`${markerFor('a-1')} ${quoted}`)).toBe(quoted);
   });
 });
 
@@ -682,6 +705,40 @@ describe('writeAnnotations', () => {
   });
 });
 
+describe('a review imported from a file with bad values', () => {
+  const stroke = { kind: 'ink', quads: ['10 20 80 90'], strokes: ['10 20 80 90'], contents: 'hi' };
+
+  it('saves: the colour is the default, a page the document lacks is left out and counted', async () => {
+    const file = JSON.stringify({
+      marks: [
+        { ...stroke, pageIndex: 0, color: 'red' },
+        { ...stroke, pageIndex: 7, color: '#112233' },
+        { ...stroke, pageIndex: -1, color: '#112233' },
+      ],
+    });
+    // The page count is the document's, which the file cannot know.
+    const imported = keepMarksOnPages(parseAnnotationsJson(file), 1);
+    expect(imported.skipped).toBe(2);
+    expect(imported.marks).toHaveLength(1);
+    expect(imported.marks[0]?.color).toBe('#ffd400');
+
+    await withHandle(
+      buildPdf(1, () => {}),
+      async (handle) => {
+        const outcome = await writeAnnotations(handle, { marks: imported.marks }, RUN);
+        expect(outcome.written).toEqual([imported.marks[0]?.id]);
+        const settled = await settleEngineMarks(outcome.bytes, imported.marks, RUN);
+        const read = await withHandle(settled.bytes, (written) => readAnnotations(written, RUN));
+        expect(
+          read
+            .filter((annotation) => annotation.kind !== null)
+            .map((annotation) => [annotation.kind, annotation.marker, annotation.contents]),
+        ).toEqual([['ink', imported.marks[0]?.id, 'hi']]);
+      },
+    );
+  });
+});
+
 describe('readAnnotations on odd records and odd files', () => {
   const stubHandle = (
     annotations: readonly unknown[],
@@ -753,6 +810,34 @@ describe('readAnnotations on odd records and odd files', () => {
         .filter((annotation) => annotation.kind !== null)
         .map((annotation) => [annotation.pageIndex, annotation.kind, annotation.marker]),
     ).toEqual([[1, 'shapes', 'square-1']]);
+  });
+
+  it('lists the words of a comment that quotes a marker as they are, and names only the head marker', async () => {
+    const quoted = `The old note said ${markerFor('old-1')} here`;
+    const bytes = buildPdf(1, (doc) => {
+      const own = doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Square',
+        Rect: [10, 10, 50, 50],
+        Contents: doc.newString(quoted),
+      });
+      const tagged = doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Square',
+        Rect: [60, 10, 100, 50],
+        Contents: doc.newString(`${markerFor('t-1')} ${quoted}`),
+      });
+      doc.findPage(0).put('Annots', [own, tagged]);
+    });
+    const read = await withHandle(bytes, (handle) => readAnnotations(handle, RUN));
+    expect(
+      read
+        .filter((annotation) => annotation.kind !== null)
+        .map((annotation) => [annotation.marker, annotation.contents]),
+    ).toEqual([
+      [null, quoted],
+      ['t-1', quoted],
+    ]);
   });
 
   it('stops at an aborted signal', async () => {
@@ -1045,6 +1130,35 @@ describe('settleEngineMarks on a tagged annotation', () => {
     );
     const read = await withHandle(outcome.bytes, (handle) => readAnnotations(handle, RUN));
     expect(read[0]).toMatchObject({ marker: 's1', contents: '' });
+  });
+
+  it('names and rewrites the annotation that carries the marker at its head, not one that quotes it', async () => {
+    const quoted = `Compare with ${markerFor('s1')} on page two`;
+    const bytes = buildPdf(1, (doc) => {
+      const quoting = doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Square',
+        Rect: [70, 10, 120, 30],
+        Contents: doc.newString(quoted),
+      });
+      const ours = doc.addObject({
+        Type: 'Annot',
+        Subtype: 'Square',
+        Rect: [10, 10, 60, 30],
+        Contents: doc.newString(`${markerFor('s1')} stale`),
+      });
+      doc.findPage(0).put('Annots', [quoting, ours]);
+    });
+    const outcome = await settleEngineMarks(
+      bytes,
+      [mark({ id: 's1', kind: 'shapes', rect: [10, 10, 60, 30], contents: 'our words' })],
+      RUN,
+    );
+    const read = await withHandle(outcome.bytes, (handle) => readAnnotations(handle, RUN));
+    expect(read.map((annotation) => [annotation.marker, annotation.contents])).toEqual([
+      [null, quoted],
+      ['s1', 'our words'],
+    ]);
   });
 
   it('refuses a retag whose mark carries a colour that is not #rrggbb', async () => {

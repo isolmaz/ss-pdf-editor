@@ -162,6 +162,36 @@ describe('an FDF as Acrobat writes it', () => {
   });
 });
 
+describe('stream bodies', () => {
+  const words = (source: string) => tokenizePdfSource(source).map((token) => `${token.kind}:${token.text}`);
+
+  it('are binary data: a ( or < in one starts no string, and the tokens go on after endstream', () => {
+    expect(words('<</Length 9>>\nstream\nq (not closed << [ <4\nendstream\nendobj /After')).toEqual([
+      'dict-open:<<',
+      'name:Length',
+      'name:9',
+      'dict-close:>>',
+      'name:stream',
+      'name:endstream',
+      'name:endobj',
+      'name:After',
+    ]);
+  });
+
+  it('end with the file when the stream is never closed', () => {
+    expect(words('/A stream\n( << [ <4 unfinished')).toEqual(['name:A', 'name:stream']);
+  });
+
+  it('are only the bare word: /stream is a name and (stream) is a string', () => {
+    expect(words('/stream (stream) <73747265616d> (x)')).toEqual([
+      'name:stream',
+      'string:stream',
+      'string:stream',
+      'string:x',
+    ]);
+  });
+});
+
 describe('FDF delimiters that start nothing, and hex strings', () => {
   it('moves past a lone >, a ) that closes nothing, and reads the fields around them', () => {
     expect(tokenizePdfSource('/A > /B ) /C').map((token) => `${token.kind}:${token.text}`)).toEqual([

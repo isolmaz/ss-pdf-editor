@@ -2685,14 +2685,22 @@ Two rules make that list trustworthy:
   is listed — deleting it is what removes bytes — and the pending copy is dropped, so the
   count the strip shows and what deletion removes are the same number.
 
-Ids crossing into session state are **reminted**: an FDF import carries the `/NM` the file was
-annotated with (`ops/annotation-data.ts`), which is not unique across documents, so an id
-already in use becomes a fresh UUID. The import result also states its geometry space:
-this app's own JSON and FDF records are in app space, while Acrobat's comment FDF is PDF user
-space and is mirrored into app space with each page's top edge (`toAppSpace`) — read as
-app space, every Acrobat comment would land mirrored about the page's middle. The records carry
-`rect` and `fontSize` as well, because a note's place is its `rect` alone. The comments panel shows a saved
-mark's words through `commentText()`, never the `pdf-editor-ann:<id>` marker itself. Duplicate ids would break React keys and make one deletion
+Ids crossing into session state are **reminted**: the readers (`ops/annotation-data.ts`,
+`annotation-xfdf.ts`) give every mark a fresh id, and the importer still gives a fresh UUID to
+an id already in use, because a name a file carries is not unique across documents. The import
+result also states its geometry space: this app's JSON and the `ann.N.*` FDF records it used to
+write are in app space, while Acrobat's comment FDF and XFDF are PDF user space and are mirrored
+into app space with each page's top edge (`toAppSpace`) — read as app space, every Acrobat
+comment would land mirrored about the page's middle. The JSON records carry `rect` and
+`fontSize` as well, because a note's place is its `rect` alone. Before a result becomes session state, `keepMarksOnPages()`
+drops the marks on pages the document does not have and counts them as skipped, and the record
+reader settles what a later save would refuse: a colour that is not `#rrggbb` becomes the
+default, and a shape this app cannot draw or a page that is not a whole number from 0 makes
+the record skipped — one bad record used to make every save after the import fail
+(`hexToRgb`, the page range check and the shape subtype all throw on write). The comments panel shows a saved
+mark's words through `commentText()`, never the `pdf-editor-ann:<id>` marker itself — which is only
+the head of the text (`markerId()`): the same words in the middle of a comment are the reader's
+and are kept. Duplicate ids would break React keys and make one deletion
 remove several marks. New drawing gestures already use session UUIDs. Recovered engine
 records are converted through their original storage keys and reminted; engine-local keys
 must never become persistent mark identity.
@@ -2728,6 +2736,31 @@ The browser's `DOMParser` parses it, and `@xmldom/xmldom` is used only where the
 none (Node); an attribute is read with `hasAttribute` first, because that package answers
 `''` for a missing one. `toAppSpace` mirrors a line's two ends point by point. A line's
 `rect` is its ends in drag order, and normalising it as a box turned the line around.
+
+**Comment FDF** (`ops/annotation-data.ts`) is Acrobat's own comment container (ISO 32000-1
+§12.7.7), not a form-data file with comment-shaped keys. The writer emits `%FDF-1.2`, a catalog
+`<< /FDF << /Annots [ … ] /F (file.pdf) /UF (file.pdf) /ID [<…><…>] >> /Type /Catalog >>` and
+every annotation as an indirect object with the keys a reader needs (`/Type /Annot`,
+`/Subtype`, `/Page`, `/Rect`, `/C`, `/CA`, `/Contents`, `/T`, `/M`, `/CreationDate`, `/NM`,
+`/QuadPoints`, `/InkList`, `/L`, `/BS`, `/DA`, `/Popup`); a reply and a review state are `/Text`
+annotations with `/IRT` naming the object they answer (`/State`, `/StateModel` as text strings
+for a state). `/ID` is the engine's fingerprint of the open file and is left out when there is
+none. The reader takes the same shape from Acrobat: it tokenises with the form-data
+tokenizer (hex strings, PDFDocEncoding, and the bodies of appearance streams skipped over
+rather than scanned as tokens), reads the objects through `readFdfFile` (a dictionary is a
+`Map`, so `__proto__` or `constructor` as a key or a `/Subtype` is an entry like any other), and
+follows `/IRT` references to attach replies and states. A `/Subtype` is looked up in a `Map`
+for the same reason. `/Page` is the 0-based page; a comment without one lands on page 1 and
+is counted in `pageUnknown`. `parseAnnotationData` tells the three shapes apart from the
+bytes: JSON, an FDF with `/Annots`, and the older `ann.N.*` record FDF, which is read through the
+same record reader as JSON.
+
+**PDF dates.** `parsePdfDate()` (`ops/annotation-threads.ts`) is the one reader of
+`D:YYYYMMDDHHmmSS` + zone for the thread list, the FDF and the XFDF. Every field is checked
+(month 1–12, a day the month has, hour below 24, minute and second below 60), so
+`D:20241301` is no date instead of rolling into 2025 or throwing `RangeError`, and the zone is
+applied (`+02'00'` is two hours earlier in UTC). A comment with a date that is not a date is
+imported with the time of the import.
 
 **FDF strings.** Octal escapes of one to three digits are read (`\1`, `\12`), and the FDF reader
 uses the shared PDF tokenizer. A value with any character outside ASCII is written whole as UTF-16BE
@@ -2776,7 +2809,8 @@ Pending geometry changes in one overlay step; persisted changes use
 `ops/annotation-transform.ts`. Its writer transforms `/Rect`, quads, paths and appearance
 streams together, wraps shared appearances without mutating non-targets, and reads back
 geometry, appearance references, page facts and form values. Directional pending marks
-retain a quarter-turn value until export; JSON/FDF interchange preserves it. A mixed
+retain a quarter-turn value until export; JSON interchange preserves it (FDF and XFDF write the
+geometry as it was drawn). A mixed
 selection remains one journal step. MuPDF raster regressions verify actual rotated pixels
 and continuous marker strokes, rather than merely checking stored rectangles.
 

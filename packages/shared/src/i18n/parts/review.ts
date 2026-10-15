@@ -24,6 +24,7 @@ export const reviewPart = {
   'ann.data.xfdfExported': '{count} yorum yanıtlarıyla birlikte XFDF olarak dışa aktarıldı: {name}',
   'ann.data.xfdfSkipped':
     '{count} ek açıklama yorum olmadığı için (damga, bağlantı, form alanı) dışa aktarılmadı.',
+  'ann.data.fdfSkipped': '{count} yorum, boyutu henüz bilinmeyen sayfalarda olduğu için dışa aktarılmadı.',
   'ann.data.repliesImported': '{count} yanıt ve inceleme durumu yorumlarına bağlandı.',
   'op.note.annotate.replies': '{count} yanıt, yanıtladığı yoruma bağlı olarak (/IRT) yazıldı.',
   'op.note.annotate.states': '{count} inceleme durumu (/State) yazıldı.',
