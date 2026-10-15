@@ -28,7 +28,8 @@ export const pageeditPart = {
   'insert.document': 'Source PDF',
   'insert.documentHint': 'Selected pages are copied directly from source document.',
   'insert.range': 'Source page range',
-  'insert.rangeHint': 'Leave blank to insert all pages of source document.',
+  'insert.rangeHint':
+    'Leave blank to insert all pages of source document. Pages are inserted in the order typed (e.g. 5, 1).',
   'insert.progress.prepare': 'Preparing pages to insert',
   'insert.progress.place': 'Placing pages',
   'insert.note.storage': 'Annotations and form values carried over from document storage.',

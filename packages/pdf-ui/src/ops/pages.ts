@@ -19,6 +19,7 @@
 import {
   composeDocument,
   extractedFileName,
+  formatPageRanges,
   note,
   type OperationOutcome,
   openWithPdfjs,
@@ -185,7 +186,7 @@ export const splitDialog: OperationDialogSpec = {
       });
     }
 
-    const { files } = await splitDocument(context.bytes, options, {
+    const { files, oversizedPages } = await splitDocument(context.bytes, options, {
       signal: context.signal,
       onProgress: context.onProgress,
     });
@@ -201,6 +202,16 @@ export const splitDialog: OperationDialogSpec = {
           note('lost', 'op.note.compose.catalog'),
           note('preserved', 'op.note.compose.storage'),
           note('changed', 'split.done', { count: files.length }),
+          // A page cannot be cut: one that is over the limit on its own still
+          // leaves in a part that breaks the limit, and the report says which.
+          ...(oversizedPages.length === 0
+            ? []
+            : [
+                note('warning', 'split.note.oversized', {
+                  count: oversizedPages.length,
+                  pages: formatPageRanges(oversizedPages),
+                }),
+              ]),
         ],
         inputBytes: context.bytes.length,
         outputBytes: files.reduce((sum, file) => sum + file.bytes.length, 0),

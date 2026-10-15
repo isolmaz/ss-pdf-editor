@@ -50,7 +50,8 @@ export const pageeditPart = {
   'insert.document': 'Kaynak PDF',
   'insert.documentHint': 'Seçilen sayfalar kaynak belgeden olduğu gibi kopyalanır.',
   'insert.range': 'Kaynak sayfa aralığı',
-  'insert.rangeHint': 'Boş bırakılırsa kaynak belgenin tüm sayfaları eklenir.',
+  'insert.rangeHint':
+    'Boş bırakılırsa kaynak belgenin tüm sayfaları eklenir. Sayfalar yazdığınız sırayla eklenir (ör. 5, 1).',
   'insert.progress.prepare': 'Eklenecek sayfalar hazırlanıyor',
   'insert.progress.place': 'Sayfalar yerleştiriliyor',
   'insert.note.storage': 'Açıklamalar ve form değerleri belgenin kendi deposundan taşındı.',

@@ -13,12 +13,14 @@
  * in rather than left to the caller:
  *
  *  - **`/Count` is recomputed, never patched.** The value is the number of *visible*
- *    descendant items — positive for an open subtree, negative for a closed one. Every
- *    tree this file writes is open, so every count is positive, and after any edit the
- *    counts are recomputed from the structure that is actually there
- *    (`applyCounts`), which also repairs a file whose counts were already wrong.
- *    Nothing here writes a closed subtree: the request model has no "collapsed" flag,
- *    and inventing one would make the panel's expansion state a document property.
+ *    descendant items — positive for an open subtree, negative for a closed one. After
+ *    any edit the counts are recomputed from the structure that is actually there
+ *    (`applyCounts`), which also repairs a file whose counts were already wrong. The
+ *    open/closed state is not recomputed: an item the file already had keeps its sign
+ *    (a collapsed branch stays collapsed through a rename, a removal elsewhere or a
+ *    child added to it), and every item this file writes is open. The request model
+ *    has no "collapsed" flag, and inventing one would make the panel's expansion state
+ *    a document property.
  *  - **No orphan trees.** Every object a rewrite replaces or removes is deleted, so an
  *    unlinked item cannot travel in the output. `replace-all` with
  *    an empty list, and `remove` of the last remaining item, therefore end with
@@ -217,6 +219,12 @@ interface OutlineNode {
   readonly dict: PDFObject;
   /** `/Title` as decoded from the file; kept current so a rename can report the old name. */
   readonly title: string;
+  /**
+   * Whether the item is shown expanded. A negative `/Count` in the input file closes
+   * it (§12.3.4); everything else — and every item this file writes — is open. Carried
+   * through every edit so `applyCounts` writes back the state the file already had.
+   */
+  readonly open: boolean;
   readonly children: OutlineNode[];
 }
 
@@ -277,11 +285,13 @@ function readTree(doc: PDFDocument): OutlineTree {
       if (seen.size > MAX_OUTLINE_ITEMS) {
         refuse(`the outline carries more than ${MAX_OUTLINE_ITEMS} items`, '/Root/Outlines');
       }
+      const count = resolved(dict.get('Count'));
       nodes.push({
         ref: current,
         number,
         dict,
         title: readText(dict.get('Title')) ?? '',
+        open: !(count?.isNumber() === true && count.asNumber() < 0),
         children: read(dict, depth + 1),
       });
       current = dict.get('Next');
@@ -470,7 +480,7 @@ function writeItem(
   if (node.colour !== null) dict.put('C', [...node.colour]);
   const children = node.children.map((child) => writeItem(doc, ref, child, write));
   linkChain(dict, children);
-  return { ref, number: ref.asIndirect(), dict, title: node.title, children };
+  return { ref, number: ref.asIndirect(), dict, title: node.title, open: true, children };
 }
 
 /** The last item of a container's own chain, `null` when it has none. */
@@ -543,19 +553,31 @@ function unlinkItem(container: PDFObject, victim: OutlineNode): void {
 
 /**
  * `/Count` everywhere, from the model and from the structure that is actually there:
- * a post-order walk that sets the visible-descendant count on every item that has
- * children (and drops a stale `/Count` from one that has none), then `total` on the
- * root. Every subtree written here is open, so every value is positive (§12.3.4).
+ * a post-order walk that sets the count on every item that has children (and drops a
+ * stale `/Count` from one that has none).
+ *
+ * The count of an item is the number of descendants a reader would show if the item
+ * were open — its children plus the descendants of those children that are themselves
+ * open — and its sign is the item's own state: positive when open, negative when closed
+ * (§12.3.4). An item keeps the state it has in the model (`OutlineNode.open`), so a
+ * subtree the user collapsed stays collapsed through any edit, and a closed item hides
+ * its descendants from the count of every open ancestor.
+ *
+ * Answers `total`, every item in the subtree (what the report and the read-back
+ * compare), and `visible`, the items a reader lists with the subtree's own level shown
+ * (what the root's `/Count` holds).
  */
-function applyCounts(nodes: readonly OutlineNode[]): number {
+function applyCounts(nodes: readonly OutlineNode[]): { readonly total: number; readonly visible: number } {
   let total = 0;
+  let visible = 0;
   for (const node of nodes) {
-    const descendants = applyCounts(node.children);
-    if (node.children.length > 0) node.dict.put('Count', descendants);
+    const below = applyCounts(node.children);
+    if (node.children.length > 0) node.dict.put('Count', node.open ? below.visible : -below.visible);
     else node.dict.delete('Count');
-    total += 1 + descendants;
+    total += 1 + below.total;
+    visible += 1 + (node.open ? below.visible : 0);
   }
-  return total;
+  return { total, visible };
 }
 
 /** A fresh `/Outlines` root, linked from the catalog. */
@@ -830,7 +852,8 @@ export async function applyOutlineEdit(
       if (next === null) return nothingToDo(bytes, pageCount, []);
       context.onProgress?.({ phase: 'outline', labelKey: 'op.progress.outline', done: 1, total: 1 });
 
-      after = applyCounts(next.items);
+      const counted = applyCounts(next.items);
+      after = counted.total;
       const catalog = catalogOf(doc);
       const rootRef = catalog.get('Outlines');
       const root = resolved(rootRef);
@@ -842,7 +865,7 @@ export async function applyOutlineEdit(
           // by this call is added as an object.
           doc.deleteObject(rootRef.asIndirect());
         } else {
-          root.put('Count', after);
+          root.put('Count', counted.visible);
         }
       }
 

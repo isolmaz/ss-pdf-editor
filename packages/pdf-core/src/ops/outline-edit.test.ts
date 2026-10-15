@@ -7,6 +7,7 @@
  * point of a rotated page, and a malformed tree rewritten instead of refused.
  */
 
+import type { PDFObject } from 'mupdf';
 import { isToolError, type ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import { openWithPdfjs, type PdfOutlineEntry } from '../engines/pdfjs-handle';
@@ -591,5 +592,111 @@ describe('applyOutlineEdit removal and structure', () => {
     await expect(
       applyOutlineEdit(await three(), { kind: 'remove', path: [0] }, { signal: before.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// open and closed branches
+// ---------------------------------------------------------------------------
+
+/**
+ * `A` (closed, `/Count -2`: `A1`, `A2`), `B` (open, `/Count 1`: `B1`). The root counts what a
+ * reader shows: `A`, `B`, `B1` — a closed item hides its children from every count above it.
+ */
+async function withClosedBranch(): Promise<Uint8Array> {
+  return blank((doc) => {
+    const outlines = doc.addObject({ Type: 'Outlines' });
+    const item = (title: string, parent: PDFObject) =>
+      doc.addObject({ Title: doc.newString(title), Parent: parent });
+    const chain = (items: readonly PDFObject[], owner: PDFObject) => {
+      owner.put('First', items[0] as PDFObject);
+      owner.put('Last', items.at(-1) as PDFObject);
+      for (const [index, entry] of items.entries()) {
+        const next = items[index + 1];
+        if (next !== undefined) {
+          entry.put('Next', next);
+          next.put('Prev', entry);
+        }
+      }
+    };
+    const a = item('A', outlines);
+    const b = item('B', outlines);
+    chain([item('A1', a), item('A2', a)], a);
+    chain([item('B1', b)], b);
+    a.put('Count', -2);
+    b.put('Count', 1);
+    chain([a, b], outlines);
+    outlines.put('Count', 3);
+    catalogOf(doc).put('Outlines', outlines);
+  });
+}
+
+/** `/Count` of the root (as `root`) and of every item that carries one, by title. */
+async function countsOf(bytes: Uint8Array): Promise<Record<string, number>> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  try {
+    const counts: Record<string, number> = {};
+    const walk = (container: PDFObject) => {
+      let current = container.get('First');
+      while (!current.isNull()) {
+        const entry = current.resolve();
+        const count = entry.get('Count');
+        if (!count.isNull()) counts[entry.get('Title').asString()] = count.asNumber();
+        walk(entry);
+        current = entry.get('Next');
+      }
+    };
+    const root = doc.getTrailer().get('Root').resolve().get('Outlines').resolve();
+    counts.root = root.get('Count').asNumber();
+    walk(root);
+    return counts;
+  } finally {
+    doc.destroy();
+  }
+}
+
+describe('applyOutlineEdit keeps the open and closed state the file has', () => {
+  it('leaves a closed branch closed, and out of the root count, when an item elsewhere is renamed', async () => {
+    const out = await applyOutlineEdit(
+      await withClosedBranch(),
+      { kind: 'rename', path: [1, 0], title: 'B1 yeni' },
+      run,
+    );
+    expect(await countsOf(out.bytes)).toEqual({ A: -2, B: 1, root: 3 });
+    expect(titles(await outlineOf(out.bytes))).toEqual([{ A: ['A1', 'A2'] }, { B: ['B1 yeni'] }]);
+  });
+
+  it('recounts the root without the hidden children when the open item next to a closed one is removed', async () => {
+    const out = await applyOutlineEdit(await withClosedBranch(), { kind: 'remove', path: [1] }, run);
+    expect(await countsOf(out.bytes)).toEqual({ A: -2, root: 1 });
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.outline.nodes')?.params).toEqual({
+      before: 5,
+      after: 3,
+    });
+  });
+
+  it('counts a child added to a closed item in its negative count and keeps it closed', async () => {
+    const out = await applyOutlineEdit(
+      await withClosedBranch(),
+      { kind: 'add-child', parentPath: [0], node: leaf('A3') },
+      run,
+    );
+    expect(await countsOf(out.bytes)).toEqual({ A: -3, B: 1, root: 3 });
+  });
+
+  it('writes a new item open, beside a closed branch', async () => {
+    const out = await applyOutlineEdit(
+      await withClosedBranch(),
+      {
+        kind: 'add-child',
+        parentPath: [1],
+        node: { title: 'B2', destination: null, children: [leaf('B2a')] },
+      },
+      run,
+    );
+    // B now shows B1, B2 and B2a; A still shows only itself.
+    expect(await countsOf(out.bytes)).toEqual({ A: -2, B: 3, B2: 1, root: 5 });
   });
 });

@@ -15,7 +15,7 @@
 import { ToolError } from 'pdf-shared';
 import { openWithPdfjs } from '../engines/pdfjs-handle';
 import { composeDocument } from './compose';
-import { chunkPages, parsePageRanges, partFileName } from './page-ranges';
+import { chunkPages, parsePageRanges, partFileName, splitRangeSegments } from './page-ranges';
 import { type OperationContext, type OutputFile, throwIfAborted } from './types';
 
 export type SplitMode = 'ranges' | 'everyN' | 'size' | 'booklet';
@@ -61,12 +61,23 @@ export function planSplit(options: SplitOptions): SplitPlan {
   };
 }
 
+export interface SplitResult {
+  readonly files: readonly OutputFile[];
+  readonly plan: SplitPlan;
+  /**
+   * `size` mode: 0-based pages that are bigger than the limit on their own. Each is
+   * a single-page part that still exceeds `maxBytes` — a page cannot be cut — so the
+   * limit does not hold for it. Empty in every other mode.
+   */
+  readonly oversizedPages: readonly number[];
+}
+
 /** Produce one PDF per part. Progress is per part; cancellation stops between parts. */
 export async function splitDocument(
   bytes: Uint8Array,
   options: SplitOptions,
   context: OperationContext,
-): Promise<{ readonly files: readonly OutputFile[]; readonly plan: SplitPlan }> {
+): Promise<SplitResult> {
   throwIfAborted(context.signal);
   assertPageCount(options);
   assertSelection(options);
@@ -75,6 +86,7 @@ export async function splitDocument(
   try {
     const parts: number[][] = [];
     const blobs: Uint8Array[] = [];
+    const oversizedPages: number[] = [];
     const composePart = async (partPages: readonly number[]): Promise<Uint8Array> => {
       const outcome = await composeDocument(
         {
@@ -94,22 +106,19 @@ export async function splitDocument(
 
     if (options.mode === 'size') {
       // Estimated from the page-count proportion first, then verified against the
-      // real bytes: a part that comes back over the limit is produced again with
-      // one page less, and the measured average sizes the next part. A page that
-      // is bigger than the limit on its own is produced alone — a page cannot be
-      // cut in half.
+      // real bytes: a part that comes back over the limit is corrected from its
+      // measured size (`fitPart`), and the measured average sizes the next part.
+      // A page that is bigger than the limit on its own is produced alone — a page
+      // cannot be cut in half — and is reported in `oversizedPages`.
       const maxBytes = requireMaxBytes(options);
       const totalBytes = requireTotalBytes(options);
       let perPage = totalBytes / options.pageCount;
       let start = 0;
       while (start < options.pageCount) {
         throwIfAborted(context.signal);
-        let take = Math.max(1, Math.min(Math.floor(maxBytes / perPage), options.pageCount - start));
-        let partBytes = await composePart(pageBlock(start, take));
-        while (partBytes.length > maxBytes && take > 1) {
-          take -= 1;
-          partBytes = await composePart(pageBlock(start, take));
-        }
+        const estimate = Math.max(1, Math.min(Math.floor(maxBytes / perPage), options.pageCount - start));
+        const { take, bytes: partBytes } = await fitPart(start, estimate, maxBytes, composePart, context);
+        if (take === 1 && partBytes.length > maxBytes) oversizedPages.push(start);
         perPage = partBytes.length / take;
         parts.push(pageBlock(start, take));
         blobs.push(partBytes);
@@ -143,10 +152,49 @@ export async function splitDocument(
       bytes: partBytes,
       mime: 'application/pdf',
     }));
-    return { files, plan: { parts, names: files.map((file) => file.name) } };
+    return { files, plan: { parts, names: files.map((file) => file.name) }, oversizedPages };
   } finally {
     await handle.destroy();
   }
+}
+
+/**
+ * The largest block of pages from `start` — at most `estimate` — whose part stays
+ * within `maxBytes`, found with `O(log estimate)` productions instead of one per
+ * page of overshoot.
+ *
+ * The estimate is produced first. If it is over the limit, the *measured* size says
+ * how many pages should fit (a part of `n` pages weighing `b` bytes holds about
+ * `n * maxBytes / b`), and that is the second probe; every probe after it bisects
+ * the bracket between the largest block known to fit and the smallest known to be
+ * over, so the work is bounded even when the size is not proportional to the page
+ * count (fonts and other shared resources are repeated in every part). A single
+ * page that is over the limit is returned as it is: `take === 1` with
+ * `bytes.length > maxBytes`.
+ */
+async function fitPart(
+  start: number,
+  estimate: number,
+  maxBytes: number,
+  composePart: (pages: readonly number[]) => Promise<Uint8Array>,
+  context: OperationContext,
+): Promise<{ readonly take: number; readonly bytes: Uint8Array }> {
+  let over = { take: estimate, bytes: await composePart(pageBlock(start, estimate)) };
+  if (over.bytes.length <= maxBytes || estimate === 1) return over;
+
+  let fits: { take: number; bytes: Uint8Array } | null = null;
+  let next = Math.floor((over.take * maxBytes) / over.bytes.length);
+  while (over.take - (fits?.take ?? 0) > 1) {
+    throwIfAborted(context.signal);
+    const lowest = (fits?.take ?? 0) + 1;
+    next = Math.min(Math.max(next, lowest), over.take - 1);
+    const probe = { take: next, bytes: await composePart(pageBlock(start, next)) };
+    if (probe.bytes.length <= maxBytes) fits = probe;
+    else over = probe;
+    next = Math.floor(((fits?.take ?? 0) + over.take) / 2);
+  }
+  // Nothing smaller fits: the bracket closed on one page that is over the limit by itself.
+  return fits ?? over;
 }
 
 function planParts(options: SplitOptions): number[][] {
@@ -173,11 +221,7 @@ function planRanges(options: SplitOptions): number[][] {
   // The whole expression is parsed first: one parser decides what a duplicate, a
   // descending or an out-of-range page means.
   parsePageRanges(source, options.pageCount);
-  return source
-    .split(/[,;\n]+/)
-    .map((segment) => segment.trim())
-    .filter((segment) => segment !== '')
-    .map((segment) => [...parsePageRanges(segment, options.pageCount).pages]);
+  return splitRangeSegments(source).map((segment) => [...parsePageRanges(segment, options.pageCount).pages]);
 }
 
 function planBySize(options: SplitOptions): number[][] {

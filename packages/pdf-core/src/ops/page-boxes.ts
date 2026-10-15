@@ -617,7 +617,13 @@ function applySetPage(
   return { box: rect, changed: true };
 }
 
-/** Keep the derived boxes inside a new MediaBox — a box outside it is an invalid page. */
+/**
+ * Keep the derived boxes inside a new MediaBox — a box outside it is an invalid page.
+ *
+ * A clamped box is always written on the page itself, so a CropBox inherited from a
+ * `/Pages` node is overridden for this page and its siblings keep theirs. `clampedBoxes`
+ * counts only boxes whose effective value changed.
+ */
 function clampDerivedBoxes(page: PDFObject, media: Rect, stats: ChangeStats): void {
   for (const kind of DERIVED_BOXES) {
     if (!hasBox(page, kind)) continue;
@@ -631,6 +637,10 @@ function clampDerivedBoxes(page: PDFObject, media: Rect, stats: ChangeStats): vo
       // falls back to the MediaBox (the /CropBox default) instead of naming an area
       // the page does not have.
       page.delete(BOX_ENTRY[kind]);
+      // Deleting reaches only the page's own dictionary. A CropBox that is inherited
+      // (or that the page's own entry was hiding) is still there and still outside
+      // the page, so the fallback is written explicitly.
+      if (kind === 'crop' && hasBox(page, 'crop')) writeBox(page, 'crop', media);
     }
     stats.clampedBoxes += 1;
   }

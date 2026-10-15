@@ -62,7 +62,10 @@ export interface PdfImageInfo {
   readonly colorSpace: string | null;
   /** Encoded stream length in bytes. */
   readonly bytes: number;
-  /** The object carries `/SMask` or `/Mask`; a replacement drops it (`lost`, reported). */
+  /**
+   * The object carries `/SMask` or `/Mask`; a replacement drops it (`lost`, reported)
+   * unless the request sets `dropMask: false`, which moves it onto the new pixels.
+   */
   readonly hasMask: boolean;
   /**
    * False for anything whose pixels are not the whole picture: an image mask, a
@@ -396,6 +399,15 @@ export async function applyImageEdit(
 ): Promise<OperationOutcome> {
   throwIfAborted(context.signal);
   if (request.replacements.length === 0) {
+    // The report carries the document's real page count: a batch step after this one
+    // resolves its page scope against it.
+    const { doc: untouched } = await openForWrite(bytes);
+    let pageCount: number;
+    try {
+      pageCount = untouched.countPages();
+    } finally {
+      untouched.destroy();
+    }
     return {
       bytes,
       report: {
@@ -404,7 +416,7 @@ export async function applyImageEdit(
         notes: [note('warning', 'op.note.image.nothing'), producerKeptNote()],
         inputBytes: bytes.byteLength,
         outputBytes: bytes.byteLength,
-        pageCount: 0,
+        pageCount,
         incremental: true,
       },
     };
@@ -480,7 +492,11 @@ export async function applyImageEdit(
         );
       }
 
-      const oldMask = [target.dict.get('SMask'), target.dict.get('Mask')].find((value) => value.isIndirect());
+      const oldMasks = (['SMask', 'Mask'] as const).flatMap((key) => {
+        const value = target.dict.get(key);
+        return value.isIndirect() ? [{ key, value }] : [];
+      });
+      const oldMask = oldMasks[0];
       const sharedWith = usageCount(pages, target.ref.asIndirect());
 
       // The reference the page names now holds the new image: its dictionary first, then
@@ -494,6 +510,12 @@ export async function applyImageEdit(
         if (key === 'SMask' || key === 'Mask') ownMask = true;
         if (key !== 'Length') dictionary.put(key, value);
       });
+      // Asked to keep the old mask: it moves into the dictionary the object is about to
+      // get (a soft or stencil mask is scaled onto the new pixels by the reader), unless
+      // the new picture brought its own. Without this the rewrite below would delete the
+      // mask while the report said it was kept.
+      const carryMask = !dropMask && !ownMask;
+      if (carryMask) for (const old of oldMasks) dictionary.put(old.key, old.value);
       target.ref.writeObject(dictionary);
       target.ref.writeRawStream(encoded);
       doc.deleteObject(produced);
@@ -502,7 +524,7 @@ export async function applyImageEdit(
         // The dictionary written above is the new picture's alone, so the old object's mask
         // is already gone: it described the old pixels, and `garbage` collects it on save.
         if (oldMask !== undefined) dropped += 1;
-      } else if (oldMask !== undefined && !ownMask) {
+      } else if (oldMask !== undefined && carryMask) {
         notes.push(note('warning', 'op.note.image.maskKept', { name: replacement.name }));
       }
       replaced.push({

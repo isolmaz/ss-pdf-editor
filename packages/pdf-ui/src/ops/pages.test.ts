@@ -50,6 +50,19 @@ describe('splitDialog', () => {
     const result = await runDialog(splitDialog, { mode: 'size', maxSizeMb: 10 }, await five());
     expect(result.files).toHaveLength(1);
     expect(await pageCountOf(bytesOf(result.files[0]))).toBe(5);
+    expect(result.report.notes.some((entry) => entry.key === 'split.note.oversized')).toBe(false);
+  });
+
+  it('cuts by size and reports every page that is over the limit on its own', async () => {
+    // 10 bytes: no page of the document can fit, so each leaves alone and above the limit.
+    const result = await runDialog(splitDialog, { mode: 'size', maxSizeMb: 0.00001 }, await five());
+    expect(result.files).toHaveLength(5);
+    expect(await Promise.all(result.files.map((file) => pageCountOf(file.bytes)))).toEqual([1, 1, 1, 1, 1]);
+    expect(result.report.notes.at(-1)).toEqual({
+      kind: 'warning',
+      key: 'split.note.oversized',
+      params: { count: 5, pages: '1-5' },
+    });
   });
 
   it('folds a document into booklet parts', async () => {

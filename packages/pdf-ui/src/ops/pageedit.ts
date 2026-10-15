@@ -14,7 +14,8 @@
  *    0 = in front of everything), because a number field cannot know the count;
  *  - a source document's page range is parsed by the shared parser
  *    (`parsePageRanges` + `validateRanges`, exactly as `ops/scope.ts` does) against
- *    the *source* document's page count, never against the current one;
+ *    the *source* document's page count, never against the current one, and keeps
+ *    the order it was typed in (`{ ordered: true }`);
  *  - a replacement must produce exactly as many pages as were selected; a
  *    mismatch is refused before any engine work, never silently padded.
  *
@@ -69,10 +70,12 @@ async function pickedImages(
 }
 
 /**
- * A `files` field's single PDF, with the pages its range text names. The page
- * count comes from the engine that will compose the document: a byte-level scan
- * for `/Type /Page` misreads every document whose page objects live in an object
- * stream.
+ * A `files` field's single PDF, with the pages its range text names — in the order
+ * the text lists them (`5, 1` inserts page 5 before page 1; an insert or a
+ * replacement takes its pages in the order requested, not in document order). The
+ * page count comes from the engine that will compose the document: a byte-level
+ * scan for `/Type /Page` misreads every document whose page objects live in an
+ * object stream.
  */
 async function pickedDocument(
   value: FieldValue | undefined,
@@ -101,7 +104,7 @@ async function pickedDocument(
   const pages =
     text === ''
       ? Array.from({ length: pageCount }, (_unused, page) => page)
-      : validateRanges(parsePageRanges(text, pageCount), pageCount).pages;
+      : validateRanges(parsePageRanges(text, pageCount, { ordered: true }), pageCount).pages;
   return { name: picked.name, bytes, pages };
 }
 
