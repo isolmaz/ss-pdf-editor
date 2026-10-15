@@ -839,7 +839,6 @@ The limits are defined once, in
 | `pnpm e2e` | Playwright against the assembled `dist/` (the signing specs need `openssl`); `E2E_WORKERS=N` caps the browsers running at once |
 | `pnpm coverage [--skip-e2e] [--min=N]` | Unit and browser coverage of `packages/*/src` and `apps/*/src`, added together statement by statement; per-package table and `coverage/report/html/` (rebuilds the production `dist/` before it exits); `--min=N` fails the run when the total lines, statements, branches or functions are under N %. CI splits the run over jobs with `--unit-only`, `--e2e-shard=N/M` and `--merge=<dir>[,<dir>...]` (see `tools/coverage/report.mjs`) |
 | `pnpm measure:model` | Journal and snapshot measurements (not a gate) |
-| `pnpm fidelity [playwright args]` | PDF → Word export accuracy against LibreOffice (needs the assembled `dist/` and `LIBREOFFICE` set to the path of `soffice`); results in `test-results/fidelity/` |
 | `pnpm fetch:engines [--sync\|--update]` | Copies engine binaries from the pnpm store and checks or rewrites the pins |
 | `pnpm check:budgets` | Gzips the entry chunk and every modulepreloaded script of the built `apps/web/dist/index.html` and fails above `BUILD_BUDGETS.firstPaintJsGzipBytes` (run after `pnpm build`) |
 | `pnpm verify:assets` | Re-hashes every pinned file |
@@ -868,12 +867,12 @@ packages/
 public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English),
                     manifest, robots/sitemap
 tools/              dist assembly and preview, engine pins, licence audit, regression and docs
-                    checks (audit/), coverage report, fidelity runner, deploy smoke check,
+                    checks (audit/), coverage report, deploy smoke check,
                     revert-proof, git hook guard (hooks/), Vite hosting plugins (vite/),
                     behaviour checks and README clip recorder (behavior/), measurement
                     scripts (measure/)
 e2e/                Playwright specs for the editor flows and the site, the engine fault
-                    injection (engine-faults.ts) and the Word export fidelity harness (fidelity/)
+                    injection (engine-faults.ts)
 docs/               architecture.md and ocr-evaluation.md; media/ holds the README clips
 .github/            workflows (CI, nightly, revert-proof), issue and pull request templates
 .githooks/          pre-commit and pre-push hooks (they run tools/hooks/guard.mjs)
@@ -893,13 +892,6 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
   the traces of a failure are uploaded for 7 days.
 - **`e2e-service-worker`** (after `e2e`) runs `playwright test --project=service-worker --no-deps`.
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`: the browser behaviour checks and the OpenSSL signing round trip.
-- **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test: every
-  sample is exported through the UI in each Word layout (`flow`, `page-images`, `layout`), converted
-  back with LibreOffice 26.2.6 and compared (SSIM at 100 dpi (rendered at 200 dpi and averaged) per
-  page, word accuracy in reading order per document) against the thresholds in
-  `e2e/fidelity/thresholds.json`; a `null` threshold is measured, not gated. Locally: `pnpm fidelity`
-  with `LIBREOFFICE` set to the path of `soffice`. The report goes to the job summary and the
-  `fidelity` artifact.
 - **`coverage-unit`** (after `verify`) runs `pnpm coverage --unit-only`, and **`coverage-e2e`**
   (after `verify`, four shards) runs `pnpm coverage --e2e-shard=N/4`: each builds the unminified
   editor, runs its quarter of the Playwright suite (the last shard also the service-worker tests)
@@ -910,6 +902,9 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request, on every
 - **`deploy`** runs only on a push to `main`, after every job above has passed; see
   [Build and deploy](#build-and-deploy).
 
+The PDF → Word export is not measured round trip in CI: the LibreOffice-based fidelity harness (and
+its `fidelity` job) was removed because LibreOffice is no longer used (its headless runs hang).
+
 `.github/workflows/nightly.yml` runs daily and on manual dispatch: the same three coverage jobs,
 whose `coverage` fails when any total is under 100 % and uploads the report, and the
 Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flaky-tests`.
@@ -918,7 +913,7 @@ Playwright suite in four shards with `--repeat-each=2 --retries=0 --fail-on-flak
 fix's own test must fail on the fix commit's parent and pass on the fix commit.
 
 Branch `main` is protected: a pull request is required, `verify`, `e2e` (all four shards),
-`e2e-service-worker`, `behavior` and `fidelity` must pass, the branch must be up to date with `main`, review
+`e2e-service-worker`, `behavior` and `coverage` must pass, the branch must be up to date with `main`, review
 conversations must be resolved, and force-pushes and deletion are blocked. Pull requests
 are merged with a merge commit. [`CONTRIBUTING.md`](CONTRIBUTING.md#how-a-change-lands) describes
 how changes land.
@@ -983,7 +978,7 @@ Deployment is a Cloudflare Worker that serves `dist/` as static assets
 ([`wrangler.jsonc`](wrangler.jsonc)). There are no Functions, no SSR and no database.
 
 A push to `main` deploys on its own: the `deploy` job of `.github/workflows/ci.yml` runs only
-after `verify`, `e2e`, `e2e-service-worker`, `behavior`, `fidelity` and `coverage` have passed. It runs `wrangler
+after `verify`, `e2e`, `e2e-service-worker`, `behavior` and `coverage` have passed. It runs `wrangler
 deploy` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, then
 `tools/deploy/smoke.mjs` against `https://pdf.isolmaz.com`. If the smoke check fails or
 runs past its time limit, the job runs `wrangler rollback` to the previous version and fails.

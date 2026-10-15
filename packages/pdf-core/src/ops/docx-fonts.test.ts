@@ -50,7 +50,7 @@ function setFsType(program: Uint8Array, fsType: number | 'none'): void {
   throw new Error('the program has no OS/2 table');
 }
 
-/** A one-page PDF of `text` set in Noto Sans, embedded as a Type0 / Identity-H font (the fidelity samples' way). */
+/** A one-page PDF of `text` set in Noto Sans, embedded as a Type0 / Identity-H font. */
 async function notoPdf(
   text: string,
   {

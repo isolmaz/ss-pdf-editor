@@ -11,8 +11,8 @@ import path from 'node:path';
 import { CV_GT, CV_PDF, ensureDir, importFromWork, REPO, TESTSET_DIR, WORK } from './lib.mjs';
 import { MIXED, PROSE } from './texts.mjs';
 
-// The other faces come from a folder of .ttf files (the Fonts folder of a LibreOffice install, or
-// any folder with Noto Serif/Sans Bold, Liberation Sans/Serif, DejaVu Sans/Serif, Carlito):
+// The other faces come from a folder of .ttf files (any folder with Noto Serif/Sans Bold,
+// Liberation Sans/Serif, DejaVu Sans/Serif, Carlito):
 // set OCRBENCH_FONTS, or put them in WORK/fonts.
 const FONT_DIR = process.env.OCRBENCH_FONTS ?? path.join(WORK, 'fonts');
 const NOTO_DIR = path.join(REPO, 'public/fonts/noto');

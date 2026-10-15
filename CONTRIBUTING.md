@@ -62,10 +62,6 @@ and on manual dispatch:
 - **`behavior`** (after `verify`) runs `pnpm ci:behavior`: the browser behaviour checks
   (`tools/behavior/editor-flow-check.mjs`, `tools/behavior/text-edit-check.mjs`) and the
   OpenSSL signing round trip (`tools/behavior/sign-check.mts`).
-- **`fidelity`** (after `verify`) runs `pnpm fidelity`, the PDF → Word export accuracy test (below),
-  with a LibreOffice installed from the official `.deb` tarball pinned by version and sha256. It
-  gates `deploy` like the jobs above (a `null` threshold is measured, not gated); the report goes
-  to the job summary and the `fidelity` artifact.
 - **`coverage-unit`** (after `verify`) runs `pnpm coverage --unit-only`, and **`coverage-e2e`**
   (after `verify`, four shards) runs `pnpm coverage --e2e-shard=N/4`: each shard builds the
   unminified editor, runs its quarter of the Playwright suite (the last also the service-worker
@@ -100,7 +96,7 @@ test-name pattern, and optionally `testCommit` and `failure`). With an empty man
 
 1. Work happens on a branch, with one pull request per change.
 2. CI runs on the pull request. Branch `main` is protected: a pull request is required,
-   `verify`, `e2e` (all four shards), `e2e-service-worker`, `behavior` and `fidelity` must pass,
+   `verify`, `e2e` (all four shards), `e2e-service-worker`, `behavior` and `coverage` must pass,
    the branch must be up to date with `main`, review conversations must be resolved, and
    force-pushes and deletion are blocked.
 3. A reviewer who did not write the change reads it and records PASS or FAIL on the pull
@@ -148,69 +144,22 @@ fixture fails a test when any page of its browser context (a second window, the 
 logged a console error or threw an uncaught exception. A test that provokes an error on purpose
 names it with `test.use({ allowedErrors: [/…/] })`.
 
-`pnpm fidelity` measures how faithful "Export to Word" is (`e2e/fidelity/`). Each sample × export
-mode opens the PDF in the app, exports the DOCX through the dialog, converts it back to PDF with
-LibreOffice (`LIBREOFFICE=/path/to/soffice`, else `soffice` on the PATH), renders both PDFs with
-MuPDF and compares them: SSIM at 100 dpi (rendered at 200 dpi and
-averaged) per page, word accuracy per document. It needs the
-assembled `dist/` like `pnpm e2e`, and it is its own Playwright project, present only when
-`FIDELITY` is set, so `pnpm e2e` and `pnpm coverage` never run it. The results are
-`test-results/fidelity/` (the DOCX and PDF of each run, `report.json`, `report.md`). The comparison
-functions have unit tests (`e2e/fidelity/compare.test.ts`, run by `pnpm unit`). Details:
+The PDF → Word export is not measured round trip in CI. A LibreOffice-based fidelity harness (convert the
+exported DOCX back to PDF and compare it with the original) was removed because LibreOffice is no
+longer used (its headless runs hang), and with it the `fidelity` CI job. The export is covered by its
+unit tests (`packages/pdf-core/src/ops/docx-*.test.ts`) and the Playwright specs. Do not install or run
+LibreOffice for this repository.
 
-- **Samples.** `e2e/fidelity/samples.ts` generates the repository's own pages in code, all Turkish
-  text in embedded Noto Sans: `cv`, `columns`, `table`, `form`, `cards`, `text-over-image` and the
-  scans `cv-scan` and `cards-scan`; and, from `samples-graphics.ts`, the graphics-heavy pages
-  `shapes` (geometry and a flow diagram), `chart` (pie, bar and line charts), `text-in-image`
-  (vector text plus two pictures that contain text), `overlay` (photo with a 50 % band, gradient
-  header, soft-masked emblem, translucent text and panels), `rotated` (text at 45°, 90° and 270°, a
-  stamp), `mixed-page` (vector heading above a scanned typed paragraph), `slide` (16:9) and
-  `invoice`. Their scans are `shapes-scan`, `invoice-scan` (200 dpi) and `invoice-scan-rough`
-  (150 dpi, skewed 2.5°, noisy, unevenly lit). The text that exists only as pixels in a picture
-  (`text-in-image`, `mixed-page`) is the sample's `imageText`; the report's "Text inside pictures"
-  table counts how many of its words the conversion holds as text (none is expected without OCR).
-- **Modes.** The spec's `MODES` table has one entry per way of exporting, each picking its radio
-  buttons in the dialog: `flow` (Flowing text), `page-images` (One picture per page) and `layout`
-  (Text and pictures, exact layout). A new Word layout is one more entry, plus its keys in
-  `thresholds.json`. A sample that is image-only is judged against its ground truth (the text of the
-  page it was made from), not against its own words, so the OCR path of `layout` is measured the same way.
-- **Filters** (comma-separated, set before `pnpm fidelity`; the list is at the top of
-  `e2e/fidelity/fidelity.spec.ts`): `FIDELITY_MODES=layout` runs one mode; `FIDELITY_SAMPLES=cv,form`
-  runs the samples whose id contains one of those words; `FIDELITY_ORIGINS=generated,public` drops
-  the local ones. Arguments after `pnpm fidelity` go to Playwright (`pnpm fidelity --workers=1`).
-  `E2E_WORKERS` caps the browsers.
-- **Two worktrees at once.** Playwright serves `dist/` on port 4178; give each checkout its own
-  `E2E_PORT` (`E2E_PORT=4179 pnpm fidelity`) so neither measures the other's build, and run each
-  checkout's own `pnpm build && pnpm assemble:dist` first.
-- **LibreOffice.** `LIBREOFFICE` is the path to `soffice` (`soffice.exe` on Windows). CI uses 26.2.6;
-  another version can move the numbers, so compare runs made with the same one. The conversion
-  to PDF turns comment export off (`ExportNotes`), so the comments that mark low-confidence OCR words
-  do not appear on the rendered page.
-- **Thresholds.** `e2e/fidelity/thresholds.json` maps mode → `default` and per-sample overrides to
-  `{ ssim, words }`. SSIM gates the worst page, word accuracy the whole document. `null` means
-  measured, not gated: a run reports such a number without failing. `page-images` gates SSIM 0.95
-  for every sample; `layout` gates SSIM 0.95 and words 0.99 for most samples; a sample that does not reach them has its own floor in the file, just under what it measures (the generated `overlay`, `text-in-image` and `mixed-page`, the public `irs-fw4-2022` and `usgs-fs2020-3042`), and so do the scans read by OCR (`cv-scan`, `cards-scan`, `shapes-scan`,
-  `invoice-scan`, `invoice-scan-rough`, `nasa-tm-vacuum-1965`); `flow` gates words only, for the
-  graphics samples 0.05 under the measured value (none for their scans, which flow does not read).
-  The text inside pictures (below) is measured, never gated. A sample's own key, even `null`, wins over the
-  mode's `default`. To gate a number, set it a little
-  under the lowest value measured on CI's LibreOffice, and say in the commit what it is.
-- **Local samples.** Every `*.pdf` in the folder e2e/fixtures/local (git-ignored, so absent from a fresh clone: the files are the
-  owner's and never leave the machine) is a sample of origin `local`; a sibling `<name>.gt.txt` is its
-  ground truth, pages separated by a form feed or a line holding only `\f`. A PDF without any text is
-  treated as a scan. Without that folder the run has only the generated samples and the
-  redistributable ones in `e2e/fidelity/corpus.json`; the owner's CV and its transcript are not in
-  the repository, so the numbers measured on them cannot be reproduced by anyone else.
-- **OCR evaluation tools.** `tools/measure/ocr/` benchmarks Tesseract against PaddleOCR and OnnxTR
-  engines and layout models in Chromium, on 24 synthetic Turkish pages and, when present, the
-  local CV; `docs/ocr-evaluation.md` has the results (why Tesseract with Turkish + English is the
-  shipped engine, and why words under 90 % confidence are flagged). `tools/measure/ocr/README.md`
-  lists the commands (`setup.mjs`, `build-testset.mjs`, `run.mjs`, `score.mjs`, `diff-words.mjs`);
-  they install their own dependencies into a temp folder and never touch `package.json`. They are
-  run by hand, not by CI. To measure what the exact layout does with a scan end to end, use `pnpm
-  fidelity` with `FIDELITY_MODES=layout` on the scan samples (`cv-scan`, `cards-scan`, `invoice-scan-rough`, or a local one);
-  to change the engine or the threshold, rerun the benchmark and update `docs/ocr-evaluation.md` in
-  the same commit.
+The OCR evaluation tools in `tools/measure/ocr/` benchmark Tesseract against PaddleOCR and OnnxTR
+engines and layout models in Chromium, on 24 synthetic Turkish pages and, when present, the
+owner's CV (a PDF and its transcript in the git-ignored folder e2e/fixtures/local, absent from a
+fresh clone, so the numbers measured on it cannot be reproduced by anyone else);
+`docs/ocr-evaluation.md` has the results (why Tesseract with Turkish + English is the
+shipped engine, and why words under 90 % confidence are flagged). `tools/measure/ocr/README.md`
+lists the commands (`setup.mjs`, `build-testset.mjs`, `run.mjs`, `score.mjs`, `diff-words.mjs`);
+they install their own dependencies into a temp folder and never touch `package.json`. They are
+run by hand, not by CI. To change the engine or the threshold, rerun the benchmark and update
+`docs/ocr-evaluation.md` in the same commit.
 
 A test that installs, updates or reloads through the service worker is tagged `@service-worker`
 (`test('…', { tag: '@service-worker' }, …)`): those run in their own Playwright project once the rest
