@@ -19,6 +19,8 @@ export const enginesPart = {
     'Metadata cleared: title, author, subject, keywords, creator and the XMP packet. Custom properties are kept.',
   'op.note.redact.producerKept': 'Producer string preserved.',
   'op.note.redact.attachmentsRemoved': '{count} attachment(s) removed.',
+  'op.note.redact.tagTextRemoved':
+    '{count} alternative or replacement text(s) of the tags on the redacted pages removed; they repeated the page text.',
   'op.note.redact.fieldsRemoved': '{count} form field(s) under the marked areas removed.',
   'op.note.redact.xfaDropped':
     'The XFA form definition and data were dropped: they still held the values of the removed fields. The remaining AcroForm fields keep their values.',

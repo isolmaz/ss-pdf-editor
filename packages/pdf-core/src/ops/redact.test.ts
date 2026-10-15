@@ -40,7 +40,7 @@ const BASE: Omit<RedactOptions, 'marks'> = {
   imageMethod: 0,
   textMethod: 0,
   cleanMetadata: false,
-  cleanAttachments: [],
+  cleanAttachments: false,
 };
 
 /** Covers the second line only: its baseline sits 200 pt below the top. */
@@ -276,7 +276,7 @@ describe('redactDocument', () => {
     doc?.destroy();
   });
 
-  it('removes the named attachments and counts only the ones that existed', async () => {
+  it('removes every attachment and counts only the ones that existed', async () => {
     const source = await build([TWO_LINES], (doc) => {
       const bytes = new TextEncoder().encode('ATTACHED');
       doc.insertEmbeddedFile(
@@ -290,18 +290,18 @@ describe('redactDocument', () => {
     });
     const outcome = await redactDocument(
       source,
-      { ...BASE, cleanAttachments: ['gizli.txt', 'yok.txt'], marks: [SECRET_MARK] },
+      { ...BASE, cleanAttachments: true, marks: [SECRET_MARK] },
       run,
     );
     const mupdf = await loadMupdf();
     const doc = mupdf.PDFDocument.openDocument(outcome.bytes, 'application/pdf').asPDF();
-    expect(Object.keys(doc?.getEmbeddedFiles() ?? {})).toEqual(['kalsin.txt']);
+    expect(Object.keys(doc?.getEmbeddedFiles() ?? {})).toEqual([]);
     doc?.destroy();
     expect(outcome.report.steps).toContain('clean(attachments)');
     expect(outcome.report.notes).toContainEqual({
       kind: 'lost',
       key: 'op.note.redact.attachmentsRemoved',
-      params: { count: 1 },
+      params: { count: 2 },
     });
   });
 });

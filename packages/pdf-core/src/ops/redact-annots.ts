@@ -69,13 +69,17 @@ export function newTally(): AnnotationTally {
   return { widgets: 0, fields: 0, annotations: 0, gone: new Set(), touched: new Map() };
 }
 
+/** What a selector sees of an annotation a page lists. */
+export interface SweepCandidate {
+  readonly dict: PDFObject;
+  readonly subtype: string | null;
+}
+
 /** One entry of a page's `/Annots` that is a dictionary. */
-interface Listed {
+interface Listed extends SweepCandidate {
   /** The `/Annots` array and the entry's position in it. */
   readonly list: PDFObject;
   readonly index: number;
-  readonly dict: PDFObject;
-  readonly subtype: string | null;
   /** The object number when the array entry is an indirect reference. */
   readonly number: number | null;
 }
@@ -101,7 +105,7 @@ function listedAnnotations(page: PDFObject): Listed[] {
 }
 
 /** Whether the annotation's `/Rect` shares area with one of the rectangles (PDF user space). */
-function isUnder(item: Listed, rects: readonly Rect[]): boolean {
+function isUnder(item: SweepCandidate, rects: readonly Rect[]): boolean {
   if (item.subtype === 'Redact') return false;
   const corners = readNumbers(item.dict.get('Rect'));
   if (corners.length < 4) return false;
@@ -139,6 +143,19 @@ function fieldOf(item: Listed): { readonly number: number; readonly dict: PDFObj
  * once, after every page, by `finishSweep`. Returns whether anything was removed.
  */
 export function sweepPage(page: PDFObject, rects: readonly Rect[], tally: AnnotationTally): boolean {
+  return sweepWhere(page, (item) => isUnder(item, rects), tally);
+}
+
+/**
+ * `sweepPage` for any selection: the annotations of one page that `selects` picks go, with the
+ * popups and replies that hang off them. Redaction's own attachment cleanup uses it to take every
+ * file-attachment annotation out, wherever it lies.
+ */
+export function sweepWhere(
+  page: PDFObject,
+  selects: (annotation: SweepCandidate) => boolean,
+  tally: AnnotationTally,
+): boolean {
   const items = listedAnnotations(page);
   const doomed = new Map<number, Listed>();
   const doomedNumbers = new Set<number>();
@@ -146,7 +163,7 @@ export function sweepPage(page: PDFObject, rects: readonly Rect[], tally: Annota
     doomed.set(item.index, item);
     if (item.number !== null) doomedNumbers.add(item.number);
   };
-  for (const item of items) if (isUnder(item, rects)) doom(item);
+  for (const item of items) if (selects(item)) doom(item);
   if (doomed.size === 0) return false;
 
   // Popups and replies of a doomed annotation are doomed, and so are the replies to those.

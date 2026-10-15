@@ -31,6 +31,8 @@ export const enginesPart = {
     'Üst veri temizlendi: başlık, yazar, konu, anahtar sözcükler, oluşturan ve XMP paketi. Özel alanlar korunur.',
   'op.note.redact.producerKept': 'Üretici satırı korundu.',
   'op.note.redact.attachmentsRemoved': '{count} ek kaldırıldı.',
+  'op.note.redact.tagTextRemoved':
+    'Karartılan sayfalardaki etiketlerin {count} alternatif ya da yerine geçen metni kaldırıldı; sayfa metnini yineliyorlardı.',
   'op.note.redact.fieldsRemoved': 'İşaretli alanların altındaki {count} form alanı kaldırıldı.',
   'op.note.redact.xfaDropped':
     'XFA form tanımı ve verisi atıldı: kaldırılan alanların değerlerini hâlâ taşıyorlardı. Kalan AcroForm alanları değerlerini korur.',

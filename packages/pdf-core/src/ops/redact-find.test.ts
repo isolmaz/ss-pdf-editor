@@ -50,7 +50,7 @@ describe('findPatternMarks', () => {
     expect(marks).toEqual([{ pageIndex: 0, space: 'app-v1', rect: [x0, y0, x1, y1] }]);
     const outcome = await redactDocument(
       source,
-      { marks, imageMethod: 0, textMethod: 0, cleanMetadata: false, cleanAttachments: [] },
+      { marks, imageMethod: 0, textMethod: 0, cleanMetadata: false, cleanAttachments: false },
       run,
     );
     expect(await pageTexts(outcome.bytes)).toEqual(['Public line Secret']);
@@ -69,7 +69,7 @@ describe('findPatternMarks', () => {
           imageMethod: 0,
           textMethod: 0,
           cleanMetadata: false,
-          cleanAttachments: [],
+          cleanAttachments: false,
         },
         run,
       );
