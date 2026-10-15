@@ -305,7 +305,9 @@ function readBlocks(
         chars = [];
       },
       // The binding builds every glyph colour as an RGB triple (`colorFromNumber`), although
-      // its declared `Color` also allows grey and CMYK shapes.
+      // its declared `Color` also allows grey and CMYK shapes. `ch` is one whole code point, so an
+      // emoji or a mathematical letter is two UTF-16 units: the stock binding cut it to 16 bits
+      // (U+1F600 read as U+F600), and `patches/mupdf@1.28.1.patch` is what keeps the rune whole.
       onChar(ch, origin, font, size, quad, color: [number, number, number]) {
         const at = pointToUser(box, rotation, origin);
         if (chars.length === 0) baseline = at[1];

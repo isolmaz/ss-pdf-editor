@@ -13,7 +13,9 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { ToolError } from 'pdf-shared';
+import { buildTextPage } from 'pdf-text-engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ASTRAL_CHARACTERS, ASTRAL_LINE, astralPage } from './astral-fixtures';
 import { loadMupdf } from './engines/mupdf';
 import {
   loadFontMetrics,
@@ -202,6 +204,35 @@ describe('readPageText', () => {
       expect(uprightLine?.chars[0]?.origin).toEqual([10, 150]);
     },
   );
+
+  it('reads a character above U+FFFF whole, not cut to its low 16 bits', async () => {
+    const page = await readPageText(await astralPage(), 0, run);
+    const lines = page.blocks.flatMap((block) => block.lines);
+    expect(lines).toHaveLength(1);
+    // U+1F600 (emoji), U+1D400 (mathematical bold A), U+10000 (Linear B) and U+1D800 (SignWriting):
+    // the stock binding returned U+F600, U+D400, U+0000 and a lone high surrogate for them.
+    expect(lines[0]?.chars.map((char) => char.ch)).toEqual([
+      'H',
+      'i',
+      ' ',
+      String.fromCodePoint(0x1f600),
+      String.fromCodePoint(0x1d400),
+      String.fromCodePoint(0x10000),
+      String.fromCodePoint(0x1d800),
+      ' ',
+      'o',
+      'k',
+    ]);
+    expect(ASTRAL_CHARACTERS.map((character) => character.length)).toEqual([2, 2, 2, 2]);
+  });
+
+  it('gives the text model the whole characters, so an edit starts from what the page shows', async () => {
+    const model = buildTextPage(await readPageText(await astralPage(), 0, run));
+    expect(model.blocks).toHaveLength(1);
+    expect(model.blocks[0]?.text).toBe(ASTRAL_LINE);
+    const glyphs = model.blocks[0]?.lines.flatMap((line) => line.words.flatMap((word) => word.glyphs));
+    expect(glyphs?.map((glyph) => glyph.ch)).toEqual(['H', 'i', ...ASTRAL_CHARACTERS, 'o', 'k']);
+  });
 
   it('reports no blocks and no colours for a page without text', async () => {
     const page = await readPageText(await pages('0 0 10 10 re f'), 0, run);

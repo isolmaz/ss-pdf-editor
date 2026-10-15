@@ -1,0 +1,15 @@
+diff --git a/dist/mupdf.js b/dist/mupdf.js
+index 849fee6a754aa62c1c7ec4c21824f03b38219f1c..df990348545b4728f521300301db44a037b3a0c7 100644
+--- a/dist/mupdf.js
++++ b/dist/mupdf.js
+@@ -1147,7 +1147,9 @@ export class StructuredText extends Userdata {
+ 					if (walker.onChar) {
+ 						let ch = libmupdf._wasm_stext_line_get_first_char(line);
+ 						while (ch) {
+-							let ch_rune = String.fromCharCode(libmupdf._wasm_stext_char_get_c(ch));
++							// The rune is a full code point; fromCharCode would keep only its low 16 bits.
++							let ch_code = libmupdf._wasm_stext_char_get_c(ch);
++							let ch_rune = String.fromCodePoint(ch_code >= 0 && ch_code <= 0x10FFFF ? ch_code : 0xFFFD);
+ 							let ch_origin = fromPoint(libmupdf._wasm_stext_char_get_origin(ch));
+ 							let ch_font = new Font(libmupdf._wasm_stext_char_get_font(ch));
+ 							let ch_size = libmupdf._wasm_stext_char_get_size(ch);

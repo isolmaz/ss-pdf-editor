@@ -216,6 +216,13 @@ family is an `@expo-google-fonts/<family>` package pinned to an exact version, a
 `packages/pdf-core/src/ops/ocr-font-catalog.ts`; its regular face must spell `ğĞıİşŞçÇöÖüÜ`.
 Only SIL OFL-1.1 or Apache-2.0 fonts are accepted.
 
+The one engine that is not the registry's own bytes is MuPDF: `patches/mupdf@1.28.1.patch` (one line
+of `dist/mupdf.js`: characters above U+FFFF were cut to 16 bits) is applied by pnpm through
+`pnpm.patchedDependencies` in the root `package.json`, so `pnpm fetch:engines` serves, and
+`tools/asset-pins.json` pins, the patched file. Moving to another MuPDF version means checking
+whether the defect is gone, and otherwise `pnpm patch mupdf@<version>` and `pnpm patch-commit`
+again, then `pnpm fetch:engines --update`.
+
 A new dependency must carry a free licence; `pnpm check:licenses` audits every installed
 package and fails on one that is neither free nor recognised.
 
