@@ -293,11 +293,12 @@ export function savePdf(doc: PDFDocument, options: string | Record<string, unkno
 const LATIN1_CHUNK = 0x8000;
 
 /**
- * Raw bytes as a latin1 ("binary") string — the shape object-level audits need
- *: a needle can then be counted with plain
- * `indexOf` across dictionary text, hex strings and undecoded streams without
- * decoding the file as UTF-8 (a PDF is binary; UTF-8 decoding would mangle bytes
- * and hide occurrences).
+ * Raw bytes as a latin1 ("binary") string — the shape object-level audits need:
+ * a needle written as plain bytes can then be counted with plain `indexOf` across
+ * dictionary text and undecoded streams without decoding the file as UTF-8 (a PDF is
+ * binary; UTF-8 decoding would mangle bytes and hide occurrences). It does **not**
+ * find a needle inside a hex string or a UTF-16BE text string — those hold other
+ * bytes; `ops/redact-audit.ts` parses and decodes them separately.
  *
  * Chunked because `String.fromCharCode(...bytes)` on a 50 MB file overflows the
  * argument limit.
