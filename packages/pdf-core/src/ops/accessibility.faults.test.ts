@@ -185,6 +185,20 @@ describe('tagDocument verification', () => {
     );
   });
 
+  it('refuses an output whose marked content is balanced but crosses a text object', async () => {
+    // One sequence opened and one closed, exactly as many as were claimed — but the sequence
+    // now ends outside the text object it began in, which no counting of BDCs against EMCs sees.
+    state.tamper = (doc) => {
+      const target = doc.findPage(0);
+      replaceContent(doc, target, contentOf(target).replace(/Tj\s*EMC\s*ET/, 'Tj ET\nEMC'));
+    };
+    await expect(tag(page(HELLO))).rejects.toMatchObject(
+      refused(
+        'page 1 marked content does not nest: 1 sequences cross a text object, a graphics-state level or another sequence and 1 closing operators have nothing to close',
+      ),
+    );
+  });
+
   it('refuses a structure tree that points at an MCID the content does not carry', async () => {
     state.tamper = (doc) => {
       const target = doc.findPage(0);

@@ -31,6 +31,29 @@ function isRegular(byte: number): boolean {
   return !WHITESPACE.has(byte) && !DELIMITERS.has(byte);
 }
 
+/**
+ * The index one past the `EI` that ends an inline image's data, searching from `from`, or
+ * `null` when no `EI` qualifies.
+ *
+ * The one rule every content-stream reader of this package ends an inline image by
+ * (`ops/accessibility.ts` delimits the same streams for tagging, PDF/UA, text editing and
+ * hidden-layer removal, and must not disagree with the PDF/A checker about where an image
+ * stops): `EI` preceded by white space and followed by white space, a delimiter or the end of
+ * the stream (ISO 32000-1 §8.9.7). That keeps `aEIb`, `EIx` and a `EI` glued to other data
+ * inside the image's bytes, and still lets `EI(text) Tj` and `EI/Name gs` close it.
+ */
+export function inlineImageEnd(bytes: Uint8Array, from: number): number | null {
+  for (let index = from; index + 1 < bytes.length; index += 1) {
+    if (bytes[index] !== 0x45 || bytes[index + 1] !== 0x49) continue;
+    const before = bytes[index - 1];
+    if (before === undefined || !WHITESPACE.has(before)) continue;
+    const after = bytes[index + 2];
+    if (after !== undefined && isRegular(after)) continue;
+    return index + 2;
+  }
+  return null;
+}
+
 class Reader {
   position = 0;
   constructor(readonly bytes: Uint8Array) {}
@@ -168,16 +191,7 @@ class Reader {
     const { bytes } = this;
     // Exactly one whitespace byte follows `ID`.
     if (WHITESPACE.has(bytes[this.position] ?? NUL)) this.position += 1;
-    for (let index = this.position; index + 1 < bytes.length; index += 1) {
-      if (bytes[index] !== 0x45 || bytes[index + 1] !== 0x49) continue;
-      const before = bytes[index - 1];
-      const after = bytes[index + 2];
-      if (before !== undefined && !WHITESPACE.has(before)) continue;
-      if (after !== undefined && !WHITESPACE.has(after)) continue;
-      this.position = index + 2;
-      return;
-    }
-    this.position = bytes.length;
+    this.position = inlineImageEnd(bytes, this.position) ?? bytes.length;
   }
 }
 

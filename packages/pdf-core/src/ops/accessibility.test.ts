@@ -9,8 +9,12 @@
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import type { PageTextInput, Rect } from 'pdf-text-engine';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadMupdf } from '../engines/mupdf';
+import * as pdfjsHandle from '../engines/pdfjs-handle';
+import * as textSource from '../text-source';
 import {
+  type AccessibilityReport,
   checkAccessibility,
   claimsFor,
   engineFailure,
@@ -32,6 +36,7 @@ import {
   tagDocument,
   treeOrder,
 } from './accessibility';
+import { scanContent } from './pdfa-content';
 import type { OperationContext } from './types';
 
 // Each case reads a whole document with MuPDF: under a second alone, several under the
@@ -410,7 +415,7 @@ describe('marked-content placement', () => {
   it('gives up on a nesting that names a text object or level the instructions do not hold', () => {
     const instructions = parsed('(a) Tj (b) Tj ET (c) Tj');
     const lies = (object: number[], depth: number[]) =>
-      expandToNesting(instructions, { object, depth }, 1, 2);
+      expandToNesting(instructions, { object, depth, marked: [0, 0, 0, 0, 0] }, 1, 2);
     const outside = [0, 0, 0, 0, 0];
     // Claims the range starts inside text object 0, which no BT opens.
     expect(lies([-1, 0, 0, -1, -1], outside)).toBeNull();
@@ -585,6 +590,13 @@ const findingsOf = (report: Awaited<ReturnType<typeof reportOf>>, id: string) =>
   report.findings.filter((entry) => entry.id === id);
 const catalogOf = (doc: PDFDocument) => doc.getTrailer().get('Root');
 
+/** A well-formed XMP packet whose one `rdf:Description` holds `properties` (and `attributes`). */
+const xmp = (properties: string, attributes = ''): string =>
+  '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/">' +
+  '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+  `<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"${attributes}>${properties}</rdf:Description>` +
+  '</rdf:RDF></x:xmpmeta><?xpacket end="w"?>';
+
 describe('checkAccessibility: document facts', () => {
   const edited = (edit: (doc: PDFDocument, root: PDFObject) => void) =>
     pdfOf(['0 0 1 1 re f'], { edit: (doc) => edit(doc, catalogOf(doc)) });
@@ -601,10 +613,10 @@ describe('checkAccessibility: document facts', () => {
         doc.getTrailer().put('Info', doc.addObject({ Title: doc.newString('Rapor') } as never));
         root.put(
           'Metadata',
-          doc.addStream('<x:xmpmeta><dc:title><rdf:Alt/></dc:title></x:xmpmeta>', {
-            Type: 'Metadata',
-            Subtype: 'XML',
-          }),
+          doc.addStream(
+            xmp('<dc:title><rdf:Alt><rdf:li xml:lang="x-default">Rapor</rdf:li></rdf:Alt></dc:title>'),
+            { Type: 'Metadata', Subtype: 'XML' },
+          ),
         );
       }),
     );
@@ -616,9 +628,11 @@ describe('checkAccessibility: document facts', () => {
   it('names a packet with no dc:title, and counts a title written as an attribute', async () => {
     const packet = (text: string) =>
       edited((doc, root) => root.put('Metadata', doc.addStream(text, { Type: 'Metadata', Subtype: 'XML' })));
-    const without = await reportOf(packet('<x:xmpmeta><dc:creator/></x:xmpmeta>'));
+    const without = await reportOf(
+      packet(xmp('<dc:creator><rdf:Seq><rdf:li>A</rdf:li></rdf:Seq></dc:creator>')),
+    );
     expect(findingsOf(without, 'title-xmp')).toMatchObject([{ state: 'problem', where: 'dc:title' }]);
-    const attribute = await reportOf(packet('<rdf:Description dc:title="T"/>'));
+    const attribute = await reportOf(packet(xmp('', ' dc:title="T"')));
     expect(findingsOf(attribute, 'title-xmp')).toMatchObject([{ state: 'ok' }]);
     const unreadable = await reportOf(
       edited((doc, root) =>
@@ -626,6 +640,29 @@ describe('checkAccessibility: document facts', () => {
       ),
     );
     expect(findingsOf(unreadable, 'title-xmp')).toMatchObject([{ state: 'problem', where: '/Metadata' }]);
+  });
+
+  it('does not count a dc:title in a comment, an empty one, or one in a packet that is not XML as a title', async () => {
+    const packet = (text: string) =>
+      edited((doc, root) => root.put('Metadata', doc.addStream(text, { Type: 'Metadata', Subtype: 'XML' })));
+    const commented = await reportOf(
+      packet(xmp('<!-- <dc:title><rdf:Alt><rdf:li>T</rdf:li></rdf:Alt></dc:title> -->')),
+    );
+    expect(findingsOf(commented, 'title-xmp')).toMatchObject([{ state: 'problem', where: 'dc:title' }]);
+    const selfClosing = await reportOf(packet(xmp('<dc:title/>')));
+    expect(findingsOf(selfClosing, 'title-xmp')).toMatchObject([{ state: 'problem', where: 'dc:title' }]);
+    const emptyItem = await reportOf(
+      packet(xmp('<dc:title><rdf:Alt><rdf:li xml:lang="x-default">  </rdf:li></rdf:Alt></dc:title>')),
+    );
+    expect(findingsOf(emptyItem, 'title-xmp')).toMatchObject([{ state: 'problem', where: 'dc:title' }]);
+    const broken = await reportOf(packet('<a>'));
+    expect(findingsOf(broken, 'title-xmp')).toMatchObject([
+      { state: 'problem', key: 'op.a11y.check.xmpMalformed', where: '/Metadata' },
+    ]);
+    const real = await reportOf(
+      packet(xmp('<dc:title><rdf:Alt><rdf:li xml:lang="x-default">T</rdf:li></rdf:Alt></dc:title>')),
+    );
+    expect(findingsOf(real, 'title-xmp')).toMatchObject([{ state: 'ok' }]);
   });
 
   it('tells a missing /MarkInfo from one without /Marked true', async () => {
@@ -935,11 +972,18 @@ describe('checkAccessibility: fields and links', () => {
   it('names fields by their qualified name and finds the page a widget sits on, directly or through its kids', async () => {
     const report = await reportOf(
       withFields((doc, page) => {
-        const kid = widget(doc, { P: page, TU: doc.newString('Tip') });
+        const kid = widget(doc, { P: page });
         return [
           doc.addObject({
             T: doc.newString('outer'),
-            Kids: [doc.addObject({ T: doc.newString('inner'), FT: 'Tx', Kids: [kid] } as never)],
+            Kids: [
+              doc.addObject({
+                T: doc.newString('inner'),
+                FT: 'Tx',
+                TU: doc.newString('Tip'),
+                Kids: [kid],
+              } as never),
+            ],
           } as never),
           widget(doc, { T: doc.newString('direct'), P: page }),
           widget(doc, { T: doc.newString('lost'), Kids: [doc.newInteger(2)] }),
@@ -962,6 +1006,61 @@ describe('checkAccessibility: fields and links', () => {
     const rows = findingsOf(report, 'field-tooltip');
     expect(rows[0]).toMatchObject({ pageIndex: 1, params: { name: 'direct' }, where: 'field direct' });
     expect(rows[1]).not.toHaveProperty('pageIndex');
+  });
+
+  it('reports a radio group as one field, with the /TU of the field and not of its widgets', async () => {
+    const radio = (doc: PDFDocument, page: PDFObject, extra: Record<string, unknown>) => {
+      const widgets = [0, 1, 2].map(() => widget(doc, { P: page, FT: 'Btn' }));
+      const group = doc.addObject({
+        T: doc.newString('choice'),
+        FT: 'Btn',
+        Kids: widgets,
+        ...extra,
+      } as never);
+      for (const entry of widgets) entry.put('Parent', group);
+      return group;
+    };
+    const described = await reportOf(
+      withFields((doc, page) => [radio(doc, page, { TU: doc.newString('Pick one') })]),
+    );
+    expect(described.fields).toEqual([{ name: 'choice', tooltip: 'Pick one', pageIndex: 1 }]);
+    expect(findingsOf(described, 'field-tooltip')).toMatchObject([{ state: 'ok', params: { count: 1 } }]);
+
+    const bare = await reportOf(withFields((doc, page) => [radio(doc, page, {})]));
+    expect(bare.fields).toEqual([{ name: 'choice', tooltip: null, pageIndex: 1 }]);
+    expect(findingsOf(bare, 'field-tooltip')).toMatchObject([
+      { state: 'problem', params: { name: 'choice' }, pageIndex: 1 },
+    ]);
+  });
+
+  it('does not give a field the /TU of its parent group: /TU is not an inherited field attribute', async () => {
+    const report = await reportOf(
+      withFields((doc, page) => {
+        const child = widget(doc, { T: doc.newString('leaf'), P: page });
+        const parent = doc.addObject({
+          T: doc.newString('group'),
+          TU: doc.newString('Shared'),
+          Kids: [child],
+        } as never);
+        child.put('Parent', parent);
+        return [parent];
+      }),
+    );
+    expect(report.fields).toEqual([{ name: 'group.leaf', tooltip: null, pageIndex: 1 }]);
+    expect(findingsOf(report, 'field-tooltip')).toMatchObject([
+      { state: 'problem', params: { name: 'group.leaf' } },
+    ]);
+  });
+
+  it('does not report the unnamed widget of a group that also has child fields as a copy of the group', async () => {
+    const report = await reportOf(
+      withFields((doc, page) => {
+        const field = widget(doc, { T: doc.newString('leaf'), P: page, TU: doc.newString('Leaf') });
+        const strayWidget = widget(doc, { P: page });
+        return [doc.addObject({ T: doc.newString('g'), Kids: [field, strayWidget] } as never)];
+      }),
+    );
+    expect(report.fields).toEqual([{ name: 'g.leaf', tooltip: 'Leaf', pageIndex: 1 }]);
   });
 
   it('says fields have tooltips when all do', async () => {
@@ -1567,7 +1666,9 @@ describe('tagDocument: what the notes say', () => {
     const report = await checkAccessibility(outcome.bytes, run);
     expect(report.structure.roles).toMatchObject({ H3: 1, Figure: 1 });
     expect(report.structure.roles).not.toHaveProperty('P');
-    expect(report.images[0]?.alt).toBeNull();
+    // The figure carries the alt text, so that is the picture's alt text: nothing is missing.
+    expect(report.images[0]?.alt).toBe('A logo');
+    expect(findingsOf(report, 'image-alt')).toMatchObject([{ state: 'ok', params: { count: 1 } }]);
     const doc = mupdf.PDFDocument.openDocument(
       outcome.bytes.slice(),
       'application/pdf',
@@ -1724,6 +1825,43 @@ describe('setImageAlt', () => {
     );
   });
 
+  it('writes the tooltip of a radio group on the group, not on its first widget', async () => {
+    const bytes = pdfOf(['q Q'], {
+      edit: (doc, pages) => {
+        const widgets = [0, 1].map(() =>
+          doc.addObject({
+            Type: 'Annot',
+            Subtype: 'Widget',
+            FT: 'Btn',
+            Rect: [0, 0, 5, 5],
+            P: pages[0],
+          } as never),
+        );
+        const group = doc.addObject({ T: doc.newString('choice'), FT: 'Btn', Kids: widgets } as never);
+        for (const entry of widgets) entry.put('Parent', group);
+        catalogOf(doc).put('AcroForm', { Fields: [group] } as never);
+      },
+    });
+    const outcome = await setImageAlt(bytes, [{ kind: 'field', name: 'choice', tooltip: 'Pick one' }], run);
+    expect(outcome.report.notes).toEqual(
+      expect.arrayContaining([
+        { kind: 'changed', key: 'op.note.a11y.tooltipSet', params: { name: 'choice', tooltip: 'Pick one' } },
+      ]),
+    );
+    withPages(outcome.bytes, (doc) => {
+      const written = catalogOf(doc).get('AcroForm').get('Fields').get(0);
+      expect(written.get('TU').asString()).toBe('Pick one');
+      const kids = written.get('Kids');
+      expect(kids.length).toBe(2);
+      for (let index = 0; index < kids.length; index += 1) {
+        expect(kids.get(index).get('TU').isNull()).toBe(true);
+      }
+    });
+    expect((await checkAccessibility(outcome.bytes, run)).fields).toEqual([
+      { name: 'choice', tooltip: 'Pick one', pageIndex: 0 },
+    ]);
+  });
+
   it('writes a tooltip on a nested field and finds a field by its qualified name only', async () => {
     const bytes = pdfOf(['q Q'], {
       edit: (doc) => {
@@ -1742,6 +1880,14 @@ describe('setImageAlt', () => {
               Kids: [doc.addObject({ T: doc.newString('anon'), FT: 'Tx' } as never)],
             } as never),
             widgetWithKids,
+            // A named group of a child field and an unnamed widget: the widget is not "mixed".
+            doc.addObject({
+              T: doc.newString('mixed'),
+              Kids: [
+                doc.addObject({ T: doc.newString('own'), FT: 'Tx' } as never),
+                doc.addObject({ Subtype: 'Widget' } as never),
+              ],
+            } as never),
           ],
         } as never);
       },
@@ -1753,6 +1899,8 @@ describe('setImageAlt', () => {
         { kind: 'field', name: 'leaf', tooltip: 'unqualified' },
         { kind: 'field', name: 'w.hidden', tooltip: 'under a widget' },
         { kind: 'field', name: 'anon', tooltip: 'Under an unnamed parent' },
+        // The group's own name belongs to no field: the unnamed widget under it is not one.
+        { kind: 'field', name: 'mixed', tooltip: 'on a widget' },
       ],
       run,
     );
@@ -1764,13 +1912,14 @@ describe('setImageAlt', () => {
           key: 'op.note.a11y.tooltipSet',
           params: { name: 'anon', tooltip: 'Under an unnamed parent' },
         },
-        { kind: 'warning', key: 'op.note.a11y.targetMissing', params: { count: 2 } },
+        { kind: 'warning', key: 'op.note.a11y.targetMissing', params: { count: 3 } },
       ]),
     );
     expect((await checkAccessibility(outcome.bytes, run)).fields).toEqual([
       { name: 'group.leaf', tooltip: 'Leaf', pageIndex: null },
       { name: 'anon', tooltip: 'Under an unnamed parent', pageIndex: null },
       { name: 'w', tooltip: null, pageIndex: null },
+      { name: 'mixed.own', tooltip: null, pageIndex: null },
     ]);
   });
 
@@ -1828,6 +1977,455 @@ describe('small readers', () => {
       const direct = doc.newDictionary();
       const map = pageNumbers([pages[0] as PDFObject, direct, pages[1] as PDFObject]);
       expect([...map.values()]).toEqual([0, 2]);
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Tokenizer, nesting, tree keys, figures and reads of the tagging pass
+ * ------------------------------------------------------------------ */
+
+describe('readInstructions: strings inside dictionaries', () => {
+  it('ends a dictionary at its own >>, whatever its strings hold', () => {
+    // A hex string right in front of the dictionary's end: `>>>` is `>` and `>>`.
+    expect(operators('/Span <</ActualText<FEFF0041>>> BDC (x) Tj EMC')).toEqual(['BDC', 'Tj', 'EMC']);
+    // A literal string that holds `>>`, an escaped parenthesis, and nested dictionaries around them.
+    expect(operators('/Span <</ActualText (A>>B)>> BDC (x) Tj EMC')).toEqual(['BDC', 'Tj', 'EMC']);
+    expect(operators('/Span <</ActualText (A\\)>>B) /D <</K (>>)>> >> BDC')).toEqual(['BDC']);
+    // A comment and an array inside the dictionary hold delimiters too.
+    expect(operators('/Span <</A 1 % ) >> (\n/B [(>>) <3e3e> (])] >> BDC')).toEqual(['BDC']);
+    expect(operators('[<</K (]) >> (a)] TJ Q')).toEqual(['TJ', 'Q']);
+    // A `]` in a comment inside an array does not close it.
+    expect(operators('[(a) % ]\n(b)] TJ Q')).toEqual(['TJ', 'Q']);
+  });
+
+  it('delimits the instruction, so the range of the dictionary operator is the whole of it', () => {
+    const text = 'q /Span <</ActualText<FEFF0041>>> BDC Q';
+    const parsed = readInstructions(bytesOf(text));
+    expect(parsed?.map((entry) => entry.operator)).toEqual(['q', 'BDC', 'Q']);
+    expect(text.slice(parsed?.[1]?.start, parsed?.[1]?.end)).toBe('/Span <</ActualText<FEFF0041>>> BDC');
+  });
+
+  it('still refuses a dictionary that never closes, and gives up on a nesting no content has', () => {
+    expect(readInstructions(bytesOf('/Span <</ActualText (A>>B) BDC'))).toBeNull();
+    expect(readInstructions(bytesOf('/Span <</A <FEFF>> BDC'))).toBeNull();
+    expect(readInstructions(bytesOf('['.repeat(100_000)))).toBeNull();
+    expect(readInstructions(bytesOf('[<<'.repeat(100_000)))).toBeNull();
+  });
+
+  it('reads the page and tags it when its marked content carries ActualText', async () => {
+    const content = `/Span <</ActualText<FEFF0041>>> BDC\n${HELLO}\nEMC`;
+    const resources = (doc: PDFDocument) => ({
+      Font: { F: doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica' } as never) },
+    });
+    const outcome = await tagDocument(pdfOf([content], { resources }), run, {
+      pageText: readerOf({ 0: inputOf(0, HELLO_BLOCK) }),
+    });
+    const keys = outcome.report.notes.map((entry) => entry.key);
+    expect(keys).not.toContain('op.note.a11y.pageUnreadable');
+    expect(keys).toContain('op.note.a11y.tagged');
+    expect(outcome.report.steps).toContain('structure');
+    expect((await checkAccessibility(outcome.bytes, run)).structure.roles).toMatchObject({ P: 1 });
+  });
+});
+
+describe('one rule for the end of an inline image', () => {
+  const operatorsOf = (text: string): string[] => {
+    const found: string[] = [];
+    scanContent(bytesOf(text), (operator) => found.push(operator));
+    return found;
+  };
+
+  it('closes the image at an EI before white space, a delimiter or the end — in both readers', () => {
+    for (const [text, expected] of [
+      ['BI /W 1 ID ab EI Q', ['BI', 'Q']],
+      ['BI /W 1 ID ab EI(x) Tj', ['BI', 'Tj']],
+      ['BI /W 1 ID ab EI/G gs', ['BI', 'gs']],
+      ['BI /W 1 ID ab EI[1] TJ', ['BI', 'TJ']],
+      ['BI /W 1 ID ab EI', ['BI']],
+      ['BI /W 1 ID aEIb EIx EI Q', ['BI', 'Q']],
+    ] as const) {
+      expect(operators(text), text).toEqual(expected);
+      expect(operatorsOf(text), text).toEqual(expected);
+    }
+  });
+});
+
+describe('tagging next to marked content the page already has', () => {
+  const resources = (doc: PDFDocument) => ({
+    Font: { F: doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica' } as never) },
+  });
+  const contentOfPage = (bytes: Uint8Array): string =>
+    withPages(bytes, (_doc, pages) =>
+      Buffer.from(pageContent(pages[0] as PDFObject)?.bytes ?? new Uint8Array()).toString('latin1'),
+    );
+
+  it('numbers the nesting of marked-content sequences next to the q and BT levels', () => {
+    const nesting = nestingOf(readInstructions(bytesOf('/A BMC q /B <</MCID 1>> BDC EMC Q EMC EMC')) ?? []);
+    expect(nesting.marked).toEqual([0, 1, 1, 2, 1, 1, 0, 0]);
+  });
+
+  it('widens a range to the whole sequence it would otherwise cut, and gives up on one that never closes', () => {
+    const expand = (text: string, first: number, last: number) => {
+      const instructions = readInstructions(bytesOf(text)) ?? [];
+      return expandToNesting(instructions, nestingOf(instructions), first, last);
+    };
+    // 0 BMC, 1 (a) Tj, 2 EMC, 3 (b) Tj: a range from inside the sequence to past its end takes the sequence.
+    expect(expand('/S BMC (a) Tj EMC (b) Tj', 1, 3)).toEqual({ first: 0, last: 3 });
+    // A range that opens a sequence it does not close takes the sequence to its end.
+    expect(expand('(a) Tj /S BMC (b) Tj EMC', 0, 2)).toEqual({ first: 0, last: 3 });
+    // Inside one sequence the range stays; around a whole one it stays.
+    expect(expand('/S BMC (a) Tj (b) Tj EMC', 1, 2)).toEqual({ first: 1, last: 2 });
+    expect(expand('(a) Tj /S BMC (b) Tj EMC (c) Tj', 0, 4)).toEqual({ first: 0, last: 4 });
+    expect(expand('(a) Tj /S BMC (b) Tj', 0, 2)).toBeNull();
+  });
+
+  it('puts the new sequence around a block whose text straddles an existing one, so both still pair as written', async () => {
+    const content = 'BT /F 12 Tf 10 150 Td /Span BMC (Hel) Tj EMC (lo) Tj ET';
+    const outcome = await tagDocument(pdfOf([content], { resources }), run, {
+      pageText: readerOf({ 0: inputOf(0, HELLO_BLOCK) }),
+    });
+    expect(outcome.report.steps).toContain('verify');
+    // The tag opens before the existing sequence and closes after the last show: the Span is
+    // inside it, entire. Opening inside the Span and closing outside would make the new EMC
+    // close the Span's BMC pair the other way round.
+    expect(contentOfPage(outcome.bytes)).toMatch(
+      /\/P <<\/MCID 0>> BDC\s*\/Span BMC\s*\(Hel\) Tj\s*EMC\s*\(lo\) Tj\s*EMC\s*ET/,
+    );
+  });
+
+  it('keeps a new sequence inside a text object that an existing sequence also spans', async () => {
+    const content = 'BT /F 12 Tf 10 150 Td /Span BMC (Hello) Tj ET EMC';
+    const outcome = await tagDocument(pdfOf([content], { resources }), run, {
+      pageText: readerOf({ 0: inputOf(0, HELLO_BLOCK) }),
+    });
+    expect(contentOfPage(outcome.bytes)).toMatch(
+      /\/Span BMC\s*\/P <<\/MCID 0>> BDC\s*\(Hello\) Tj\s*EMC\s*ET\s*EMC/,
+    );
+  });
+});
+
+describe('ParentTreeNextKey', () => {
+  it('is past every key in use when a page without text leaves a hole in the keys', async () => {
+    // The cover is empty, so only pages 1 and 2 are tagged: their keys are 1 and 2. A next key of
+    // "the number of tagged pages" (2) is a key that is already taken.
+    const bytes = pdfOf(['q Q', HELLO, HELLO]);
+    const outcome = await tagDocument(bytes, run, {
+      pageText: readerOf({ 1: inputOf(1, HELLO_BLOCK), 2: inputOf(2, HELLO_BLOCK) }),
+    });
+    withPages(outcome.bytes, (doc, pages) => {
+      const tree = catalogOf(doc).get('StructTreeRoot');
+      const nums = tree.get('ParentTree').get('Nums');
+      const keys = Array.from({ length: nums.length / 2 }, (_unused, index) =>
+        nums.get(index * 2).asNumber(),
+      );
+      expect(keys).toEqual([1, 2]);
+      expect(tree.get('ParentTreeNextKey').asNumber()).toBe(3);
+      expect(pages[0]?.get('StructParents').isNull()).toBe(true);
+      expect(
+        pages.map((page) =>
+          page.get('StructParents').isNull() ? null : page.get('StructParents').asNumber(),
+        ),
+      ).toEqual([null, 1, 2]);
+    });
+  });
+});
+
+describe('the alt text of a picture in a tagged file', () => {
+  const imageResources = (doc: PDFDocument): Record<string, unknown> => {
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, 2, 2], false);
+    pixmap.clear(0);
+    return { XObject: { Im: doc.addImage(new mupdf.Image(pixmap)) } };
+  };
+  const tagged = () =>
+    tagDocument(pdfOf(['q 10 0 0 10 0 0 cm /Im Do Q'], { resources: imageResources }), run, {
+      pageText: readerOf({}),
+    });
+
+  it('is found on the Figure, which is where a reader looks', async () => {
+    const outcome = await tagged();
+    const before = await checkAccessibility(outcome.bytes, run);
+    expect(before.images[0]).toMatchObject({ name: 'Im', alt: null });
+    expect(findingsOf(before, 'image-alt')).toMatchObject([{ state: 'problem' }]);
+
+    // The file was tagged by someone else: its Figure has alt text, its XObject has none.
+    const withFigureAlt = withPages(outcome.bytes, (doc) => {
+      const figure = catalogOf(doc).get('StructTreeRoot').get('K').get(0).get('K').get(0);
+      expect(figure.get('S').asName()).toBe('Figure');
+      figure.put('Alt', doc.newString('A logo'));
+      return new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    });
+    const after = await checkAccessibility(withFigureAlt, run);
+    expect(after.images[0]).toMatchObject({ name: 'Im', alt: 'A logo' });
+    expect(findingsOf(after, 'image-alt')).toMatchObject([{ state: 'ok', params: { count: 1 } }]);
+  });
+
+  it('is written on the Figure, and the XObject is left alone', async () => {
+    const outcome = await tagged();
+    const edited = await setImageAlt(
+      outcome.bytes,
+      [{ kind: 'image', pageIndex: 0, name: 'Im', alt: 'Şirket logosu' }],
+      run,
+    );
+    const report = await checkAccessibility(edited.bytes, run);
+    expect(report.images[0]).toMatchObject({ name: 'Im', alt: 'Şirket logosu' });
+    expect(findingsOf(report, 'image-alt')).toMatchObject([{ state: 'ok' }]);
+    withPages(edited.bytes, (doc, pages) => {
+      const figure = catalogOf(doc).get('StructTreeRoot').get('K').get(0).get('K').get(0);
+      expect(figure.get('Alt').asString()).toBe('Şirket logosu');
+      expect(pages[0]?.get('Resources').get('XObject').get('Im').get('Alt').isNull()).toBe(true);
+    });
+  });
+
+  it('stays on the XObject when no figure owns the image', async () => {
+    const bytes = pdfOf(['q 10 0 0 10 0 0 cm /Im Do Q'], { resources: imageResources });
+    const edited = await setImageAlt(bytes, [{ kind: 'image', pageIndex: 0, name: 'Im', alt: 'Logo' }], run);
+    withPages(edited.bytes, (_doc, pages) => {
+      expect(pages[0]?.get('Resources').get('XObject').get('Im').get('Alt').asString()).toBe('Logo');
+    });
+    expect((await checkAccessibility(edited.bytes, run)).images[0]?.alt).toBe('Logo');
+  });
+});
+
+describe('the tagging pass reads the document once', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const pagesOf = (count: number) =>
+    pdfOf(
+      Array.from({ length: count }, (_unused, index) => `BT /F 12 Tf 10 150 Td (Page ${index + 1}) Tj ET`),
+      {
+        resources: (doc) => ({
+          Font: {
+            F: doc.addObject({
+              Type: 'Font',
+              Subtype: 'Type1',
+              BaseFont: 'Helvetica',
+              Encoding: 'WinAnsiEncoding',
+            } as never),
+          },
+        }),
+      },
+    );
+  const opens = async (bytes: Uint8Array): Promise<number> => {
+    const engine = await loadMupdf();
+    const spy = vi.spyOn(engine.PDFDocument, 'openDocument');
+    try {
+      await tagDocument(bytes, run);
+      return spy.mock.calls.length;
+    } finally {
+      spy.mockRestore();
+    }
+  };
+
+  it('opens the same number of documents however many pages it has', async () => {
+    const one = await opens(pagesOf(1));
+    const five = await opens(pagesOf(5));
+    expect(five).toBe(one);
+  });
+
+  it('opens one document to plan every page, and none through pdf.js', async () => {
+    const engine = await loadMupdf();
+    const spy = vi.spyOn(engine.PDFDocument, 'openDocument');
+    const pdfjs = vi.spyOn(pdfjsHandle, 'openWithPdfjs');
+    const bytes = pagesOf(4);
+    const doc = engine.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF() as PDFDocument;
+    spy.mockClear();
+    try {
+      const planned = await planPages(doc, bytes, run);
+      expect(spy.mock.calls.length).toBe(1);
+      expect(pdfjs).not.toHaveBeenCalled();
+      expect(planned.plans.map((plan) => plan.pageIndex)).toEqual([0, 1, 2, 3]);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('stops for an abort that arrives between two pages of the read', async () => {
+    const bytes = pagesOf(3);
+    const controller = new AbortController();
+    const context = { signal: controller.signal, onProgress: () => controller.abort() };
+    const doc = (await loadMupdf()).PDFDocument.openDocument(
+      bytes.slice(),
+      'application/pdf',
+    ).asPDF() as PDFDocument;
+    try {
+      await expect(planPages(doc, bytes, context)).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('reads the pages one at a time, naming only the page that fails, when the read of the document fails', async () => {
+    const bytes = pagesOf(3);
+    const whole = vi
+      .spyOn(textSource, 'readDocumentText')
+      .mockRejectedValueOnce(new Error('text walk failed'));
+    const single = vi.spyOn(textSource, 'readPageText');
+    single.mockImplementationOnce(async (_bytes, pageIndex) => inputOf(pageIndex));
+    single.mockImplementationOnce(async () => {
+      throw new Error('page 2 cannot be read');
+    });
+    const doc = (await loadMupdf()).PDFDocument.openDocument(
+      bytes.slice(),
+      'application/pdf',
+    ).asPDF() as PDFDocument;
+    try {
+      const planned = await planPages(doc, bytes, run);
+      expect(whole).toHaveBeenCalledTimes(1);
+      expect(single.mock.calls.map((call) => call[1])).toEqual([0, 1, 2]);
+      // Page 1 had no blocks, page 2 failed, page 3 was read for real and is the one that is tagged.
+      expect(planned.notes).toEqual([
+        { kind: 'warning', key: 'op.note.a11y.pageNoBlocks', params: { page: 1 } },
+        { kind: 'warning', key: 'op.note.a11y.textReadFailed', params: { page: 2 } },
+      ]);
+      expect(planned.plans.map((plan) => plan.pageIndex)).toEqual([2]);
+    } finally {
+      doc.destroy();
+    }
+  });
+});
+
+describe('the figure index: every way a structure tree can own a picture', () => {
+  // MuPDF stores identical pixels once, so every picture gets a grey of its own: they are
+  // different objects, which is what a figure file has.
+  let grey = 0;
+  const imageObject = (doc: PDFDocument, alt?: string): PDFObject => {
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, 2, 2], false);
+    grey += 20;
+    pixmap.clear(grey);
+    const image = doc.addImage(new mupdf.Image(pixmap));
+    if (alt !== undefined) image.put('Alt', doc.newString(alt));
+    return image;
+  };
+
+  /**
+   * One tagged page that draws images `A` … `H` in marked content of every shape a producer
+   * writes, a tree that owns them in every way the standard allows, and two pages whose content
+   * cannot be read. `C` is owned by two figures, one of which has no alt text.
+   */
+  function figureFile(): Uint8Array {
+    let c: PDFObject | undefined;
+    return pdfOf(
+      [
+        [
+          // Inline property list with a nested dictionary, a literal and a hex string, an array and
+          // comments around the one top-level /MCID, which is what the figure owns.
+          '/Figure <<% a note\n/Nested <</MCID 9>> /L [(x) <41> % c ]\n] /S (MCID) /H <4D43> /MCID 0>> BDC /A Do EMC',
+          '/Figure /P0 BDC /B Do EMC',
+          '/Span <</K 1>> BDC /C Do EMC',
+          '/Span <</MCID /x>> BDC /D Do EMC',
+          '/Span 5 BDC /E Do EMC',
+          '/Span BMC /F Do EMC',
+          '/G Do',
+          '/Missing Do',
+          '/Frm Do',
+          // Inside a sequence without an id inside one that has one: the outer id is the figure's.
+          '/Figure /P0 BDC /Span BMC /H Do EMC EMC',
+        ].join('\n'),
+        'x',
+        'q ]',
+      ],
+      {
+        resources: (doc) => {
+          c = imageObject(doc);
+          return {
+            XObject: {
+              A: imageObject(doc),
+              B: imageObject(doc),
+              C: c,
+              D: imageObject(doc, 'Alt on the XObject'),
+              E: imageObject(doc),
+              F: imageObject(doc),
+              G: imageObject(doc),
+              H: imageObject(doc),
+              Frm: doc.addStream('', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 1, 1] }),
+            },
+            Properties: { P0: { MCID: 1 } },
+          };
+        },
+        edit: (doc, pages) => {
+          const page = pages[0] as PDFObject;
+          pages[1]?.put('Contents', doc.addRawStream(new Uint8Array([1]), UNDECODABLE as never));
+          const element = (extra: Record<string, unknown>) =>
+            doc.addObject({ Type: 'StructElem', ...extra } as never);
+          const notAPage = doc.addObject({ Type: 'Other' } as never);
+          const objr = (target: unknown) => ({ Type: 'OBJR', Obj: target, Pg: page });
+          const kids = [
+            // Integer content item under the element's own page.
+            element({ S: 'Figure', Pg: page, Alt: doc.newString('Alt A'), K: [0] }),
+            // A role mapped onto Figure, content by MCR; an MCR page that is no page falls back to the element's.
+            element({
+              S: 'Picture',
+              Pg: page,
+              Alt: doc.newString('Alt B'),
+              K: [
+                { Type: 'MCR', MCID: 1, Pg: page },
+                { Type: 'MCR', MCID: 8, Pg: notAPage },
+              ],
+            }),
+            // Two figures that own the same picture by OBJR, one without alt text.
+            element({ S: 'Figure', Alt: doc.newString('Alt C'), K: [objr(c)] }),
+            element({ S: 'Figure', K: [objr(c)] }),
+            // Not figures: content items and an object reference that no figure owns.
+            element({ S: 'P', Pg: page, K: [5, objr(c)] }),
+            element({ S: 'Unmapped', K: [] }),
+            // A figure whose integer item has no page, whose object reference is direct, and a kid that is no dictionary.
+            element({ S: 'Figure', K: [3, objr({ Subtype: 'Link' }), doc.newString('stray')] }),
+          ];
+          doc.addObject({});
+          const root = doc.addObject({
+            Type: 'StructTreeRoot',
+            RoleMap: { Picture: 'Figure', Para: 'P' },
+            K: kids,
+          } as never);
+          doc
+            .getTrailer()
+            .get('Root')
+            .put('StructTreeRoot', root as never);
+        },
+      },
+    );
+  }
+
+  const altsOf = (report: AccessibilityReport) =>
+    Object.fromEntries(report.images.map((image) => [image.name, image.alt]));
+
+  it('reads the alt text of each picture from the figure that owns it, and from the XObject for the rest', async () => {
+    const report = await checkAccessibility(figureFile(), run);
+    expect(altsOf(report)).toEqual({
+      A: 'Alt A', // inline /MCID among strings, arrays and comments → the figure with an integer item
+      B: 'Alt B', // /Properties list → a role mapped onto Figure, content by MCR
+      C: null, // two figures by OBJR: one has no alt text, so the picture has none
+      D: 'Alt on the XObject', // `/MCID /x` is no id: no figure owns it
+      E: null, // `5` is no property list
+      F: null, // BMC has no id
+      G: null, // drawn outside marked content
+      H: 'Alt B', // inside a sequence without an id, inside one with an id
+    });
+    expect(findingsOf(report, 'image-alt').filter((entry) => entry.state === 'problem')).toHaveLength(4);
+  });
+
+  it('writes an alt text on every figure that owns the picture, and on the XObject when none does', async () => {
+    const edited = await setImageAlt(
+      figureFile(),
+      [
+        { kind: 'image', pageIndex: 0, name: 'C', alt: 'Both figures' },
+        { kind: 'image', pageIndex: 0, name: 'F', alt: 'On the XObject' },
+      ],
+      run,
+    );
+    const report = await checkAccessibility(edited.bytes, run);
+    expect(altsOf(report)).toMatchObject({ C: 'Both figures', F: 'On the XObject', A: 'Alt A' });
+    withPages(edited.bytes, (doc, pages) => {
+      const xobjects = (pages[0] as PDFObject).get('Resources').get('XObject');
+      expect(xobjects.get('C').get('Alt').isNull()).toBe(true);
+      expect(xobjects.get('F').get('Alt').asString()).toBe('On the XObject');
+      const tree = catalogOf(doc).get('StructTreeRoot').get('K');
+      expect(tree.get(2).get('Alt').asString()).toBe('Both figures');
+      expect(tree.get(3).get('Alt').asString()).toBe('Both figures');
+      expect(tree.get(4).get('Alt').isNull()).toBe(true);
     });
   });
 });

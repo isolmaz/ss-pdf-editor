@@ -1411,12 +1411,20 @@ deliberately not a score:
   `/Document` → one element per MCID with the parent tree a tagged PDF needs, and
   **re-opens the output** to compare marked-content sequences against the tree's MCRs. A
   document that already has a `/StructTreeRoot` is refused rather than merged.
-- `setImageAlt()` writes `/Alt` on the image XObject and `/TU` on form fields; an empty
-  alt text is refused, because decorative content would belong in an `/Artifact`, which
-  the tags editor below writes.
+- `setImageAlt()` writes `/Alt` on the `Figure` element that owns the picture in a tagged
+  file (the check reads it from there too) and on the image XObject when no figure owns it,
+  and `/TU` on the form field itself — the parent of a radio group's widgets, not one of
+  them; an empty alt text is refused, because decorative content would belong in an
+  `/Artifact`, which the tags editor below writes.
 
 `tagDocument()` places each block's shows into marked-content sequences that stay inside
-one text object and one `q` level (`nestingOf`, `expandToNesting`); a block spread over
+one text object, one `q` level and the marked-content sequences the page already has
+(`nestingOf`, `expandToNesting`), and the re-read compares how the stream's scopes nest, not
+only how many sequences it has; the content-stream tokenizer skips strings inside dictionaries
+(`/ActualText<FEFF0041>>> BDC`) and ends an inline image by the same `EI` rule as the PDF/A
+reader (`inlineImageEnd`). The text of every page is read through one MuPDF document
+(`readDocumentText`, in batches of 64 pages), and `ParentTreeNextKey` is one past the highest
+key in use. A block spread over
 several text objects becomes several sequences with one element owning all their MCIDs
 (`treeOrder` groups claims by block). A `plan` option (`TagPlan`: per-page order, roles and
 figure alt text) lets the reading-order editor tag an untagged file in the order and with
