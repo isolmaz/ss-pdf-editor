@@ -52,6 +52,7 @@ const LOADERS: Record<string, () => Promise<OperationDialogSpec>> = {
   'new-document': async () => (await import('./start')).newDocumentDialog,
   'merge-files': async () => (await import('./start')).mergeFilesDialog,
   'convert-to-pdf': async () => (await import('./convert')).convertDialog,
+  repair: async () => (await import('./repair')).repairDialog,
   'xfa-remove': async () => (await import('./xfa')).xfaRemoveDialog,
   'xfa-data': async () => (await import('./xfa')).xfaDataDialog,
   'xfa-flatten': async () => (await import('./xfa')).xfaFlattenDialog,
@@ -68,6 +69,7 @@ const STANDALONE: ReadonlySet<string> = new Set([
   'new-document',
   'merge-files',
   'convert-to-pdf',
+  'repair',
 ]);
 
 export function isStandaloneDialog(id: string): boolean {

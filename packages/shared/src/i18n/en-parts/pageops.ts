@@ -26,6 +26,13 @@ export const pageopsPart = {
   'op.note.merge.sharedFields':
     '{count} form field name(s) appear in more than one merged document; fields with the same name now share one value.',
   'op.note.merge.verified': 'Merge verified: {pages} page(s).',
+  'op.note.merge.interleaved':
+    'Front and back sides alternated: {fronts} front page(s) and {backs} back page(s).',
+  'op.note.merge.backsReversed': 'The back sides were taken from the last page to the first.',
+  'op.note.merge.unequalFronts':
+    'The front sides have {count} more page(s) than the back sides; the extra pages follow at the end.',
+  'op.note.merge.unequalBacks':
+    'The back sides have {count} more page(s) than the front sides; the extra pages follow at the end.',
   'op.note.images.unsupported': 'Unsupported image skipped: {name}',
   'op.note.images.failed': 'Image could not be added (may be corrupt) and was skipped: {name}',
   'op.note.images.exif': 'EXIF orientation applied on {count} image(s).',

@@ -1066,7 +1066,28 @@ writer does, and the steps it reports:
   `op.note.merge.encryptionDropped` when a document had `/Encrypt`, because the merged file is
   written without any protection, and counts the fully qualified field names used by more than
   one document (`fieldNamesOf`; a field's widget kids without a `/T` of their own belong to
-  it) as `op.note.merge.sharedFields`, because fields with one name share one value;
+  it) as `op.note.merge.sharedFields`, because fields with one name share one value. The
+  front/back merge of a double-sided scan (`interleaveDocuments`) is the same function with a
+  different layout: `mergeWithLayout` takes the engine's entries and the label placements, the
+  append merge asks for one block after a base page (`insertAfter`) and the interleave gives
+  each file explicit `pageIndices` from `planInterleave` (front, back, front, back…; with
+  `reverseBacks` the back of the first sheet is the last page of the backs file; the pages of
+  the longer file with no partner follow, and `op.note.merge.unequalFronts` /
+  `op.note.merge.unequalBacks` warn about them). The front file is the base, so its Info,
+  outline and form carry over and every page keeps its own label;
+- splitting (`ops/split.ts`): one `composeDocument` per part on the document that owns the
+  annotation storage, in five modes (ranges, every N pages, size, booklet, bookmarks). The
+  bookmarks mode cuts at the entries of the outline down to a chosen level
+  (`readSplitBookmarks` reads pdf.js's resolved outline, `flattenOutline` takes the level): a
+  part runs from a bookmark's page to the page before the next bookmark's, bookmarks on one
+  page start one part named after the first, the pages before the first bookmark are a part of
+  their own, and an entry that points to no page of the document is counted and reported
+  (`split.note.bookmarksSkipped`) rather than cut at. A part's file name is the document's name,
+  its number and the bookmark title written as a file name (reserved characters and edge dots
+  dropped, 60 characters at most); the number keeps the parts in document order and makes the
+  names distinct. A document with no usable bookmark is refused as `no-bookmarks`, whose hint
+  names the other modes. The dialog (`ops/pages.ts`) refuses a plan over `MAX_SPLIT_PARTS`
+  before any part is produced;
 - page insertion and replacement (`ops/page-insert.ts`), steps `pdfjs.extractPages` / `metadata`
   / `save`, with the base Info carried by `copyDocumentInfo` (raw keywords and PDF dates kept as
   written, plus the planned page labels) and matched image pages drawn as form XObjects. The
@@ -2252,6 +2273,27 @@ its text mapping.
 
 ---
 
+### 5.14 Repair
+
+`ops/repair.ts` (steps `load`, `repair`, `save`) opens a file with MuPDF, which rebuilds the
+cross-reference table from the objects it finds when the table or the trailer is missing,
+cut off or points at the wrong offsets, and writes the document out as a clean full rewrite
+(`saveRewrite`). `wasRepaired()` is asked after the whole file has been read for the save,
+because MuPDF repairs lazily, when an object is not where the table says: asked on open it can
+still be `false` for a damaged file. The output is read back before it is returned: it must open
+without a repair, with the page count of the input, in MuPDF and in the viewer's engine, or the
+operation throws `verification-failed`. A file with no object to rebuild from is
+`corrupt-document` (so is one with no readable page), and a document that needs a password is
+`encrypted-unsupported` like every writer here. The report says whether the file really was damaged
+(`op.note.repair.rebuilt` plus the warning `op.note.repair.check`, so the result is read before
+it opens: content that could not be read is not restored) or only rewritten
+(`op.note.repair.rewritten`), and a signed document carries the `lost` note that the rewrite
+invalidates the signature. The dialog (`ops/repair.ts` in `pdf-ui`) is a standalone operation
+(`repair`, command `file.repair`) because the files that need it are the ones that do not open: it
+takes the file itself and opens `<name>-repaired.pdf` in a new tab, never replacing a document. An
+open that fails with `corrupt-document` adds `open.repairHint` to its notice. The module is
+loaded with the dialog, outside the entry chunk and outside the `pdf-core` barrel.
+
 ## 6. `pdf-text-engine` — the text model
 
 Pure by construction: plain data in, plain data out. No pdf.js, MuPDF or React
@@ -2502,8 +2544,9 @@ passed from a surface has to be the id the registry declares.
 
 **Standalone operations** start a document instead of changing one (`standalone: true`, known
 synchronously through `isStandaloneDialog`): a blank document (`new-document`,
-`ops/create.ts`), a PDF from images (`images-to-pdf`), several PDFs merged into a
-new one (`merge-files`, the first file as the base of `mergeDocuments`) and other documents
+`ops/create.ts`), a PDF from images (`images-to-pdf`), a damaged PDF rebuilt into a clean copy (`repair`, §5.14), several PDFs merged into a
+new one (`merge-files`, the first file as the base of `mergeDocuments`, or in its alternating
+mode the front-sides file as the base of `interleaveDocuments`) and other documents
 converted to PDF (`convert-to-pdf`, several files converted one by one and merged in order). They run with no
 document open, their context carries no bytes, and their one result opens in a new tab. A
 tab's tools panel is frozen against that tab and dismissed when it changes, so these get a

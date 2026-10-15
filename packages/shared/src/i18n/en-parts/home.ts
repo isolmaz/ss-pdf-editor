@@ -36,7 +36,7 @@ export const homePart = {
   'home.tool.imageEdit': 'Pick an image on the page and swap in another; its placement is kept.',
   'home.tool.measure': 'Set the scale; perimeter and area are measured with the same tool.',
   'home.tool.organize': 'Drag pages into order from their thumbnails, or rotate, delete and duplicate them.',
-  'home.tool.merge': 'Join several PDFs into one file in the order you choose.',
+  'home.tool.merge': 'Join PDFs in the order you choose, or alternate the sides of a double-sided scan.',
   'home.tool.batch': 'Run the same operation on many files, one after another.',
   'home.tool.insert': 'Place blank pages, images or pages of another document into this one.',
   'home.tool.add': 'Bring in the pages of another PDF.',
@@ -118,10 +118,17 @@ export const homePart = {
 
   'start.merge.title': 'Merge PDFs',
   'start.merge.intro':
-    'The PDFs you choose are combined, in list order, into one new document that opens in a new tab. Metadata (Info/XMP) comes from the first document.',
+    'The PDFs you choose become one new document in a new tab: one after another, or alternating front and back sides. Metadata comes from the first file.',
   'start.merge.files': 'PDF files',
   'start.merge.hint': 'Change the order with the arrows; choose at least two files.',
   'start.merge.name': 'Merged',
+  'start.merge.mode': 'How to combine',
+  'start.merge.mode.append': 'One after another',
+  'start.merge.mode.interleave': 'Alternate pages (double-sided scans)',
+  'start.merge.fronts': 'Front sides (pages 1, 3, 5…)',
+  'start.merge.backs': 'Back sides',
+  'start.merge.reverse': 'Back sides are in reverse order',
+  'start.merge.reverseHint': 'Usual when the stack was turned over for the second pass.',
 
   'dialog.field.moveUp': 'Move {name} up',
   'dialog.field.moveDown': 'Move {name} down',

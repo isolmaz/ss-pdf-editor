@@ -212,7 +212,8 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
         return;
       }
       dropHomeCommand();
-      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}`);
+      const repairHint = toolError.code === 'corrupt-document' ? ` ${t('open.repairHint')}` : '';
+      showNotice(`${t(toolError.messageKey)} ${t(toolError.hintKey)}${repairHint}`);
     } finally {
       endOpening();
       setBusy(false);

@@ -173,6 +173,7 @@ const SIMPLE_MODE_COMMANDS: ReadonlySet<string> = new Set([
   'file.convert',
   'file.create-images',
   'file.scan',
+  'file.repair',
   'file.save',
   'file.export',
   'file.print',
@@ -297,6 +298,7 @@ export const STANDALONE_COMMAND_IDS: ReadonlySet<string> = new Set([
   'file.convert',
   'file.create-images',
   'file.scan',
+  'file.repair',
   'file.batch',
 ]);
 
@@ -335,7 +337,7 @@ export function menuCommands(commands: readonly Command[], mode: InterfaceMode):
  * lists follow one another group by group, and a rule is drawn between two sections of a menu.
  */
 export const MENU_SECTIONS: readonly (readonly string[])[] = [
-  ['file.new', 'file.open', 'file.merge', 'file.convert', 'file.create-images', 'file.scan'],
+  ['file.new', 'file.open', 'file.merge', 'file.convert', 'file.create-images', 'file.scan', 'file.repair'],
   ['file.save', 'file.export'],
   ['file.add', 'file.batch'],
   ['file.print', 'file.close'],
@@ -432,8 +434,27 @@ export function buildCommands(host: CommandHost): readonly Command[] {
       id: 'file.merge',
       labelKey: 'start.merge.title',
       group: 'file',
-      keywords: ['merge', 'combine', 'join', 'birlestir', 'birlestirme'],
+      keywords: [
+        'merge',
+        'combine',
+        'join',
+        'interleave',
+        'duplex',
+        'double-sided',
+        'birlestir',
+        'birlestirme',
+        'cift tarafli',
+        'on arka',
+      ],
       run: dialog('merge-files'),
+    },
+    {
+      id: 'file.repair',
+      labelKey: 'repair.title',
+      group: 'file',
+      // Standalone: a damaged file is picked in the dialog, and the repaired copy opens in a new tab.
+      keywords: ['repair', 'fix', 'damaged', 'broken', 'corrupt', 'onar', 'bozuk', 'tamir', 'duzelt'],
+      run: dialog('repair'),
     },
     {
       id: 'file.convert',

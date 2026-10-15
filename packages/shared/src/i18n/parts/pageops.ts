@@ -47,6 +47,12 @@ export const pageopsPart = {
   'op.note.merge.sharedFields':
     '{count} form alanı adı birden fazla birleştirilen belgede geçiyor; aynı adı taşıyan alanlar artık tek bir değeri paylaşır.',
   'op.note.merge.verified': 'Birleştirme doğrulandı: {pages} sayfa.',
+  'op.note.merge.interleaved': 'Ön ve arka yüzler sırayla birleştirildi: {fronts} ön, {backs} arka sayfa.',
+  'op.note.merge.backsReversed': 'Arka yüzler son sayfadan ilk sayfaya doğru alındı.',
+  'op.note.merge.unequalFronts':
+    'Ön yüzlerde arka yüzlerden {count} sayfa fazla var; fazla sayfalar sona eklendi.',
+  'op.note.merge.unequalBacks':
+    'Arka yüzlerde ön yüzlerden {count} sayfa fazla var; fazla sayfalar sona eklendi.',
 
   // imagesToPdf
   'op.note.images.unsupported': 'Desteklenmeyen görsel atlandı: {name}',
