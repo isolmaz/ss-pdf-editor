@@ -33,6 +33,7 @@ import {
   useOpen,
 } from '../open/open-store';
 import { toggleMagnifier, toggleReading, useReading } from '../reading/reading-store';
+import { saveModeFor } from '../save/save-mode';
 import { currentViewer, saveStore, useSave } from '../save/save-store';
 import { useSelection } from '../selection/selection-store';
 import type { ShellActions } from './shell-actions';
@@ -107,7 +108,10 @@ export function useShellCommands(
         canEdit,
         canUndo: activeTab?.journal.canUndo ?? false,
         canRedo: activeTab?.journal.canRedo ?? false,
-        canSave: canPrepareWrite && activeTab?.source.handle !== undefined,
+        // The header's Save button, decided by the same `saveModeFor`: a tab with no file handle
+        // saves too when the browser can ask where, and where it cannot there is no Save at all
+        // (the download is Export; Ctrl+S downloads as well).
+        canSave: canPrepareWrite && saveModeFor(activeTab?.source.handle !== undefined) !== 'none',
         canExport: canPrepareWrite,
         selectedPages,
         zoom: () => saveStore.get().zoom,

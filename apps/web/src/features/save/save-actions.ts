@@ -2,12 +2,13 @@
  * Save and Export: the two ways a prepared version leaves the editor as a file.
  *
  * Save writes in place when the document has a file handle (and offers "Save as" through the
- * file picker when it has none); Export always downloads a new file. Both run on bytes the
+ * file picker when it has none); Export always downloads a new file — which is also the save
+ * where a download is the only way to save at all (see `exportDocument`). Both run on bytes the
  * shell prepared (`prepare-output.ts`) and take the busy flag and the operation controller for
  * the duration.
  */
 
-import { type SessionStore, sha256Hex } from 'pdf-model';
+import { type SessionStore, type SessionTab, sha256Hex } from 'pdf-model';
 import { ToolError, type Translator } from 'pdf-shared';
 import { noticeLine, verificationNotices } from '../../notices';
 import { downloadFiles } from '../../operations';
@@ -56,10 +57,69 @@ export interface SaveOptions {
 /** The name a download of `name` is saved under. */
 const pdfName = (name: string): string => (name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`);
 
+/** Whether the browser can ask the user where to write a file (File System Access). */
+const hasSavePicker = (): boolean => typeof window !== 'undefined' && 'showSaveFilePicker' in window;
+
 /** The notice a failed write leaves: the failure's message and what to do about it. */
 function failureLine(error: unknown, t: Translator): string {
   const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
   return `${t(toolError.messageKey)} ${t(toolError.hintKey)}`;
+}
+
+/** The sha-256 of what a file holds. */
+async function contentHash(file: File): Promise<string> {
+  return sha256Hex(new Uint8Array(await file.arrayBuffer()));
+}
+
+/**
+ * Takes the baseline of the file a Save is about to write and returns the check that it still
+ * holds it, made when the bytes are ready. Writing in place measures against what the editor
+ * last wrote there (`lastWrittenSha256`, which a restored draft remembers; the source hash for
+ * a file it never wrote); a file the user confirmed overwriting (`confirmed`) is not measured at
+ * all; any other destination against
+ * what it holds right now. The destination is read once for its baseline; at the end its size
+ * and modified time say whether anything touched it, and only a touched file is read and
+ * hashed again — a touch that left the bytes alone is no conflict, a changed byte is.
+ */
+async function destinationGuard(
+  tab: SessionTab,
+  file: FileSystemFileHandle,
+  confirmed: FileSystemFileHandle | undefined,
+): Promise<() => Promise<boolean>> {
+  // The user has been asked about this very file and said to overwrite whatever it holds.
+  if (file === confirmed) return async () => true;
+  if (file === tab.source.handle) {
+    const recorded = tab.lastWrittenSha256 ?? tab.source.sha256;
+    return async () => (await contentHash(await file.getFile())) === recorded;
+  }
+  const baseline = await file.getFile();
+  const sha256 = await contentHash(baseline);
+  return async () => {
+    const current = await file.getFile();
+    if (current.size === baseline.size && current.lastModified === baseline.lastModified) return true;
+    return (await contentHash(current)) === sha256;
+  };
+}
+
+/**
+ * Record that a prepared version left the editor as a file: the version the *preparation*
+ * produced, not the one captured before a picker — an edit made while the picker was open must
+ * not be recorded as saved. The fact table itself is kept, not a summary of it: the notice says
+ * what the write established, and the output keeps the record a later surface can read back.
+ */
+function recordOutput(session: SessionStore, prepared: PreparedOutput): void {
+  const { tab, outputProtection, execution, outputHash, verification } = prepared;
+  session.addOutput(tab.id, {
+    id: crypto.randomUUID(),
+    fromWorkingVersion: tab.working.id,
+    fromState: tab.working.stateId,
+    encrypted: outputProtection.encrypted,
+    steps: execution.steps.map((step) => `${step.engine}:${step.id}`),
+    appliedSteps: execution.appliedSteps.map((step) => `${step.engine}:${step.id}`),
+    incremental: execution.plan.incremental,
+    verification,
+    writtenTo: { fileName: tab.name, savedAt: Date.now(), sha256: outputHash },
+  });
 }
 
 /**
@@ -104,7 +164,7 @@ export async function saveDocument(
     if (target !== undefined && !(await ensureWriteAccess(target))) {
       throw new ToolError('permission-denied', { engine: 'model' });
     }
-    if (target === undefined && typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+    if (target === undefined && hasSavePicker()) {
       try {
         target = await (
           window as unknown as {
@@ -127,36 +187,27 @@ export async function saveDocument(
      * against the *source* hash rejected every Save As that was not a re-save of the
      * original. The in-place path keeps the original/last-written protection.
      */
-    const targetIsSource = target !== undefined && target === tab.source.handle;
-    const checked = target === undefined || target !== options.overwrite;
-    const expected =
-      !checked || target === undefined
-        ? null
-        : targetIsSource
-          ? (tab.lastWrittenSha256 ?? tab.source.sha256)
-          : await sha256Hex(new Uint8Array(await (await target.getFile()).arrayBuffer()));
+    const destination =
+      target === undefined
+        ? undefined
+        : { file: target, unchanged: await destinationGuard(tab, target, options.overwrite) };
 
     const executedSteps: SaveStepDescription[] = [];
     const prepared = await prepareOutput(tab.id, controller, executedSteps);
     if (prepared === null) return false;
 
-    const { tab: preparedTab, bytes, outputProtection, execution, outputHash, verification } = prepared;
+    const { tab: preparedTab, bytes, verification } = prepared;
 
-    if (target !== undefined) {
-      // A destination was chosen, so a baseline was taken for it above — unless the user has
-      // confirmed overwriting whatever the file holds now.
-      if (checked) {
-        const actual = new Uint8Array(await (await target.getFile()).arrayBuffer());
-        if ((await sha256Hex(actual)) !== expected) {
-          // A changed file is a question, not a failure: the dialog offers overwriting *this* file
-          // (confirmed), saving as a new file, or leaving it alone.
-          conflictFound(tab.id, target);
-          return false;
-        }
+    if (destination !== undefined) {
+      // A changed file is a question, not a failure: the dialog offers overwriting *this* file
+      // (confirmed), saving as a new file, or leaving it alone.
+      if (!(await destination.unchanged())) {
+        conflictFound(tab.id, destination.file);
+        return false;
       }
 
       if (controller.signal.aborted) return false;
-      const writable = await target.createWritable();
+      const writable = await destination.file.createWritable();
       try {
         if (controller.signal.aborted) throw new ToolError('aborted', { engine: 'model' });
         await writable.write(bytes as unknown as FileSystemWriteChunkType);
@@ -169,28 +220,13 @@ export async function saveDocument(
       // Only now is this handle the document's own file: attaching it before the write
       // succeeded would make the next Save write in place over a file this one never
       // managed to commit.
-      session.setHandle(preparedTab.id, target);
+      session.setHandle(preparedTab.id, destination.file);
     } else {
       // Direct download fallback when File System Access is not available
       downloadFiles([{ name: pdfName(tab.name), bytes, mime: 'application/pdf' }]);
     }
 
-    session.addOutput(preparedTab.id, {
-      id: crypto.randomUUID(),
-      // The version the *preparation* produced, not the one captured before the
-      // picker: an edit made while the picker was open must not be recorded as saved.
-      fromWorkingVersion: preparedTab.working.id,
-      fromState: preparedTab.working.stateId,
-      encrypted: outputProtection.encrypted,
-      steps: execution.steps.map((step) => `${step.engine}:${step.id}`),
-      appliedSteps: execution.appliedSteps.map((step) => `${step.engine}:${step.id}`),
-      incremental: execution.plan.incremental,
-      // The fact table itself, not a summary of it: the notice below says
-      // what the save established, and the output keeps the record a later surface
-      // can read back.
-      verification,
-      writtenTo: { fileName: preparedTab.name, savedAt: Date.now(), sha256: outputHash },
-    });
+    recordOutput(session, prepared);
     showNotice(
       noticeLine(
         [{ key: 'save.done', params: { name: preparedTab.name } }, ...verificationNotices(verification)],
@@ -211,7 +247,7 @@ export async function saveDocument(
 /**
  * Export: writes the **current version** of `tabId` (default: the active tab) as a new file.
  * Without a File System Access handle this is the only way to keep work — and it must be
- * *this* file, not the bytes the user opened.
+ * *this* file, not the bytes the user opened — named as a PDF, as Save names its download.
  */
 export async function exportDocument(host: SaveHost, tabId: string | undefined): Promise<void> {
   const { session, t, prepareOutput } = host;
@@ -234,10 +270,15 @@ export async function exportDocument(host: SaveHost, tabId: string | undefined):
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = tab.name;
+    anchor.download = pdfName(tab.name);
     anchor.click();
     // Blob URLs are cleaned up right after the operation.
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    // Where a download is the only way to keep work — no file to write over, no picker to ask
+    // for one — Export is the user's Save, and Save's download is recorded as saved: left
+    // unrecorded, a document that was exported stays "unsaved" and closing it warns of a loss.
+    // Anywhere else Export is a copy, and the document stays as dirty as it was.
+    if (tab.source.handle === undefined && !hasSavePicker()) recordOutput(session, prepared);
     // The browser-matrix contract: without an in-place handle the user
     // must know why this writes a *new* file instead of saving the one they opened.
     // The verification table travels with it either way: an export is a

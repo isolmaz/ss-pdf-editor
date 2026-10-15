@@ -10,6 +10,7 @@ import { cancelOperation, showNotice, useCore } from '../core/core-store';
 import { openExportDialog } from '../export/export-store';
 import { HomeHeader } from '../open/OpenSurfaces';
 import { clearPageSelection, showStartScreen } from '../open/open-store';
+import { saveModeFor } from '../save/save-mode';
 import { currentViewer } from '../save/save-store';
 import { useEditorSurfaces } from './editor-store';
 import type { ShellActions } from './shell-actions';
@@ -26,14 +27,6 @@ export interface ShellHeaderProps {
     ShellActions,
     'openViaPicker' | 'saveActive' | 'exportActive' | 'closeTab' | 'openDialog'
   >;
-}
-
-/** What Save does for a tab: write over its file, ask where to write it, or nothing (download is Export). */
-function saveModeFor(hasFileHandle: boolean): 'save' | 'saveAs' | 'none' {
-  if (hasFileHandle) return 'save';
-  return typeof (globalThis as { showSaveFilePicker?: unknown }).showSaveFilePicker === 'function'
-    ? 'saveAs'
-    : 'none';
 }
 
 export function ShellHeader({ session, tier, t, commands, actions }: ShellHeaderProps) {

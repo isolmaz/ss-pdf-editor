@@ -78,6 +78,10 @@ export const propsPart = {
   'props.sig.roots.none': 'No readable certificate found in selected files.',
   'props.sig.roots.addedRefused':
     '{count} trust root(s) added; {refused} file(s) could not be read as certificate.',
+  'props.sig.storeFailed':
+    'The change to your trust roots and revocation lists could not be stored on this device, so nothing was changed. {reason}',
+  'props.sig.storeUnreadable':
+    'The stored trust roots and revocation lists could not be read from this device; certificate trust is shown as "not checked" until you import them again.',
   'props.sig.certValidUntil': 'Certificate valid until: {date}',
   'props.sig.certExpired': 'Certificate expired on {date}.',
   'props.sig.certNotYet': 'Certificate is not valid until {date}.',

@@ -73,11 +73,11 @@ export function PropertiesFacts({
           attachments={facts?.attachments ?? []}
           signatures={facts?.signatures ?? []}
           trustRoots={trustRoots}
-          onRemoveTrustRoot={removeTrustRootById}
-          onImportTrustRoots={(imported) => importTrustRoots(imported, t)}
+          onRemoveTrustRoot={(id) => void removeTrustRootById(id, t)}
+          onImportTrustRoots={(imported) => void importTrustRoots(imported, t)}
           revocationLists={revocationLists}
-          onRemoveRevocationList={removeRevocationListById}
-          onImportRevocationLists={(imported) => importRevocationLists(imported, t)}
+          onRemoveRevocationList={(id) => void removeRevocationListById(id, t)}
+          onImportRevocationLists={(imported) => void importRevocationLists(imported, t)}
           security={facts?.security ?? null}
           loading={facts === null}
           disabled={disabled}

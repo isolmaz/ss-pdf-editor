@@ -381,6 +381,15 @@ indentation), so it has no failure of its own; a stored root that decodes to few
 dropped rather than trusted, and `trustRootFrom` derives the id from the DER, so importing
 the same certificate twice is one entry.
 
+The roots and the revocation lists live in the app's own OPFS directory, and
+`features/facts/trust-store.ts` keeps the store equal to the file: a change is written first and
+applied to the store (and to the verdicts that depend on it) only when the write succeeded. A write
+the browser refuses leaves the store as it was and says why (the same storage reason as a failed draft
+copy, `storageReasonKey`), so a removed root never returns after a reload and an added one never
+judges signatures for a session only. The writes run one at a time and each change is derived from the
+state its turn finds, so two quick imports both land; a read the browser refuses is reported rather
+than shown as an empty list.
+
 ---
 
 ## 5. `pdf-core` — engines and operations
@@ -2436,7 +2445,10 @@ been highlighted before. The empty state's
 Shortcut help is not a document operation: `CommandHost.showShortcuts` opens app-owned state,
 and `ShortcutsDialog` loads through `pdf-ui/dialog` even without an open PDF. Its rows and
 the command hints derive from the same `SHELL_SHORTCUTS` table in `useShortcuts.ts` that
-dispatches keyboard actions, keeping the displayed bindings and their behavior together. The page keys (`PageUp`, `PageDown`,
+dispatches keyboard actions, keeping the displayed bindings and their behavior together. A chord
+names the modifiers it needs and ignores the rest (`F4` answers with `Shift` held), except a `bare`
+chord: `F5` toggles the tools dock only with no modifier down, so `Ctrl+F5` and `Shift+F5` stay the
+browser's reloads instead of being swallowed. The page keys (`PageUp`, `PageDown`,
 `Home`, `End`) stand aside while focus is inside a composite widget (menu bar, menu, listbox,
 tree, grid, tab list, or a list marked `data-owns-page-keys` such as the form panel's field
 list), which owns them. They stand aside for a full-screen presentation too: its own key
@@ -2645,7 +2657,7 @@ sequenceDiagram
     A->>C: verifySignatures (a rewrite breaks an existing signature — ask first)
     A->>V: verifyForWrite(base, this run's own steps, live handle as reference)
     V-->>A: per-fact table, or throws verification-failed
-    A->>A: re-check the destination hash, then write and close the writable
+    A->>A: re-check the destination (in place by hash, Save As by size and modified time), then write and close the writable
     A->>M: addOutput — only the version this preparation produced
     A->>U: notice naming the facts that were and were not established
 ```
@@ -2657,7 +2669,10 @@ Ordering rules encoded here, each of which prevents a specific defect:
   would run a second preparation and a second write against the same document.
 - **The conflict baseline belongs to the file about to be written**, not to the document
   that was opened — otherwise every Save As that is not a re-save of the original is
-  rejected. The in-place path keeps the original/last-written protection.
+  rejected. The in-place path keeps the original/last-written protection. A Save As
+  destination is read and hashed once, for its baseline; before the write its size and
+  modified time say whether anything touched it, and only a touched file is read and hashed
+  again (a touch that left the bytes alone is no conflict, a changed byte is).
 - **Pending redaction marks refuse the save.** They are intents the user staged; the
   alternative is a Save that marks the tab clean while the delivered file still contains
   the content the user asked to remove. The same marks refuse every dialog whose result
@@ -2672,11 +2687,20 @@ Ordering rules encoded here, each of which prevents a specific defect:
   the picker, so an edit made while the picker was open is not recorded as saved.
 - **A failed write leaves the tab dirty.** `dirty` flips back only when a write for that
   exact version succeeded.
+- **Export is a copy, except where a download is the only way to save.** The download is named
+  as a PDF, as Save names its own. With no file handle and no `showSaveFilePicker` the
+  download *is* the save, so the version is recorded like Save's download (`recordOutput`) and
+  the tab is no longer dirty; with a handle, or in a browser that can write files, an export is
+  a copy and the tab stays as dirty as it was.
 - **Save and Export are offered only for an inspected version.** Both are enabled from the
   same verdict: the document-facts read (fonts, signatures, attachments, protection) *and*
   the form inventory must describe the tab's current `working.id`. A byte operation moves
   that id, so the two reads re-run and the buttons go quiet until the new answers land — a
-  save cannot be prepared against a version nothing has looked at.
+  save cannot be prepared against a version nothing has looked at. The header's Save button
+  and the menu and palette entry share one answer, `saveModeFor` (`features/save/save-mode.ts`):
+  write over the tab's file, ask where (no file yet and the browser can), or no Save at all
+  where the browser cannot write files — there the download is Export, and `Ctrl+S`, which
+  does not consult it, downloads as well.
 
 ### 8.3 `materializeBase` — which bytes are the base
 

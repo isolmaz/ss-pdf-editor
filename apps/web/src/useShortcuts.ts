@@ -22,7 +22,9 @@ import { useEffect } from 'react';
  * physical `Ctrl` `+`, and the modifier-less keys (`F4`, `PageDown`) keep their
  * meaning whatever else is held. `Shift` is written only where it decides between two
  * bindings — `Ctrl+S` saves, `Ctrl+Shift+S` exports — and there the shifted row comes
- * first, exactly as the pre-table handler checked it.
+ * first, exactly as the pre-table handler checked it. A chord whose key the browser also gives
+ * modified meanings is `bare` instead: `F5` toggles the tools dock, and `Ctrl+F5` / `Shift+F5` stay
+ * the browser's own reloads.
  *
  * Editing contexts win: while the focus is in a field, a text area or a
  * `contenteditable` (the form widgets pdf.js renders are fields), the shell stays out
@@ -112,6 +114,11 @@ export interface ShortcutChord {
    * the row that owns the shifted form is listed ahead of its plain sibling instead.
    */
   readonly shift?: boolean;
+  /**
+   * No modifier at all is held — not `Ctrl`, `Cmd`, `Shift` or `Alt`. For a key whose modified forms
+   * belong to the browser, so the chord does not swallow them.
+   */
+  readonly bare?: boolean;
 }
 
 /**
@@ -283,7 +290,9 @@ export const SHELL_SHORTCUTS: readonly ShellShortcut[] = [
     id: 'view.right-dock',
     group: 'view',
     labelKey: 'dock.toggleRight',
-    chords: [{ key: 'F5' }],
+    // Bare: `Ctrl+F5` and `Shift+F5` are the browser's reloads, and a toggle that consumed them would
+    // leave the page with no way to reload from the keyboard.
+    chords: [{ key: 'F5', bare: true }],
     run: (shortcuts) => shortcuts.toggleRightDock(),
   },
   {
@@ -430,7 +439,8 @@ export function inCompositeWidget(target: EventTarget | null): boolean {
  * Whether `event` is the chord: the key (or its alias) matches, and every modifier the
  * chord *names* is held. A modifier the chord does not name is not checked — the
  * printed `Ctrl++` arrives as `'+'` with `Shift` down, which this chord does not demand,
- * and `F4` fires with `Shift`, `Ctrl` or `Alt` down, as it did before this table existed.
+ * and `F4` fires with `Shift`, `Ctrl` or `Alt` down, as it did before this table existed. A `bare`
+ * chord is the exception: it needs every modifier up.
  *
  * Single characters compare case-insensitively (`KeyboardEvent.key` reports `'S'`
  * while Shift is held); named keys (`PageDown`, `F4`) compare exactly.
@@ -438,6 +448,7 @@ export function inCompositeWidget(target: EventTarget | null): boolean {
 function chordMatches(chord: ShortcutChord, event: KeyboardEvent, accel: boolean): boolean {
   if (chord.accel === true && !accel) return false;
   if (chord.shift === true && !event.shiftKey) return false;
+  if (chord.bare === true && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return false;
   const same = (candidate: string) =>
     candidate.length === 1 ? candidate === event.key.toLowerCase() : candidate === event.key;
   return same(chord.key) || (chord.alias !== undefined && same(chord.alias));

@@ -19,6 +19,7 @@ import {
   engineValuesNotices,
   failureNotices,
   noticeLine,
+  storageReasonKey,
   storedCopyWarning,
   verificationNotices,
 } from './notices';
@@ -207,6 +208,21 @@ describe('storedCopyWarning', () => {
       'draft.sourceNotStored[draft.storageRefused]',
     );
     expect(storedCopyWarning('nope', t)).toBe('draft.sourceNotStored[draft.storageRefused]');
+  });
+});
+
+describe('storageReasonKey', () => {
+  it('names why a write was refused: a ToolError by its own message, a full store, or the browser refusing', () => {
+    expect(storageReasonKey(new ToolError('out-of-memory', { engine: 'fs' }))).toBe(
+      'error.out-of-memory.message',
+    );
+    expect(storageReasonKey(new DOMException('full', 'QuotaExceededError'))).toBe(
+      'error.quota-exceeded.message',
+    );
+    expect(storageReasonKey(new DOMException('locked', 'NoModificationAllowedError'))).toBe(
+      'draft.storageRefused',
+    );
+    expect(storageReasonKey('nope')).toBe('draft.storageRefused');
   });
 });
 
