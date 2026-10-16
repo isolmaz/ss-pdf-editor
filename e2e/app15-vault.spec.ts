@@ -99,9 +99,11 @@ test('a draft whose stored document is gone is reported as damaged and does not 
   await rotateCurrentPage(page);
   const vault = await stored(page);
   // The first window is closed before its blobs are removed: an open window would store its
-  // source again with the next autosave.
+  // source again with the next autosave. The second one opens a page of the same origin that is
+  // not the editor: the not-found page as a file (the landing at `/` is another Worker, not part
+  // of this build).
   const other = await context.newPage();
-  await other.goto('/');
+  await other.goto('/404.html');
   await page.close();
   for (const key of vault.sources) await touchVault(other, 'sources', key, null);
 

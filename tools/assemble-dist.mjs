@@ -2,14 +2,14 @@
 /**
  * Build the deployable static layout into `dist/`.
  *
- *   dist/                 <- apps/site/dist (landing at /, /gizlilik, /kosullar)
  *   dist/editor/          <- apps/web/dist  (the PWA, base /editor/)
- *   dist/{_headers,404.html,robots.txt,sitemap.xml,manifest.webmanifest,favicon.svg,theme-boot.js}
+ *   dist/{_headers,404.html,manifest.webmanifest,favicon.svg,theme-boot.js,sw.js}
  *   dist/en/404.html      <- the English not-found page (`public/en/404.html`)
  *   dist/engines/**       <- pinned engine builds (fetched, never committed)
  *
  * One Cloudflare Worker (static assets) serves this tree; deploying stays manual and is
- * never a CI step.
+ * never a CI step. The landing and legal pages of the same host (`/`, `/en/`, `/gizlilik`, …)
+ * are another Worker, built from the ss-pdf-editor-site repository.
  */
 import {
   copyFileSync,
@@ -61,7 +61,6 @@ if (verification.problems.length > 0) {
 }
 
 rmSync(out, { recursive: true, force: true });
-copyInto(join(root, 'apps/site/dist'), out);
 copyInto(join(root, 'apps/web/dist'), join(out, 'editor'));
 const publicDir = join(root, 'public');
 copyInto(publicDir, out, { filter: (source) => relative(publicDir, source) !== 'engines' });
@@ -427,8 +426,6 @@ console.log(
 );
 
 const rows = [
-  ['/            (landing)', join(out, 'index.html')],
-  ['/en/         (landing en)', join(out, 'en/index.html')],
   ['/editor/     (editor)', join(out, 'editor/index.html')],
   ['/engines/    (pinned engines)', join(out, 'engines')],
 ];

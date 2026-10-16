@@ -47,7 +47,7 @@ const MIME = {
   '.pdf': 'application/pdf',
 };
 
-/** Cloudflare static-assets "clean URL" behaviour: /gizlilik -> gizlilik.html. */
+/** Cloudflare static-assets "clean URL" behaviour: /editor -> editor/index.html, /page -> page.html. */
 function resolveFile(pathname) {
   let decoded;
   try {

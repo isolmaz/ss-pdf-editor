@@ -725,7 +725,8 @@ The limits are defined once, in
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
   newest versions are always kept, and an evicted step is shown as **unavailable**.
 - **Build budgets.** `BUILD_BUDGETS` in `packages/shared/src/limits.ts` holds them: at most
-  250 KiB gzip of first-paint JavaScript, 60 KiB for the landing page and 25 MiB per asset.
+  250 KiB gzip of first-paint JavaScript, 60 KiB for the landing page (now built in the
+  ss-pdf-editor-site repository) and 25 MiB per asset.
   `pnpm check:budgets` (a step of `pnpm ci:verify`, after `pnpm build`) enforces the first; the
   other two are measured by hand. How the first-paint budget is met: `docs/architecture.md` §2.
 
@@ -888,8 +889,8 @@ The limits are defined once, in
 | Command | What it does |
 |---|---|
 | `pnpm prepare` | Sets `core.hooksPath` to `.githooks` so the git hooks run; it runs by itself after `pnpm install` |
-| `pnpm dev` | Vite dev server for the editor (port 5173; `pnpm --filter site dev` for the landing, port 5175) |
-| `pnpm build` | Builds the landing (`apps/site/dist`), then the editor (`apps/web/dist`) |
+| `pnpm dev` | Vite dev server for the editor (port 5173) |
+| `pnpm build` | Builds the editor (`apps/web/dist`) |
 | `pnpm assemble:dist` | Composes the deployable `dist/` |
 | `pnpm preview` | Serves `dist/` under the production headers (port 4178, or `--port N`; Playwright passes `E2E_PORT`) |
 | `pnpm typecheck` | `tsc -b` over the workspace |
@@ -904,7 +905,7 @@ The limits are defined once, in
 | `pnpm check:budgets` | Gzips the entry chunk and every modulepreloaded script of the built `apps/web/dist/index.html` and fails above `BUILD_BUDGETS.firstPaintJsGzipBytes` (run after `pnpm build`) |
 | `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
-| `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist, and that each Turkish site page has the same structure as its English page |
+| `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist |
 | `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
 | `pnpm ci:behavior` | The behaviour checks in `tools/behavior/` against the assembled `dist/`: the editor flow (`editor-flow-check.mjs`), the text-edit round trip (`text-edit-check.mjs`), then the signing check (`sign-check.mts`, needs `openssl`) |
 | `pnpm ci:verify` / `ci:full` | The full local gate / the same plus `ci:behavior` |
@@ -918,7 +919,6 @@ clone, `pnpm fetch:engines --sync` is therefore required.
 ```
 apps/
   web/              the editor PWA (served at /editor/)
-  site/             landing and legal pages (static HTML, TR + EN)
 packages/
   shared/           error contract, limits, i18n (Turkish and English)
   pdf-model/        session store, operation journal, drafts
@@ -926,13 +926,13 @@ packages/
   pdf-text-engine/  text model, editability, reflow, fonts
   pdf-ui/           React surfaces: viewer, panels, dialogs, tools, printing
 public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English),
-                    manifest, robots/sitemap
+                    manifest
 tools/              dist assembly and preview, engine pins, licence audit, regression and docs
                     checks (audit/), coverage report, deploy smoke check,
                     revert-proof, git hook guard (hooks/), Vite hosting plugins (vite/),
                     behaviour checks and README clip recorder (behavior/), measurement
                     scripts (measure/)
-e2e/                Playwright specs for the editor flows and the site, the engine fault
+e2e/                Playwright specs for the editor flows and the not-found pages, the engine fault
                     injection (engine-faults.ts)
 docs/               architecture.md and ocr-evaluation.md; media/ holds the README clips
 .github/            workflows (CI, nightly, revert-proof), issue and pull request templates
@@ -997,9 +997,14 @@ The PDF → Word export is not measured round trip in CI; its unit tests and the
 
 | Source | Lands at |
 |---|---|
-| `apps/site/dist` | `dist/` root (landing, legal pages, `/en/`) |
 | `apps/web/dist` | `dist/editor/` |
 | `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `en/404.html`, manifest, `engines/**`, `fonts/**`) |
+
+The landing and legal pages of the same host (`/`, `/en/`, `/gizlilik`, `/kosullar`,
+`/en/privacy`, `/en/terms`) are not in this repository: they are the private
+ss-pdf-editor-site repository, deployed as a second Worker that claims those paths with routes.
+Cloudflare runs routes before this Worker's Custom Domain, so every other path, unknown ones
+included, is answered by this build.
 
 The same step also does the following:
 

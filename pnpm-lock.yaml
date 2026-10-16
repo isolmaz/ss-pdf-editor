@@ -188,25 +188,6 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/node@26.5.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.14.6)(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
 
-  apps/site:
-    dependencies:
-      pdf-ui:
-        specifier: workspace:*
-        version: link:../../packages/pdf-ui
-    devDependencies:
-      '@cloudflare/kumo':
-        specifier: 2.13.2
-        version: 2.13.2(@date-fns/tz@1.5.0)(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@tailwindcss/vite':
-        specifier: 4.3.3
-        version: 4.3.3(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))
-      tailwindcss:
-        specifier: 4.3.3
-        version: 4.3.3
-      vite:
-        specifier: 8.3.0
-        version: 8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)
-
   apps/web:
     dependencies:
       '@phosphor-icons/react':

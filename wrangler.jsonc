@@ -3,8 +3,14 @@
   // `dist/` as static assets. No API, no database, no Functions, no SSR — the request
   // path never runs JavaScript on Cloudflare, it only hands back files.
   //
-  // `tools/assemble-dist.mjs` produces exactly what is uploaded: the landing at `/`,
-  // the editor at `/editor/`, the legal pages, `404.html`, `en/404.html` and the pinned engines.
+  // `tools/assemble-dist.mjs` produces exactly what is uploaded: the editor at `/editor/`, its
+  // root files (service worker, theme script, icon, manifest, fonts), `404.html`, `en/404.html`
+  // and the pinned engines.
+  //
+  // The host is shared with the landing and legal pages (`/`, `/en/`, `/gizlilik`, …), a second
+  // Worker built from the ss-pdf-editor-site repository. That Worker claims its own paths with
+  // routes, which Cloudflare runs before this Worker's Custom Domain; every other path, unknown
+  // ones included, is answered here.
   // `dist/_headers` travels with it, so the CSP and the COOP/COEP pair for `/editor/*`
   // are enforced by the host and never depend on a dashboard setting.
   //
@@ -18,9 +24,8 @@
   "compatibility_date": "2026-09-15",
   "assets": {
     "directory": "./dist",
-    // `/gizlilik` and `/kosullar` are written as `.html` files and must resolve without
-    // the extension; an unknown path gets the nearest `404.html`: the English one under
-    // `/en/`, the Turkish one everywhere else.
+    // `/editor` resolves to `/editor/`; an unknown path gets the nearest `404.html`: the
+    // English one under `/en/`, the Turkish one everywhere else.
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
   },

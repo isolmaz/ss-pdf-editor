@@ -1,5 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /engines/
-
-Sitemap: https://pdf.isolmaz.com/sitemap.xml
