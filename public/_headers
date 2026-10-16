@@ -8,24 +8,6 @@
   Cross-Origin-Resource-Policy: same-origin
   Strict-Transport-Security: max-age=31536000
 
-/
-  Cache-Control: public, max-age=0, must-revalidate
-
-/gizlilik
-  Cache-Control: public, max-age=0, must-revalidate
-
-/kosullar
-  Cache-Control: public, max-age=0, must-revalidate
-
-/en/
-  Cache-Control: public, max-age=0, must-revalidate
-
-/en/privacy
-  Cache-Control: public, max-age=0, must-revalidate
-
-/en/terms
-  Cache-Control: public, max-age=0, must-revalidate
-
 /editor
   Cache-Control: public, max-age=0, must-revalidate
   Cross-Origin-Opener-Policy: same-origin

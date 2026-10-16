@@ -110,7 +110,7 @@ function applyHeaders(sections, relaxDevCsp) {
 }
 
 /**
- * Serve `<repo>/public/**` at the URL root (dev): `/engines/**`, `/robots.txt`, …
+ * Serve `<repo>/public/**` at the URL root (dev): `/engines/**`, `/favicon.svg`, …
  *
  * Also under the editor's base: the dev server rewrites the root-absolute URLs of
  * `index.html` (`/theme-boot.js`, `/favicon.svg`, the font preloads) to `/editor/…`, where

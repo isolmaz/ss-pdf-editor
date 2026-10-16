@@ -7,7 +7,7 @@
  * Run by the `deploy` job of `.github/workflows/ci.yml` right after `wrangler deploy`; a
  * failure there rolls the Worker back to the previous version. Checks, against `<base-url>`:
  *
- *  1. `/`, `/en/`, `/editor/` and `/sw.js` answer 200 (a redirect is a failure: these are the
+ *  1. `/editor/` and `/sw.js` answer 200 (a redirect is a failure: these are the
  *     published entry points and each is served directly).
  *  2. `/editor/` references every `/editor/assets/*.js` file that `<dist-dir>/editor/index.html`
  *     references, and each of those files answers 200. Asset names carry a content hash, so
@@ -45,7 +45,7 @@ const ATTEMPTS = 10;
 const DELAY_MS = 6_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const DEADLINE_MS = 5 * 60_000;
-const ENTRY_POINTS = ['/', '/en/', '/editor/', '/sw.js'];
+const ENTRY_POINTS = ['/editor/', '/sw.js'];
 
 const USAGE = 'usage: node tools/deploy/smoke.mjs <base-url> [dist-dir=dist]';
 
