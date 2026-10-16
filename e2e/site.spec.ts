@@ -235,13 +235,11 @@ test('pages load fonts and images with no CSP violation or failed resource', asy
       const images = [...document.images]
         .filter((i) => !i.complete || i.naturalWidth === 0)
         .map((i) => i.src);
-      const bg = await fetch('/footer_bg.jpg');
       const sheets = [...document.styleSheets].length;
       return [
         ...(window as unknown as { __problems: string[] }).__problems,
         ...failed,
         ...images,
-        ...(bg.ok && bg.headers.get('content-type')?.startsWith('image/') ? [] : ['footer_bg.jpg']),
         ...(sheets > 0 ? [] : ['no stylesheet']),
       ];
     });

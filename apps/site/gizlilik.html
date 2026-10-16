@@ -5,401 +5,127 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Gizlilik Güvencesi — SsPdfEditor</title>
     <meta
-      name="description"
-      content="SsPdfEditor gizlilik bildirimi: %100 yerel çalışma prensibi, sıfır sunucu yüklemesi ve mutlak kullanıcı denetimi."
+    name="description"
+    content="SsPdfEditor gizlilik bildirimi: %100 yerel çalışma prensibi, sıfır sunucu yüklemesi ve mutlak kullanıcı denetimi."
     />
     <link rel="canonical" href="https://pdf.isolmaz.com/gizlilik" />
     <link rel="alternate" hreflang="tr" href="https://pdf.isolmaz.com/gizlilik" />
     <link rel="alternate" hreflang="en" href="https://pdf.isolmaz.com/en/privacy" />
     <link rel="alternate" hreflang="x-default" href="https://pdf.isolmaz.com/gizlilik" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link
-      rel="preload"
-      href="/fonts/space-grotesk/space-grotesk-latin-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
-    <link
-      rel="preload"
-      href="/fonts/space-grotesk/space-grotesk-latin-ext-400-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
-    <link
-      rel="preload"
-      href="/fonts/space-grotesk/space-grotesk-latin-600-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
-    <link
-      rel="preload"
-      href="/fonts/space-grotesk/space-grotesk-latin-ext-600-normal.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <script src="/theme-boot.js"></script>
     <link rel="stylesheet" href="/src/site.css" />
+    <script type="module" src="/src/motion.ts"></script>
   </head>
-  <body class="min-h-screen bg-kumo-canvas text-kumo-default antialiased">
-    <!-- Skip link for accessibility -->
-    <a
-      href="#ana-icerik"
-      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-kumo-base focus:px-4 focus:py-2 focus:text-xs focus:font-semibold focus:text-kumo-strong focus:shadow-md focus:ring-2 focus:ring-kumo-focus"
-    >
-      Ana içeriğe atla
-    </a>
-
-    <!-- Top Navigation Header -->
-    <header class="sticky top-0 z-40 border-b border-kumo-line bg-kumo-base/95 backdrop-blur-sm">
-      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <a href="/" class="flex items-center gap-2.5 text-kumo-strong" aria-label="SsPdfEditor Ana Sayfa">
-          <svg
-            class="size-6 text-kumo-strong"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="9" y1="13" x2="15" y2="13" />
-            <line x1="9" y1="17" x2="13" y2="17" />
-          </svg>
-          <span class="text-base font-semibold tracking-tight text-kumo-strong">SsPdfEditor</span>
-        </a>
-
-        <nav class="hidden items-center gap-6 text-sm font-medium text-kumo-subtle md:flex" aria-label="Ana Gezinti">
-          <a class="transition-colors hover:text-kumo-strong" href="/#ozellikler">Özellikler</a>
-          <a class="transition-colors hover:text-kumo-strong" href="/#karsilastirma">Karşılaştırma</a>
-          <a class="text-kumo-strong font-semibold" href="/gizlilik">Gizlilik Güvencesi</a>
-          <a class="transition-colors hover:text-kumo-strong" href="/#sss">SSS</a>
+  <body>
+    <a class="skip" href="#ana-icerik">Ana içeriğe atla</a>
+    <header class="nav">
+      <div class="nav-inner">
+        <a class="brand" href="/" aria-label="SsPdfEditor"><img src="/favicon.svg" alt="" width="20" height="20" /><span>SsPdfEditor</span></a>
+        <nav>
+          <a href="/#karsilastirma">Karşılaştırma</a>
+          <a href="/#sss">SSS</a>
+          <a href="/gizlilik" aria-current="page">Gizlilik</a>
         </nav>
-
-                <div class="flex items-center gap-3">
-          <!-- Language Selector -->
-          <div class="flex items-center rounded-md border border-kumo-line bg-kumo-base p-0.5 text-xs font-medium text-kumo-subtle">
-            <span class="rounded px-2 py-1 bg-pdf-accent text-pdf-on-accent font-semibold">TR</span>
-            <a href="/en/privacy" hreflang="en" lang="en" class="rounded px-2 py-1 hover:text-kumo-strong transition-colors" title="Switch to English">EN</a>
-          </div>
-          <a class="btn-primary" href="/editor/">
-            <span>Düzenleyiciyi Aç</span>
-            <svg
-              class="size-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <line x1="5" y1="12" x2="19" y2="12" />
-              <polyline points="12 5 19 12 12 19" />
-            </svg>
-          </a>
-        </div>
+        <div class="lang"><span aria-current="true">TR</span><a href="/en/privacy" hreflang="en" lang="en" title="Switch to English">EN</a></div>
+        <button class="theme-toggle" type="button" aria-label="Açık / koyu tema" title="Açık / koyu tema">
+          <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
+          <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+        </button>
+        <a class="nav-cta" href="/editor/">Düzenleyiciyi Aç</a>
       </div>
     </header>
 
-    <main id="ana-icerik" class="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
-      <div class="mb-8">
-        <a href="/" class="inline-flex items-center gap-1.5 text-xs text-kumo-subtle hover:text-kumo-strong transition-colors mb-4">
-          <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="19" y1="12" x2="5" y2="12" />
-            <polyline points="12 19 5 12 12 5" />
-          </svg>
-          <span>Ana Sayfaya Dön</span>
-        </a>
-
-        <div class="inline-flex items-center gap-2 rounded-full border border-kumo-line bg-kumo-base px-3 py-1 text-xs font-semibold uppercase tracking-wider text-kumo-strong mb-3">
-          <span>GÜVENLİK VE GİZLİLİK STANDARDI</span>
-        </div>
-
-        <h1 class="text-3xl font-semibold tracking-tight text-kumo-strong sm:text-4xl leading-[1.35]">
-          Gizlilik ve Güvenlik Güvencesi
-        </h1>
-
-        <p class="mt-4 max-w-[58ch] text-base leading-relaxed text-kumo-subtle">
-          SsPdfEditor, %100 yerel çalışma prensibiyle tasarlanmıştır. Belgelerinizin içeriği hiçbir zaman cihazınızdan
-          ayrılmaz.
-        </p>
-      </div>
-
-      <!-- Guarantees Card -->
-      <div class="rounded-2xl border border-kumo-line bg-kumo-base p-6 sm:p-8 space-y-6">
-        <div class="flex items-start gap-4">
-          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
-            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Belgeleriniz Asla Yüklenmez</h2>
-            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              Açtığınız veya düzenlediğiniz PDF dosyaları doğrudan kendi tarayıcınızın geçici belleğinde işlenir.
-              Sunucuya tek bir bayt veri dahi gönderilmez. Sunucu yalnızca statik dosya sunar; belge yükleyebileceğiniz bir API yoktur.
-            </p>
-          </div>
-        </div>
-
-        <div class="flex items-start gap-4">
-          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
-            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Hesap veya Giriş Gerekmez</h2>
-            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              E-posta adresi vermenize, hesap açmanıza veya kayıt olmanıza gerek yoktur. Açıp hemen belgenizle
-              çalışabilirsiniz.
-            </p>
-          </div>
-        </div>
-
-        <div class="flex items-start gap-4">
-          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
-            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Üçüncü Taraf Yok</h2>
-            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              Motorlar, OCR dil paketleri ve yazı tipleri bu siteden sunulur; hiçbir üçüncü tarafa istek gitmez. Sıkı bir içerik güvenlik politikası (CSP) bağlantıları yalnızca bu siteye izin verir. Çerez ve analitik yoktur. Bir PDF’nin içindeki dış bağlantıya tıklarsanız adres yeni bir tarayıcı sekmesinde açılır; düzenleyici ve kaydedilmemiş çalışmanız olduğu yerde kalır.
-            </p>
-          </div>
-        </div>
-
-        <div class="flex items-start gap-4">
-          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
-            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-              <circle cx="12" cy="13" r="3" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Kamera Yalnızca Tararken</h2>
-            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              Bir belgeyi taradığınızda tarayıcı önce kamera izninizi ister. Görüntü cihazınızda işlenir ve yalnızca sakladığınız sayfalar PDF olur; ses kaydedilmez, tarama penceresini kapattığınızda kamera kapanır. Sitenin yanıt başlıkları kamerayı yalnızca bu siteye açar.
-            </p>
-          </div>
-        </div>
-
-        <div class="flex items-start gap-4">
-          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
-            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Kayıt ve İndirme Denetimi</h2>
-            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              Düzenlediğiniz nihai dosyayı kaydetme veya indirme kararı tamamen size aittir. Kaydetmediğiniz
-              değişiklikler, yanlışlıkla kapanan bir pencerede kaybolmasın diye taslak olarak yalnızca bu tarayıcıda
-              tutulur ve düzenleyiciyi yeniden açtığınızda geri gelir; belgenin sekmesini düzenleyicide kapattığınızda
-              taslağı da silinir. Tarayıcının depolama alanı belgenin kurtarma kopyasını kabul etmezse (örneğin alan
-              dolduysa) belge yine açılır ve bildirim bunu nedeniyle birlikte söyler; bir taslak kaydı başarılı olana
-              kadar kaydedilmemiş değişiklikler sekme kapatılırsa veya tarayıcı çökerse korunmaz.
-            </p>
-          </div>
-        </div>
-
-        <div class="flex items-start gap-4">
-          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kumo-tint text-kumo-strong">
-            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <ellipse cx="12" cy="5" rx="9" ry="3" />
-              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-              <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-base font-semibold text-kumo-strong leading-[1.4]">Cihazınızda Saklananlar</h2>
-            <p class="mt-1.5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              Hiçbiri sunucuya gitmez; yalnızca bu tarayıcının kendi depolama alanında kalır:
-            </p>
-            <ul class="mt-2 list-disc space-y-1 ps-5 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              <li>
-                Taslaklar: kaydedilmemiş çalışma ve gerektiğinde belgenin kaynak kopyası (tarayıcının özel dosya
-                alanı, OPFS).
-              </li>
-              <li>
-                Son açılan belgeler listesi: dosya adı, boyutu, sayfa sayısı, açılış zamanı ve varsa yıldız işareti (localStorage). Chromium tabanlı
-                tarayıcılarda dosyayı yeniden açabilmek için dosyaya bir başvuru da tutulur (IndexedDB); dosyanın
-                içeriği değil.
-              </li>
-              <li>
-                “Bu cihazda hatırla” ile sakladığınız imza görselleri (en fazla altı, localStorage; imza iletişim
-                kutusundan tek tek silinir) ve içe aktardığınız güven kökleri ile iptal listeleri (uygulamanın kendi
-                ayar klasörü, OPFS; siz kaldırana kadar durur).
-              </li>
-              <li>
-                Tema, dil, arayüz modu ve son kullandığınız komutlar.
-              </li>
-              <li>
-                Çevrimdışı kullanım için uygulamanın, PDF motorlarının, OCR dil paketlerinin ve yazı tiplerinin
-                statik dosyaları (service worker önbelleği). Belge baytları hiçbir zaman önbelleğe girmez.
-              </li>
-            </ul>
-            <p class="mt-2 text-sm leading-relaxed text-kumo-subtle max-w-[55ch]">
-              Açılışta parola isteyen bir belgeyi parolasıyla açtığınızda hassas oturum başlar: o belgenin taslağı, kaynak
-              kopyası ve dosya başvurusu saklanmaz, belge açıkken hiçbir imza görseli hatırlanmaz, listede yalnızca adı, boyutu, sayfa sayısı ve açılış zamanı görünür. Parola yalnızca
-              bellekte tutulur, hiçbir yere yazılmaz. Aynı ayarı
-              <strong class="font-medium text-kumo-strong">Ayarlar → Gizlilik ve depolama → Hassas oturum</strong>
-              ile kendiniz de açabilirsiniz; açtığınızda o belgenin kayıtlı kopyaları silinir. Bir belgenin kayıtlı
-              kopyalarını aynı bölümdeki <strong class="font-medium text-kumo-strong">Bu Belgenin Kayıtlı
-              Kopyalarını Sil</strong> ile, son açılanlar listesindeki bir girişi yanındaki silme düğmesiyle
-              kaldırabilirsiniz. Silme, diskteki baytların üzerine yazmaz; güvenli silme değildir.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Action Card -->
-      <div class="mt-8 rounded-xl border border-kumo-line bg-kumo-tint/40 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div>
-          <div class="font-semibold text-kumo-strong">İletişim & Güvenlik</div>
-          <p class="mt-1 text-xs text-kumo-subtle">
-            Güvenlik bildirimleriniz ve sorularınız için: <a class="text-kumo-strong underline" href="mailto:iletisim@isolmaz.com">iletisim@isolmaz.com</a>
-          </p>
-        </div>
-        <a class="btn-primary" href="/editor/">
-          <span>Düzenleyiciyi Aç</span>
-        </a>
-      </div>
+    <main id="ana-icerik">
+      <section class="page-head">
+        <h1>Gizlilik ve Güvenlik Güvencesi</h1>
+        <p class="lead">SsPdfEditor, %100 yerel çalışma prensibiyle tasarlanmıştır. Belgelerinizin içeriği hiçbir zaman cihazınızdan
+ayrılmaz.</p>
+      </section>
+      <article class="prose">
+<h2>Belgeleriniz Asla Yüklenmez</h2>
+<p>
+Açtığınız veya düzenlediğiniz PDF dosyaları doğrudan kendi tarayıcınızın geçici belleğinde işlenir.
+Sunucuya tek bir bayt veri dahi gönderilmez. Sunucu yalnızca statik dosya sunar; belge yükleyebileceğiniz bir API yoktur.
+</p>
+<h2>Hesap veya Giriş Gerekmez</h2>
+<p>
+E-posta adresi vermenize, hesap açmanıza veya kayıt olmanıza gerek yoktur. Açıp hemen belgenizle
+çalışabilirsiniz.
+</p>
+<h2>Üçüncü Taraf Yok</h2>
+<p>
+Motorlar, OCR dil paketleri ve yazı tipleri bu siteden sunulur; hiçbir üçüncü tarafa istek gitmez. Sıkı bir içerik güvenlik politikası (CSP) bağlantıları yalnızca bu siteye izin verir. Çerez ve analitik yoktur. Bir PDF’nin içindeki dış bağlantıya tıklarsanız adres yeni bir tarayıcı sekmesinde açılır; düzenleyici ve kaydedilmemiş çalışmanız olduğu yerde kalır.
+</p>
+<h2>Kamera Yalnızca Tararken</h2>
+<p>
+Bir belgeyi taradığınızda tarayıcı önce kamera izninizi ister. Görüntü cihazınızda işlenir ve yalnızca sakladığınız sayfalar PDF olur; ses kaydedilmez, tarama penceresini kapattığınızda kamera kapanır. Sitenin yanıt başlıkları kamerayı yalnızca bu siteye açar.
+</p>
+<h2>Kayıt ve İndirme Denetimi</h2>
+<p>
+Düzenlediğiniz nihai dosyayı kaydetme veya indirme kararı tamamen size aittir. Kaydetmediğiniz
+değişiklikler, yanlışlıkla kapanan bir pencerede kaybolmasın diye taslak olarak yalnızca bu tarayıcıda
+tutulur ve düzenleyiciyi yeniden açtığınızda geri gelir; belgenin sekmesini düzenleyicide kapattığınızda
+taslağı da silinir. Tarayıcının depolama alanı belgenin kurtarma kopyasını kabul etmezse (örneğin alan
+dolduysa) belge yine açılır ve bildirim bunu nedeniyle birlikte söyler; bir taslak kaydı başarılı olana
+kadar kaydedilmemiş değişiklikler sekme kapatılırsa veya tarayıcı çökerse korunmaz.
+</p>
+<h2>Cihazınızda Saklananlar</h2>
+<p>
+Hiçbiri sunucuya gitmez; yalnızca bu tarayıcının kendi depolama alanında kalır:
+</p>
+<ul>
+<li>
+Taslaklar: kaydedilmemiş çalışma ve gerektiğinde belgenin kaynak kopyası (tarayıcının özel dosya
+alanı, OPFS).
+</li>
+<li>
+Son açılan belgeler listesi: dosya adı, boyutu, sayfa sayısı, açılış zamanı ve varsa yıldız işareti (localStorage). Chromium tabanlı
+tarayıcılarda dosyayı yeniden açabilmek için dosyaya bir başvuru da tutulur (IndexedDB); dosyanın
+içeriği değil.
+</li>
+<li>
+“Bu cihazda hatırla” ile sakladığınız imza görselleri (en fazla altı, localStorage; imza iletişim
+kutusundan tek tek silinir) ve içe aktardığınız güven kökleri ile iptal listeleri (uygulamanın kendi
+ayar klasörü, OPFS; siz kaldırana kadar durur).
+</li>
+<li>
+Tema, dil, arayüz modu ve son kullandığınız komutlar.
+</li>
+<li>
+Çevrimdışı kullanım için uygulamanın, PDF motorlarının, OCR dil paketlerinin ve yazı tiplerinin
+statik dosyaları (service worker önbelleği). Belge baytları hiçbir zaman önbelleğe girmez.
+</li>
+</ul>
+<p>
+Açılışta parola isteyen bir belgeyi parolasıyla açtığınızda hassas oturum başlar: o belgenin taslağı, kaynak
+kopyası ve dosya başvurusu saklanmaz, belge açıkken hiçbir imza görseli hatırlanmaz, listede yalnızca adı, boyutu, sayfa sayısı ve açılış zamanı görünür. Parola yalnızca
+bellekte tutulur, hiçbir yere yazılmaz. Aynı ayarı
+<strong>Ayarlar → Gizlilik ve depolama → Hassas oturum</strong>
+ile kendiniz de açabilirsiniz; açtığınızda o belgenin kayıtlı kopyaları silinir. Bir belgenin kayıtlı
+kopyalarını aynı bölümdeki <strong>Bu Belgenin Kayıtlı
+Kopyalarını Sil</strong> ile, son açılanlar listesindeki bir girişi yanındaki silme düğmesiyle
+kaldırabilirsiniz. Silme, diskteki baytların üzerine yazmaz; güvenli silme değildir.
+</p>
+<h2>İletişim & Güvenlik</h2>
+<p>Güvenlik bildirimleriniz ve sorularınız için: <a href="mailto:iletisim@isolmaz.com">iletisim@isolmaz.com</a></p>
+      </article>
     </main>
 
-    <!-- Footer with Atmospheric Night Background Image -->
-    <footer
-      class="w-full relative overflow-hidden bg-black text-white"
-      style="background: #000000 url('/footer_bg.jpg') no-repeat center bottom; background-size: cover;"
-    >
-      <div class="relative z-10 mx-auto max-w-6xl px-4 sm:px-6 pt-16 pb-80 sm:pb-96 md:pb-[380px]">
-        <!-- Top Columns Section -->
-        <div class="grid grid-cols-2 gap-8 md:grid-cols-6 lg:gap-12 pb-12">
-          <!-- Brand & About (Span 2 cols) -->
-          <div class="col-span-2 space-y-4">
-            <div class="flex items-center gap-2.5">
-              <span class="flex size-8 items-center justify-center rounded-lg bg-white/10 text-white">
-                <svg
-                  class="size-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="9" y1="13" x2="15" y2="13" />
-                  <line x1="9" y1="17" x2="13" y2="17" />
-                </svg>
-              </span>
-              <span class="text-base font-semibold tracking-tight text-white">SsPdfEditor</span>
-            </div>
-
-            <p class="text-xs leading-relaxed text-white/70 max-w-sm">
-              Tarayıcı tabanlı, %100 yerel ve açık standartlı PDF düzenleyici. Belgeleriniz sunucuya yüklenmez, cihazınızdan asla ayrılmaz.
-            </p>
-
-            <div class="flex items-center gap-3 pt-2">
-              <a
-                href="https://github.com/isolmaz/ss-pdf-editor"
-                target="_blank"
-                rel="noreferrer"
-                class="flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
-                aria-label="GitHub"
-              >
-                <svg class="size-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path
-                    fill-rule="evenodd"
-                    clip-rule="evenodd"
-                    d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-                  />
-                </svg>
-              </a>
-              <a
-                href="mailto:iletisim@isolmaz.com"
-                class="flex size-8 items-center justify-center rounded-full border border-white/20 bg-white/5 text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
-                aria-label="E-posta"
-              >
-                <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                  <polyline points="22,6 12,13 2,6" />
-                </svg>
-              </a>
-            </div>
-          </div>
-
-          <!-- Column 1: Özellikler -->
-          <div class="space-y-3">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Özellikler</h2>
-            <ul class="space-y-2 text-xs text-white/70">
-              <li><a class="transition-colors hover:text-white" href="/#ozellikler">Sayfa Düzenleme</a></li>
-              <li><a class="transition-colors hover:text-white" href="/#ozellikler">Form Doldurma & İmza</a></li>
-              <li><a class="transition-colors hover:text-white" href="/#ozellikler">Kalıcı Redaksiyon</a></li>
-              <li><a class="transition-colors hover:text-white" href="/#ozellikler">OCR & Metin Tanıma</a></li>
-            </ul>
-          </div>
-
-          <!-- Column 2: Kaynaklar -->
-          <div class="space-y-3">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Kaynaklar</h2>
-            <ul class="space-y-2 text-xs text-white/70">
-              <li><a class="transition-colors hover:text-white" href="/#gizlilik">%100 Yerel Mimari</a></li>
-              <li><a class="transition-colors hover:text-white" href="/#karsilastirma">Karşılaştırma</a></li>
-              <li><a class="transition-colors hover:text-white" href="/editor/">Web Uygulaması</a></li>
-              <li><a class="transition-colors hover:text-white" href="/#sss">SSS</a></li>
-            </ul>
-          </div>
-
-          <!-- Column 3: Kurumsal -->
-          <div class="space-y-3">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">Kurumsal</h2>
-            <ul class="space-y-2 text-xs text-white/70">
-              <li><a class="transition-colors hover:text-white" href="/gizlilik">Gizlilik Bildirimi</a></li>
-              <li><a class="transition-colors hover:text-white" href="/kosullar">Kullanım Koşulları</a></li>
-              <li><a class="transition-colors hover:text-white" href="/#gizlilik">Sıfır Veri Taahhüdü</a></li>
-              <li><a class="transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">İletişim</a></li>
-            </ul>
-          </div>
-
-          <!-- Column 4: İletişim -->
-          <div class="space-y-3">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-white">İletişim</h2>
-            <ul class="space-y-2 text-xs text-white/70">
-              <li>İstanbul, Türkiye</li>
-              <li><a class="font-mono transition-colors hover:text-white" href="mailto:iletisim@isolmaz.com">iletisim@isolmaz.com</a></li>
-              <li class="text-white/80 font-medium">Çevrimdışı Çalışır</li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Hairline Divider -->
-        <div class="border-t border-white/10 pt-6">
-          <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/60">
-            <p>© 2026 SsPdfEditor. Tüm hakları saklıdır.</p>
-            <div class="flex flex-wrap items-center gap-6">
-              <a class="transition-colors hover:text-white/90" href="/gizlilik">Gizlilik Bildirimi</a>
-              <a class="transition-colors hover:text-white/90" href="/kosullar">Kullanım Koşulları</a>
-              <a class="transition-colors hover:text-white/90" href="/#gizlilik">KVKK / Yerel Güvence</a>
-            </div>
-          </div>
-        </div>
+    <footer class="footer">
+      <div class="footer-inner">
+        <span>© 2026 SsPdfEditor</span>
+        <nav>
+          <a href="/#karsilastirma">Karşılaştırma</a>
+          <a href="/#sss">SSS</a>
+          <a href="/gizlilik">Gizlilik</a>
+          <a href="/kosullar">Kullanım Koşulları</a>
+          <a href="mailto:iletisim@isolmaz.com">İletişim</a>
+          <a href="https://github.com/isolmaz/ss-pdf-editor">GitHub</a>
+          <a href="https://github.com/isolmaz/ss-pdf-editor/blob/main/LICENSE">AGPL-3.0 lisansı</a>
+        </nav>
       </div>
     </footer>
   </body>

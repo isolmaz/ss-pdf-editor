@@ -918,7 +918,7 @@ clone, `pnpm fetch:engines --sync` is therefore required.
 ```
 apps/
   web/              the editor PWA (served at /editor/)
-  site/             landing and legal pages (static HTML, TR + EN)
+  site/             landing and legal pages (static HTML, TR + EN, animated models of the editor)
 packages/
   shared/           error contract, limits, i18n (Turkish and English)
   pdf-model/        session store, operation journal, drafts

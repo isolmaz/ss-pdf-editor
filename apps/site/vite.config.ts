@@ -1,15 +1,14 @@
 /// <reference types="node" />
 import { fileURLToPath } from 'node:url';
-import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 import { hosting } from '../../tools/vite/hosting.mjs';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 
-// Landing + legal pages: static HTML on the shared token layer, no framework
-// JS.
+// Landing + legal pages: static HTML with their own style sheet and two small scripts
+// (the page motion and the animated models of the editor), no framework.
 export default defineConfig({
-  plugins: [tailwindcss(), ...hosting({ repoRoot })],
+  plugins: [...hosting({ repoRoot })],
   publicDir: false,
   build: {
     outDir: 'dist',
