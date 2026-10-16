@@ -7,20 +7,20 @@
 const root = document.documentElement;
 root.classList.add('js');
 
-const nav = document.querySelector('.nav');
+const nav = document.querySelector('.nav') as HTMLElement;
 let scrolled: boolean | null = null;
 const onScroll = (): void => {
   const now = window.scrollY > 8;
   if (now === scrolled) return;
   scrolled = now;
-  nav?.classList.toggle('scrolled', now);
+  nav.classList.toggle('scrolled', now);
 };
 onScroll();
 window.addEventListener('scroll', onScroll, { passive: true });
 
 // The theme is the editor's own setting (`pdf-editor.theme`, read by theme-boot.js), so a choice
 // made here is the one the editor opens with, and the reverse.
-document.querySelector('.theme-toggle')?.addEventListener('click', () => {
+(document.querySelector('.theme-toggle') as HTMLElement).addEventListener('click', () => {
   const mode = root.dataset.mode === 'dark' ? 'light' : 'dark';
   root.classList.add('theme-switching');
   root.style.colorScheme = mode;
@@ -37,23 +37,19 @@ document.querySelector('.theme-toggle')?.addEventListener('click', () => {
 // behind the caret CSS draws. Below 600px a longer word would wrap and move the hero on every
 // keystroke, so there, with reduced motion and without JavaScript, the word in the HTML stays.
 const swap = document.querySelector<HTMLElement>('.swap');
-const words = swap?.dataset.words?.split('|') ?? [];
-if (
-  swap &&
-  words.length > 1 &&
-  !window.matchMedia('(prefers-reduced-motion: reduce), (max-width: 599px)').matches
-) {
+if (swap && !window.matchMedia('(prefers-reduced-motion: reduce), (max-width: 599px)').matches) {
+  const words = (swap.dataset.words as string).split('|');
   swap.classList.add('typing');
   const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
   void (async () => {
     for (let index = 1; ; index = (index + 1) % words.length) {
       await wait(2600);
-      for (let left = swap.textContent?.length ?? 0; left > 0; left--) {
-        swap.textContent = (swap.textContent ?? '').slice(0, left - 1);
+      for (let left = swap.textContent.length; left > 0; left--) {
+        swap.textContent = swap.textContent.slice(0, left - 1);
         await wait(36);
       }
       await wait(240);
-      for (const character of words[index] ?? '') {
+      for (const character of words[index] as string) {
         swap.textContent += character;
         await wait(64);
       }
@@ -61,19 +57,14 @@ if (
   })();
 }
 
-const items = document.querySelectorAll('.reveal');
-if ('IntersectionObserver' in window) {
-  const observer = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        entry.target.classList.add('in');
-        observer.unobserve(entry.target);
-      }
-    },
-    { rootMargin: '0px 0px -8% 0px', threshold: 0.1 },
-  );
-  for (const item of items) observer.observe(item);
-} else {
-  for (const item of items) item.classList.add('in');
-}
+const observer = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add('in');
+      observer.unobserve(entry.target);
+    }
+  },
+  { rootMargin: '0px 0px -8% 0px', threshold: 0.1 },
+);
+for (const item of document.querySelectorAll('.reveal')) observer.observe(item);

@@ -14,7 +14,7 @@ const lang: Lang = document.documentElement.lang === 'en' ? 'en' : 'tr';
 const T = (key: AppKey): string => APP[lang][key];
 const S = SITE[lang];
 const fmt = (text: string, values: Record<string, string | number>): string =>
-  text.replace(/\{(\w+)\}/g, (_, name: string) => String(values[name] ?? ''));
+  text.replace(/\{(\w+)\}/g, (_, name: string) => String(values[name]));
 
 const W = 800;
 const H = 500;
@@ -40,8 +40,8 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-const esc = (text: string): string =>
-  text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c);
+const ENTITY = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+const esc = (text: string): string => text.replace(/[&<>"]/g, (c) => ENTITY[c as keyof typeof ENTITY]);
 
 function place(node: HTMLElement, x: number, y: number, w?: number, hgt?: number): HTMLElement {
   node.style.left = `${x}px`;
@@ -53,7 +53,7 @@ function place(node: HTMLElement, x: number, y: number, w?: number, hgt?: number
 
 /* ---- icons (16 × 16, stroked) ------------------------------------------------------------ */
 
-const ICON: Record<string, string> = {
+const ICON = {
   home: 'M2.5 7.5 8 3l5.5 4.5V13H10V9.5H6V13H2.5z',
   search: 'M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10zM10.5 10.5 14 14',
   open: 'M2 4h4l1.5 1.5H14V12H2zM2 7h12',
@@ -81,8 +81,8 @@ const ICON: Record<string, string> = {
   lock: 'M4.5 7.5h7v6h-7zM6 7.5V5.5a2 2 0 0 1 4 0v2',
 };
 
-const icon = (name: string, size = 16): string =>
-  `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true"><path d="${ICON[name] ?? ''}"/></svg>`;
+const icon = (name: keyof typeof ICON, size = 16): string =>
+  `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true"><path d="${ICON[name]}"/></svg>`;
 
 /* ---- the editor ---------------------------------------------------------------------------- */
 
@@ -98,7 +98,7 @@ const TOOLS = [
   'link',
   'measure',
   'redact',
-];
+] as const;
 
 interface Editor {
   root: HTMLElement;
@@ -289,9 +289,8 @@ type Scene = (stage: HTMLElement, ctx: Ctx) => Promise<void>;
 const ease = (t: number): number => 1 - (1 - t) ** 3;
 
 function context(figure: HTMLElement, stage: HTMLElement, instant: boolean, alive: () => boolean): Ctx {
-  const caption = figure.nextElementSibling?.classList.contains('mock-cap')
-    ? (figure.nextElementSibling as HTMLElement)
-    : null;
+  // Every model on the page is followed by its caption line (`.mock-cap`).
+  const caption = figure.nextElementSibling as HTMLElement;
   const cursor = h(
     'div',
     'cur',
@@ -306,12 +305,8 @@ function context(figure: HTMLElement, stage: HTMLElement, instant: boolean, aliv
   };
   set(0);
   if (instant) cursor.hidden = true;
-  caption?.classList.remove('on');
-  const check = (): void => {
-    if (!alive()) throw new Cancelled();
-  };
+  caption.classList.remove('on');
   const wait = (ms: number): Promise<void> => {
-    check();
     if (instant) return Promise.resolve();
     return new Promise((resolve, reject) =>
       setTimeout(() => (alive() ? resolve() : reject(new Cancelled())), ms),
@@ -340,7 +335,6 @@ function context(figure: HTMLElement, stage: HTMLElement, instant: boolean, aliv
       cursor.classList.toggle('beam', on);
     },
     async tween(ms, step) {
-      check();
       if (instant) {
         step(1);
         return;
@@ -371,7 +365,7 @@ function context(figure: HTMLElement, stage: HTMLElement, instant: boolean, aliv
       }
     },
     cap(text, key) {
-      if (!caption || instant) return;
+      if (instant) return;
       caption.innerHTML = `<span>${esc(text)}</span>${key ? `<span class="dot">·</span><kbd>${esc(key)}</kbd>` : ''}`;
       caption.classList.add('on');
     },
@@ -541,10 +535,10 @@ const SCENES: Record<string, Scene> = {
       page.el,
     );
     place(svg, 22, 141);
-    const path = svg.querySelector('path');
+    const path = svg.querySelector('path') as SVGPathElement;
     await ctx.move(PAPER_X + 26, PAPER_Y + 151, 700);
     await ctx.tween(1300, (t) => {
-      path?.style.setProperty('stroke-dashoffset', String(1 - t));
+      path.style.setProperty('stroke-dashoffset', String(1 - t));
       ctx.at(PAPER_X + 26 + 196 * t, PAPER_Y + 151 + Math.sin(t * Math.PI * 10) * 3);
     });
     log(T('ann.tool.ink'));
@@ -649,8 +643,7 @@ const SCENES: Record<string, Scene> = {
         cell.style.transform = `translate(${x}px, ${y}px)`;
         const thumb = ed.thumbs[page] as HTMLElement;
         thumb.style.transform = `translateY(${slot * 124}px)`;
-        const label = thumb.querySelector('em');
-        if (label) label.textContent = String(slot + 1);
+        (thumb.querySelector('em') as HTMLElement).textContent = String(slot + 1);
       });
     };
     const status = (selected: number): void => {
@@ -691,8 +684,7 @@ const SCENES: Record<string, Scene> = {
     third.classList.add('turned');
     ctx.toast(ed, fmt(T('pages.rotate.done'), { count: 1 }));
     log(fmt(T('pages.rotate.done'), { count: 1 }));
-    const thumb = ed.thumbs[2]?.querySelector('.mp') as HTMLElement | null;
-    thumb?.classList.add('turned');
+    ((ed.thumbs[2] as HTMLElement).querySelector('.mp') as HTMLElement).classList.add('turned');
     await ctx.wait(400);
     third.classList.remove('hover');
     await ctx.move(560, 430, 900);
@@ -729,11 +721,11 @@ const SCENES: Record<string, Scene> = {
       )}</span></div>`,
       ed.view,
     );
-    const stroke = dialog.querySelector('.ed-pad path') as SVGPathElement | null;
+    const stroke = dialog.querySelector('.ed-pad path') as SVGPathElement;
     await ctx.wait(500);
     await ctx.move(VIEW_LEFT + 96, BODY_TOP + 160, 800);
     await ctx.tween(1600, (t) => {
-      stroke?.style.setProperty('stroke-dashoffset', String(1 - t));
+      stroke.style.setProperty('stroke-dashoffset', String(1 - t));
       ctx.at(VIEW_LEFT + 96 + 220 * t, BODY_TOP + 150 + Math.sin(t * Math.PI * 7) * 12);
     });
     await ctx.wait(300);
@@ -827,7 +819,7 @@ const SCENES: Record<string, Scene> = {
   async convert(stage, ctx) {
     const ed = editor(stage, '', 1);
     ed.root.classList.add('home');
-    ed.file.parentElement?.classList.add('off');
+    (ed.file.parentElement as HTMLElement).classList.add('off');
     const zone = h(
       'div',
       'ed-drop',
@@ -851,7 +843,7 @@ const SCENES: Record<string, Scene> = {
     await ctx.wait(1300);
     ed.root.classList.remove('home');
     ed.file.textContent = S.pdfFile;
-    ed.file.parentElement?.classList.remove('off');
+    (ed.file.parentElement as HTMLElement).classList.remove('off');
     zone.remove();
     const doc = place(h('div', 'pp', '', ed.view), PAPER_X - VIEW_LEFT, PAPER_Y - BODY_TOP, 330, 467);
     h('div', 'pp-band', `<span>${S.studio}</span><span>1</span>`, doc);
@@ -871,7 +863,7 @@ const SCENES: Record<string, Scene> = {
 const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 for (const figure of document.querySelectorAll<HTMLElement>('figure[data-mock]')) {
-  const scene = SCENES[figure.dataset.mock ?? ''];
+  const scene = SCENES[figure.dataset.mock as string];
   if (!scene) continue;
   const stage = h('div', 'stage', '', figure);
   const fit = (): void => {
@@ -895,7 +887,8 @@ for (const figure of document.querySelectorAll<HTMLElement>('figure[data-mock]')
         await new Promise((resolve) => setTimeout(resolve, 450));
       } while (alive());
     } catch (error) {
-      if (!(error instanceof Cancelled)) throw error;
+      // Reported, not rethrown: nothing awaits the play, so a rejection would go unhandled.
+      if (!(error instanceof Cancelled)) reportError(error);
     }
   };
 
@@ -905,10 +898,10 @@ for (const figure of document.querySelectorAll<HTMLElement>('figure[data-mock]')
   }
   new IntersectionObserver(
     ([entry]) => {
-      if (entry?.isIntersecting) void play(false);
+      if ((entry as IntersectionObserverEntry).isIntersecting) void play(false);
       else {
         run++;
-        figure.nextElementSibling?.classList.remove('on');
+        (figure.nextElementSibling as HTMLElement).classList.remove('on');
       }
     },
     { threshold: 0.35 },
