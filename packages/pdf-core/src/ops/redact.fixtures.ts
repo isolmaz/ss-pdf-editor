@@ -61,6 +61,83 @@ export const TWO_LINES = {
   ] as const,
 };
 
+// ---- text drawn through resources the engine does not edit ---------------------------------------
+// A tiling pattern and a soft-mask group are content streams of their own. `applyRedactions` removes
+// the paint operation under a mark and leaves them in the page's resources, text and all.
+
+export const PATTERN_SECRET = 'PATTERNSECRET8';
+export const MASK_SECRET = 'MASKSECRET9';
+
+/** After what page `pageIndex` already draws: `content`, with `resources` merged into the page's own. */
+export function drawOnPage(
+  doc: PDFDocument,
+  content: string,
+  resources: Record<string, Record<string, unknown>>,
+  pageIndex = 0,
+): void {
+  const page = doc.findPage(pageIndex);
+  const own = page.get('Resources');
+  for (const [group, entries] of Object.entries(resources)) own.put(group, entries);
+  page.put('Contents', [page.get('Contents'), doc.addStream(content, {})]);
+}
+
+/** Helvetica as the font resource `F1` of the stream that shows text. */
+const helvetica = (doc: PDFDocument): Record<string, unknown> => ({
+  Font: { F1: doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica' }) },
+});
+
+/** The operators that show `text` once, 12 pt, in the font `F1`. */
+export const showText = (text: string): string => `BT /F1 12 Tf 2 5 Td (${text}) Tj ET`;
+
+/** A tiling pattern with `content`; its resources are Helvetica unless given. */
+export function tilingPattern(
+  doc: PDFDocument,
+  content: string,
+  resources: Record<string, unknown> = helvetica(doc),
+): PDFObject {
+  return doc.addStream(content, {
+    Type: 'Pattern',
+    PatternType: 1,
+    PaintType: 1,
+    TilingType: 1,
+    BBox: [0, 0, 100, 20],
+    XStep: 100,
+    YStep: 20,
+    Resources: resources,
+  });
+}
+
+/** A form XObject with a transparency group, the shape a soft mask draws through; resources are Helvetica unless given. */
+export function groupForm(
+  doc: PDFDocument,
+  content: string,
+  resources: Record<string, unknown> = helvetica(doc),
+): PDFObject {
+  return doc.addStream(content, {
+    Type: 'XObject',
+    Subtype: 'Form',
+    BBox: [0, 0, 400, 500],
+    Group: { S: 'Transparency', CS: 'DeviceGray' },
+    Resources: resources,
+  });
+}
+
+/** An `/ExtGState` whose soft mask is a luminosity mask drawn by `group`. */
+export const softMaskState = (doc: PDFDocument, group: PDFObject): PDFObject =>
+  doc.addObject({ Type: 'ExtGState', SMask: { Type: 'Mask', S: 'Luminosity', G: group } });
+
+/** A tiling pattern that shows `text`, painted over user x 40–240, y 290–320 (where `SECRET_MARK` lies). */
+export function addPatternText(doc: PDFDocument, text = PATTERN_SECRET, pageIndex = 0): void {
+  const pattern = tilingPattern(doc, showText(text));
+  drawOnPage(doc, '/Pattern cs /P1 scn 40 290 200 30 re f', { Pattern: { P1: pattern } }, pageIndex);
+}
+
+/** A luminosity soft mask whose group shows `text`, applied to a rectangle over user x 40–240, y 290–320. */
+export function addSoftMaskText(doc: PDFDocument, text = MASK_SECRET, pageIndex = 0): void {
+  const state = softMaskState(doc, groupForm(doc, `1 g ${showText(text)}`));
+  drawOnPage(doc, 'q /GS1 gs 0 0 1 rg 40 290 200 30 re f Q', { ExtGState: { GS1: state } }, pageIndex);
+}
+
 // ---- annotations and form fields ------------------------------------------------------------
 // Hand-built the way a producer writes them: a text field is one dictionary that is both
 // field and widget, a comment is a `/Text` annotation whose `/Popup` window points back

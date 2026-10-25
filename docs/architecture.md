@@ -1532,7 +1532,14 @@ Details that matter:
   and walks the structured text per character; a page where any non-whitespace glyph is
   ≥ 50 % covered throws `verification-failed`. The same pass reads the page's `/Annots`: an
   annotation or widget (anything but `/Redact`) that still shares area with a mark fails the
-  page the same way, so a form field's value cannot hide behind a clean text check.
+  page the same way, so a form field's value cannot hide behind a clean text check. It also
+  walks the marked page's resources (forms, tiling patterns and the groups of `/ExtGState`
+  soft masks, nested ones too, each stream once) and reads their content with the
+  accessibility tokenizer: `applyRedactions` removes the paint operation under a mark but never
+  edits a pattern or a soft-mask group, so one that shows text (`Tj`, `TJ`, `'`, `"`, or a stream the
+  tokenizer cannot delimit) keeps that text in the file. The page is listed in `paintText` and
+  the run throws `verification-failed`; a form XObject's own text is the engine's to erase and
+  is not read.
 - `auditRedactedDocument()` is a raw-byte scan plus a string-object pass, and **documents
   its own blind spot**: it cannot see inside deflated streams or object streams. The
   string pass parses literal `(…)` and hex `<…>` strings outside filtered streams, decodes

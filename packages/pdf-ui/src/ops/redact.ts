@@ -106,8 +106,8 @@ export const redactDialog: OperationDialogSpec = {
     );
 
     // `redactDocument` throws `verification-failed` when a mark still holds text, an annotation or a
-    // form field, so a result that got here is a verified one: there is no failed or partial
-    // verification to report.
+    // form field, or when a pattern or soft mask of a marked page shows text, so a result that got
+    // here is a verified one: there is no failed or partial verification to report.
     return {
       files: [{ name: context.name, bytes: outcome.bytes, mime: 'application/pdf' }],
       report: {

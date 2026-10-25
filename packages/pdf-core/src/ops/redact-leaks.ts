@@ -23,10 +23,16 @@
  *    are scrubbed whole, used or not, and never in place: a form or a property dictionary can be
  *    shared with pages that carried no mark, so the page gets a copy (and a copy of its resources
  *    that points at it) and the other pages keep the original.
+ *
+ * It also answers one question it cannot fix (`paintResourcesShowText`): whether a tiling pattern or
+ * a soft-mask group among a page's resources shows text. Those are content streams of their own
+ * that `applyRedactions` never edits, so the text stays in the file after the paint operation
+ * under a mark is gone.
  */
 
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { pageContentParts, readName, resolved } from '../engines/mupdf-write';
+import { readInstructions } from './accessibility';
 import { fileSpecObjects, isEmptyDictionary, objectNumber } from './attachments-write';
 import { scanMarkedContent } from './marked-content';
 import { finishSweep, newTally, sweepWhere } from './redact-annots';
@@ -362,4 +368,67 @@ export function scrubRedactedPages(doc: PDFDocument, pageIndices: readonly numbe
     removed += scrubPage(doc, page, memo);
   }
   return removed;
+}
+
+/** The operators that show text. */
+const SHOW_TEXT: ReadonlySet<string> = new Set(['Tj', 'TJ', "'", '"']);
+
+/**
+ * A stream a resource dictionary paints through. `showsText` is true for the ones `applyRedactions`
+ * does not edit (a tiling pattern, a soft-mask group); a form XObject is only walked through, for
+ * the resources of its own.
+ */
+interface PaintStream {
+  readonly entry: PDFObject;
+  readonly showsText: boolean;
+}
+
+function paintStreams(resources: PDFObject | null): PaintStream[] {
+  const streams: PaintStream[] = [];
+  if (resources?.isDictionary() !== true) return streams;
+  resolved(resources.get('Pattern'))?.forEach((entry) => {
+    streams.push({ entry, showsText: true });
+  });
+  resolved(resources.get('XObject'))?.forEach((entry) => {
+    streams.push({ entry, showsText: false });
+  });
+  resolved(resources.get('ExtGState'))?.forEach((state) => {
+    const mask = resolved(resolved(state)?.get('SMask'));
+    if (mask?.isDictionary() === true) streams.push({ entry: mask.get('G'), showsText: true });
+  });
+  return streams;
+}
+
+/** Whether a content stream shows text; one this reader cannot delimit may hold text it cannot see. */
+function streamShowsText(stream: PDFObject): boolean {
+  const buffer = stream.readStream();
+  let content: Uint8Array;
+  try {
+    content = new Uint8Array(buffer.asUint8Array());
+  } finally {
+    buffer.destroy();
+  }
+  const instructions = readInstructions(content);
+  return instructions === null || instructions.some((instruction) => SHOW_TEXT.has(instruction.operator));
+}
+
+/**
+ * Whether a tiling pattern or the group of a soft mask that `page`'s resources reach shows text,
+ * through the resources of the forms, patterns and groups on the way too. Redaction removes what
+ * the engine paints under a mark and does not edit these streams, so their text is still in the
+ * file when it is done; a page for which this is true cannot be reported as redacted.
+ */
+export function paintResourcesShowText(page: PDFObject): boolean {
+  const seen = new Set<string>();
+  const pending = paintStreams(resolved(page.getInheritable('Resources')));
+  while (pending.length > 0) {
+    const { entry, showsText } = pending.pop() as PaintStream;
+    if (!entry.isStream()) continue;
+    const key = `${entry.asIndirect()}/${showsText}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (showsText && streamShowsText(entry)) return true;
+    pending.push(...paintStreams(resolved(entry.get('Resources'))));
+  }
+  return false;
 }

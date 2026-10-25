@@ -454,6 +454,9 @@ nothing leaving the browser.
   - The file is rewritten as a single revision, and the output is re-checked glyph by glyph
     and for any annotation or field still under a mark. An object-level audit reports any
     remaining terms, earlier revisions and leftover structure.
+  - The engine does not edit text drawn through a tiling pattern or a soft-mask group. A marked
+    page whose patterns or masks show text is refused as unverified and nothing is written,
+    instead of being reported as redacted.
   - The verification covers the marked areas only. Document properties and bookmark titles
     are not checked; the metadata option clears the title, author, subject, keywords and
     creator fields and the XMP packet, and the notices say exactly that.

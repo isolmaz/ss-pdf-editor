@@ -46,7 +46,7 @@ import {
   newTally,
   sweepPage,
 } from './redact-annots';
-import { purgeAttachments, scrubRedactedPages } from './redact-leaks';
+import { paintResourcesShowText, purgeAttachments, scrubRedactedPages } from './redact-leaks';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 /** The XFA writers bring an XML parser with them: they load only for a form that has XFA. */
@@ -78,6 +78,11 @@ export interface RedactVerification {
   readonly marksCleared: boolean;
   /** Page indices where a probe still found content (verification failure). */
   readonly remaining: readonly number[];
+  /**
+   * Page indices whose tiling patterns or soft-mask groups show text. Those streams are not edited
+   * by the engine, so the text is still in the file whatever the marks covered.
+   */
+  readonly paintText: readonly number[];
 }
 
 /**
@@ -190,7 +195,10 @@ export async function redactDocument(
     // engine message for the report and the bug report.
     throw new ToolError('verification-failed', {
       engine: 'mupdf',
-      engineMessage: `redaction left text or annotations inside marks on page(s) ${verification.remaining.join(', ')}`,
+      engineMessage:
+        verification.remaining.length > 0
+          ? `redaction left text or annotations inside marks on page(s) ${verification.remaining.join(', ')}`
+          : `a tiling pattern or soft-mask group of page(s) ${verification.paintText.join(', ')} shows text that redaction does not erase`,
     });
   }
   context.onProgress?.({ phase: 'redact', labelKey: 'op.progress.redact.save', done: 1, total: 1 });
@@ -276,6 +284,7 @@ export async function verifyRedaction(
   try {
     const pageCount = doc.countPages();
     const remaining: number[] = [];
+    const paintText: number[] = [];
     for (const [pageIndex, rects] of byPage) {
       if (pageIndex < 0 || pageIndex >= pageCount) {
         remaining.push(pageIndex);
@@ -323,6 +332,7 @@ export async function verifyRedaction(
             rects.map((rect) => topLeftRectToUserSpace(box, rect)),
           );
           if (leftover || annotated) remaining.push(pageIndex);
+          if (paintResourcesShowText(page.getObject())) paintText.push(pageIndex);
         } finally {
           text.destroy();
         }
@@ -330,7 +340,7 @@ export async function verifyRedaction(
         page.destroy();
       }
     }
-    return { marksCleared: remaining.length === 0, remaining };
+    return { marksCleared: remaining.length === 0 && paintText.length === 0, remaining, paintText };
   } catch (error) {
     throw mapMupdfError(error, 'verify-redaction');
   } finally {
