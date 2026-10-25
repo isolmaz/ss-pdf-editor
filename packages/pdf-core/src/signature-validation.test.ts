@@ -504,4 +504,68 @@ describe('evaluateEvidence along the trusted path', () => {
     ]);
     expect(outcome.revocation).toBe('not-revoked');
   });
+
+  it('checks the signer and a document timestamp along the paths their trust walks validated', async () => {
+    const root = await authority('Root', await key());
+    const intermediate = await authority('Intermediate', await key(), root);
+    // Another root certified the intermediate's key, and has replaced that certificate since.
+    const other = await authority('Other Root', await key());
+    const cross = await issueCertificate(
+      {
+        subject: 'Intermediate',
+        keyPair: intermediate.keyPair,
+        ...VALID,
+        basicConstraints: { cA: true },
+        keyUsage: ['keyCertSign', 'cRLSign'],
+      },
+      other,
+    );
+    const importedCrls = [
+      await issueCrl({ issuer: intermediate, ...LIST_DATES }),
+      await issueCrl({ issuer: root, ...LIST_DATES }),
+      await issueCrl({
+        issuer: other,
+        ...LIST_DATES,
+        revoked: [{ cert: cross, at: day(2, 1), reason: CRL_REASON.superseded }],
+      }),
+    ];
+
+    const signer = await holder('Signer', intermediate);
+    const signature = await evidence(signer, [cross.der, other.der, intermediate.der], [root], {
+      importedCrls,
+    });
+    expect(signature.trust).toMatchObject({ verdict: 'trusted', path: ['Signer', 'Intermediate', 'Root'] });
+    expect(rows(signature.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Intermediate', 'good'],
+    ]);
+    expect(signature.revocation).toBe('not-revoked');
+
+    const tsa = await holder('TSA', intermediate, VALID.notAfter, true);
+    const covered = new TextEncoder().encode('the byte range of the document');
+    const token = await issueTimestampToken({
+      tsa,
+      covered,
+      genTime: SIGNED_AT,
+      extraCertificates: [cross, other, intermediate],
+    });
+    const stamp = await evaluateDocumentTimestamp({
+      token,
+      covered,
+      roots: [root.der],
+      importedCrls,
+      dss: NO_DSS,
+      now: NOW,
+    });
+    expect(stamp.timestamp).toMatchObject({
+      status: 'valid',
+      trusted: true,
+      tsaPath: ['TSA', 'Intermediate', 'Root'],
+    });
+    expect(rows(stamp.timestamp.tsaRevocation)).toEqual([
+      ['TSA', 'good'],
+      ['Intermediate', 'good'],
+    ]);
+    expect(stamp.revocation).toBe('not-revoked');
+  });
 });
