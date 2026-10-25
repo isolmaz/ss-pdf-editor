@@ -26,6 +26,9 @@ export const scanPart = {
   'scan.camera.busyHint': 'Close the application that uses the camera and try again.',
   'scan.camera.failed': 'The camera could not be started.',
   'scan.camera.failedHint': 'Try again, or pick photos below.',
+  'scan.camera.stopped': 'The camera stopped.',
+  'scan.camera.stoppedHint':
+    'It may have been unplugged, or access may have been taken back. Check it, then try again, or pick photos below.',
   'scan.capture': 'Take photo',
   'scan.capture.failed': 'The photo could not be taken. Try again.',
   'scan.choose': 'Choose photos',

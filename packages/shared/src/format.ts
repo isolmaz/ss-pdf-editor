@@ -22,11 +22,17 @@ function numberFormat(locale: string, style: 'oneDecimal' | 'percent', digits = 
   return format;
 }
 
-/** A byte size for people: `900 B`, `1.5 KB`, `5.3 MB`, with the locale's decimal mark. */
+/**
+ * A byte size for people: `900 B`, `1.5 KB`, `5.3 MB`, with the locale's decimal mark. A size
+ * that is not a finite, non-negative number is unknown and written as a dash.
+ */
 export function formatBytes(bytes: number, locale: string): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—';
   if (bytes < 1024) return `${bytes} B`;
   const oneDecimal = numberFormat(locale, 'oneDecimal');
-  if (bytes < 1024 * 1024) return `${oneDecimal.format(bytes / 1024)} KB`;
+  // Rounded before the unit is chosen, so 1,048,575 B is `1.0 MB` and not `1,024.0 KB`.
+  const kilobytes = Math.round((bytes / 1024) * 10) / 10;
+  if (kilobytes < 1024) return `${oneDecimal.format(kilobytes)} KB`;
   return `${oneDecimal.format(bytes / (1024 * 1024))} MB`;
 }
 

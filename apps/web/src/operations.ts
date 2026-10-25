@@ -38,7 +38,6 @@ import { fieldValueText } from 'pdf-core/ops/form-value';
 import type { FormFieldInfo } from 'pdf-core/ops/forms';
 import { type MeasureMark, writeMeasureAnnotations } from 'pdf-core/ops/measure';
 import type { RedactRect } from 'pdf-core/ops/redact';
-import { readPageText } from 'pdf-core/text-source';
 import {
   copyForEngine,
   type EngineValuesDraft,
@@ -55,6 +54,7 @@ import { type MarkRemovalRequest, normalizePendingMarks } from './annotation-int
 import {
   composeDocument,
   readFormFields,
+  readPageText,
   removePdfAnnotations,
   syncXfaDatasets,
   writeAnnotationsToFile,

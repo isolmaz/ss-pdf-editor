@@ -67,24 +67,36 @@ export function PropertiesFacts({
           </Button>
         </div>
       ) : (
-        <PropertiesPanel
-          t={t}
-          fonts={facts?.fonts ?? null}
-          attachments={facts?.attachments ?? []}
-          signatures={facts?.signatures ?? []}
-          trustRoots={trustRoots}
-          onRemoveTrustRoot={(id) => void removeTrustRootById(id, t)}
-          onImportTrustRoots={(imported) => void importTrustRoots(imported, t)}
-          revocationLists={revocationLists}
-          onRemoveRevocationList={(id) => void removeRevocationListById(id, t)}
-          onImportRevocationLists={(imported) => void importRevocationLists(imported, t)}
-          security={facts?.security ?? null}
-          loading={facts === null}
-          disabled={disabled}
-          onAddAttachments={onAddAttachments}
-          onRemoveAttachment={onRemoveAttachment}
-          onReadAttachment={onReadAttachment}
-        />
+        <>
+          {facts?.unread?.length ? (
+            <div role="alert" className="flex flex-col gap-2 p-2 text-xs text-kumo-danger">
+              {facts.unread.map((kind) => (
+                <p key={kind}>{t(`inspection.${kind}.failed`)}</p>
+              ))}
+              <Button variant="outline" onClick={onRetry}>
+                {t('inspection.retry')}
+              </Button>
+            </div>
+          ) : null}
+          <PropertiesPanel
+            t={t}
+            fonts={facts?.fonts ?? null}
+            attachments={facts?.attachments ?? []}
+            signatures={facts?.signatures ?? []}
+            trustRoots={trustRoots}
+            onRemoveTrustRoot={(id) => void removeTrustRootById(id, t)}
+            onImportTrustRoots={(imported) => void importTrustRoots(imported, t)}
+            revocationLists={revocationLists}
+            onRemoveRevocationList={(id) => void removeRevocationListById(id, t)}
+            onImportRevocationLists={(imported) => void importRevocationLists(imported, t)}
+            security={facts?.security ?? null}
+            loading={facts === null}
+            disabled={disabled}
+            onAddAttachments={onAddAttachments}
+            onRemoveAttachment={onRemoveAttachment}
+            onReadAttachment={onReadAttachment}
+          />
+        </>
       )}
     </Suspense>
   );

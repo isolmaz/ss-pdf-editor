@@ -10,7 +10,7 @@ import { ToolError, type Translator } from 'pdf-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { cancelOperation, coreStore, initialCoreState, operationRunning, setBusy } from '../core/core-store';
 import { dropHandle, handleFor } from '../core/handles';
-import { persistenceStore } from '../persistence/persistence-store';
+import { holdsUnprotectedWork, persistenceStore } from '../persistence/persistence-store';
 import { fakeChannel, type MemoryStorage, manifest, memoryStorage } from '../persistence/vault.fixtures';
 import { createOpenActions, fileInput, openAndFingerprint } from './open-actions';
 import { initialOpenState, openStore, selectPages, showStartScreen } from './open-store';
@@ -364,6 +364,25 @@ describe('openProducedTab', () => {
     expect(openStore.get().showHomeScreen).toBe(false);
     expect(setCurrentPage).toHaveBeenCalledWith(0);
     expect(notice()).toBeNull();
+  });
+
+  it('opens the result as unsaved work, since no file holds its bytes', async () => {
+    await actions().openProducedTab('out.pdf', bytes);
+
+    expect(session.active?.source.handle).toBeUndefined();
+    expect(session.active?.dirty).toBe(true);
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(true);
+  });
+
+  it('keeps the bytes produced from a document opened with its password as sensitive as it, storing no copy', async () => {
+    await actions().openFile(pdfFile(), undefined, 'secret');
+    const source = session.active?.id;
+
+    await expect(actions().openProducedTab('unlocked.pdf', bytes)).resolves.toBeNull();
+
+    expect(session.active?.id).not.toBe(source);
+    expect(session.active?.sensitive).toBe(true);
+    expect(storage.sources.size).toBe(0);
   });
 
   it('resolves with the warning, keeping the tab, when the recovery copy cannot be stored', async () => {

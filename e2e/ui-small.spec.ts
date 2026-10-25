@@ -687,11 +687,16 @@ test('Add Text settings: the size is kept between 6 and 72 pt, an empty field ke
   await rail(page, 'Add text').click();
   const strip = settingsStrip(page);
   const size = strip.getByRole('spinbutton', { name: 'Size' });
+  // A size is taken as typed and kept in range when the field is left.
   await size.fill('500');
+  await expect(size).toHaveValue('500');
+  await size.blur();
   await expect(size).toHaveValue('72');
   await size.fill('2');
+  await size.blur();
   await expect(size).toHaveValue('6');
   await size.fill('18.4');
+  await size.blur();
   await expect(size).toHaveValue('18');
   // A half-typed (empty) field is not a size: the last valid one stays.
   await size.fill('');

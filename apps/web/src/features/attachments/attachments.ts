@@ -38,7 +38,7 @@ export interface AttachmentDeps {
   ) => Promise<void>;
 }
 
-/** The two writes the left dock's attachments panel asks for: files to embed, or names to drop. */
+/** The two writes the left dock's attachments panel asks for: files to embed, or name-tree keys to drop. */
 export interface AttachmentWrite {
   readonly add?: readonly File[];
   readonly remove?: readonly string[];
@@ -60,7 +60,12 @@ export async function measuredAttachments(
       (bytes) => bytes.byteLength,
       () => null,
     );
-    measured.push({ name: attachment.filename, description: attachment.description, size });
+    measured.push({
+      id: attachment.id,
+      name: attachment.filename,
+      description: attachment.description,
+      size,
+    });
   }
   return measured;
 }
@@ -104,8 +109,8 @@ function payloadsOf(files: readonly File[], mimeOf: (file: File) => string) {
 export interface AttachmentActions {
   /** Embed the picked files in the document. */
   readonly addToDocument: (files: readonly File[]) => Promise<void>;
-  /** Drop one embedded file by name. */
-  readonly removeFromDocument: (name: string) => Promise<void>;
+  /** Drop one embedded file by its name-tree key. */
+  readonly removeFromDocument: (id: string) => Promise<void>;
   /** Save one embedded file out to disk. */
   readonly readOut: (name: string) => Promise<void>;
   /** Embed and drop in one journal step. */
@@ -141,14 +146,14 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
     );
   }
 
-  /** Drop the embedded file called `name` from the document. */
-  async function removeFromDocument(name: string): Promise<void> {
+  /** Drop the embedded file whose name-tree key is `id` from the document. */
+  async function removeFromDocument(id: string): Promise<void> {
     await withDocument(
       deps,
       () => true,
       async (tab, handle, signal) => {
         const base = await materializeBase(documentContext(deps.session, deps.t, tab, handle), { signal });
-        const outcome = await removeAttachments(base, [name], { signal });
+        const outcome = await removeAttachments(base, [id], { signal });
         const next = await applyProducedBytes(
           documentContext(deps.session, deps.t, tab, handle),
           outcome.bytes,
@@ -187,7 +192,7 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
   /**
    * The attachments panel's two writes (“attachments add/remove”), run on the working
    * document through the shared writer pipeline: the panel hands over the picked files (or the
-   * names to drop) and the shell journals what the writer produced.
+   * name-tree keys to drop) and the shell journals what the writer produced.
    */
   async function write(request: AttachmentWrite): Promise<void> {
     await withDocument(

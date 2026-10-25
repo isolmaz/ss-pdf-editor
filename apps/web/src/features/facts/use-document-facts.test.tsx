@@ -138,6 +138,7 @@ describe('useDocumentFacts', () => {
         { name: 'b.txt', description: 'second', size: null },
       ],
       security: { encrypted: true, permissions: ['print', 'modify'] },
+      unread: [],
     });
   });
 
@@ -243,11 +244,54 @@ describe('useDocumentFacts', () => {
     expect(currentFactsError(tab)).toBe(failure);
     expect(currentFacts(tab)).toBeNull();
 
-    calls.listPdfFonts.mockRejectedValueOnce(new Error('worker gone'));
+    calls.verifySignatures.mockRejectedValueOnce(new Error('worker gone'));
     view.rerender(<Follower store={store} tab={tab} handle={handle} revision={1} />);
     await act(async () => undefined);
     expect(currentFactsError(tab)).toBeInstanceOf(ToolError);
     expect(currentFactsError(tab)?.messageKey).toBe(failure.messageKey);
+  });
+
+  it('fails the read when the protection could not be read, as it does for the signatures', async () => {
+    const store = new SessionStore();
+    const tab = openTab(store);
+    calls.inspectProtection.mockRejectedValueOnce(new ToolError('internal', { engine: 'model' }));
+
+    render(<Follower store={store} tab={tab} handle={handle} />);
+    await act(async () => undefined);
+
+    expect(currentFacts(tab)).toBeNull();
+    expect(currentFactsError(tab)?.code).toBe('internal');
+  });
+
+  it('keeps the facts a write needs when the fonts or the attachments cannot be read, and names what is unread', async () => {
+    const store = new SessionStore();
+    const tab = openTab(store);
+    calls.listPdfFonts.mockRejectedValueOnce(new Error('worker gone'));
+
+    const view = render(<Follower store={store} tab={tab} handle={handle} revision={0} />);
+    await act(async () => undefined);
+
+    expect(currentFactsError(tab)).toBeNull();
+    expect(currentFacts(tab)).toEqual({
+      tabId: tab.id,
+      bytesKey: workingBytesKey(tab),
+      fonts: [],
+      signatures: [{ fieldName: 'Sig1' }],
+      attachments: [],
+      security: { encrypted: true, permissions: ['print', 'modify'] },
+      unread: ['fonts'],
+    });
+
+    calls.listPdfAttachments.mockRejectedValueOnce(new Error('no names'));
+    view.rerender(<Follower store={store} tab={tab} handle={handle} revision={1} />);
+    await act(async () => undefined);
+
+    expect(currentFacts(tab)).toMatchObject({
+      fonts: [{ name: 'Helvetica' }],
+      attachments: [],
+      signatures: [{ fieldName: 'Sig1' }],
+      unread: ['attachments'],
+    });
   });
 
   it('drops a read that lands, or fails, after the next one started', async () => {

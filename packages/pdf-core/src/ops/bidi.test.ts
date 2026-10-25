@@ -8,8 +8,10 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  bidiClass,
   charDirection,
   type Direction,
+  displayOrder,
   hasRtlScript,
   letterCounts,
   readingOrder,
@@ -30,6 +32,34 @@ describe('bidi', () => {
     // A digit, a space, a sign and a combining mark have no direction of their own.
     expect(['1', ' ', '-', '\u05B0'].map(charDirection)).toEqual([N, N, N, N]);
     expect(letterCounts('ab \u05D0\u05D1\u05D2 1')).toEqual({ rtl: 3, ltr: 2 });
+  });
+
+  it('classes a character as UAX #9 does: letters by script, numbers, separators, terminators, neutrals', () => {
+    expect(['a', 'א', 'م', '5', '۵', '٥', '-', '%', '.', ' ', '(', 'ְ'].map(bidiClass)).toEqual([
+      'L',
+      'R',
+      'AL',
+      'EN',
+      'EN',
+      'AN',
+      'ES',
+      'ET',
+      'CS',
+      'ON',
+      'ON',
+      'ON',
+    ]);
+    // A cluster is classed by its first character.
+    expect(bidiClass('אְ')).toBe('R');
+    expect(bidiClass('\u{1F600}')).toBe('ON');
+  });
+
+  it('puts the units of a right-to-left paragraph where the page shows them, left to right', () => {
+    // Letters of the script only: the whole run reversed.
+    expect(displayOrder(['R', 'R', 'R'])).toEqual([2, 1, 0]);
+    // A number inside it keeps its own order, and stands to the left of the letters read before it.
+    expect(displayOrder(['R', 'EN', 'EN'])).toEqual([1, 2, 0]);
+    expect(displayOrder([])).toEqual([]);
   });
 
   it('gives a neutral the direction of the letters on both sides, else the paragraph direction', () => {

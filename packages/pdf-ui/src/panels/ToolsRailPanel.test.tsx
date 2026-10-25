@@ -218,6 +218,32 @@ describe('ToolsRailPanel: the inline runner', () => {
     expect(onBackToTools).not.toHaveBeenCalled();
   });
 
+  it('keeps the tool open as the reader moves on: a field seeded from the page follows it until it is edited', async () => {
+    const spec: OperationDialogSpec = {
+      ...SPEC,
+      initialValues: (context) => ({ page: `page ${context.currentPage + 1}` }),
+      fields: [{ kind: 'text', id: 'page', labelKey: 'op.scope', defaultValue: '' }],
+    };
+    const handlers = { onBackToTools: vi.fn(), onResult: vi.fn() };
+    const view = render(
+      <ToolsRailPanel t={t} activeSpec={spec} context={{ ...CONTEXT, currentPage: 4 }} {...handlers} />,
+    );
+    const box = () => screen.getByRole('textbox', { name: 'Page range' }) as HTMLInputElement;
+    expect(box().value).toBe('page 5');
+
+    view.rerender(
+      <ToolsRailPanel t={t} activeSpec={spec} context={{ ...CONTEXT, currentPage: 8 }} {...handlers} />,
+    );
+    expect(box().value).toBe('page 9');
+
+    await userEvent.clear(box());
+    await userEvent.type(box(), 'mine');
+    view.rerender(
+      <ToolsRailPanel t={t} activeSpec={spec} context={{ ...CONTEXT, currentPage: 1 }} {...handlers} />,
+    );
+    expect(box().value).toBe('mine');
+  });
+
   it('shows the rail when there is a tool but no document to run it on, or a document but no tool', () => {
     const first = render(<ToolsRailPanel t={t} activeSpec={SPEC} context={null} />);
     expect(screen.getByRole('button', { name: 'Organize pages' })).toBeTruthy();

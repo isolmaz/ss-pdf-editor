@@ -30,7 +30,7 @@ export const enginesPart = {
   'op.note.redact.emptyMarks':
     'Uyarı: {pages}. sayfadaki işaret hiçbir metinle örtüşmedi; o alanlarda silinen içerik yok.',
   'op.note.redact.metadataCleared':
-    'Üst veri temizlendi: başlık, yazar, konu, anahtar sözcükler, oluşturan ve XMP paketi. Özel alanlar korunur.',
+    'Üst veri temizlendi: başlık, yazar, konu, anahtar sözcükler, oluşturan, XMP paketleri ve belgenin, sayfaların ve nesnelerin uygulamaya özgü verileri. Özel alanlar korunur.',
   'op.note.redact.producerKept': 'Üretici satırı korundu.',
   'op.note.redact.attachmentsRemoved': '{count} ek kaldırıldı.',
   'op.note.redact.tagTextRemoved':

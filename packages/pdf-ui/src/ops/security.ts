@@ -14,7 +14,7 @@
  * engine string.
  */
 
-import { type ProtectionPermissions, partFileName, protectDocument, unlockDocument } from 'pdf-core';
+import { type ProtectionPermissions, protectDocument, unlockDocument } from 'pdf-core';
 import type { OperationDialogSpec } from '../dialogs/types';
 
 /**
@@ -146,7 +146,8 @@ export const unlockDialog: OperationDialogSpec = {
 
     // Named after the document it came from, so the decrypted copy can sit beside
     // the protected one without either name lying about which is which.
-    const name = partFileName(context.name, 0, 1, `-${context.t('security.unlock.suffix')}`);
+    const stem = context.name.replace(/\.pdf$/i, '') || 'document';
+    const name = `${stem}-${context.t('security.unlock.suffix')}.pdf`;
 
     return {
       files: [{ name, bytes: outcome.bytes, mime: 'application/pdf' }],

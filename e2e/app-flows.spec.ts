@@ -43,7 +43,7 @@ test('a text file is converted and opens as a PDF tab with its words and a notic
   await expect(notice(page, /The TXT file was converted to PDF and opened in a new tab\./)).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByRole('button', { name: 'notes.pdf', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'notes.pdf Unsaved changes', exact: true })).toBeVisible();
   const shape = await pageShape(page);
   expect(shape.height).toBeGreaterThan(shape.width);
   const texts = await readProducedPageTexts(await exportBytes(page, 'notes-out.pdf'));
@@ -59,7 +59,7 @@ test('a CSV file becomes a landscape table', async ({ page }) => {
     buffer: Buffer.from('region,total\nNorth,120\nSouth,340\n'),
   });
   await expect(notice(page, /The CSV file was converted to PDF/)).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole('button', { name: 'sales.pdf', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'sales.pdf Unsaved changes', exact: true })).toBeVisible();
   const shape = await pageShape(page);
   expect(shape.width).toBeGreaterThan(shape.height);
   const text = (await readProducedPageTexts(await exportBytes(page, 'sales-out.pdf'))).join(' ');
@@ -75,7 +75,7 @@ test('a picture opens as one PDF page', async ({ page }) => {
   await expect(notice(page, 'The image was opened as a PDF page in a new tab.')).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByRole('button', { name: 'photo.pdf', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'photo.pdf Unsaved changes', exact: true })).toBeVisible();
   await expect(page.getByText('/ 1', { exact: true })).toBeVisible();
 });
 

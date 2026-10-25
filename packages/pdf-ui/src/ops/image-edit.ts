@@ -21,7 +21,7 @@
  * chosen rather than refused after.
  */
 
-import type { PdfImageInfo } from 'pdf-core/ops/image-edit';
+import type { ImagePlacement, PdfImageInfo } from 'pdf-core/ops/image-edit';
 import { applyImageEdit, readImageData } from 'pdf-core/ops/image-edit';
 import { applyImageOpacity } from 'pdf-core/ops/image-opacity';
 import { ToolError } from 'pdf-shared';
@@ -91,14 +91,19 @@ function choicesFrom(
  * introduce artefacts on top of the user's cut — while `compress` re-encodes as JPEG,
  * which is the one action where a smaller file *is* the point. The canvas keeps the
  * image's own pixel size unless a crop asks for less, so the object's pixel dimensions
- * change exactly as much as the edit does.
+ * change exactly as much as the edit does. The placement says how the new pixels sit in the
+ * old picture, so the page can draw them in a frame of the same shape.
  */
 async function transformed(
   action: string,
   params: Record<string, unknown>,
   image: PdfImageInfo,
   context: OpRunContext,
-): Promise<{ readonly data: Uint8Array; readonly format: 'jpeg' | 'png' }> {
+): Promise<{
+  readonly data: Uint8Array;
+  readonly format: 'jpeg' | 'png';
+  readonly placement: ImagePlacement;
+}> {
   const read = await readImageData(
     context.bytes,
     { pageIndex: image.pageIndex, name: image.name },
@@ -149,8 +154,6 @@ async function transformed(
   }
   two.translate(canvas.width / 2, canvas.height / 2);
   two.rotate((degrees * Math.PI) / 180);
-  const corner = turned ? sourceHeight : sourceWidth;
-  const edge = turned ? sourceWidth : sourceHeight;
   if (source instanceof ImageData) {
     // `drawImage` cannot crop an `ImageData`, so the crop is written into a bitmap first.
     const full = new OffscreenCanvas(width, height);
@@ -164,10 +167,10 @@ async function transformed(
       sourceTop,
       sourceWidth,
       sourceHeight,
-      -corner / 2,
-      -edge / 2,
-      corner,
-      edge,
+      -sourceWidth / 2,
+      -sourceHeight / 2,
+      sourceWidth,
+      sourceHeight,
     );
   } else {
     two.drawImage(
@@ -176,17 +179,29 @@ async function transformed(
       sourceTop,
       sourceWidth,
       sourceHeight,
-      -corner / 2,
-      -edge / 2,
-      corner,
-      edge,
+      -sourceWidth / 2,
+      -sourceHeight / 2,
+      sourceWidth,
+      sourceHeight,
     );
   }
 
   const quality = Math.min(Math.max(Number(params.quality ?? 0.7), 0.05), 1);
   const lossy = action === 'compress';
   const blob = await canvas.convertToBlob(lossy ? { type: 'image/jpeg', quality } : { type: 'image/png' });
-  return { data: new Uint8Array(await blob.arrayBuffer()), format: lossy ? 'jpeg' : 'png' };
+  return {
+    data: new Uint8Array(await blob.arrayBuffer()),
+    format: lossy ? 'jpeg' : 'png',
+    placement: {
+      turned,
+      crop: {
+        left: sourceLeft / width,
+        top: sourceTop / height,
+        right: (width - sourceLeft - sourceWidth) / width,
+        bottom: (height - sourceTop - sourceHeight) / height,
+      },
+    },
+  };
 }
 
 export const imageEditDialog: OperationDialogSpec = {
@@ -331,6 +346,7 @@ export const imageEditDialog: OperationDialogSpec = {
     }
     let data: Uint8Array;
     let format: 'jpeg' | 'png';
+    let placement: ImagePlacement | undefined;
     if (action === 'replace') {
       const picked = Array.isArray(params.file) ? (params.file[0] as File | undefined) : undefined;
       if (picked === undefined) {
@@ -348,11 +364,21 @@ export const imageEditDialog: OperationDialogSpec = {
           engineMessage: `this image's samples cannot be read: ${image.notTransformableKey ?? 'unknown'}`,
         });
       }
-      ({ data, format } = await transformed(action, params, image, context));
+      ({ data, format, placement } = await transformed(action, params, image, context));
     }
     const outcome = await applyImageEdit(
       context.bytes,
-      { replacements: [{ pageIndex: image.pageIndex, name: image.name, data, format }] },
+      {
+        replacements: [
+          {
+            pageIndex: image.pageIndex,
+            name: image.name,
+            data,
+            format,
+            ...(placement === undefined ? {} : { placement }),
+          },
+        ],
+      },
       { signal: context.signal, onProgress: context.onProgress },
     );
     return {

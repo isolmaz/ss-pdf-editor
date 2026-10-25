@@ -15,6 +15,7 @@
  */
 
 import { fromBase64, toBase64 } from './base64';
+import { sha256Hex } from './digest';
 
 export interface RevocationList {
   readonly id: string;
@@ -48,25 +49,23 @@ export interface RevocationListsFile {
 
 export const EMPTY_REVOCATION_LISTS: RevocationListsFile = { version: 1, lists: [] };
 
-/** A list from its DER and a label; the id comes from the DER, so one CRL imported twice is one entry. */
-export function revocationListFrom(
+/** A list from its DER and a label; the id is the SHA-256 of the DER, so one CRL imported twice is one entry. */
+export async function revocationListFrom(
   der: Uint8Array,
   label: string,
   summary: RevocationListSummary,
   addedAt = Date.now(),
-): RevocationList {
-  const encoded = toBase64(der);
-  let hash = 0;
-  for (const character of encoded) hash = (hash * 31 + character.charCodeAt(0)) % 0xffffffff;
-  return { id: `crl-${hash.toString(16)}`, label, derBase64: encoded, addedAt, ...summary };
+): Promise<RevocationList> {
+  return { id: `crl-${await sha256Hex(der)}`, label, derBase64: toBase64(der), addedAt, ...summary };
 }
 
 export function revocationListDer(list: RevocationList): Uint8Array {
   return fromBase64(list.derBase64);
 }
 
+/** Add, replacing an entry with the same CRL; the content decides, so an entry stored under an earlier kind of id is recognised. */
 export function addRevocationList(file: RevocationListsFile, list: RevocationList): RevocationListsFile {
-  return { version: 1, lists: [...file.lists.filter((entry) => entry.id !== list.id), list] };
+  return { version: 1, lists: [...file.lists.filter((entry) => entry.derBase64 !== list.derBase64), list] };
 }
 
 export function removeRevocationList(file: RevocationListsFile, id: string): RevocationListsFile {

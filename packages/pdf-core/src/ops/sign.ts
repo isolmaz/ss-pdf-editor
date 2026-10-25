@@ -36,11 +36,12 @@
 
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
-import { mapMupdfError } from '../engines/mupdf';
+import { loadMupdf, mapMupdfError } from '../engines/mupdf';
 import {
   annotsOf,
   arrayIn,
   dictionaryIn,
+  embedNotoSans,
   openForWrite,
   pageObjects,
   readName,
@@ -49,6 +50,7 @@ import {
   resolved,
   saveIncremental,
   saveRewrite,
+  subsetEmbeddedFaces,
   text,
 } from '../engines/mupdf-write';
 import { detachedCmsSignature, type SignatureDigest, type SignatureIdentity } from '../signature-cms';
@@ -128,23 +130,34 @@ function appearanceLines(request: SignRequest, date: Date): readonly string[] {
   ];
 }
 
+/** The most lines a visible stamp shows. */
+const STAMP_ROWS = 6;
+
 /**
- * A `/Sig` field's appearance: a form XObject drawing the lines in Helvetica.
+ * A `/Sig` field's appearance: a form XObject drawing the lines.
  *
- * Helvetica is a **standard-14** face, so nothing is embedded and every reader has it —
- * which is the right trade for a signature stamp: the appearance is not the signature, and
- * the file must stay small and portable. Text is escaped for a PDF literal string, and the
- * content is built from ASCII only (a Turkish letter in a stamp would need a font this
- * appearance does not have; the field's own `/T` and the CMS carry the real names).
+ * A stamp of printable ASCII is drawn in Helvetica, a **standard-14** face: nothing is
+ * embedded and every reader has it, which keeps the common file small and portable. A line
+ * with any other letter (`ş`, `İ`, `ğ`) is outside what that face spells, so the stamp is
+ * drawn in the embedded Noto Sans instead, cut to the glyphs it shows. A character that face
+ * lacks, a control character or a space other than the plain one is drawn as `?`.
  */
-function appearance(
+async function appearance(
   doc: PDFDocument,
   rect: { readonly width: number; readonly height: number },
   lines: readonly string[],
-): PDFObject {
+): Promise<PDFObject> {
+  const rows = lines.slice(0, STAMP_ROWS);
+  const mupdf = await loadMupdf();
+  const face = rows.some((line) => /\P{ASCII}/u.test(line)) ? await embedNotoSans(mupdf, doc) : null;
   const escapeLiteral = (text: string): string => text.replace(/[\\()]/g, (character) => `\\${character}`);
-  const safe = (text: string): string => text.replace(/[^\x20-\x7e]/g, '?');
-  const rows = lines.slice(0, 6);
+  const drawable = (character: string): boolean =>
+    /[\x20-\x7e]/.test(character) ||
+    (face !== null && !/[\p{C}\p{Z}]/u.test(character) && face.covers(character));
+  const safe = (text: string): string =>
+    Array.from(text, (character) => (drawable(character) ? character : '?')).join('');
+  const operand = (text: string): string =>
+    face === null ? `(${escapeLiteral(safe(text))})` : face.encode(safe(text));
   const step = 11;
   const size = rows.length > 3 ? 8 : 9;
   const top = rect.height - 12;
@@ -152,9 +165,10 @@ function appearance(
     .map((line, index) => {
       const y = top - index * step;
       if (y < 6) return '';
-      return `BT /Helv ${size} Tf 0 0 0 rg 6 ${y.toFixed(2)} Td (${escapeLiteral(safe(line))}) Tj ET\n`;
+      return `BT /Stamp ${size} Tf 0 0 0 rg 6 ${y.toFixed(2)} Td ${operand(line)} Tj ET\n`;
     })
     .join('');
+  if (face !== null) subsetEmbeddedFaces(mupdf, doc, [face]);
   return doc.addStream(`0.92 0.92 0.92 rg 0.75 w 0 0 ${rect.width} ${rect.height} re B\n0 0 0 rg\n${body}`, {
     Type: 'XObject',
     Subtype: 'Form',
@@ -162,7 +176,12 @@ function appearance(
     BBox: [0, 0, rect.width, rect.height],
     Resources: {
       Font: {
-        Helv: { Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: 'WinAnsiEncoding' },
+        Stamp: face?.ref ?? {
+          Type: 'Font',
+          Subtype: 'Type1',
+          BaseFont: 'Helvetica',
+          Encoding: 'WinAnsiEncoding',
+        },
       },
     },
   });
@@ -311,16 +330,16 @@ function areaOf(dict: PDFObject): { x: number; y: number; width: number; height:
  * Returns `true` when the field kept its own place over a rectangle the caller gave, so the
  * report can say that this one was not used.
  */
-function dressExistingField(
+async function dressExistingField(
   doc: PDFDocument,
   field: ExistingField,
   request: SignatureFieldRequest,
   lines: readonly string[],
-): boolean {
+): Promise<boolean> {
   const own = areaOf(field.dict);
   const asked = request.rect;
   if (own !== null) {
-    field.dict.put('AP', { N: appearance(doc, own, lines) });
+    field.dict.put('AP', { N: await appearance(doc, own, lines) });
     return asked !== undefined;
   }
   if (asked === undefined) return false;
@@ -334,17 +353,17 @@ function dressExistingField(
     field.dict.put('P', page);
   }
   field.dict.put('Rect', [asked.x, asked.y, asked.x + asked.width, asked.y + asked.height]);
-  field.dict.put('AP', { N: appearance(doc, asked, lines) });
+  field.dict.put('AP', { N: await appearance(doc, asked, lines) });
   return false;
 }
 
 /** A fresh `/Widget` + `/FT /Sig` field, wired into the page and the `/AcroForm`. */
-function createSignatureField(
+async function createSignatureField(
   doc: PDFDocument,
   request: SignatureFieldRequest,
   name: string,
   lines: readonly string[],
-): SignatureTarget {
+): Promise<SignatureTarget> {
   const pageIndex = request.pageIndex ?? 0;
   const page = pageAt(doc, pageIndex);
   const rect = request.rect;
@@ -364,7 +383,7 @@ function createSignatureField(
     Rect: box,
     P: page,
   });
-  if (rect !== undefined) dict.put('AP', { N: appearance(doc, rect, lines) });
+  if (rect !== undefined) dict.put('AP', { N: await appearance(doc, rect, lines) });
   annotsOf(doc, page, true)?.push(dict);
 
   // Every PDF the engine opens has a catalog: a file without one is refused at open.
@@ -490,9 +509,9 @@ export async function signPdf(
     let target: SignatureTarget;
     let keptOwnPlace = false;
     if (existing === null) {
-      target = createSignatureField(doc, asked, newFieldName(usedFieldNames(doc), wanted), lines);
+      target = await createSignatureField(doc, asked, newFieldName(usedFieldNames(doc), wanted), lines);
     } else {
-      keptOwnPlace = dressExistingField(doc, existing, asked, lines);
+      keptOwnPlace = await dressExistingField(doc, existing, asked, lines);
       target = existing;
     }
     fieldName = qualifiedName(target.dict);

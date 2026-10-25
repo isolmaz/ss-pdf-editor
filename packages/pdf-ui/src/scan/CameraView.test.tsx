@@ -184,6 +184,27 @@ describe('CameraView problems', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('says so when the camera stops after it was live, and starts it again on request', async () => {
+    await renderLive();
+    act(() => camera.emit('ended'));
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('The camera stopped.')).toBeTruthy();
+    expect(shutter().hasAttribute('disabled')).toBe(true);
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await screen.findByText('Looking for the page…');
+    expect(camera.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(shutter().hasAttribute('disabled')).toBe(false);
+  });
+
+  it('cannot take a photo while the camera delivers no picture', async () => {
+    await renderLive();
+    expect(shutter().hasAttribute('disabled')).toBe(false);
+    act(() => camera.emit('mute'));
+    expect(shutter().hasAttribute('disabled')).toBe(true);
+    act(() => camera.emit('unmute'));
+    expect(shutter().hasAttribute('disabled')).toBe(false);
+  });
+
   it('tells an insecure page why, with no way to retry', async () => {
     Object.defineProperty(window, 'isSecureContext', { configurable: true, value: false });
     renderView();

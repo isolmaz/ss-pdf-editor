@@ -1208,6 +1208,39 @@ describe('editStructure: moving, grouping and unwrapping', () => {
       }
     });
   });
+  it('gives the children of an unwrapped element its /Lang where they have none of their own', async () => {
+    const built = await buildTagged({
+      pages: [
+        {
+          fonts: HELV,
+          content: [0, 1].map((id) => tagged('P', id, shown(10, 150 - id * 20, `t${id}`))).join(''),
+        },
+      ],
+      tree: [
+        {
+          s: 'Document',
+          k: [
+            {
+              s: 'Sect',
+              lang: 'fr-FR',
+              pg: 0,
+              k: [
+                { s: 'P', k: [0] },
+                { s: 'P', lang: 'de-DE', k: [1] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const model = await modelOfBytes(built.bytes);
+    const out = await editStructure(built.bytes, [{ op: 'unwrap', key: keyOfRole(model, 'Sect') }], run);
+    const document = (await modelOfBytes(out.bytes)).roots[0];
+    expect(document?.kids.map((kid) => (kid.kind === 'element' ? kid.node.lang : null))).toEqual([
+      'fr-FR',
+      'de-DE',
+    ]);
+  });
 });
 
 describe('editStructure: refusals', () => {

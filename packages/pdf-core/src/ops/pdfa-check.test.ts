@@ -499,6 +499,89 @@ describe('metadata stream and claim', () => {
     expect(details(noCreator, 'xmp-info')).toEqual(['Author: missing from the metadata stream']);
   });
 
+  it('compares the dates and the trapped flag in part 1, an instant written in another time zone being the same date', async () => {
+    const xmpDates = (created: string, modified: string, trapped: string) =>
+      `<xmp:CreateDate>${created}</xmp:CreateDate><xmp:ModifyDate>${modified}</xmp:ModifyDate><pdf:Trapped>${trapped}</pdf:Trapped>`;
+    const infoDates = (entries: Record<string, string>, trapped?: string) => (doc: PDFDocument) => {
+      const dictionary = doc.newDictionary();
+      for (const [key, value] of Object.entries(entries)) dictionary.put(key, doc.newString(value));
+      if (trapped !== undefined) dictionary.put('Trapped', doc.newName(trapped));
+      doc.getTrailer().put('Info', doc.addObject(dictionary));
+    };
+
+    const same = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('2026-01-02T10:00:00Z', '2026-03-04T05:06:07.250-05:00', 'False'),
+        xmpDeclarations: NS,
+        catalog: infoDates(
+          { CreationDate: "D:20260102120000+02'00'", ModDate: 'D:20260304100607Z' },
+          'False',
+        ),
+      }),
+    );
+    expect(rule(same, 'xmp-info')?.state).toBe('pass');
+
+    const dateOnly = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('2026-01-02', '2026-03-04T10:06Z', 'Unknown'),
+        xmpDeclarations: NS,
+        catalog: infoDates({ CreationDate: 'D:20260102', ModDate: 'D:20260304100600' }, 'Unknown'),
+      }),
+    );
+    expect(rule(dateOnly, 'xmp-info')?.state).toBe('pass');
+
+    const coarse = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('2026', '2026-03', 'False'),
+        xmpDeclarations: NS,
+        catalog: infoDates({ CreationDate: 'D:2026', ModDate: 'D:202603' }),
+      }),
+    );
+    expect(rule(coarse, 'xmp-info')?.state).toBe('pass');
+
+    const wrong = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('2026-01-02T10:00:00Z', '2026-03-04T10:06:07Z', 'True'),
+        xmpDeclarations: NS,
+        catalog: infoDates({ CreationDate: 'D:20260102120000Z', ModDate: 'D:20260304100608Z' }, 'False'),
+      }),
+    );
+    expect(details(wrong, 'xmp-info')).toEqual([
+      'CreationDate: differs from the metadata stream',
+      'ModDate: differs from the metadata stream',
+      'Trapped: differs from the metadata stream',
+    ]);
+
+    const notDates = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('yesterday', '2026-13-45T00:00:00Z', 'True'),
+        xmpDeclarations: NS,
+        catalog: infoDates({ CreationDate: 'D:20260102120000Z', ModDate: 'not a date' }),
+      }),
+    );
+    expect(details(notDates, 'xmp-info')).toEqual([
+      'CreationDate: differs from the metadata stream',
+      'ModDate: differs from the metadata stream',
+    ]);
+
+    const absent = await checkPdfA(
+      build({
+        claim: '1',
+        catalog: infoDates({ CreationDate: 'D:20260102120000Z', ModDate: 'D:20260304100607Z' }, 'True'),
+      }),
+    );
+    expect(details(absent, 'xmp-info')).toEqual([
+      'CreationDate: missing from the metadata stream',
+      'ModDate: missing from the metadata stream',
+      'Trapped: missing from the metadata stream',
+    ]);
+  });
+
   it('asks for the pdfaid part and a conformance that part allows', async () => {
     const noConformance = await checkPdfA(build({ conformance: null }));
     expect(details(noConformance, 'xmp-claim')).toEqual(['no pdfaid:conformance']);
@@ -1110,11 +1193,32 @@ describe('form XObjects', () => {
       part === undefined ? {} : { part },
     );
 
-  it('reads the content of a form XObject, which starts without a known colour', async () => {
+  it('reads the content of a form XObject, which starts in the colour of the page that draws it', async () => {
     const painted = await useForm((doc) => form(doc, '0 0 0 1 k 0 0 5 5 re f'));
     expect(details(painted, 'device-colour')).toEqual(['DeviceCMYK']);
     const unset = await useForm((doc) => form(doc, '0 0 5 5 re f'));
-    expect(details(unset, 'device-colour')).toEqual([]);
+    expect(details(unset, 'device-colour')).toEqual(['DeviceGray']);
+  });
+
+  it('paints a form with the colour the page selected before it, as the page itself is judged', async () => {
+    const colourOf = async (formContent: string, content: string) =>
+      details(await useForm((doc) => form(doc, formContent), { content }, 2), 'device-colour');
+    expect(
+      details(
+        await checkPdfA(build({ claim: null, content: '1 0 0 rg 0 0 50 50 re f' }), { part: 2 }),
+        'device-colour',
+      ),
+    ).toEqual(['DeviceRGB']);
+    expect(await colourOf('0 0 50 50 re f', '1 0 0 rg /Fm Do')).toEqual(['DeviceRGB']);
+    expect(await colourOf('0 0 5 5 re S', '0 0 0 1 K /Fm Do')).toEqual(['DeviceCMYK']);
+    // A form used under two colours is read under each.
+    expect(await colourOf('0 0 5 5 re f', '1 0 0 rg /Fm Do 0 0 0 1 k /Fm Do')).toEqual([
+      'DeviceRGB',
+      'DeviceCMYK',
+    ]);
+    // The form's own colour replaces the inherited one, and a colour set inside q … Q is gone after it.
+    expect(await colourOf('0 0 0 1 k 0 0 5 5 re f', '1 0 0 rg /Fm Do')).toEqual(['DeviceCMYK']);
+    expect(await colourOf('0 0 5 5 re f', 'q 1 0 0 rg Q /Fm Do')).toEqual(['DeviceGray']);
   });
 
   it('resolves a form’s names through its own resources, or through the page’s when it has none', async () => {
@@ -1803,6 +1907,28 @@ describe('annotations', () => {
     expect(await colourOfAppearance(cmyk)).toEqual(['DeviceCMYK']);
     expect(await colourOfAppearance((doc) => ({ On: cmyk(doc), Off: 'NotAStream' }))).toEqual(['DeviceCMYK']);
     expect(await colourOfAppearance(() => 5)).toEqual([]);
+  });
+
+  it('starts an appearance stream in DeviceGray, the colour a stream paints with before it selects one', async () => {
+    const report = await checkPdfA(
+      build({
+        claim: null,
+        content: '0 0 5 5 re n',
+        page: (doc, page) =>
+          page.put('Annots', [
+            doc.addObject({
+              Type: 'Annot',
+              Subtype: 'Stamp',
+              Rect: [0, 0, 10, 10],
+              F: 4,
+              AP: {
+                N: doc.addStream('0 0 5 5 re f', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 10, 10] }),
+              },
+            } as never),
+          ]),
+      }),
+    );
+    expect(details(report, 'device-colour')).toEqual(['DeviceGray']);
   });
 
   it('names a widget that has an action or an additional action', async () => {

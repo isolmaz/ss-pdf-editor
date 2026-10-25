@@ -99,7 +99,17 @@ describe('useDraftRecovery', () => {
       expect.objectContaining({ id: 'draft', name: 'report.pdf', sizeBytes: 3 }),
     );
     expect(notice()).toBe(en('draft.restored', { count: 1 }));
-    expect(outside.pruneRecentHandles).toHaveBeenCalledWith(new Set(['kept']));
+    expect(outside.pruneRecentHandles).toHaveBeenCalledWith(new Set(['kept', 'draft']));
+  });
+
+  it('keeps the file handle of an open tab and of a stored draft whose entry the recent list no longer names', async () => {
+    outside.loadRecentDocuments.mockReturnValue([]);
+    const open = openTab(store, 'open', 'open.pdf');
+    stored(manifest('restored'));
+    stored(manifest('idle', { dirty: false }));
+    await recover();
+
+    expect(outside.pruneRecentHandles).toHaveBeenCalledWith(new Set([open.id, 'restored', 'idle']));
   });
 
   it('keeps the document the user already has in front', async () => {

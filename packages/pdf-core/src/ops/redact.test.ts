@@ -13,24 +13,33 @@ import { PRODUCER_LINE } from './metadata';
 import { type RedactOptions, type RedactRect, redactDocument, verifyRedaction } from './redact';
 import {
   addNote,
+  addPatternText,
+  addSoftMaskText,
   addWidget,
   annotationsOf,
   build,
   decompressed,
+  drawOnPage,
   FIELD_SECRET,
   fieldNames,
   formAndNotes,
+  groupForm,
   inProduced,
   LINK_SECRET,
   listOnPage,
+  MASK_SECRET,
   mark,
   NOTE_SECRET,
   OUTSIDE_LINK,
   OUTSIDE_NOTE,
   OUTSIDE_VALUE,
+  PATTERN_SECRET,
   pageTexts,
   setForm,
+  showText,
+  softMaskState,
   TWO_LINES,
+  tilingPattern,
 } from './redact.fixtures';
 import { editWidgets, withPdf, xfaPdf } from './xfa-form.fixtures';
 
@@ -45,6 +54,9 @@ const BASE: Omit<RedactOptions, 'marks'> = {
 
 /** Covers the second line only: its baseline sits 200 pt below the top. */
 const SECRET_MARK = mark([40, 185, 200, 210]);
+
+/** Over nothing at all on the pages `build` makes: only what the page's resources hold can be left. */
+const NOWHERE = mark([300, 10, 390, 40]);
 
 /** What `formAndNotes` leaves on its page once `SECRET_MARK` has been applied: everything far from the mark. */
 const OUTSIDE_ANNOTATIONS = [
@@ -67,7 +79,7 @@ describe('redactDocument', () => {
       },
     );
     expect(await pageTexts(outcome.bytes)).toEqual(['Public line']);
-    expect(outcome.verification).toEqual({ marksCleared: true, remaining: [] });
+    expect(outcome.verification).toEqual({ marksCleared: true, remaining: [], paintText: [] });
     expect(events).toEqual([
       'op.progress.redact:1/1',
       'op.progress.redact.save:0/1',
@@ -257,6 +269,61 @@ describe('redactDocument', () => {
     expect(outcome.report.notes).toContainEqual({ kind: 'lost', key: 'op.note.redact.metadataCleared' });
   });
 
+  it('clears the XMP packets and private data that pages and objects carry, and only when asked to', async () => {
+    const SECRETS = [
+      'PAGEXMPSECRET',
+      'FORMXMPSECRET',
+      'IMAGEXMPSECRET',
+      'PAGEPIECESECRET',
+      'CATALOGPIECESECRET',
+    ];
+    const packet = (doc: PDFDocument, secret: string): PDFObject =>
+      doc.addStream(`<x:xmpmeta>${secret}</x:xmpmeta>`, { Type: 'Metadata', Subtype: 'XML' });
+    const source = await build([TWO_LINES], (doc) => {
+      const page = doc.findPage(0);
+      page.put('Metadata', packet(doc, 'PAGEXMPSECRET'));
+      page.put('PieceInfo', {
+        App: { Data: doc.newString('PAGEPIECESECRET'), LastModified: 'D:20200101000000Z' },
+      });
+      doc
+        .getTrailer()
+        .get('Root')
+        .put('PieceInfo', { App: { Data: doc.newString('CATALOGPIECESECRET') } });
+      const form = doc.addStream('q Q', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, 10, 10],
+        Metadata: packet(doc, 'FORMXMPSECRET'),
+      });
+      const image = doc.addStream('A', {
+        Type: 'XObject',
+        Subtype: 'Image',
+        Width: 1,
+        Height: 1,
+        ColorSpace: 'DeviceGray',
+        BitsPerComponent: 8,
+        Metadata: packet(doc, 'IMAGEXMPSECRET'),
+      });
+      drawOnPage(doc, 'q /Fm1 Do /Im1 Do Q', { XObject: { Fm1: form, Im1: image } });
+    });
+    for (const secret of SECRETS) expect(await decompressed(source), secret).toContain(secret);
+
+    const kept = await redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run);
+    for (const secret of SECRETS) expect(await decompressed(kept.bytes), secret).toContain(secret);
+
+    const cleared = await redactDocument(source, { ...BASE, cleanMetadata: true, marks: [SECRET_MARK] }, run);
+    for (const secret of SECRETS) expect(await decompressed(cleared.bytes), secret).not.toContain(secret);
+    const left = await inProduced(cleared.bytes, (doc) => {
+      const page = doc.findPage(0);
+      return [page.get('Metadata'), page.get('PieceInfo'), doc.getTrailer().get('Root').get('PieceInfo')].map(
+        (entry) => entry.isNull(),
+      );
+    });
+    expect(left).toEqual([true, true, true]);
+    expect(cleared.report.steps).toContain('clean(Info+XMP)');
+    expect(cleared.report.notes).toContainEqual({ kind: 'lost', key: 'op.note.redact.metadataCleared' });
+  });
+
   it('clears a direct XMP entry, and reports no metadata clean-up for a document without any', async () => {
     const direct = await build([TWO_LINES], (doc) => {
       doc.getTrailer().get('Root').put('Metadata', { Type: 'Metadata' });
@@ -306,6 +373,89 @@ describe('redactDocument', () => {
   });
 });
 
+describe('redactDocument: page boxes written with their corners the other way round', () => {
+  it('erases on a page whose /MediaBox lists the upper corner first', async () => {
+    const source = await build([TWO_LINES], (doc) => {
+      doc.findPage(0).put('MediaBox', [400, 500, 0, 0]);
+    });
+    const outcome = await redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run);
+    expect(await pageTexts(outcome.bytes)).toEqual(['Public line']);
+    expect(outcome.verification).toEqual({ marksCleared: true, remaining: [], paintText: [] });
+  });
+
+  it('measures the marks from the top and left of a /CropBox that lists the upper corner first', async () => {
+    // The crop box is x 200–350, y 100–400 of the media box: the text sits at its left edge.
+    const lines = [
+      ['Public line', 210, 350],
+      ['Secret 4711', 210, 250],
+    ] as const;
+    const source = await build([{ lines }], (doc) => {
+      doc.findPage(0).put('CropBox', [350, 400, 200, 100]);
+    });
+    expect(await pageTexts(source)).toEqual(['Public line Secret 4711']);
+    // x is the user-space x, y counts down from the top of the crop box (user y 400).
+    const outcome = await redactDocument(source, { ...BASE, marks: [mark([205, 135, 300, 160])] }, run);
+    expect(await pageTexts(outcome.bytes)).toEqual(['Public line']);
+  });
+});
+
+describe('redactDocument: a page whose /UserUnit is not 1', () => {
+  it('erases the marked text, the mark being given in user units, on a page of any turn', async () => {
+    for (const unit of [2, 0.5]) {
+      for (const rotate of [0, 90, 180, 270] as const) {
+        const source = await build([{ ...TWO_LINES, rotate }], (doc) => {
+          doc.findPage(0).put('UserUnit', unit);
+        });
+        const outcome = await redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run);
+        expect(await pageTexts(outcome.bytes), `unit ${unit}, rotation ${rotate}`).toEqual(['Public line']);
+        expect(outcome.report.notes.some((entry) => entry.key === 'op.note.redact.emptyMarks')).toBe(false);
+      }
+    }
+  });
+
+  it('removes the field and the comment under the mark of a /UserUnit page, and keeps those outside it', async () => {
+    const source = await build([TWO_LINES], (doc) => {
+      formAndNotes(doc);
+      doc.findPage(0).put('UserUnit', 2);
+    });
+    const outcome = await redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run);
+    expect(await pageTexts(outcome.bytes)).toEqual(['Public line']);
+    expect(await annotationsOf(outcome.bytes)).toEqual(OUTSIDE_ANNOTATIONS);
+  });
+});
+
+describe('redactDocument: text drawn through a tiling pattern or a soft mask', () => {
+  it('refuses a page whose tiling pattern shows text instead of reporting the mark as verified', async () => {
+    const source = await build([TWO_LINES], (doc) => {
+      addPatternText(doc);
+    });
+    // The fixture really carries what the engine leaves behind: the text is not in the text layer.
+    expect(await pageTexts(source)).toEqual(['Public line Secret 4711']);
+    expect(await decompressed(source)).toContain(PATTERN_SECRET);
+    await expect(redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run)).rejects.toMatchObject({
+      code: 'verification-failed',
+      details: {
+        engineMessage:
+          'a tiling pattern or soft-mask group of page(s) 0 shows text that redaction does not erase',
+      },
+    });
+  });
+
+  it('refuses a page whose soft-mask group shows text', async () => {
+    const source = await build([TWO_LINES], (doc) => {
+      addSoftMaskText(doc);
+    });
+    expect(await decompressed(source)).toContain(MASK_SECRET);
+    await expect(redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run)).rejects.toMatchObject({
+      code: 'verification-failed',
+      details: {
+        engineMessage:
+          'a tiling pattern or soft-mask group of page(s) 0 shows text that redaction does not erase',
+      },
+    });
+  });
+});
+
 describe('redactDocument: annotations and form fields under a mark', () => {
   it('removes the form field, the comment and the link under the mark, byte for byte, and leaves those outside it alone', async () => {
     const source = await build([TWO_LINES], formAndNotes);
@@ -327,7 +477,7 @@ describe('redactDocument: annotations and form fields under a mark', () => {
     }
     for (const kept of [OUTSIDE_VALUE, OUTSIDE_NOTE, OUTSIDE_LINK]) expect(forensic).toContain(kept);
 
-    expect(outcome.verification).toEqual({ marksCleared: true, remaining: [] });
+    expect(outcome.verification).toEqual({ marksCleared: true, remaining: [], paintText: [] });
     expect(outcome.report.steps).toContain('clean(annotations+fields)');
     expect(outcome.report.notes).toContainEqual({
       kind: 'lost',
@@ -751,7 +901,7 @@ describe('redactDocument: a static XFA form', () => {
       });
       expect(kept, layout).toEqual({ xfaGone: true, fields: 1 });
       expect(outcome.report.notes, layout).toContainEqual({ kind: 'lost', key: 'op.note.redact.xfaDropped' });
-      expect(outcome.verification, layout).toEqual({ marksCleared: true, remaining: [] });
+      expect(outcome.verification, layout).toEqual({ marksCleared: true, remaining: [], paintText: [] });
     }
   });
 
@@ -784,10 +934,12 @@ describe('verifyRedaction', () => {
     ).toEqual({
       marksCleared: false,
       remaining: [1],
+      paintText: [],
     });
     expect(await verifyRedaction(source, [mark([300, 10, 390, 40], 0)])).toEqual({
       marksCleared: true,
       remaining: [],
+      paintText: [],
     });
   });
 
@@ -798,15 +950,18 @@ describe('verifyRedaction', () => {
     expect(await verifyRedaction(source, [mark([130, 190, 155, 205])])).toEqual({
       marksCleared: false,
       remaining: [0],
+      paintText: [],
     });
     expect(await verifyRedaction(source, [mark([165, 190, 200, 205])])).toEqual({
       marksCleared: false,
       remaining: [0],
+      paintText: [],
     });
     // Over nothing at all on page 1, and on a page that carries no annotations.
     expect(await verifyRedaction(source, [mark([300, 10, 390, 40]), mark([130, 190, 155, 205], 1)])).toEqual({
       marksCleared: true,
       remaining: [],
+      paintText: [],
     });
   });
 
@@ -818,6 +973,7 @@ describe('verifyRedaction', () => {
     expect(await verifyRedaction(source, [mark([130, 190, 155, 205])])).toEqual({
       marksCleared: true,
       remaining: [],
+      paintText: [],
     });
   });
 
@@ -827,10 +983,12 @@ describe('verifyRedaction', () => {
     expect(await verifyRedaction(source, [mark([40, 185, 51, 210])])).toEqual({
       marksCleared: true,
       remaining: [],
+      paintText: [],
     });
     expect(await verifyRedaction(source, [mark([40, 185, 58, 210])])).toEqual({
       marksCleared: false,
       remaining: [0],
+      paintText: [],
     });
   });
 
@@ -841,8 +999,13 @@ describe('verifyRedaction', () => {
     ).toEqual({
       marksCleared: false,
       remaining: [-1, 3],
+      paintText: [],
     });
-    expect(await verifyRedaction(rotated, [SECRET_MARK])).toEqual({ marksCleared: false, remaining: [0] });
+    expect(await verifyRedaction(rotated, [SECRET_MARK])).toEqual({
+      marksCleared: false,
+      remaining: [0],
+      paintText: [],
+    });
   });
 
   it('refuses a mark with an unknown geometry space', async () => {
@@ -857,7 +1020,11 @@ describe('verifyRedaction', () => {
     const source = await build([TWO_LINES], (doc) => {
       doc.findPage(0).put('Contents', doc.addStream('BT /F1 12 Tf 0 Tz 50 300 Td (Hidden) Tj ET', {}));
     });
-    expect(await verifyRedaction(source, [SECRET_MARK])).toEqual({ marksCleared: true, remaining: [] });
+    expect(await verifyRedaction(source, [SECRET_MARK])).toEqual({
+      marksCleared: true,
+      remaining: [],
+      paintText: [],
+    });
   });
 
   it('refuses a page without a readable box as a damaged document', async () => {
@@ -867,6 +1034,142 @@ describe('verifyRedaction', () => {
     await expect(verifyRedaction(source, [SECRET_MARK])).rejects.toMatchObject({
       code: 'corrupt-document',
       details: { engineMessage: 'page has no readable CropBox/MediaBox' },
+    });
+  });
+
+  it('names the page whose pattern or soft mask shows text and leaves the other marked pages alone', async () => {
+    const source = await build([TWO_LINES, TWO_LINES], (doc) => {
+      addPatternText(doc, PATTERN_SECRET, 1);
+    });
+    expect(await verifyRedaction(source, [NOWHERE])).toEqual({
+      marksCleared: true,
+      remaining: [],
+      paintText: [],
+    });
+    expect(await verifyRedaction(source, [mark(NOWHERE.rect, 1), NOWHERE])).toEqual({
+      marksCleared: false,
+      remaining: [],
+      paintText: [1],
+    });
+    const masked = await build([TWO_LINES], (doc) => addSoftMaskText(doc));
+    expect(await verifyRedaction(masked, [NOWHERE])).toEqual({
+      marksCleared: false,
+      remaining: [],
+      paintText: [0],
+    });
+  });
+
+  it('follows forms, patterns and soft-mask groups down to the stream that shows the text', async () => {
+    const shown = showText('NESTEDSECRET');
+    const variants: Record<string, (doc: PDFDocument) => void> = {
+      'a pattern in the resources of a form': (doc) => {
+        const form = groupForm(doc, '', { Pattern: { P1: tilingPattern(doc, shown) } });
+        drawOnPage(doc, 'q /Fm1 Do Q', { XObject: { Fm1: form } });
+      },
+      'a soft mask in the resources of a form': (doc) => {
+        const form = groupForm(doc, '', { ExtGState: { GS1: softMaskState(doc, groupForm(doc, shown)) } });
+        drawOnPage(doc, 'q /Fm1 Do Q', { XObject: { Fm1: form } });
+      },
+      'a soft mask in the resources of a pattern': (doc) => {
+        const pattern = tilingPattern(doc, '0 g 0 0 10 10 re f', {
+          ExtGState: { GS1: softMaskState(doc, groupForm(doc, shown)) },
+        });
+        drawOnPage(doc, '/Pattern cs /P1 scn 40 290 200 30 re f', { Pattern: { P1: pattern } });
+      },
+      'a pattern in the resources of a soft-mask group': (doc) => {
+        const group = groupForm(doc, '', { Pattern: { P1: tilingPattern(doc, shown) } });
+        drawOnPage(doc, 'q /GS1 gs 40 290 200 30 re f Q', { ExtGState: { GS1: softMaskState(doc, group) } });
+      },
+      'a form a pattern draws': (doc) => {
+        const pattern = tilingPattern(doc, '/Fm1 Do', { XObject: { Fm1: groupForm(doc, shown) } });
+        drawOnPage(doc, '/Pattern cs /P1 scn 40 290 200 30 re f', { Pattern: { P1: pattern } });
+      },
+      'a form a soft-mask group draws': (doc) => {
+        const group = groupForm(doc, '/Fm1 Do', { XObject: { Fm1: groupForm(doc, shown) } });
+        drawOnPage(doc, 'q /GS1 gs 40 290 200 30 re f Q', { ExtGState: { GS1: softMaskState(doc, group) } });
+      },
+      'resources the page tree supplies': (doc) => {
+        addPatternText(doc);
+        const page = doc.findPage(0);
+        page.get('Parent').put('Resources', page.get('Resources'));
+        page.delete('Resources');
+      },
+    };
+    for (const [name, prepare] of Object.entries(variants)) {
+      const source = await build([TWO_LINES], prepare);
+      expect(await verifyRedaction(source, [NOWHERE]), name).toEqual({
+        marksCleared: false,
+        remaining: [],
+        paintText: [0],
+      });
+    }
+  });
+
+  it('passes resources that paint without showing text', async () => {
+    const variants: Record<string, (doc: PDFDocument) => void> = {
+      'a pattern that only fills': (doc) => {
+        const pattern = tilingPattern(doc, '0 0 1 rg 0 0 10 10 re f');
+        drawOnPage(doc, '/Pattern cs /P1 scn 40 290 200 30 re f', { Pattern: { P1: pattern } });
+      },
+      'a pattern that is a shading and not a stream': (doc) => {
+        drawOnPage(doc, '', { Pattern: { P1: doc.addObject({ PatternType: 2 }) } });
+      },
+      'a text-showing form, which the engine edits': (doc) => {
+        drawOnPage(doc, 'q /Fm1 Do Q', { XObject: { Fm1: groupForm(doc, showText('FORMSECRET')) } });
+      },
+      'an image': (doc) => {
+        const image = doc.addStream('A', {
+          Type: 'XObject',
+          Subtype: 'Image',
+          Width: 1,
+          Height: 1,
+          ColorSpace: 'DeviceGray',
+          BitsPerComponent: 8,
+        });
+        drawOnPage(doc, 'q /Im1 Do Q', { XObject: { Im1: image } });
+      },
+      'a graphics state without a soft mask': (doc) => {
+        drawOnPage(doc, '', { ExtGState: { GS1: doc.addObject({ Type: 'ExtGState', CA: 0.5 }) } });
+      },
+      'a soft mask of none': (doc) => {
+        drawOnPage(doc, '', { ExtGState: { GS1: doc.addObject({ SMask: 'None' }) } });
+      },
+      'a soft mask without a group': (doc) => {
+        drawOnPage(doc, '', { ExtGState: { GS1: doc.addObject({ SMask: { S: 'Alpha' } }) } });
+      },
+      'a graphics state that points nowhere': (doc) => {
+        drawOnPage(doc, '', { ExtGState: { GS1: doc.newIndirect(9999) } });
+      },
+      'a form that draws itself': (doc) => {
+        const form = groupForm(doc, '');
+        form.put('Resources', { XObject: { Fm1: form } });
+        drawOnPage(doc, 'q /Fm1 Do Q', { XObject: { Fm1: form } });
+      },
+      'a page without resources': (doc) => {
+        doc.findPage(0).delete('Resources');
+      },
+      'resources that are no dictionary': (doc) => {
+        doc.findPage(0).put('Resources', 3);
+      },
+    };
+    for (const [name, prepare] of Object.entries(variants)) {
+      const source = await build([TWO_LINES], prepare);
+      expect(await verifyRedaction(source, [NOWHERE]), name).toEqual({
+        marksCleared: true,
+        remaining: [],
+        paintText: [],
+      });
+    }
+  });
+
+  it('counts a pattern it cannot read as a content stream as showing text', async () => {
+    const source = await build([TWO_LINES], (doc) => {
+      drawOnPage(doc, '', { Pattern: { P1: tilingPattern(doc, ') Tj') } });
+    });
+    expect(await verifyRedaction(source, [NOWHERE])).toEqual({
+      marksCleared: false,
+      remaining: [],
+      paintText: [0],
     });
   });
 

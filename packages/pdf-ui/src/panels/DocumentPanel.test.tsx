@@ -336,12 +336,12 @@ describe('DocumentPanel: outline', () => {
 describe('DocumentPanel: attachments', () => {
   const ATTACHMENT = { id: 'a', filename: 'report.csv', description: '', content: null };
 
-  it('hands picked files and names to remove to the shell', async () => {
+  it('hands picked files and the keys of the attachments to remove to the shell', async () => {
     engine.listPdfAttachments.mockResolvedValue([ATTACHMENT]);
     engine.readPdfAttachment.mockResolvedValue(new Uint8Array(1));
     const { user, container, onAddAttachments, onRemoveAttachments } = show({ tab: 'attachments' });
     await user.click(await screen.findByRole('button', { name: 'Remove attachment: report.csv' }));
-    expect(onRemoveAttachments).toHaveBeenCalledExactlyOnceWith(['report.csv']);
+    expect(onRemoveAttachments).toHaveBeenCalledExactlyOnceWith(['a']);
 
     const file = new File(['x'], 'x.txt');
     await user.upload(container.querySelector('input[data-attachment-picker]') as HTMLInputElement, file);

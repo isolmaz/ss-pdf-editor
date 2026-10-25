@@ -229,6 +229,10 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
    * line (`null` when the copy is stored). The caller owns the notice because it sets its own
    * success line right after, and the shell has one line: a warning set here would be
    * replaced by that line.
+   *
+   * The tab opens as unsaved work: no file holds these bytes until a Save or an Export writes
+   * them. Bytes produced while a sensitive session is in front (an unlocked copy, a tool's result
+   * of that document) are as sensitive as it: the tab keeps no recovery copy and no draft.
    */
   async function openProducedTab(
     name: string,
@@ -254,7 +258,9 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
       await handle.destroy();
       throw new ToolError('page-limit', { engine: 'model', path: name });
     }
-    const tab = session.openDocument({ name, bytes, sha256, pageCount: handle.pageCount });
+    const sensitive = session.active?.sensitive === true;
+    const tab = session.openDocument({ name, bytes, sha256, pageCount: handle.pageCount, unwritten: true });
+    if (sensitive) session.setSensitive(tab.id, true);
     adoptHandle(tab.id, handle);
     addRecentDocument({
       id: tab.id,
@@ -264,12 +270,14 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
     });
     hideStartScreen();
     let warning: string | null = null;
-    try {
-      const sourceKey = sourceKeyFor(tab.id, sha256);
-      await draftStorage().putSource(sourceKey, bytes);
-      sourceStored(tab.id, sourceKey);
-    } catch (error) {
-      warning = storedCopyWarning(error, t);
+    if (!sensitive) {
+      try {
+        const sourceKey = sourceKeyFor(tab.id, sha256);
+        await draftStorage().putSource(sourceKey, bytes);
+        sourceStored(tab.id, sourceKey);
+      } catch (error) {
+        warning = storedCopyWarning(error, t);
+      }
     }
     setCurrentPage(0);
     return warning;

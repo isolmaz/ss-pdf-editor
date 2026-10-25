@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export type CameraProblem = 'denied' | 'none' | 'insecure' | 'unsupported' | 'busy' | 'failed';
+export type CameraProblem = 'denied' | 'none' | 'insecure' | 'unsupported' | 'busy' | 'failed' | 'stopped';
 
 export interface CameraDevice {
   readonly id: string;
@@ -33,6 +33,8 @@ export interface CameraState {
   readonly deviceId: string | null;
   /** The video's own size, once frames are flowing. */
   readonly size: { readonly width: number; readonly height: number } | null;
+  /** The track is live but delivers no picture (the camera is covered, switched off or taken by the system). */
+  readonly muted: boolean;
 }
 
 /** Classify what `getUserMedia` threw. Exported for the dialog's tests and probes. */
@@ -92,6 +94,7 @@ export function useCamera(): UseCamera {
     devices: [],
     deviceId: null,
     size: null,
+    muted: false,
   });
 
   const release = useCallback(() => {
@@ -133,7 +136,16 @@ export function useCamera(): UseCamera {
             element.srcObject = stream;
             await element.play().catch(() => undefined);
           }
-          const settings = stream.getVideoTracks()[0]?.getSettings();
+          const track = stream.getVideoTracks()[0];
+          // Unplugging the camera or taking its permission back ends the track without any call
+          // from here; without this the view would keep a frozen frame as a live camera.
+          track?.addEventListener('ended', () => {
+            release();
+            setState((current) => ({ ...current, status: 'problem', problem: 'stopped', muted: false }));
+          });
+          track?.addEventListener('mute', () => setState((current) => ({ ...current, muted: true })));
+          track?.addEventListener('unmute', () => setState((current) => ({ ...current, muted: false })));
+          const settings = track?.getSettings();
           const all = await navigator.mediaDevices.enumerateDevices().catch(() => []);
           if (mine !== generation.current) return;
           const devices = all
@@ -148,6 +160,7 @@ export function useCamera(): UseCamera {
               settings?.width !== undefined && settings.height !== undefined
                 ? { width: settings.width, height: settings.height }
                 : null,
+            muted: track?.muted === true,
           });
         } catch (error) {
           if (mine !== generation.current) return;

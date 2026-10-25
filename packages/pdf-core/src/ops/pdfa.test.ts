@@ -10,9 +10,10 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadMupdf, openPdf } from '../engines/mupdf';
+import { parsePdfDate } from './annotation-threads';
 import { blankForm, handPdf } from './forms.fixtures';
 import { convertToPdfA } from './pdfa';
-import { plain, rich, withUnreadableContent } from './pdfa.fixtures';
+import { plain, rich, withModDate, withUnreadableContent } from './pdfa.fixtures';
 import { checkPdfA } from './pdfa-check';
 
 // `rich()` holds a text value under an empty appearance: flattening draws it again with the
@@ -112,6 +113,33 @@ describe('convertToPdfA', () => {
     expect(outcome.converted).toBe(true);
     expect(outcome.report.steps).toEqual(['pdfa.prepare', 'pdfa.convert', 'pdfa.verify']);
     expect(outcome.report.notes.map((entry) => entry.key)).not.toContain('op.note.pdfa.alreadyCompliant');
+  });
+
+  it('converts a PDF/A-1 file whose Information dates disagree with its XMP, instead of calling it compliant', async () => {
+    const compliant = (await convertToPdfA(await source(), { part: 1 }, run)).bytes;
+    const skewed = await withModDate(compliant, 'D:20200101000000Z');
+    const check = await checkPdfA(skewed);
+    expect(check).toMatchObject({ verdict: 'claims-with-violations', violations: 1, targetFromClaim: true });
+    expect(
+      check.rules.find((entry) => entry.id === 'xmp-info')?.samples.map((entry) => entry.detail),
+    ).toEqual(['ModDate: differs from the metadata stream']);
+
+    const outcome = await convertToPdfA(skewed, { part: 1 }, run);
+    expect(outcome.converted).toBe(true);
+    expect(outcome.report.notes.map((entry) => entry.key)).not.toContain('op.note.pdfa.alreadyCompliant');
+    const again = await checkPdfA(outcome.bytes);
+    expect(again).toMatchObject({ verdict: 'claims-and-meets', violations: 0 });
+    const doc = openPdf(await loadMupdf(), outcome.bytes);
+    try {
+      const packet = new TextDecoder().decode(
+        doc.getTrailer().get('Root').get('Metadata').readStream().asUint8Array(),
+      );
+      const stored = parsePdfDate(doc.getMetaData('info:ModDate') ?? '');
+      expect(stored).not.toBeNull();
+      expect(stored).toBe(Date.parse(/ModifyDate>([^<]+)</.exec(packet)?.[1] ?? ''));
+    } finally {
+      doc.destroy();
+    }
   });
 
   it('refuses a file that needs a password before the engine starts', async () => {

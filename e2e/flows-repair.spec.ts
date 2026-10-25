@@ -49,7 +49,9 @@ test('repair: a file with no cross-reference table becomes a clean copy that ope
     ),
   ).toBeVisible();
   await dialog.getByRole('button', { name: 'Open in new tab' }).click();
-  await expect(page.getByRole('button', { name: 'cutoff-repaired.pdf', exact: true })).toBeVisible({
+  await expect(
+    page.getByRole('button', { name: 'cutoff-repaired.pdf Unsaved changes', exact: true }),
+  ).toBeVisible({
     timeout: 30_000,
   });
 

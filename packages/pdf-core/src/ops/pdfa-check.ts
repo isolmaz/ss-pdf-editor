@@ -20,7 +20,8 @@
  *  - `streams` — no LZW, no external stream (`/F`, `/FFilter`), over **every** object;
  *  - `xmp`, `xmp-claim`, `xmp-schemas`, `xmp-info` — the metadata stream, the `pdfaid`
  *    identification, properties from schemas the packet does not describe, and (part 1) the
- *    Information dictionary agreeing with the packet;
+ *    Information dictionary agreeing with the packet: its text entries, `/CreationDate` and
+ *    `/ModDate` (the same instant, in whatever time zone) and `/Trapped`;
  *  - `output-intent` — the profile of each PDF/A output intent (header, class, components);
  *  - `device-colour` — DeviceGray/RGB/CMYK painted without a matching output intent or
  *    `Default*` space, found by reading the content streams (`pdfa-content.ts`);
@@ -46,6 +47,7 @@ import type { PDFDocument, PDFObject } from 'mupdf';
 import { hexStringToLatin1, loadMupdf, openPdf } from '../engines/mupdf';
 import { readName, resolved } from '../engines/mupdf-write';
 import { engineFailure } from './accessibility';
+import { parsePdfDate } from './annotation-threads';
 import { nameOf, numberOf, type Operand, scanContent } from './pdfa-content';
 import { NS_DC, NS_PDF, NS_XMP, parseXmp, type XmpPacket, xmpList, xmpText } from './pdfa-xmp';
 import { throwIfAborted } from './types';
@@ -270,13 +272,25 @@ interface Graphics {
   mode: number;
 }
 
+/** The colour spaces a content stream starts with. */
+type Colours = Pick<Graphics, 'fill' | 'stroke'>;
+
+/** Where nothing is known of the colour: a pattern cell, a soft-mask group. */
+const UNKNOWN_COLOURS: Colours = { fill: 'unknown', stroke: 'unknown' };
+
+/** The graphics state a page or an annotation appearance starts in. */
+const DEFAULT_COLOURS: Colours = { fill: 'DeviceGray', stroke: 'DeviceGray' };
+
 interface Context {
   readonly part: PdfAPart;
   readonly findings: Findings;
   readonly signal: AbortSignal | undefined;
   readonly outputIntent: { readonly present: boolean; readonly space: 'RGB' | 'CMYK' | 'GRAY' | null };
-  /** Indirect form XObjects, patterns and soft-mask groups already read, by object number. */
-  readonly visited: Set<number>;
+  /**
+   * Indirect form XObjects, patterns and soft-mask groups already read: a form by object number and
+   * the colours it started with, a pattern or a soft-mask group by object number.
+   */
+  readonly visited: Set<string>;
   /** Fonts a content stream selected and painted with, by key, and whether any paint was visible. */
   readonly fonts: Map<string, { readonly font: PDFObject; readonly pageIndex: number; visible: boolean }>;
   /** Graphics states (`gs`) already judged, by object number. */
@@ -420,9 +434,30 @@ function checkAllObjects(doc: PDFDocument, part: PdfAPart, findings: Findings): 
  * Metadata
  * ------------------------------------------------------------------ */
 
+const XMP_DATE =
+  /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?)?)?$/;
+
+/** An XMP date (ISO 8601, any of its shorter forms) as milliseconds since the epoch; a zone-less one is UTC. */
+function xmpDateMillis(value: string): number | null {
+  const match = XMP_DATE.exec(value.trim());
+  if (match === null) return null;
+  const [, year, month = '', day = '', hour = '', minute = '', second = '', zone = ''] = match;
+  return parsePdfDate(`D:${year}${month}${day}${hour}${minute}${second}${zone.replace(':', "'")}`);
+}
+
+/** A PDF date and an XMP date name the same second, whatever time zone each is written in. */
+function sameInstant(fromInfo: string, fromXmp: string): boolean {
+  const instant = parsePdfDate(fromInfo);
+  return instant !== null && instant === xmpDateMillis(fromXmp);
+}
+
 const INFO_KEYS: readonly {
   readonly info: string;
   readonly read: (packet: XmpPacket) => string | null;
+  /** The Information entry is a name (`/Trapped`), not a text string. */
+  readonly name?: true;
+  /** How the two values are compared; trimmed text equality when absent. */
+  readonly same?: (fromInfo: string, fromXmp: string) => boolean;
 }[] = [
   { info: 'Title', read: (packet) => xmpText(packet, NS_DC, 'title') },
   { info: 'Author', read: (packet) => (xmpList(packet, NS_DC, 'creator') ?? []).join(', ') || null },
@@ -430,6 +465,9 @@ const INFO_KEYS: readonly {
   { info: 'Keywords', read: (packet) => xmpText(packet, NS_PDF, 'Keywords') },
   { info: 'Creator', read: (packet) => xmpText(packet, NS_XMP, 'CreatorTool') },
   { info: 'Producer', read: (packet) => xmpText(packet, NS_PDF, 'Producer') },
+  { info: 'CreationDate', read: (packet) => xmpText(packet, NS_XMP, 'CreateDate'), same: sameInstant },
+  { info: 'ModDate', read: (packet) => xmpText(packet, NS_XMP, 'ModifyDate'), same: sameInstant },
+  { info: 'Trapped', read: (packet) => xmpText(packet, NS_PDF, 'Trapped'), name: true },
 ];
 
 function infoText(info: PDFObject | null, name: string): string | null {
@@ -482,12 +520,12 @@ function checkMetadata(trailer: PDFObject, loaded: LoadedMetadata, part: PdfAPar
   if (part === 1) {
     const info = resolved(trailer.get('Info'));
     for (const entry of INFO_KEYS) {
-      const fromInfo = infoText(info, entry.info);
+      const fromInfo = entry.name === true ? readName(info?.get(entry.info)) : infoText(info, entry.info);
       if (fromInfo === null || fromInfo === '') continue;
       const fromXmp = entry.read(packet);
       if (fromXmp === null)
         findings.add('xmp-info', { detail: `${entry.info}: missing from the metadata stream` });
-      else if (fromXmp.trim() !== fromInfo.trim()) {
+      else if (!(entry.same?.(fromInfo, fromXmp) ?? fromXmp.trim() === fromInfo.trim())) {
         findings.add('xmp-info', { detail: `${entry.info}: differs from the metadata stream` });
       }
     }
@@ -728,12 +766,14 @@ function checkImageDictionary(image: PDFObject, context: Context, scope: Scope):
   }
 }
 
-function scanForm(form: PDFObject, context: Context, parent: Scope): void {
+/** Read a form XObject, which paints with the colours in effect where it is drawn (`initial`). */
+function scanForm(form: PDFObject, context: Context, parent: Scope, initial: Colours): void {
   if (parent.depth >= MAX_FORM_DEPTH) return;
   const number = key(form);
   if (number >= 0) {
-    if (context.visited.has(number)) return;
-    context.visited.add(number);
+    const read = `${number}:${initial.fill}:${initial.stroke}`;
+    if (context.visited.has(read)) return;
+    context.visited.add(read);
   }
   const subtype = nameAt(form, 'Subtype');
   if (subtype === 'PS' || !form.get('PS').isNull()) {
@@ -769,11 +809,11 @@ function scanForm(form: PDFObject, context: Context, parent: Scope): void {
     pageIndex: parent.pageIndex,
     depth: parent.depth + 1,
   };
-  scanStream(form, context, scope, 'unknown');
+  scanStream(form, context, scope, initial);
 }
 
 /** Read a content stream: colour use, font use, and the objects it paints. */
-function scanStream(stream: PDFObject, context: Context, scope: Scope, initial: Cs): void {
+function scanStream(stream: PDFObject, context: Context, scope: Scope, initial: Colours): void {
   if (context.signal !== undefined) throwIfAborted(context.signal);
   const bytes = streamBytes(stream);
   if (bytes === null) {
@@ -783,13 +823,13 @@ function scanStream(stream: PDFObject, context: Context, scope: Scope, initial: 
   scanBytes(bytes, context, scope, initial);
 }
 
-function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: Cs): void {
+function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: Colours): void {
   if (context.budget < bytes.length) {
     context.budgetExhausted = true;
     return;
   }
   context.budget -= bytes.length;
-  let state: Graphics = { fill: initial, stroke: initial, font: null, mode: 0 };
+  let state: Graphics = { fill: initial.fill, stroke: initial.stroke, font: null, mode: 0 };
   const stack: Graphics[] = [];
 
   const paintFill = (): void => useSpace(context, scope, state.fill);
@@ -897,7 +937,8 @@ function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: C
             checkExtGState(entry, context, scope);
             const mask = dictionaryAt(entry, 'SMask');
             const group = mask === null ? null : mask.get('G');
-            if (group !== null && !group.isNull() && group.isStream()) scanForm(group, context, scope);
+            if (group !== null && !group.isNull() && group.isStream())
+              scanForm(group, context, scope, UNKNOWN_COLOURS);
           }
         }
         break;
@@ -922,7 +963,7 @@ function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: C
           if (mask?.isBoolean() === true && mask.asBoolean()) paintFill();
           else useSpace(context, scope, classifySpace(entry.get('ColorSpace'), scope));
         } else if (subtype === 'Form' || subtype === 'PS') {
-          scanForm(entry, context, scope);
+          scanForm(entry, context, scope, state);
         }
         break;
       }
@@ -981,14 +1022,14 @@ function scanPattern(name: string, context: Context, scope: Scope): void {
   if (!entry.isStream()) return;
   // A stream is always an indirect object, so it has a number.
   const number = key(entry);
-  if (context.visited.has(number)) return;
-  context.visited.add(number);
+  if (context.visited.has(String(number))) return;
+  context.visited.add(String(number));
   const own = dictionaryAt(entry, 'Resources');
   scanStream(
     entry,
     context,
     { resources: own ?? scope.resources, pageIndex: scope.pageIndex, depth: scope.depth + 1 },
-    'unknown',
+    UNKNOWN_COLOURS,
   );
 }
 
@@ -1131,7 +1172,7 @@ function checkAnnotation(annotation: PDFObject, pageIndex: number, context: Cont
         });
       }
     }
-    for (const stream of streams) scanForm(stream, context, scope);
+    for (const stream of streams) scanForm(stream, context, scope, DEFAULT_COLOURS);
   }
   if (subtype === 'Widget') {
     if (!annotation.get('A').isNull() || !annotation.get('AA').isNull()) {
@@ -1404,7 +1445,7 @@ async function run(
         joined[at + chunk.length] = 0x0a;
         at += chunk.length + 1;
       }
-      scanBytes(joined, context, scope, 'DeviceGray');
+      scanBytes(joined, context, scope, DEFAULT_COLOURS);
     }
 
     for (const annotation of arrayItems(page.get('Annots'))) {

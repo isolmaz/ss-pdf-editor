@@ -7,9 +7,10 @@
  *   dist/en/404.html      <- the English not-found page (`public/en/404.html`)
  *   dist/engines/**       <- pinned engine builds (fetched, never committed)
  *
- * One Cloudflare Worker (static assets) serves this tree; deploying stays manual and is
- * never a CI step. The landing and legal pages of the same host (`/`, `/en/`, `/gizlilik`, …)
- * are another Worker, built from the ss-pdf-editor-site repository.
+ * One Cloudflare Worker (static assets) serves this tree. The `deploy` job of ci.yml publishes
+ * it on every push to `main`; `pnpm worker:deploy` is the same publish by hand. The landing
+ * and legal pages of the same host (`/`, `/en/`, `/gizlilik`, …) are another Worker, built from
+ * the ss-pdf-editor-site repository.
  */
 import {
   copyFileSync,
@@ -50,13 +51,15 @@ function sizeOf(path) {
   return total;
 }
 
-// What `public/engines/**` holds is what ships, so it is checked first: a missing or altered
+// What `public/engines/**` and `public/fonts/**` hold is what ships, so it is checked first: a missing or altered
 // pinned file, a file no pin names (a local `worker:deploy` runs no other gate), or a
 // version record that no longer matches the pins stops the assembly.
 const verification = verifyAssets();
 if (verification.problems.length > 0) {
   printReport(verification, { action: 'assemble-dist' });
-  console.error('assemble-dist: public/engines/** does not match the pins — refusing to assemble');
+  console.error(
+    'assemble-dist: public/engines/** or public/fonts/** does not match the pins — refusing to assemble',
+  );
   process.exit(1);
 }
 

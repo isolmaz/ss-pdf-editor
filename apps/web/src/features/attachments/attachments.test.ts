@@ -76,16 +76,16 @@ afterEach(() => {
 
 describe('measuredAttachments', () => {
   it('lists each embedded file with the byte length of its payload, unreadable ones as null', async () => {
-    const first = { filename: 'a.txt', description: 'first' };
-    const second = { filename: 'b.bin', description: '' };
+    const first = { id: 'key-a', filename: 'a.txt', description: 'first' };
+    const second = { id: 'key-b', filename: 'b.bin', description: '' };
     mocks.listPdfAttachments.mockResolvedValue([first, second]);
     mocks.readPdfAttachment.mockImplementation((_handle: unknown, entry: unknown) =>
       entry === first ? Promise.resolve(new Uint8Array(7)) : Promise.reject(new Error('unreadable')),
     );
 
     await expect(measuredAttachments(handle, new AbortController().signal)).resolves.toEqual([
-      { name: 'a.txt', description: 'first', size: 7 },
-      { name: 'b.bin', description: '', size: null },
+      { id: 'key-a', name: 'a.txt', description: 'first', size: 7 },
+      { id: 'key-b', name: 'b.bin', description: '', size: null },
     ]);
     expect(mocks.listPdfAttachments).toHaveBeenCalledWith(handle);
     expect(mocks.readPdfAttachment).toHaveBeenCalledWith(handle, first);
@@ -94,8 +94,8 @@ describe('measuredAttachments', () => {
   it('stops reading payloads once the caller has aborted', async () => {
     const controller = new AbortController();
     mocks.listPdfAttachments.mockResolvedValue([
-      { filename: 'a.txt', description: '' },
-      { filename: 'b.txt', description: '' },
+      { id: 'key-a', filename: 'a.txt', description: '' },
+      { id: 'key-b', filename: 'b.txt', description: '' },
     ]);
     mocks.readPdfAttachment.mockImplementation(() => {
       controller.abort();
@@ -103,7 +103,7 @@ describe('measuredAttachments', () => {
     });
 
     await expect(measuredAttachments(handle, controller.signal)).resolves.toEqual([
-      { name: 'a.txt', description: '', size: 2 },
+      { id: 'key-a', name: 'a.txt', description: '', size: 2 },
     ]);
     expect(mocks.readPdfAttachment).toHaveBeenCalledTimes(1);
   });

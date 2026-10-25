@@ -135,7 +135,7 @@ test('the properties panel: a removal the engine cannot save keeps the file in t
   expect((await readProducedPdf(await exportBytes(page, 'gone.pdf'))).attachmentNames).toEqual([]);
 });
 
-test('the properties panel: removing a file the name tree holds under another key says it was not found and changes nothing', async ({
+test('the properties panel: a file the name tree holds under another key is removed by that key', async ({
   page,
 }) => {
   // The panel lists the file specification's own name; removal looks the tree key up.
@@ -155,11 +155,8 @@ test('the properties panel: removing a file the name tree holds under another ke
   await expect(propsRow(section, 'shown.txt')).toBeVisible();
 
   await propsRow(section, 'shown.txt').getByRole('button', { name: 'Remove attachment shown.txt' }).click();
-  await expect(notice(page, '1 attachment(s) not found in document.')).toBeVisible();
-  await expect(propsRow(section, 'shown.txt')).toBeVisible();
-  expect((await readProducedPdf(await exportBytes(page, 'same.pdf'))).attachmentNames).toEqual([
-    'keyed-differently.txt',
-  ]);
+  await expect(propsRow(section, 'shown.txt')).toHaveCount(0, { timeout: 60_000 });
+  expect((await readProducedPdf(await exportBytes(page, 'gone.pdf'))).attachmentNames).toEqual([]);
 });
 
 test('the properties panel: an attachment pdf.js cannot read back is reported and nothing is downloaded; the next try opens it', async ({

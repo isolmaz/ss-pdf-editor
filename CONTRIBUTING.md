@@ -37,7 +37,9 @@ pnpm check:budgets           # the first-paint JavaScript stays inside its gzip 
 pnpm verify:assets
 pnpm check:licenses
 pnpm assemble:dist
+node tools/hooks/guard.mjs tracked   # the rules of the pre-push hook (no engine builds, keys, env files or oversized blobs)
 pnpm e2e                     # Playwright against the assembled dist/ (signing specs need openssl)
+pnpm coverage --min=100      # unit and browser coverage must reach 100 % (runs the e2e suite again; CI enforces it)
 pnpm ci:behavior             # the behaviour checks in tools/behavior/ (needs openssl)
 ```
 
@@ -64,8 +66,8 @@ and on manual dispatch:
 
 - **`verify`** installs with the frozen lockfile and runs `pnpm typecheck`, `pnpm check`,
   `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`,
-  `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist` and
-  `wrangler deploy --dry-run`, then uploads the assembled `dist/` as the `dist` artifact. It is the
+  `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`,
+  `node tools/hooks/guard.mjs tracked` and `wrangler deploy --dry-run`, then uploads the assembled `dist/` as the `dist` artifact. It is the
   only job that builds the production site: the jobs below that serve or publish the site download
   that artifact, so the bytes the browser tests ran against are the bytes `deploy` uploads.
 - **`e2e`** (after `verify`) runs the Playwright suite in four shards. Each shard downloads the
@@ -85,7 +87,9 @@ and on manual dispatch:
 - **`coverage`** (after both) downloads what they uploaded and runs `pnpm coverage
   --merge=coverage-parts --min=100`: the unit suite and the Playwright suite against the
   unminified build, added together, must cover every line, statement, branch and function; the
-  report is the `coverage-report` artifact.
+  report is the `coverage-report` artifact. It runs even when a part failed, and its first step
+  fails it unless every part succeeded: a skipped job would count as passing for the branch
+  protection.
 - **`deploy`** runs only on a push to `main`, after every job above has passed. It builds nothing: it
   downloads the `dist` artifact of `verify` and runs `pnpm dlx wrangler@4.135.0 deploy` with the
   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets (`wrangler` is not a dependency of the
@@ -112,11 +116,11 @@ added to a pull request. Adding any other label neither starts it nor cancels a 
 to run it again after a push, remove and add the label, or dispatch it. For every fix on the list
 that `tools/review/revert-proof.mjs` reads, the fix's own test must fail on the fix commit's
 parent and pass on the fix commit. The manifest
-`tools/review/revert-proof.json` is an empty list until a pull request wants the proof: that
-pull request adds one entry per fix commit (`commit` as a full SHA, `title`, `kind` `unit` or
+`tools/review/revert-proof.json` lists the fix commits of the pull request that wants the proof,
+one entry per fix commit (`commit` as a full SHA, `title`, `kind` `unit` or
 `e2e`, `tests` the files brought in from the fix, `run` the test files to run, `filter` the
 test-name pattern, and optionally `testCommit` and `failure`, the expected failure pattern for a fix
-whose defect was a throw or a hang rather than a wrong value). With an empty manifest
+whose defect was a throw or a hang rather than a wrong value). With an empty list
 `node tools/review/revert-proof.mjs` says so and exits 0. Run it locally on a clean work tree with
 `node tools/review/revert-proof.mjs [--shard i/n] [--only <sha-prefix>]`: it checks the commits out,
 restores your `HEAD` afterwards and writes `revert-proof-report.json` (git-ignored). An entry counts
@@ -136,8 +140,9 @@ jobs and `deploy` download, the strict shell of the deploy's head check, the lab
    the branch must be up to date with `main`, review conversations must be resolved, and
    force-pushes and deletion are blocked.
 3. A reviewer who did not write the change reads it and records PASS or FAIL on the pull
-   request. Documentation (README, CONTRIBUTING, `docs/`, the site's Turkish and English pages)
-   is part of the review: a behaviour change that is not reflected there is a FAIL.
+   request. Documentation (README, CONTRIBUTING, `docs/`) is part of the review: a behaviour
+   change that is not reflected there is a FAIL. The landing and legal pages (Turkish and
+   English) live in the private ss-pdf-editor-site repository and are reviewed there.
 4. The pull request is merged with a merge commit, never squashed or rebased, so each commit
    keeps naming one fix and its test.
 5. A push to `main` runs the `deploy` job above. If the smoke check of the live site fails,
@@ -256,7 +261,9 @@ page, the camera picture and the magnifier lens.
 ## Repository hygiene
 
 `pnpm install` installs the git hooks: its `prepare` script runs `tools/hooks/install.mjs`,
-which sets `core.hooksPath` to `.githooks`. Both hooks run `tools/hooks/guard.mjs`.
+which sets `core.hooksPath` to `.githooks`. Both hooks run `tools/hooks/guard.mjs`, and git runs
+them only while they are executable (mode 100755 in the index). The `verify` job runs the
+pre-push rules on every pull request, so a fork or a commit made with `--no-verify` is checked too.
 
 The pre-commit hook checks the staged files. It refuses engine builds, traineddata, wasm
 and font binaries, private keys and env files, then runs `biome check --staged`. The

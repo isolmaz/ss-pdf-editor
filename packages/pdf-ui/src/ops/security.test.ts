@@ -92,8 +92,23 @@ describe('unlockDialog', () => {
     );
     const context = await runContext(bytesOf(locked), { name: 'plan.pdf' });
     const result = await unlockDialog.run({ password: 'pw' }, context);
-    expect(result.files[0]?.name).toBe(`plan-1-${context.t('security.unlock.suffix')}.pdf`);
+    expect(result.files[0]?.name).toBe(`plan-${context.t('security.unlock.suffix')}.pdf`);
     expect((await inspectProtection(bytesOf(result))).encrypted).toBe(false);
+  });
+
+  it.each([
+    ['Plan.PDF', 'Plan'],
+    ['plan', 'plan'],
+    ['report-pdf', 'report-pdf'],
+    ['.pdf', 'document'],
+  ])('names the copy of %s after its stem, with "document" when the name has none', async (name, stem) => {
+    const locked = await protectDialog.run(
+      { userPassword: 'pw', ownerPassword: 'ow' },
+      await runContext(await textPdf([['x']])),
+    );
+    const context = await runContext(bytesOf(locked), { name });
+    const result = await unlockDialog.run({ password: 'pw' }, context);
+    expect(result.files[0]?.name).toBe(`${stem}-${context.t('security.unlock.suffix')}.pdf`);
   });
 
   it('refuses a wrong password', async () => {

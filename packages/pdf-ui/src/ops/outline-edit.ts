@@ -179,6 +179,7 @@ export const outlineEditDialog: OperationDialogSpec = {
     },
     {
       kind: 'number',
+      integer: true,
       id: 'page',
       labelKey: 'outline.field.page',
       defaultValue: 1,

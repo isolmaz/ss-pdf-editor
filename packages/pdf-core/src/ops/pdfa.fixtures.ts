@@ -82,3 +82,18 @@ export async function withUnreadableContent(bytes: Uint8Array): Promise<Uint8Arr
     doc.destroy();
   }
 }
+
+/**
+ * `bytes` with the Information dictionary's `/ModDate` replaced, appended incrementally so the
+ * metadata stream stays as it was.
+ */
+export async function withModDate(bytes: Uint8Array, date: string): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = openPdf(mupdf, bytes);
+  try {
+    doc.getTrailer().get('Info').resolve().put('ModDate', doc.newString(date));
+    return new Uint8Array(doc.saveToBuffer('incremental').asUint8Array());
+  } finally {
+    doc.destroy();
+  }
+}

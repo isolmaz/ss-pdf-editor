@@ -90,4 +90,26 @@ describe('writeOcrLayer', () => {
       expect(box?.w ?? 0).toBeGreaterThan(box?.h ?? 0);
     }
   });
+
+  it('writes a Hebrew word with a number so that the viewer reads the number in order', async () => {
+    const input = await scans();
+    const words = [
+      { text: 'שנת2024', x0: 150, y0: 100, x1: 250, y1: 120, confidence: 90 },
+      { text: 'עד100', x0: 50, y0: 100, x1: 140, y1: 120, confidence: 90 },
+    ];
+    const out = await writeOcrLayer(
+      input,
+      [{ pageIndex: 0, words, toPdfPoint: (x, y) => [x, 400 - y] as const }],
+      run,
+    );
+    const handle = await openWithPdfjs(out);
+    try {
+      const content = await handle.textContent(0);
+      expect(content.items.map((item) => item.text.trim()).filter((text) => text !== '')).toEqual(
+        words.map((word) => word.text),
+      );
+    } finally {
+      await handle.destroy();
+    }
+  });
 });

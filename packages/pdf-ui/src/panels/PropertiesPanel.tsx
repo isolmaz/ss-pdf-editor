@@ -42,6 +42,8 @@ import { importTrustRoots } from './trust-roots';
 
 /** One embedded file as the panel lists it; `size` is `null` when its payload cannot be read. */
 export interface AttachmentRow {
+  /** The name-tree key the attachment is removed by; it need not equal `name`. */
+  readonly id: string;
   readonly name: string;
   readonly description: string;
   readonly size: number | null;
@@ -55,7 +57,7 @@ export interface PropertiesPanelProps {
   readonly security: { readonly encrypted: boolean; readonly permissions: readonly string[] } | null;
   readonly loading?: boolean;
   readonly disabled?: boolean;
-  readonly onRemoveAttachment?: (name: string) => void;
+  readonly onRemoveAttachment?: (id: string) => void;
   readonly onAddAttachments?: (files: readonly File[]) => void;
   readonly onReadAttachment?: (name: string) => void;
   /**
@@ -127,6 +129,7 @@ const TRUST_REASON_LABEL: Record<TrustReason, MessageKey> = {
   validity: 'props.sig.trustReason.validity',
   'not-a-ca': 'props.sig.trustReason.notACa',
   'key-usage': 'props.sig.trustReason.keyUsage',
+  'signer-usage': 'props.sig.trustReason.signerUsage',
   'path-length': 'props.sig.trustReason.pathLength',
   'name-constraint': 'props.sig.trustReason.nameConstraint',
   'search-limit': 'props.sig.trustReason.searchLimit',
@@ -210,6 +213,7 @@ const REVOCATION_REASON_LABEL: Record<NonNullable<RevocationCertCheck['reason']>
 const REVOCATION_WHY_LABEL: Record<NonNullable<RevocationCertCheck['unknownReason']>, MessageKey> = {
   'no-list': 'props.sig.rev.why.noList',
   'no-issuer': 'props.sig.rev.why.noIssuer',
+  'issuer-not-trusted': 'props.sig.rev.why.issuerNotTrusted',
   'invalid-list': 'props.sig.rev.why.invalidList',
   'unsupported-list': 'props.sig.rev.why.unsupportedList',
   'list-scope': 'props.sig.rev.why.listScope',
@@ -657,7 +661,7 @@ export function PropertiesPanel({
           <ul aria-label={t('props.attach.title')} className="flex flex-col gap-0.5">
             {attachments.map((attachment) => (
               <li
-                key={attachment.name}
+                key={attachment.id}
                 className="flex items-center gap-2 rounded-sm px-1.5 py-1 hover:bg-kumo-tint"
               >
                 <div className="min-w-0 flex-1">
@@ -687,7 +691,7 @@ export function PropertiesPanel({
                   disabled={disabled === true || onRemoveAttachment === undefined}
                   className={FOCUS_CLASS}
                   aria-label={t('props.attach.removeNamed', { name: attachment.name })}
-                  onClick={() => onRemoveAttachment?.(attachment.name)}
+                  onClick={() => onRemoveAttachment?.(attachment.id)}
                 >
                   {t('props.attach.remove')}
                 </Button>

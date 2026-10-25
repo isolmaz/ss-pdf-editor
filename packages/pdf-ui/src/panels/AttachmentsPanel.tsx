@@ -28,8 +28,8 @@ export interface AttachmentsPanelProps {
   readonly onNotice?: (message: string) => void;
   /** Files to embed (`ops/attachments-write.ts`). The shell does the write; the panel has no bytes. */
   readonly onAdd: (files: readonly File[]) => void;
-  /** Attachment names to remove, by the engine's own filename. */
-  readonly onRemove: (names: readonly string[]) => void;
+  /** Attachments to remove, by their name-tree keys (`PdfAttachment.id`). */
+  readonly onRemove: (ids: readonly string[]) => void;
   /** The host is not taking writes right now (no document, viewing tier, busy). */
   readonly disabled?: boolean;
 }
@@ -266,7 +266,7 @@ export function AttachmentsPanel({
                 title={t('panel.attachments.remove')}
                 aria-label={`${t('panel.attachments.remove')}: ${attachment.filename}`}
                 disabled={disabled === true}
-                onClick={() => onRemove([attachment.filename])}
+                onClick={() => onRemove([attachment.id])}
               />
             </li>
           );

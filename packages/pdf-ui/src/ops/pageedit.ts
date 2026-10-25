@@ -233,6 +233,7 @@ export const insertPagesDialog: OperationDialogSpec = {
     {
       id: 'position',
       kind: 'number',
+      integer: true,
       labelKey: 'insert.position',
       hintKey: 'insert.positionHint',
       defaultValue: 1,
@@ -243,6 +244,7 @@ export const insertPagesDialog: OperationDialogSpec = {
     {
       id: 'count',
       kind: 'number',
+      integer: true,
       labelKey: 'insert.count',
       hintKey: 'insert.countHint',
       defaultValue: 1,

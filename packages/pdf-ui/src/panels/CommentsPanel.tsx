@@ -26,7 +26,7 @@ import type {
 } from 'pdf-core/ops/annotations';
 import { annotationKindKey, REVIEW_STATES } from 'pdf-core/ops/annotations';
 import type { MessageKey, Translator } from 'pdf-shared';
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 import { PanelLoading, PanelMessage } from './PanelParts';
 
 export interface CommentsPanelProps {
@@ -134,6 +134,8 @@ export function CommentsPanel({
 }: CommentsPanelProps) {
   const [filter, setFilter] = useState<AnnotationKind | 'all'>('all');
   const [editing, setEditing] = useState<string | null>(null);
+  /** `editing`, at once: a blur can reach the box after Cancel or Escape and before the state settles. */
+  const editingNow = useRef<string | null>(null);
   const [draft, setDraft] = useState('');
   const [replying, setReplying] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState('');
@@ -191,6 +193,12 @@ export function CommentsPanel({
     });
     return [...pending, ...saved].sort((a, b) => a.pageIndex - b.pageIndex);
   }, [existing, marks]);
+
+  const stopEditing = () => {
+    editingNow.current = null;
+    setEditing(null);
+    setDraft('');
+  };
 
   const sendReply = useCallback(
     (row: CommentRow) => {
@@ -355,8 +363,17 @@ export function CommentsPanel({
                       <button
                         type="button"
                         disabled={disabled === true}
+                        // The box keeps the focus while Cancel is pressed: a blur first would save the edit.
+                        onMouseDown={(event) => {
+                          if (isEditing) event.preventDefault();
+                        }}
                         onClick={() => {
-                          setEditing(isEditing ? null : row.id);
+                          if (isEditing) {
+                            stopEditing();
+                            return;
+                          }
+                          editingNow.current = row.id;
+                          setEditing(row.id);
                           setDraft(row.contents);
                         }}
                         className="whitespace-nowrap rounded-sm px-1 text-[10px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default disabled:opacity-40"
@@ -535,10 +552,13 @@ export function CommentsPanel({
                       value={draft}
                       rows={2}
                       onChange={(event) => setDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') stopEditing();
+                      }}
                       onBlur={() => {
+                        if (editingNow.current !== row.id) return;
                         onEdit?.(row.id, draft);
-                        setEditing(null);
-                        setDraft('');
+                        stopEditing();
                       }}
                       className="w-full rounded-sm border border-kumo-line bg-kumo-base p-1 text-xs text-kumo-default outline-none focus:ring-1 focus:ring-kumo-focus"
                     />

@@ -8,11 +8,12 @@
  * the duration.
  */
 
-import { type SessionStore, type SessionTab, sha256Hex } from 'pdf-model';
-import { ToolError, type Translator } from 'pdf-shared';
+import { type SessionStore, type SessionTab, sha256Hex, workingPageCount } from 'pdf-model';
+import { ToolError, type Translator, toToolError } from 'pdf-shared';
 import { noticeLine, verificationNotices } from '../../notices';
 import { downloadFiles } from '../../operations';
-import { ensureWriteAccess } from '../../recent-handles';
+import { addRecentDocument } from '../../recent';
+import { ensureWriteAccess, putRecentHandle } from '../../recent-handles';
 import type { SaveStepDescription } from '../../save-plan';
 import {
   beginOperation,
@@ -60,10 +61,28 @@ const pdfName = (name: string): string => (name.toLowerCase().endsWith('.pdf') ?
 /** Whether the browser can ask the user where to write a file (File System Access). */
 const hasSavePicker = (): boolean => typeof window !== 'undefined' && 'showSaveFilePicker' in window;
 
-/** The notice a failed write leaves: the failure's message and what to do about it. */
+/**
+ * The notice a failed write leaves: the failure's message and what to do about it. The browser's
+ * file errors are told apart by what the user can do: a refused permission is asked for again,
+ * a file that is gone, locked or has no room is written elsewhere (Save as, or Export).
+ */
 function failureLine(error: unknown, t: Translator): string {
-  const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
+  const toolError = error instanceof DOMException ? fileFailure(error) : toToolError(error);
   return `${t(toolError.messageKey)} ${t(toolError.hintKey)}`;
+}
+
+function fileFailure(error: DOMException): ToolError {
+  const details = { engine: 'fs', engineMessage: error.message };
+  switch (error.name) {
+    case 'NotAllowedError':
+      return new ToolError('permission-denied', details, { cause: error });
+    case 'NotFoundError':
+    case 'NoModificationAllowedError':
+    case 'QuotaExceededError':
+      return new ToolError('write-failed', details, { cause: error });
+    default:
+      return toToolError(error);
+  }
 }
 
 /** The sha-256 of what a file holds. */
@@ -221,12 +240,23 @@ export async function saveDocument(
       // succeeded would make the next Save write in place over a file this one never
       // managed to commit.
       session.setHandle(preparedTab.id, destination.file);
+      // The recent entry reopens, and a draft restored later saves over, the file written last.
+      if (destination.file !== tab.source.handle && !preparedTab.sensitive) {
+        await putRecentHandle(preparedTab.id, destination.file);
+      }
     } else {
       // Direct download fallback when File System Access is not available
       downloadFiles([{ name: pdfName(tab.name), bytes, mime: 'application/pdf' }]);
     }
 
     recordOutput(session, prepared);
+    // The entry describes the file as it is now, so opening it again finds the same document.
+    addRecentDocument({
+      id: preparedTab.id,
+      name: preparedTab.name,
+      sizeBytes: bytes.byteLength,
+      pageCount: workingPageCount(preparedTab),
+    });
     showNotice(
       noticeLine(
         [{ key: 'save.done', params: { name: preparedTab.name } }, ...verificationNotices(verification)],
@@ -277,8 +307,12 @@ export async function exportDocument(host: SaveHost, tabId: string | undefined):
     // Where a download is the only way to keep work — no file to write over, no picker to ask
     // for one — Export is the user's Save, and Save's download is recorded as saved: left
     // unrecorded, a document that was exported stays "unsaved" and closing it warns of a loss.
-    // Anywhere else Export is a copy, and the document stays as dirty as it was.
-    if (tab.source.handle === undefined && !hasSavePicker()) recordOutput(session, prepared);
+    // A document no file holds yet (`savedState` is `null`) has nothing but this download to
+    // keep, so its first Export is its save as well. Anywhere else Export is a copy, and the
+    // document stays as dirty as it was.
+    if (tab.source.handle === undefined && (!hasSavePicker() || tab.savedState === null)) {
+      recordOutput(session, prepared);
+    }
     // The browser-matrix contract: without an in-place handle the user
     // must know why this writes a *new* file instead of saving the one they opened.
     // The verification table travels with it either way: an export is a

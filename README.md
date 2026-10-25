@@ -41,15 +41,15 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | | |
 | --- | --- |
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
-| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
+| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · typed text · links · pictures and signatures · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · detect fields on a flat form · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
-| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder (page grid) · rotate · extract · split · replace · merge (several files, in any order, or the front and back sides of a double-sided scan alternating) · reverse order · remove blank pages · split two-up scans · page boxes and auto-crop · straighten tilted scans · labels |
+| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder (page grid) · rotate · extract · split · replace · merge (several files, in any order, or the front and back sides of a double-sided scan alternating) · add a document · reverse order · remove blank pages · split two-up scans · page boxes and auto-crop · straighten tilted scans · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
-| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · repair of damaged PDFs · PDF/A conversion and check |
+| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · replace, recompress, rotate, crop or fade an embedded image · repair of damaged PDFs · PDF/A conversion and check |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
-| ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes (chosen in Settings) · offline |
+| ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · rename the document · simple and advanced modes (chosen in Settings) · offline |
 
 ## Quick start
 
@@ -83,6 +83,15 @@ pnpm dev                    # http://localhost:5173
 Every capability below is implemented in this repository. You can reach each one from the
 UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home screen.
 
+The editor starts in **Simple mode**, which keeps the features people reach for most:
+opening, merging, converting and saving, organising pages, markup, text editing, forms,
+signing and PDF to Word or Excel. The menu bar, the palette, the tool rail and the docks
+leave out the rest (redaction, encryption, OCR, measurement, comparison, watermarks, Bates
+numbering and layers among them). **Settings → Interface → Advanced mode** shows everything,
+and so does the **Advanced mode** button the palette offers when a search has matches hidden by
+Simple mode. The home screen's **All tools** shows the same tools in either mode. The choice is
+kept on the device.
+
 ### Reading and navigation
 
 - **Home screen.** *Start* opens a PDF (or several, each in its own tab: drop them on the
@@ -105,7 +114,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     Space, `→` and `PageDown` turn to the next page, `←` and `PageUp` to the previous one,
     `Home` and `End` go to the first and last page. `Esc` ends it, and so does the browser
     leaving full screen. A browser that refuses full screen still shows the presentation
-    layout in the page. Leaving restores the zoom you had.
+    layout in the page. Leaving restores the zoom and the page layout (single or book) you had.
 - **Page box.** The status bar's page box goes to the page typed. A number outside the document,
   or text that is not a number, is marked invalid with a short message beside the box (for
   example “Enter 1–5”) and the page stays where it was.
@@ -120,9 +129,13 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   subtag) or, when the file declares none, for the interface language; without such a
   voice it is unavailable and says so.
 - **Navigation aids.** Thumbnails, the outline and document tabs. The recent-files list
-  reopens a document by its identity, never by its file name. In Chromium-based browsers it
+  reopens a document by its identity, never by its file name: two files with the same name
+  are two entries, and opening a file again replaces its earlier entry only when its name, size
+  and page count match. In Chromium-based browsers it
   reopens the file itself (the browser asks for permission again, and once more for write
   access the first time you save over it); elsewhere it asks you to choose the file.
+- **Rename.** **Edit → Rename** edits the open document's name, shown in the header and on
+  its tab.
 - **The document never moves under you.** Marks, selections, measurements and staged
   redactions scroll and zoom with their page. Tools, progress and notices never shift
   the page.
@@ -146,11 +159,18 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   field, a menu, a list and a dialog, and only on an open document (the tools that write also
   need it to be editable). Each tool's letter is in its rail tooltip and in the shortcut list.
   `F4` toggles the page panel and `Shift+F4` the tools dock; `F5` is the browser's reload.
+- **Other shortcuts.** `Ctrl+O` opens, `Ctrl+S` saves, `Ctrl+Shift+S` exports a copy and
+  `Ctrl+P` prints; these four and `Ctrl+K` also work while a field has the focus. `Ctrl+Z`
+  undoes, `Ctrl+Shift+Z` or `Ctrl+Y` redoes. `Ctrl+0` fits the page to the width and `Ctrl+1`
+  shows it at actual size (100 %). `F9` toggles reading mode, `Ctrl+Shift+D` opens the document
+  properties. In reading mode `→`, `↓` and `PageDown` turn to the next page, `←`, `↑` and
+  `PageUp` to the previous one, and `Esc` leaves it.
 
 ### Annotating, forms, measuring
 
-- **Markup.** Highlight (selected text or freehand), ink, notes, stamps, underline,
-  strike-out, squiggly and geometric shapes are all available.
+- **Markup.** Highlight (selected text or freehand), ink, notes, underline, strike-out,
+  squiggly and geometric shapes are all available. Pictures and signatures are placed as
+  stamp annotations (see *Simple signatures and images* below); there are no preset stamps.
 - **Add text.** Click and type. The text is written as a `/FreeText` annotation with
   embedded Noto Sans, so Turkish letters survive in every reader. It stays upright on
   rotated pages.
@@ -213,11 +233,13 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   its dialog shows the size of the document as it is now, not as it was opened. Firefox and
   Safari offer Export only, and there the download is the only way to keep your work, so it
   also counts as saving: the document is no longer marked as having unsaved changes. In
-  Chromium an export is a copy and leaves the document as unsaved as it was. Saving to a file
-  you pick with *Save as* reads that file once, before the document is prepared; it is read
-  again only if its size or modified time changed while the document was being prepared. If the
-  file Save would write changed on disk — since it was opened or last saved here, or, for a
-  *Save as* target, while the document was being prepared — Save writes nothing and asks:
+  Chromium an export is a copy and leaves the document as unsaved as it was, except for a
+  document a tool produced that nothing has saved yet: its first export counts as its save.
+  Saving to a file you pick with *Save as* reads that file once, before the document is
+  prepared; it is read again only if its size or modified time changed while the document was
+  being prepared. If the file Save would write changed on disk — since it was opened or last
+  saved here, or, for a *Save as* target, while the document was being prepared — Save writes
+  nothing and asks:
   **Overwrite** replaces that file with your version, **Save as** writes a new file and leaves
   the changed one alone, **Cancel** keeps both. A changed file is never written over without
   that question; only choosing **Overwrite** lets the write go to it unchecked.
@@ -260,16 +282,19 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 - **Page operations.** Insert, delete, duplicate, reorder, rotate, extract, split, replace
   and merge.
-  - Split cuts by page ranges, every N pages, file size, booklet signatures or the
-    bookmarks of the outline (down to a level you choose): each part is named after its
-    bookmark, the pages before the first bookmark are a part of their own, and a document
-    without bookmarks is told to use another method.
+  - Split cuts by page ranges (one file per range, in the order you type them), every N
+    pages, file size, booklet signatures or the bookmarks of the outline (down to a level you
+    choose): each part is named after its bookmark, the pages before the first bookmark are a
+    part of their own, and a document without bookmarks is told to use another method.
   - The Page menu works on the pages you selected, or on the page on screen when none is
     selected.
   - A new document starts as blank pages of A3, A4, A5, Letter or Legal, in either
     orientation.
   - Merging several files builds a new document in the order you set; its metadata comes
     from the first file, and the report says so.
+  - **File → Add document** appends another PDF to the open one, or inserts it at the start
+    or after the current page; the result replaces the open document, which keeps its own
+    metadata.
   - Outlines, form fields and page labels travel with the pages.
   - *Reverse page order* flips the whole document, or the selected pages among the places they
     hold when two or more are selected. It is one journaled step, undone like any page action.
@@ -352,10 +377,21 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     new text needs (in a merged file, the copy of the font the page itself uses). Otherwise
     it uses a close standard font (Helvetica, Times, Courier) or Noto Sans, sized to match,
     and the report names the font.
-  - Searching without match case treats `I`/`ı` and `İ`/`i` as Turkish and English
-    readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches `sik`.
+  - Searching without match case, here and in the search panel, treats `I`/`ı` and `İ`/`i` as
+    Turkish and English readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches
+    `sik`. A final sigma `ς` and `σ` are the same letter, so `Μαρκος` finds `ΜΑΡΚΟΣ`.
+  - Text is compared in its compatibility form, so `m2` also finds `m²`, `fi` finds the ligature
+    `ﬁ`, and a full-width `Ａ` finds `A`; every match is replaced, whichever form it was in.
+  - A letter and an accent drawn as two glyphs (`e` and U+0301) are compared as the letter
+    they make, so `café` finds either spelling, and a match takes the combining marks that
+    follow its last letter with it.
+  - The new text is one line of words. A line break, a tab and invisible characters such as a
+    zero-width joiner, a soft hyphen or a direction mark are refused before anything is read,
+    and the message names the code points.
 - **Export and import.** Export text as plain text or Markdown. Export pages as PNG, JPEG or
   WebP images, or build a PDF from images.
+  - Markdown export escapes what Markdown would read as syntax (a line `# of users` stays text
+    instead of becoming a heading), so the rendered file shows the page's own words.
 - **Other documents to PDF.** DOCX, XLSX, PPTX, HTML, TXT/MD, CSV/TSV, EPUB and FB2 are
   converted in the browser by MuPDF's layout engine. The result is real text you can select
   and search.
@@ -368,7 +404,13 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     order.
   - Headings become the outline. `http:`, `https:` and `mailto:` links and links inside the
     document become link annotations. The title comes from the file or its name.
-  - Text and CSV that are not UTF-8 are read as Windows-1254, and the report says so.
+  - Text and CSV that open with a UTF-16 byte-order mark (as Notepad and Excel's *Unicode Text*
+    save them) are read as UTF-16; other text that is not UTF-8 is read as Windows-1254. The
+    report says which.
+  - A word with no space that is longer than the line (a URL, a hash, base64) is broken onto
+    several lines in text and CSV, in a table cell within the cell's share of the line, down to
+    20 characters a piece (a table with very many columns can still run wider than the page).
+    Copying it gives the pieces on separate lines.
   - A Word, Excel or PowerPoint file that unpacks to far more than it weighs (a part over 64 MiB,
     or 256 MiB in all) and a CSV with more than 1000 columns or two million cells are refused
     rather than opened.
@@ -416,7 +458,9 @@ nothing leaving the browser.
   camera picker on a laptop; the photograph is taken at the highest resolution the camera
   offers. **Choose photos** takes pictures from files instead, which is also the way on a
   device without a camera or when the camera permission is refused. Denied, missing,
-  in-use and insecure-connection cases each say what to do, in Turkish and English.
+  in-use and insecure-connection cases each say what to do, in Turkish and English, and so
+  does a camera that is unplugged or loses its permission while scanning; the shutter waits
+  while the camera delivers no picture.
 - **The page is found for you.** An outline follows the page in the preview, and the
   photograph is analysed again on capture. A small detector (no OpenCV) finds the page's four
   straight edges even where a finger or glare breaks them. If it is not sure it says so and
@@ -454,12 +498,18 @@ nothing leaving the browser.
   - The file is rewritten as a single revision, and the output is re-checked glyph by glyph
     and for any annotation or field still under a mark. An object-level audit reports any
     remaining terms, earlier revisions and leftover structure.
+  - The engine does not edit text drawn through a tiling pattern or a soft-mask group. A marked
+    page whose patterns or masks show text is refused as unverified and nothing is written,
+    instead of being reported as redacted.
   - The verification covers the marked areas only. Document properties and bookmark titles
     are not checked; the metadata option clears the title, author, subject, keywords and
-    creator fields and the XMP packet, and the notices say exactly that.
-  - The attachments option removes every attached file of the document, wherever it lives, not
-    only the ones the Attachments list shows (a file attached only as an annotation is
-    cleaned too). The report counts each file once and counts only a file that was there.
+    creator fields, every XMP packet (the document's, and those of pages and of the forms and
+    images they draw) and the private application data (`/PieceInfo`) of the document, its pages
+    and its objects, and the notices say exactly that.
+  - The attachments option removes the attached files of the name tree, the file-attachment
+    annotations and the associated files (`/AF`) of the document, its pages, annotations and
+    structure elements, not only the ones the Attachments list shows. Associated files of form
+    or image objects and of marked content are not removed. The report counts each file once and counts only a file that was there.
   - Each page that carried a mark also loses its thumbnail and the alternative text,
     replacement text and expansions its tags carry; the report counts them.
   - A staged mark stays an intent until you apply it. While marks are still staged, saving
@@ -504,6 +554,12 @@ nothing leaving the browser.
     re-encoded.
   - **Remember on this device** is off by default. When ticked, the picture stays in this
     browser's local storage only, and every saved entry can be deleted from the dialog.
+- **Replace image.** **Tools → Replace image** edits an image the document already contains:
+  it swaps in a new PNG or JPEG, recompresses it as JPEG, rotates it by 90, 180 or 270
+  degrees, crops it by percent or changes its opacity. The image object is edited in place, so
+  an image that several pages share changes wherever it is drawn; a quarter turn or a crop also
+  reshapes its frame on the page, and a picture drawn only from inside a form is refused for
+  those two.
 - **Signing.** PAdES B-B from a PKCS#12 identity, with a visible stamp.
   - Signing a file that already carries a signature appends the new one as a revision, so
     the earlier signatures keep validating. Only a file the engine cannot append to (one it
@@ -514,11 +570,23 @@ nothing leaving the browser.
     refused). Without one, the first empty signature field is filled where it sits. Either
     way the field gets a drawn appearance; the stamp position you pick applies to a new
     field, or to an existing one that has no area of its own.
+  - The stamp is drawn in Helvetica when its lines are plain ASCII. A line with other letters
+    (such as `ş`, `ğ` or `İ`) is drawn in an embedded subset of Noto Sans, and a character
+    that face lacks (for example Chinese) or a control or separator character (a non-breaking
+    space, a zero-width joiner, a soft hyphen) shows as `?`.
   - The signer is the certificate that matches the private key in the PKCS#12 file, not the first one it lists.
+  - The visible stamp shows the signer's name, the date in your own time zone and the reason;
+    the signature itself records the same moment in UTC.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
-  - Trust is checked only against certificates you imported. A certificate that is not yet
-    valid is reported with the date it becomes valid; any other shows its expiry date.
+  - Trust is checked only against certificates you imported (a PEM file may hold several, such
+    as a CA bundle; each is added and the ones that cannot be read are counted). A certificate
+    that is not yet valid is reported with the date it becomes valid; any other shows its
+    expiry date.
+  - The signer's own certificate has to allow signing documents: a key usage without digital
+    signature or non-repudiation, or an extended key usage without a signing purpose (e-mail
+    protection, Adobe or Microsoft document signing, document signing, any purpose), is reported
+    as not trusted, however well the chain is built.
   - What you import is stored on this device, and a change is applied only once the write
     succeeded: if the browser's storage refuses it, the root or list is neither added nor
     removed and the notice says why. A stored list the browser cannot read is reported too,
@@ -527,6 +595,11 @@ nothing leaving the browser.
     the signature panel (DER or PEM, kept in the app's own storage until you remove them) and
     the CRLs and OCSP responses stored in the PDF (its validation data and the signature's own). Each certificate in the chain is reported not revoked, revoked (with
     date and reason, and whether that is before or after the signature) or unknown. A list
+    clears a certificate only when the certificate that signed it is a root you imported or chains
+    to one: a PDF that carries its own CA, a certificate under it and a list that CA signed gets
+    "unknown", and with no root imported no certificate is reported not revoked. A revocation
+    counts whoever vouches for the issuer, since only the key that issued the certificate can
+    sign it. A list
     issued before the signature, or one past its next-update date when no trusted timestamp
     fixes the signing time, cannot rule out a revocation: the summary then says the lists are
     too old instead of "not revoked".
@@ -545,7 +618,11 @@ nothing leaving the browser.
     Polish, Czech, Hungarian, Romanian, Swedish, Azerbaijani, Kurdish (Kurmanji), Russian,
     Ukrainian, Bulgarian, Greek, Arabic, Persian, Hebrew, Hindi, Chinese (simplified and
     traditional), Japanese and Korean.
-  - The OCR engine and every language pack are served by this site. Turkish and English are
+  - **Quality.** The dialog offers *Fast* (the default) and *High quality*, and Turkish is
+    ticked. Fast reads with the `fast` models, which only Turkish and English have; High quality
+    reads with the integer `best` models. A run that ticks any other language uses High quality
+    whatever is chosen. The scanned pages of the exact Word layout are always read at High quality.
+  - The OCR engine and every language pack are served by this origin. Turkish and English are
     the two packs listed in the offline manifest, but Settings → Offline use does not fetch
     them (see [Offline use](#offline-use)). The engine and each pack are downloaded the first
     time you run OCR with them; after that they work offline too. If the engine or a language
@@ -553,7 +630,9 @@ nothing leaving the browser.
     language or an engine package is missing, and the next run tries again.
   - Words in scripts the embedded Noto Sans cannot spell (Arabic, Hebrew, CJK) are written in
     a glyph-less font whose codes are the text itself, so they can be searched and copied.
-    Right-to-left words come back in reading order.
+    Right-to-left words come back in reading order, a number or Latin word inside one with its
+    digits and letters in order. That holds for this editor's viewer (pdf.js); another reader,
+    MuPDF's text extraction for one, can order a word that mixes scripts differently.
   - Why Tesseract and no other engine, and why words below 90 % confidence are the ones
     flagged: [docs/ocr-evaluation.md](docs/ocr-evaluation.md). The same OCR reads scanned pages
     for the exact Word layout (see [PDF to Word, Excel and CSV](#text)).
@@ -617,6 +696,8 @@ nothing leaving the browser.
   than 1 GiB in total (1024 MB in the notice) is refused before the run starts. *Cancel* stops the run and leaves the dialog open on the
   report of what finished. The steps are extract pages, compress, OCR, page labels, header/footer and page
   numbering, document properties, text export and security (password and permissions).
+  - A step's page range is checked as it is typed, with the same rules as every other range
+    field (pages 1–2000, no page twice, no backwards range); *Run* waits until it reads.
   - A set of steps can be saved as a JSON ruleset and loaded again. A loaded ruleset runs as
     it is, with the dialog's own steps disabled, until you choose *Discard loaded ruleset*;
     choosing files afterwards does not discard it.
@@ -657,14 +738,20 @@ These describe how the build works; they are not promises.
   - A window with unsaved changes that no draft protects (a sensitive session, or a draft that
     is still being written or could not be written) asks before it is closed or reloaded, and
     an update of the app never reloads it by itself: the update banner asks you to save and
-    reload instead. A window whose changes a draft holds asks nothing.
+    reload instead. A window whose changes a draft holds asks nothing. A document that a tool
+    produced (a merge, an extract, a conversion) opens as unsaved changes, because no file holds
+    it, until it is saved or exported; closing its tab asks first, and a draft brings it back.
+    One produced while a document opened with its password is in front (its unlocked copy, a
+    tool's result of it) is a sensitive session too: no recovery copy and no draft.
   - The recent list keeps the file name, size, page count, when it was last opened and
     whether it is starred in `localStorage`. In Chromium it also keeps a *handle* to the
     file in IndexedDB — a reference the browser asks permission for again, never the file's
     bytes. A sensitive session keeps no handle: marking a document sensitive, or purging it,
     forgets its handle, and so do removing an entry and clearing the list — except that
     clearing keeps the handle of a document that is open in a tab or has a stored draft, so
-    a restored tab can still save over its file.
+    a restored tab can still save over its file; so does the clean-up after the start-up
+    restore. *Save as* makes the new file the one its entry reopens and a restored tab saves
+    over.
   - A signature picture is kept only when you tick **Remember on this device**: in
     `localStorage`, at most six, each deletable from the signature dialog. A sensitive
     session does not offer it.
@@ -688,13 +775,15 @@ These describe how the build works; they are not promises.
     windows never overwrite one draft or delete each other's saved versions. Where the
     browser has no Web Locks, ownership is not enforced.
   - A draft that cannot be read back is reported and skipped; the others are still restored.
+  - A document that was open with no unsaved change and no undo history when its window went
+    away leaves no stored copy: the next start removes it.
   - A tab restored from a draft remembers the file it last saved over, so its first Save is
     checked against that file and not against the original.
   - If the browser's storage refuses the recovery copy of a document you open (storage
     full, for example), the document still opens and the notice says that its recovery copy
     could not be stored and why; until a draft save succeeds, its unsaved changes would not
     survive a closed tab or a crash. A later draft save that fails the same way shows the
-    same sentence.
+    same sentence, and the drafts of the other open documents are still saved.
 - **Deleting a draft is not secure erasure.** It does not overwrite the bytes on disk, and
   the UI never claims that it does.
 
@@ -725,10 +814,9 @@ The limits are defined once, in
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
   newest versions are always kept, and an evicted step is shown as **unavailable**.
 - **Build budgets.** `BUILD_BUDGETS` in `packages/shared/src/limits.ts` holds them: at most
-  250 KiB gzip of first-paint JavaScript, 60 KiB for the landing page (now built in the
-  ss-pdf-editor-site repository) and 25 MiB per asset.
+  250 KiB gzip of first-paint JavaScript and 25 MiB per asset.
   `pnpm check:budgets` (a step of `pnpm ci:verify`, after `pnpm build`) enforces the first; the
-  other two are measured by hand. How the first-paint budget is met: `docs/architecture.md` §2.
+  second is measured by hand. How the first-paint budget is met: `docs/architecture.md` §2.
 
 ## Honest limits
 
@@ -906,7 +994,7 @@ The limits are defined once, in
 | `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
 | `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist |
-| `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
+| `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of `packages/pdf-model`, `packages/shared`, `packages/pdf-text-engine` and `apps/web/src/drafts.ts` (the DOM lib is on, so it does not prove they are DOM-free) |
 | `pnpm ci:behavior` | The behaviour checks in `tools/behavior/` against the assembled `dist/`: the editor flow (`editor-flow-check.mjs`), the text-edit round trip (`text-edit-check.mjs`), then the signing check (`sign-check.mts`, needs `openssl`) |
 | `pnpm ci:verify` / `ci:full` | The full local gate / the same plus `ci:behavior` |
 | `pnpm worker:deploy[:dry]` | `assemble:dist`, then `wrangler deploy` |
@@ -926,7 +1014,7 @@ packages/
   pdf-text-engine/  text model, editability, reflow, fonts
   pdf-ui/           React surfaces: viewer, panels, dialogs, tools, printing
 public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English),
-                    manifest
+                    manifest, favicon.svg, theme-boot.js
 tools/              dist assembly and preview, engine pins, licence audit, regression and docs
                     checks (audit/), coverage report, deploy smoke check,
                     revert-proof, git hook guard (hooks/), Vite hosting plugins (vite/),
@@ -969,6 +1057,7 @@ The PDF → Word export is not measured round trip in CI; its unit tests and the
   10. `verify:assets`
   11. `check:licenses`
   12. `assemble:dist`
+  13. `node tools/hooks/guard.mjs tracked` (the hygiene rules of the git hooks)
 - **`pnpm ci:full`** adds `ci:behavior`:
   - `tools/behavior/editor-flow-check.mjs` drives a real browser through one editing session
     end to end: open, search, highlight, comment, fill a form, delete two pages and add one,
@@ -998,7 +1087,7 @@ The PDF → Word export is not measured round trip in CI; its unit tests and the
 | Source | Lands at |
 |---|---|
 | `apps/web/dist` | `dist/editor/` |
-| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `en/404.html`, manifest, `engines/**`, `fonts/**`) |
+| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `en/404.html`, manifest, `favicon.svg`, `theme-boot.js`, `engines/**`, `fonts/**`) |
 
 The landing and legal pages of the same host (`/`, `/en/`, `/gizlilik`, `/kosullar`,
 `/en/privacy`, `/en/terms`) are not in this repository: they are the private
@@ -1055,8 +1144,11 @@ pnpm worker:deploy:dry      # same, with --dry-run
   fetches; OCR, cached on first use, is not counted against it. The editor's own scripts
   count (capability `app`): engines without a tool's code are not "ready". A half-downloaded
   pack is reported as `missing`, with the missing paths named.
-- **Release isolation.** The cache name carries a release identity, so a new release never
-  reads an older cache.
+- **Release isolation.** The cache name carries a release identity, so a new release answers
+  from its own cache first. An older cache is kept only while a window may still run that
+  release (a window left on its old code by unsaved work), is read only for a file the new one
+  lacks, and is deleted at the first navigation or worker start with no other editor window
+  open.
 - **Engine versions.** Every engine is served from a versioned URL, so a rebuilt engine is
   never answered with old cached bytes under the new editor. Readiness compares those URLs, so
   a cached engine of another version counts as `missing`.
@@ -1101,8 +1193,8 @@ The fonts the app ships are fetched by `pnpm fetch:engines` from pinned npm pack
 the same origin and pinned by size and SHA-256 in `tools/asset-pins.json`. All are SIL Open Font
 License 1.1 (the licence texts are copied to `dist/licenses/`):
 
-- **Document text.** Noto Sans is embedded by stamps, headers and the OCR text layer. A scan exported
+- **Document text.** Noto Sans is embedded by watermarks, Bates numbers, headers, Add text, form field appearances, the OCR text layer and signature stamps whose lines go beyond ASCII. A scan exported
   to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
-  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic.
+  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten families, Noto Sans included, are static TrueType in regular, italic, bold and bold italic.
   Each covers the Turkish letters. Lato is not offered: its faces lack Ğ/ğ, İ and Ş/ş.
 - **Interface and signatures:** Space Grotesk, DM Sans, Dancing Script and Great Vibes.

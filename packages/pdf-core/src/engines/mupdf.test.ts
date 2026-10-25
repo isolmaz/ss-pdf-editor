@@ -53,20 +53,52 @@ function page(entries: Record<string, unknown>) {
 describe('readPageBox', () => {
   it('reads the media box, and the crop box inside it', () => {
     const plain = page({});
-    expect(readPageBox(plain.page)).toEqual({ x: 0, y: 0, width: 200, height: 300 });
+    expect(readPageBox(plain.page)).toEqual({ x: 0, y: 0, width: 200, height: 300, userUnit: 1 });
     plain.doc.destroy();
     const cropped = page({ CropBox: [10, 20, 150, 250] });
-    expect(readPageBox(cropped.page)).toEqual({ x: 10, y: 20, width: 140, height: 230 });
+    expect(readPageBox(cropped.page)).toEqual({
+      x: 10,
+      y: 20,
+      width: 140,
+      height: 230,
+      userUnit: 1,
+    });
     cropped.doc.destroy();
   });
 
   it('clips a crop box that sticks out of the media box, and ignores one that misses it entirely', () => {
     const sticking = page({ CropBox: [-50, -50, 100, 100] });
-    expect(readPageBox(sticking.page)).toEqual({ x: 0, y: 0, width: 100, height: 100 });
+    expect(readPageBox(sticking.page)).toEqual({
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      userUnit: 1,
+    });
     sticking.doc.destroy();
     const missing = page({ CropBox: [500, 500, 600, 600] });
-    expect(readPageBox(missing.page)).toEqual({ x: 0, y: 0, width: 200, height: 300 });
+    expect(readPageBox(missing.page)).toEqual({
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 300,
+      userUnit: 1,
+    });
     missing.doc.destroy();
+  });
+
+  it('reads the page unit, and takes 1 for one that is zero, negative or not a number', () => {
+    for (const [raw, unit] of [
+      [2, 2],
+      [0.5, 0.5],
+      [0, 1],
+      [-3, 1],
+      ['x', 1],
+    ] as const) {
+      const scaled = page({ UserUnit: raw });
+      expect(readPageBox(scaled.page).userUnit).toBe(unit);
+      scaled.doc.destroy();
+    }
   });
 
   it('refuses a page without a readable media box or with an empty one', () => {

@@ -14,11 +14,15 @@ import { useCallback, useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'pdf-editor.locale';
 
+/** The language picked in this visit while the store refused to keep it, for what mounts later. */
+let unstoredLocale: Locale | null = null;
+
 /**
  * The interface language: the one the user chose, else the first of the browser's
  * languages the app has (`navigator.languages`, in order), else Turkish.
  */
 export function getStoredLocale(): Locale {
+  if (unstoredLocale !== null) return unstoredLocale;
   try {
     // Without a `window` (a server render) the reads below throw and the default applies.
     const stored = window.localStorage.getItem(STORAGE_KEY);
@@ -40,17 +44,18 @@ function markDocument(locale: Locale): void {
 
 export function applyLocale(locale: Locale): void {
   try {
-    // Without a `window` (a server render) the first line throws and nothing is applied.
     window.localStorage.setItem(STORAGE_KEY, locale);
-    markDocument(locale);
-    window.dispatchEvent(
-      new CustomEvent('pdf-locale-change', {
-        detail: { locale },
-      }),
-    );
+    unstoredLocale = null;
   } catch {
-    // Storage access may be restricted
+    // Storage access may be restricted: the language still changes, for this visit only.
+    unstoredLocale = locale;
   }
+  markDocument(locale);
+  window.dispatchEvent(
+    new CustomEvent('pdf-locale-change', {
+      detail: { locale },
+    }),
+  );
 }
 
 export function useLocale(): {

@@ -377,6 +377,27 @@ describe('applyPageBoxes refuses requests that are not valid', () => {
       ),
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('hands the thread back between pages while measuring so a cancel raised from another task stops an auto-crop', async () => {
+    const input = await pagesWith(3, () => {});
+    const cancel = new AbortController();
+    const measured: (number | undefined)[] = [];
+    await expect(
+      applyPageBoxes(
+        input,
+        { mode: 'auto-crop', pages: [0, 1, 2] },
+        {
+          signal: cancel.signal,
+          onProgress: (step) => {
+            if (step.phase !== 'measure') return;
+            measured.push(step.done);
+            setTimeout(() => cancel.abort(), 0);
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(measured).toEqual([1]);
+  });
 });
 
 describe('applyPageBoxes: the media box and the boxes derived from it', () => {

@@ -19,8 +19,11 @@
  * Three consequences, and all are the point:
  *
  *  - **A new release never reads the previous release's cache.** The name changes, so the
- *    entries are absent and every request goes to the network; the old cache is deleted on
- *    activation.
+ *    entries are absent and every request goes to the network. A cache lookup tries this
+ *    release's cache first, and a previous release's only for what this one lacks. The old
+ *    cache is deleted once no window is left that could still run that release
+ *    (`pruneStaleCaches`): a page the new worker took over keeps its old code until it reloads,
+ *    and the lazy chunks that code has not loaded yet are no longer on the origin.
  *  - **An engine can never be served under a shell that expects another build of it.**
  *    `/engines/**` is cached by the browser as immutable for a year, so an engine's URL names
  *    its pinned version (`/engines/<engine>/v<digest>/<file>`, `pdf-core`'s `assets.ts`): the
@@ -160,23 +163,37 @@ self.addEventListener('install', (event) => {
   );
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        // Only this application's caches, and only the previous *versions* of them: the
-        // namespace is shared by the whole origin, so an unfiltered delete would reach
-        // another app's storage.
-        Promise.all(
-          keys
-            .filter((key) => key.startsWith('pdf-editor-static-') && key !== CACHE_NAME)
-            .map((key) => caches.delete(key)),
-        ),
-      )
-      .then(() => self.clients.claim()),
+/**
+ * Deletes the caches of this application's previous releases, unless a window may still run one
+ * of them: a page left on its old code (an update waits for unsaved work) loads its remaining
+ * chunks through the worker that took it over, and the previous release's cache is where those
+ * chunks still are. `except` names the windows that do not count: the one a navigation creates.
+ * No browser tells the worker which window a reload replaces, so that window still counts, and
+ * its release's cache goes at the next navigation or activation with no other window open. Only this application's caches are touched — the namespace is shared
+ * by the whole origin, so an unfiltered delete would reach another app's storage.
+ */
+async function pruneStaleCaches(except = []) {
+  // Uncontrolled windows count too: at activation the windows are still the old worker's. Only
+  // those inside the scope do — the origin's other pages never run this application's code.
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const scope = self.registration.scope;
+  if (windows.some((client) => client.url.startsWith(scope) && !except.includes(client.id))) return;
+  const keys = await caches.keys();
+  await Promise.all(
+    keys
+      .filter((key) => key.startsWith('pdf-editor-static-') && key !== CACHE_NAME)
+      .map((key) => caches.delete(key)),
   );
+}
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(pruneStaleCaches().then(() => self.clients.claim()));
 });
+
+/** The cached answer for `request`: this release's cache first, then a previous release's that is still around. */
+async function cachedMatch(request) {
+  return (await caches.match(request, { cacheName: CACHE_NAME })) ?? (await caches.match(request));
+}
 
 function isCacheable(request) {
   if (request.method !== 'GET') return false;
@@ -275,6 +292,12 @@ self.addEventListener('fetch', (event) => {
     request.mode === 'navigate' || url.pathname === '/editor/' || url.pathname === '/editor/index.html';
   const key = engineKey(request);
 
+  // A navigation is where a page moves onto the current release: with no other window of the
+  // editor open, nothing can still need an older release's cache.
+  if (request.mode === 'navigate') {
+    event.waitUntil(pruneStaleCaches([event.resultingClientId]).catch(() => undefined));
+  }
+
   // User performed a force refresh (Ctrl+F5 / Ctrl+Shift+R): bypass cache completely.
   if (request.cache === 'reload') {
     event.respondWith(
@@ -286,7 +309,7 @@ self.addEventListener('fetch', (event) => {
           return withIsolationHeaders(response, isNavigate);
         })
         .catch(async () => {
-          const cached = await caches.match(key);
+          const cached = await cachedMatch(key);
           // Offline: the cached answer, else the offline page.
           return cached ? withIsolationHeaders(cached, isNavigate) : offlineMissing();
         }),
@@ -301,14 +324,17 @@ self.addEventListener('fetch', (event) => {
     // the cache *name* carries the release, so a hit is always this build's bytes. A module
     // retry (`?retry=N`) is looked up, and stored, under the URL without the parameter.
     event.respondWith(
-      caches.match(key).then((cached) => {
+      caches.match(key, { cacheName: CACHE_NAME }).then((cached) => {
         if (cached) return withIsolationHeaders(cached);
         return fetch(request)
           .then((response) => {
             if (response.ok) event.waitUntil(remember(key, response.clone()));
             return response;
           })
-          .catch(() => offlineMissing());
+          .catch(async () => {
+            const previous = await caches.match(key);
+            return previous ? withIsolationHeaders(previous) : offlineMissing();
+          });
       }),
     );
     return;
@@ -326,14 +352,14 @@ self.addEventListener('fetch', (event) => {
           event.waitUntil(remember(request, response.clone()));
           return response;
         }
-        const cached = await caches.match(request);
+        const cached = await cachedMatch(request);
         return cached ? withIsolationHeaders(cached, isNavigate) : response;
       })
       .catch(async () => {
-        const cached = await caches.match(request);
+        const cached = await cachedMatch(request);
         if (cached) return withIsolationHeaders(cached, isNavigate);
         if (isNavigate) {
-          const fallback = await caches.match('/editor/index.html');
+          const fallback = await cachedMatch('/editor/index.html');
           if (fallback) return withIsolationHeaders(fallback, true);
         }
         return offlineMissing();

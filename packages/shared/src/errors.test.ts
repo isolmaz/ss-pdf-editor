@@ -25,7 +25,7 @@ describe('ToolError contract', () => {
   });
 
   it('keeps the engine text for diagnostics without using it as the user message', () => {
-    const error = new ToolError('unsupported', { engine: 'qpdf', engineMessage: 'Unable to process' });
+    const error = new ToolError('unsupported', { engine: 'mupdf', engineMessage: 'Unable to process' });
     expect(error.message).toContain('Unable to process');
     expect(error.code).toBe('unsupported');
     expect(tr[error.messageKey as keyof typeof tr]).not.toContain('Unable to process');
@@ -116,9 +116,9 @@ describe('ToolError contract', () => {
 
   it('keeps the original failure as the cause, and the engine text of whatever was thrown', () => {
     const original = new Error('kaboom');
-    const wrapped = toToolError(original, 'qpdf');
+    const wrapped = toToolError(original, 'mupdf');
     expect(wrapped.cause).toBe(original);
-    expect(wrapped.message).toBe('[internal] qpdf: kaboom');
+    expect(wrapped.message).toBe('[internal] mupdf: kaboom');
 
     const thrownString = toToolError('plain text', 'fs');
     expect(thrownString.code).toBe('internal');
@@ -159,6 +159,18 @@ describe('ToolError contract', () => {
       const translate = createTranslator(locale);
       const message = translate(error.messageKey, error.details.params);
       expect(message, locale).toContain('😀 😁');
+      expect(message, locale).not.toContain('{chars}');
+    }
+  });
+
+  it('puts the code points a replacement-invalid refusal names into its message, in both languages', () => {
+    const error = new ToolError('replacement-invalid', {
+      engine: 'model',
+      params: { chars: 'U+000A U+200D' },
+    });
+    for (const locale of ['tr', 'en'] as const) {
+      const message = createTranslator(locale)(error.messageKey, error.details.params);
+      expect(message, locale).toContain('U+000A U+200D');
       expect(message, locale).not.toContain('{chars}');
     }
   });

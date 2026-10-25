@@ -194,6 +194,22 @@ describe('findBlankPages', () => {
       findBlankPages(bytes, { signal: midway.signal, onProgress: () => midway.abort() }),
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('hands the thread back between pages so a cancel raised from another task stops the scan', async () => {
+    const bytes = await build([{}, {}, {}]);
+    const cancel = new AbortController();
+    const scanned: (number | undefined)[] = [];
+    await expect(
+      findBlankPages(bytes, {
+        signal: cancel.signal,
+        onProgress: (step) => {
+          scanned.push(step.done);
+          setTimeout(() => cancel.abort(), 0);
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(scanned).toEqual([1]);
+  });
 });
 
 describe('splitTwoUpPages', () => {

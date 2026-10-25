@@ -389,6 +389,74 @@ describe('planFindReplace: one line', () => {
   });
 });
 
+describe('planFindReplace: matching without case', () => {
+  const found = (word: string, find: string, matchCase = false): number =>
+    plan(pageOf([blockOf('b0', [lineOf({ words: [word], baseline: 100 })])]), find, 'x', { matchCase }).found;
+
+  it('matches a capital sigma with a final sigma and with a medial one, in either direction', () => {
+    expect(found('ΜΑΡΚΟΣ', 'Μαρκος')).toBe(1);
+    expect(found('Μαρκος', 'ΜΑΡΚΟΣ')).toBe(1);
+    expect(found('ΟΔΥΣΣΕΥΣ', 'οδυσσευς')).toBe(1);
+    expect(found('Μαρκοσ', 'Μαρκος')).toBe(1);
+  });
+
+  it('keeps σ and ς apart when case counts', () => {
+    expect(found('Μαρκος', 'Μαρκοσ', true)).toBe(0);
+    expect(found('Μαρκος', 'Μαρκος', true)).toBe(1);
+  });
+});
+
+describe('planFindReplace: compatibility forms', () => {
+  it('finds a superscript, a ligature and a full-width letter by their plain forms, and replaces each', () => {
+    for (const [word, find] of [
+      ['m²', 'm2'],
+      ['ﬁeld', 'field'],
+      ['ＡB', 'AB'],
+    ] as const) {
+      const result = plan(pageOf([blockOf('b0', [lineOf({ words: [word], baseline: 100 })])]), find, 'x', {
+        matchCase: false,
+      });
+      expect(result).toMatchObject({ found: 1, replaced: 1 });
+    }
+  });
+});
+
+describe('planFindReplace: accents written as a letter and a mark', () => {
+  // A glyph is 5 pt wide from x = 40, so the five glyphs of `cafe` + the combining acute end at 65.
+  const decomposed = 'café';
+  const planOf = (word: string, find: string, replace = 'tea') =>
+    plan(pageOf([blockOf('b0', [lineOf({ words: [word], baseline: 100 })])]), find, replace, {
+      matchCase: false,
+    });
+
+  it('finds the precomposed spelling in a word whose accent is a glyph of its own, and replaces both glyphs', () => {
+    const result = planOf(decomposed, 'café');
+    expect(result).toMatchObject({ found: 1, replaced: 1 });
+    // The erased stretch runs to the end of the mark's glyph, not of the `e`.
+    expect(erased(result)[0]?.[0]).toBeCloseTo(40.05);
+    expect(erased(result)[0]?.[2]).toBeCloseTo(64.95);
+  });
+
+  it('treats the word like its precomposed spelling: `cafe` is not `café`', () => {
+    expect(planOf('café', 'cafe').found).toBe(0);
+    expect(planOf(decomposed, 'cafe').found).toBe(0);
+  });
+
+  it('matches letters and marks that have no precomposed form, and takes the mark with its letter', () => {
+    // `x` + combining acute composes to nothing; searching `x` still finds the letter, and the mark goes with it.
+    const result = planOf('ax́b', 'x', 'y');
+    expect(result).toMatchObject({ found: 1, replaced: 1 });
+    expect(erased(result)[0]?.[0]).toBeCloseTo(45.05);
+    expect(erased(result)[0]?.[2]).toBeGreaterThanOrEqual(54.95);
+    expect(planOf('ax́b', 'x́').found).toBe(1);
+  });
+
+  it('composes a letter with a later mark of its word only, never across a gap', () => {
+    const line = lineOf({ words: ['cafe', '́'], baseline: 100 });
+    expect(plan(pageOf([blockOf('b0', [line])]), 'café', 'tea').found).toBe(0);
+  });
+});
+
 describe('planFindReplace: faces and sizes', () => {
   /** One line, the match at its end, so the replacement is drawn in place. */
   const endOfLine = (look: Look, style: Partial<TextStyle>) =>

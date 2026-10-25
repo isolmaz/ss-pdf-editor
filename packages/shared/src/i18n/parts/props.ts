@@ -68,6 +68,8 @@ export const propsPart = {
     'Zincirdeki bir sertifika denetim anında geçerli değil (süresi dolmuş ya da henüz başlamamış).',
   'props.sig.trustReason.notACa': 'Üst sertifikanın cA ayarlı bir basicConstraints uzantısı yok.',
   'props.sig.trustReason.keyUsage': 'Üst sertifikanın keyUsage uzantısı keyCertSign bitini ayarlamıyor.',
+  'props.sig.trustReason.signerUsage':
+    'İmzalayan sertifikanın keyUsage ya da extKeyUsage uzantısı belge imzalamaya izin vermiyor.',
   'props.sig.trustReason.pathLength': 'Üst sertifikanın pathLenConstraint sınırı aşılıyor.',
   'props.sig.trustReason.nameConstraint':
     'Alt sertifikanın adları izin verilen alt ağacın dışında ya da dışlanan alt ağacın içinde.',
@@ -86,7 +88,7 @@ export const propsPart = {
   'props.sig.roots.remove': 'Kaldır',
   'props.sig.roots.added': '{count} güven kökü eklendi.',
   'props.sig.roots.none': 'Seçilen dosyalarda okunabilir bir sertifika yok.',
-  'props.sig.roots.addedRefused': '{count} güven kökü eklendi; {refused} dosya sertifika olarak okunamadı.',
+  'props.sig.roots.addedRefused': '{count} güven kökü eklendi; {refused} sertifika ya da dosya okunamadı.',
   'props.sig.storeFailed':
     'Güven kökleri ve iptal listelerindeki değişiklik bu cihazda saklanamadı; bu yüzden hiçbir şey değişmedi. {reason}',
   'props.sig.storeUnreadable':

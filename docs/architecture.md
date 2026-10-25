@@ -94,8 +94,8 @@ are; the header, the shell body, the home screen, the banners, the dialog hosts 
 `features/` hooks and stores are not (the rule and its exclusions are in `vite.config.ts`).
 Over the nine profiled sessions (cold load, open a 12-page PDF, scroll, zoom, tool switches,
 search, highlight, command palette, ten idle seconds) this scope renders 4,604 components
-against 9,606 uncompiled and 3,530 with the whole first paint compiled; the whole-first-paint
-build is 262.8 KiB gzip, 12.8 KiB over the budget.
+against 9,606 uncompiled and 3,530 with the whole first paint compiled; compiling the whole
+first paint puts the first paint over the budget, which is why that scope is not used.
 
 One rule follows from compiling: a component keeps its output while its inputs are the same,
 so it must not read mutable imperative state while rendering unless a React input says when
@@ -138,7 +138,8 @@ The readers and writers the shell calls only from a user action go through
 its module on the first call. They are annotation removal, layer writes, attachments, the
 redaction audit, the font inventory, placed pictures, conversion of other formats and of
 images to PDF, XFA inspection and sync, signature verification, the protection check, the
-image list, form read and fill, composition and the session-annotation writer. Only a
+image list, form read and fill, composition, the session-annotation writer and the page-text
+reader that finds the words under redaction marks. Only a
 module that nothing else in the entry graph imports by value can be listed there; one that is
 also imported statically stays in the entry chunk. The comment data formats
 (`annotation-data`, `annotation-xfdf`), form-field detection, `unlockDocument` and the review
@@ -193,7 +194,7 @@ The entry chunk is not all of the first paint: the `modulepreload` links the bui
 it (Kumo's shared dialog chunk, the React runtime, the `mupdf-write` vocabulary and the few
 `pdf-core` modules the shell's hooks and the editor chunk share) download with it. The first
 paint is the entry chunk plus every one of those links, gzipped at Node's default level:
-245.5 KiB over nine files, of which the entry chunk is 198.7 KiB (the compiled `App` and status
+246.5 KiB over ten files, of which the entry chunk is 208.5 KiB (the compiled `App` and status
 bar are about 5 KiB of it). The 250 KiB target
 (`BUILD_BUDGETS.firstPaintJsGzipBytes`) is checked on that sum: `pnpm check:budgets`
 (`tools/check-build-budgets.mjs`) reads the built `apps/web/dist/index.html`, prints each file's
@@ -206,8 +207,8 @@ CI `verify` job, after `pnpm build`.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (40 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
-| `format.ts` | `formatBytes(bytes, locale)`, `formatPercent(fraction, locale)` and `formatDegrees(degrees, locale)`: sizes, percentages and angles the way the interface language writes them (`1,5 KB`, `%140` and `1,8°` in Turkish, `1.5 KB`, `140%` and `1.8°` in English), through `Intl.NumberFormat`. Report notes never format a size or an angle: they carry the numbers and the sentence asks for them with a `{name:bytes}`, `{name:percent}` or `{name:degrees}` placeholder, which `createTranslator` writes in its own locale. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (41 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
+| `format.ts` | `formatBytes(bytes, locale)`, `formatPercent(fraction, locale)` and `formatDegrees(degrees, locale)`: sizes, percentages and angles the way the interface language writes them (`1,5 KB`, `%140` and `1,8°` in Turkish, `1.5 KB`, `140%` and `1.8°` in English), through `Intl.NumberFormat`; a size that is not a finite, non-negative number is written as `—`, and a size that rounds up to 1,024 KB is written in MB. Report notes never format a size or an angle: they carry the numbers and the sentence asks for them with a `{name:bytes}`, `{name:percent}` or `{name:degrees}` placeholder, which `createTranslator` writes in its own locale. |
 | `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`; the gauge and the limit-profile badge are drawn only while the limit verdict is not `ok` or the gauge is at 75 % or more (from 768 px up). |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
@@ -397,8 +398,9 @@ because shipping one would vouch for certificates the user never chose. base64 i
 implemented once, in `base64.ts` (shared with revocation lists and the draft bitmaps), rather than
 via `btoa`, so the code runs identically in Node and the browser. The decoder ignores every character outside the base64 alphabet (line breaks, PEM
 indentation), so it has no failure of its own; a stored root that decodes to fewer than 64 bytes is
-dropped rather than trusted, and `trustRootFrom` derives the id from the DER, so importing
-the same certificate twice is one entry.
+dropped rather than trusted, and `trustRootFrom` (asynchronous, as is `revocationListFrom`) derives the
+id from the SHA-256 of the DER, so two certificates never share an id; adding a root replaces an entry
+with the same DER whatever id it was stored under, so importing the same certificate twice is one entry.
 
 The roots and the revocation lists live in the app's own OPFS directory, and
 `features/facts/trust-store.ts` keeps the store equal to the file: a change is written first and
@@ -460,7 +462,11 @@ writer does, and the steps it reports:
   MuPDF tags device RGB with an sRGB profile, so an image it had written could otherwise not
   be cropped or rotated again. A replacement picture with alpha keeps it as the `/SMask` MuPDF
   produced for it; only the old picture's mask is dropped, and the report says so
-  (`op.note.image.maskDropped`);
+  (`op.note.image.maskDropped`). A quarter turn or a crop also hands the writer an `ImagePlacement`:
+  every drawing of the object in a page's own content gets `q … cm` in front of its `Do` (the matrix
+  in force is followed through `q`, `Q` and `cm`), so a turned picture stands in a turned frame around
+  the same centre and a cropped one stays where its remaining part was drawn
+  (`op.note.image.reframed`); a picture the page draws only from inside a form is refused;
 - a blank document (`ops/create.ts`, steps `create.blank` / `save`): empty pages of an ISO or
   US size in either orientation, with an empty content stream and no resources;
 - a placed picture — a drawn, typed or photographed signature, initials, or an image
@@ -481,7 +487,7 @@ writer does, and the steps it reports:
   `corrupt-document`; an attribute is read through `attribute()`, which answers `null` when it is
   absent, because xmldom's `getAttribute` answers `''` and no default would ever apply; one it had to repair, such as a sheet cut off mid-row, is converted and
   named in a `lost` note; a boolean attribute is read through `onOff()`, which takes `1`, `true` and `on`
-  as on and `0`, `false` and `off` as off), text and CSV by `ops/convert-text.ts` (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are.
+  as on and `0`, `false` and `off` as off), text and CSV by `ops/convert-text.ts` (UTF-16 behind a byte-order mark, else UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are.
   The reads are bounded by what actually comes out, not by what a file declares: every ZIP entry is
   inflated through JSZip's `internalStream`, which counts the bytes chunk by chunk and stops at 64 MiB
   for one entry or 256 MiB for one package (`file-too-large`; images count too), and a DOCX package is
@@ -1016,15 +1022,17 @@ writer does, and the steps it reports:
   set to 1, because MuPDF-based readers apply it and would turn the picture a second time;
 - page boxes, resize, scale, shift, content rotation and auto-crop (`ops/page-boxes.ts`), where
   a content transform wraps the page's streams through `wrapPageContent`, auto-crop measures
-  on the document it edits instead of opening a second copy, and a page that needs no change
-  is counted once in the unchanged-pages note;
+  on the document it edits instead of opening a second copy and gives the event loop a turn
+  after each page it measures, and a page that needs no change is counted once in the
+  unchanged-pages note;
 - page tidy-up (`ops/page-tidy.ts`, steps `load` / `split-two-up` / `save`). `findBlankPages`
   judges a page blank only when it has no annotation (a widget is one), no letter or digit of
   structured text (invisible text counts, punctuation alone does not) and at most 0.01 % of
   its pixels count as ink when drawn in grey at 50 dpi (longest side capped at 2000 px): darker
   than grey 200, or more than 25 levels darker than the page's paper (its median grey), so a
   light-grey logo or gridline on white paper is content and a tinted or noisy sheet is not. It judges the render, not the content stream, so an image of an empty sheet or a white
-  rectangle is blank and a scan's noise does not hold the page. `splitTwoUpPages` copies the
+  rectangle is blank and a scan's noise does not hold the page. It gives the event loop a turn
+  after each page, so the progress bar and Cancel are served during a long scan. `splitTwoUpPages` copies the
   page dictionary of each landscape page (every entry shared by reference, so the content
   streams and images exist once; inherited `/Resources` and `/Rotate` are made the page's own
   first; `/Thumb` and `/StructParents` are not copied) and gives the two the halves of the
@@ -1079,6 +1087,8 @@ writer does, and the steps it reports:
   outline and form carry over and every page keeps its own label;
 - splitting (`ops/split.ts`): one `composeDocument` per part on the document that owns the
   annotation storage, in five modes (ranges, every N pages, size, booklet, bookmarks). The
+  ranges mode makes one part per typed segment, in the order written (`1-3, 4-6` is two parts;
+  the dialog passes the validated text on as typed, not as a merged page set). The
   bookmarks mode cuts at the entries of the outline down to a chosen level
   (`readSplitBookmarks` reads pdf.js's resolved outline, `flattenOutline` takes the level): a
   part runs from a bookmark's page to the page before the next bookmark's, bookmarks on one
@@ -1102,7 +1112,9 @@ writer does, and the steps it reports:
   columns or rows) as `range-invalid`;
 - compression (`ops/compress.ts`): the structure mode is a MuPDF rewrite with deduplication,
   lossless font/image compression and object streams, and does not regenerate form-field
-  appearances; the raster mode replaces the selected pages **in place** (`assembleRaster`)
+  appearances. The deduplication merges annotations whose dictionaries are alike (the same
+  stamp on two pages), so a second save gives every page after the first its own copy back;
+  the raster mode replaces the selected pages **in place** (`assembleRaster`)
   instead of rebuilding the file, so the other pages, the outline and the rest of the catalog
   are kept. Its `assemble` step declares what it changes on those pages (`rotation`,
   `cropBox`, `annotations` besides the content);
@@ -1274,7 +1286,10 @@ mechanics are arranged around one number, `/ByteRange`:
    `lost` note, as `protectDocument`'s does. The written field is told apart from the
    others by its full name, which a new field may not repeat; a named request fills only
    the empty field of that name and otherwise creates one, and a reused field also gets
-   its `/AP`.
+   its `/AP`. The appearance draws the stamp's lines in Helvetica when they are printable
+   ASCII (nothing embedded); a line with any other letter makes it draw in the embedded
+   Noto Sans, subset to the glyphs shown, and a character that face lacks (or a control or
+   separator character outside ASCII) is drawn as `?`.
 3. The `/Contents` placeholder is located in the produced bytes (uniqueness enforced); the
    real ByteRange is computed from those offsets and written over the same digits, with a
    length-equality assertion.
@@ -1355,7 +1370,12 @@ issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates, e
 signature verified over the child's `tbsCertificate`, validity windows checked against the
 supplied clock, and `basicConstraints` cA (on every issuer but the trust anchor — the user's
 import is the statement that it may issue, and a v1 self-signed root has no extensions) /
-`keyUsage.keyCertSign` / `pathLenConstraint` / `nameConstraints` enforced. Depth and candidate
+`keyUsage.keyCertSign` / `pathLenConstraint` / `nameConstraints` enforced. The signer's own
+certificate has to allow signing a document too: a present `keyUsage` must assert `digitalSignature`
+or `nonRepudiation`, and a present `extKeyUsage` must name `anyExtendedKeyUsage`, e-mail protection,
+Adobe or Microsoft document signing or `id-kp-documentSigning`, otherwise the verdict is `untrusted`
+with reason `signer-usage` (a caller that judges the purposes itself, as the time-stamping check does,
+lists `extKeyUsage` among `leafCriticalExtensions` and is not held to that list). Depth and candidate
 counts bound one path, not the number of paths, so the search is also bounded in work: a
 certificate from which no imported root is reachable is never entered, each (certificate,
 issuer) signature is verified once, and after 2048 expansions or 128 distinct signature
@@ -1393,9 +1413,19 @@ but not including a self-signed root, are checked.
   signed with `id-kp-OCSPSigning`, and its `CertID` (issuer name and key hash, serial) must match.
   This is what stops a PDF from embedding a CA with the real CA's name and a CRL saying nothing
   is revoked (measured: such a CRL is rejected as `invalid-list` and cannot hide a real revocation).
+  The signature alone does not make an issuer genuine, though: a file can carry its own CA, a
+  certificate under it and a list that CA signed. A list therefore clears a certificate only when
+  its issuer is one of the roots the user imported or chains to one (`anchoredIssuers`, from the
+  signature-built chain, compared with the imported roots by name and key, so a re-issued or
+  cross-signed copy of a root is the same issuer). Otherwise a `good` answer becomes `unknown` with
+  reason `issuer-not-trusted`; with no root imported no certificate is cleared. A `revoked` answer is
+  taken whoever vouches for the issuer: the list is verified with the key that issued the
+  certificate, and a revocation can only make the verdict stricter.
+  A certificate for which the file holds no list or response from its issuer is `no-list`
+  whoever its issuer is: there is no list to set aside.
 - **Answers.** `good` (a verified complete list does not name the certificate), `revoked`
   (date and reason from the list; `removeFromCRL` entries are not revocations) or `unknown` with a
-  reason: `no-list`, `no-issuer`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
+  reason: `no-list`, `no-issuer`, `issuer-not-trusted`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
   critical extension), `list-scope` (delta, `onlySomeReasons`, a partition the certificate does not
   name). A `good` carries `coversValidationTime` (was the list issued at or after the signature?)
   and `stale` (past its `nextUpdate` today). A lasting revocation outranks everything; otherwise
@@ -1463,8 +1493,9 @@ sequenceDiagram
 Details that matter:
 
 - Marks travel in **app space** (unrotated user space, top-left origin, Y down from the
-  unrotated CropBox top) and are converted through the verified four-rotation table. A
-  rectangle stored in PDF user space is accepted silently by MuPDF and removes *nothing*, so
+  unrotated CropBox top) and are converted through the verified four-rotation table and
+  scaled by the page's `/UserUnit`, because MuPDF's page space is user space times that unit.
+  A rectangle stored in PDF user space is accepted silently by MuPDF and removes *nothing*, so
   the space of every mark is stated once and converted in one place (§9).
 - `black_boxes: false` is deliberate: a black bar would advertise the redaction and could
   be lifted. The erase is a content-stream operation.
@@ -1501,13 +1532,13 @@ Details that matter:
   save-time check measures a removed field as a declared change instead of calling the run
   unverified.
 - `applyRedactions` does not touch three more things that kept the erased words or a file the
-  user asked to clear, and `ops/redact-leaks.ts` cleans them. *Attachments:* MuPDF's
-  `deleteEmbeddedFile` left `/Root /AF`, a page's `/AF` and every `/FileAttachment` annotation, and an
-  empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
+  user asked to clear, and `ops/redact-leaks.ts` cleans them. *Attachments:* clearing the name
+  tree alone would leave `/Root /AF`, the `/AF` of pages, annotations and structure elements and
+  every `/FileAttachment` annotation, and an empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
   reads from the Attachments panel — that list is empty for a file that is attached only as an
   annotation or in `/AF` — and the step removes every attached file: each file specification of the
   name tree (walked through `/Kids` as well; the tree and a `/Names` that holds nothing else leave
-  the catalog), every `/AF` entry (catalog and pages), and every file-attachment annotation
+  the catalog), every `/AF` entry (catalog, pages, annotations and structure elements), and every file-attachment annotation
   (through `sweepWhere` of `redact-annots.ts`: popup and replies included), with the file
   specification and `/EF` streams behind each (`fileSpecObjects` of `ops/attachments-write.ts`).
   A file reachable two ways counts once, and a reference to nothing not at all. *Thumbnails:* each marked page's
@@ -1532,7 +1563,15 @@ Details that matter:
   and walks the structured text per character; a page where any non-whitespace glyph is
   ≥ 50 % covered throws `verification-failed`. The same pass reads the page's `/Annots`: an
   annotation or widget (anything but `/Redact`) that still shares area with a mark fails the
-  page the same way, so a form field's value cannot hide behind a clean text check.
+  page the same way, so a form field's value cannot hide behind a clean text check. It also
+  walks the marked page's resources (forms, tiling patterns and the groups of `/ExtGState`
+  soft masks, nested ones too, each stream once) and reads their content with the
+  accessibility tokenizer: `applyRedactions` removes the paint operation under a mark but never
+  edits a pattern or a soft-mask group, so one that shows text (`Tj`, `TJ`, `'`, `"`, or a stream the
+  tokenizer cannot delimit) keeps that text in the file. The page is listed in `paintText` and
+  the run throws `verification-failed`; a form XObject the page draws is the engine's to erase
+  and its own text is not read, while one that a pattern or a soft-mask group draws is read like
+  them.
 - `auditRedactedDocument()` is a raw-byte scan plus a string-object pass, and **documents
   its own blind spot**: it cannot see inside deflated streams or object streams. The
   string pass parses literal `(…)` and hex `<…>` strings outside filtered streams, decodes
@@ -1555,10 +1594,13 @@ Identity-H with a `/ToUnicode` CMap — which is what makes the words selectable
 searchable at all. Noto Sans has no Arabic, Hebrew or CJK glyphs: such a word would encode as
 glyph 0 and come back as nothing, so those words use the glyph-less font, whose codes are the
 text's UTF-16 units. A right-to-left word is written in visual order (grapheme clusters
-reversed), the order extractors undo with the bidi algorithm; written logically it would come
-back reversed. Words of Devanagari, Arabic, Hebrew, Korean and the glyph-less font get a space
-beside them, because MuPDF finds no gap between them and would join `नमस्ते दुनिया` into one
-word. All of this is measured through both MuPDF and pdf.js extraction.
+reversed, a number or Latin word inside it kept as it reads: `displayOrder` in `ops/bidi.ts`, UAX #9
+without the mirrored glyphs), the order extractors undo with the bidi algorithm; written logically
+it would come back reversed. pdf.js runs that algorithm over the drawn text; MuPDF places the
+digits and brackets beside a right-to-left word differently, so a word that mixes scripts reads
+back in the intended order through pdf.js and not always through MuPDF. Words of Devanagari, Arabic, Hebrew, Korean and the glyph-less
+font get a space beside them, because MuPDF finds no gap between them and would join `नमस्ते दुनिया`
+into one word. All of this is measured through both MuPDF and pdf.js extraction.
 
 There are 27 languages (`OCR_LANGUAGE_CODES_ALL`). Turkish and English ship both models and
 are in the offline package; the others ship `4.0.0_best_int` only. The `4.0.0` packs add the
@@ -1610,7 +1652,10 @@ deliberately not a score:
   file (the check reads it from there too) and on the image XObject when no figure owns it,
   and `/TU` on the form field itself — the parent of a radio group's widgets, not one of
   them; an empty alt text is refused, because decorative content would belong in an
-  `/Artifact`, which the tags editor below writes.
+  `/Artifact`, which the tags editor below writes. The figure walk reads `STRUCT_NODE_LIMIT`
+  elements and 64 levels, the bound of the structure model; in a tree it could not read to the
+  end, a picture with no figure found is reported `unchecked` instead of missing, and its alt
+  text is refused instead of written on the XObject.
 
 `tagDocument()` places each block's shows into marked-content sequences that stay inside
 one text object, one `q` level and the marked-content sequences the page already has
@@ -1648,7 +1693,9 @@ the types the user chose; every drawing of an image is a figure.
   MCID may remain marked. Steps: `load`, `tags`, `tags.artifact`, `producer`, `save`,
   `verify`.
 - `ops/ua-xmp.ts` — textual edits of the XMP packet (`dc:title`, `pdfuaid:part`) that
-  leave every other byte of the packet alone.
+  leave every other byte of the packet alone. In a packet that claims PDF/A, the part comes
+  with the `pdfaExtension` description of the `pdfuaid` schema, which PDF/A requires for a
+  namespace it does not predefine.
 - `ops/pdfua.ts` — `checkPdfUa` and `fixPdfUa`. The 34 rules (`UA_RULES`) each carry a
   Matterhorn checkpoint group and an ISO 14289-1 clause, and end `pass | fail | manual | na
   | unchecked`: `unchecked` means the file could not be examined for that rule (no tree,
@@ -1776,11 +1823,18 @@ through a `FaceSource`), and hands one `TextEditRequest` to the text editor's wr
 own. Steps: `text.find` (declared read-only in `OPERATION_TABLE`) and the writer's.
 
 **Matching.** A block is a list of units — glyphs, word gaps and line breaks — and the search
-compares NFKC-normalised code points, so `ﬁ` matches `fi`; a match that would begin or end
+compares NFKC-normalised code points, so `ﬁ` matches `fi` and `m2` matches `m²`; a letter and a
+combining accent that are glyphs of their own compare as the letter they make (`e` + U+0301 is
+`é`), and a match takes the marks after its last letter with it. A match that would begin or end
 inside one glyph is skipped and counted. A line-end hyphen before a lower-case letter is read
-as hyphenation and joins the word. Without match case, `I` matches both `i` and `ı`, `İ`
-matches `i`, and `ı` matches only `ı` — folding `ı` to `i` would make Turkish `sık` and `sik`
-one word. Whole-word mode refuses a letter, digit or mark on either side.
+as hyphenation and joins the word. Without match case (`case-fold.ts`, which the document search
+`search.ts` uses too), `I` matches both `i` and `ı`, `İ` matches `i`, and `ı` matches `ı` and `I`
+but not `i` — folding `ı` to `i` would make Turkish `sık` and `sik` one word — and a final sigma
+`ς` is `σ`.
+Whole-word mode refuses a letter, digit or mark on either side. The replacement is one line of words: a
+control character (line break, tab), a line or paragraph separator, or a zero-width, soft-hyphen or
+direction character in it is refused before any page is read (`replacement-invalid`, naming the code
+points), since the first kind would be drawn as a plain gap and the second kind cannot be read back.
 
 **Placement**, per line of matches:
 
@@ -2111,8 +2165,9 @@ a rule set over what MuPDF reports.
 (`readPageLayout`), the table finder's rulings, and one `mupdf.Device` pass that collects
 filled and stroked rectangles, circles (four or more curves and at most one line), rounded
 rectangles, dots and ink. Dotted leaders are rebuilt from runs of dots and periods. All of
-it is in MuPDF's displayed space (top-left origin, `/Rotate` applied) and is converted once
-with `displayToAppRect` into the app space of section 9; the widget `/Rect` is then derived
+it is in MuPDF's displayed space (top-left origin, `/Rotate` applied, `/UserUnit` applied) and
+is converted once with `displayToAppRect` (and the label size divided by the unit) into the
+app space of section 9; the widget `/Rect` is then derived
 with `topLeftRectToUserSpace`, and a turned page gets `/MK /R` so the widget text reads
 upright. The pure rule set, `ops/form-detect-rules.ts` (`detectPageFields`), sees only that
 `DetectionPage` value and is the unit-testable part.
@@ -2564,7 +2619,9 @@ Every capability the menus can run is described by exactly one `OperationDialogS
 noticeKey }, resultKind, destructive, changesPageGeometry }`. Fields are a 15-variant
 union (`pageScope`, `radio`, `select`, `number`, `text`, `choice`, `multiline`, `password`,
 `checkbox`, `checkboxList`, `color`, `image`, `files`, `scan`, `readOnlyText`), and validation is
-`fieldErrors()` from `dialogs/fields.tsx`. A `choice` (a select of document data) with
+`fieldErrors()` from `dialogs/fields.tsx`: a page scope or a `pageRanges` text that does not parse
+against the page count, and a `number` outside its `min`/`max` (or, when marked `integer`, with a
+fraction: page numbers and counts). A `choice` (a select of document data) with
 nothing picked keeps the run waiting, but only shows "no items to select in this document"
 when the document's list really is empty. A run's `noticeKey` is the sentence the shell
 shows whatever the result kind (replace, new tab, download); without one it says what
@@ -2862,10 +2919,19 @@ that reopens the file is something saved. A recent entry then reopens the file i
 browser asks for read permission again on that click (`requestPermission` needs the gesture),
 a refusal is reported and taken as the answer, and a file that has moved or gone is reported
 before the picker is offered. A tab restored from a draft gets its handle back, so it can still
-Save over its file rather than only Export. A handle read back this way holds no write access
+Save over its file rather than only Export. A Save as (or the first Save of a document with no
+file) records the file it wrote as the entry's handle (`putRecentHandle`, never for a sensitive
+session) and the written size and page count as the entry's, so a draft restored later is measured
+against the file it last wrote, and `addRecentDocument` replaces an earlier entry by id or by the
+same name, size and page count, never by name alone. The prune after the start-up restore keeps the
+handle of every open tab and of every draft the vault holds. A handle read back this way holds no write access
 (a reopened entry asked for `read` only), so `saveActive` asks for `readwrite`
 (`ensureWriteAccess`) as the first await of the click that saves, before the preparation uses
-up the gesture; a refusal is `permission-denied`, and nothing is written. Handles whose entry
+up the gesture; a refusal is `permission-denied`, and nothing is written. A write the browser
+refuses later is worded by what it means (`failureLine` in `save-actions.ts`): a
+`NotAllowedError` is `permission-denied`, a file that is gone, locked or out of room
+(`NotFoundError`, `NoModificationAllowedError`, `QuotaExceededError`) is `write-failed`, whose hint
+offers Export, and any other failure goes through `toToolError`. Handles whose entry
 has left the list are pruned after the startup restore, which is the one reader that needs
 them. A reopened file keeps its star: `addRecentDocument` carries it over from the entry it
 replaces.
@@ -2942,9 +3008,12 @@ Ordering rules encoded here, each of which prevents a specific defect:
   as a PDF, as Save names its own. With no file handle and no `showSaveFilePicker` the
   download *is* the save, so the version is recorded like Save's download (`recordOutput`) and
   the tab is no longer dirty; with a handle, or in a browser that can write files, an export is
-  a copy and the tab stays as dirty as it was.
+  a copy and the tab stays as dirty as it was — unless the tab is a produced document nothing
+  has written yet (`savedState` is `null`, §8.5), whose first export is its save.
 - **Save and Export are offered only for an inspected version.** Both are enabled from the
-  same verdict: the document-facts read (fonts, signatures, attachments, protection) *and*
+  same verdict: the document-facts read (signatures and protection; the fonts and the
+  attachments are read beside them and only shown, so a read of those that fails leaves them
+  empty, says so in the properties tab with a retry, and does not close Save) *and*
   the form inventory must describe the bytes the tab shows. The facts are keyed to the produced
   version's own id (`workingBytesKey`; `'source'` for the master), the form inventory to that id
   plus the values typed into the engine that are not in the bytes yet (`formInventoryKey`: Save
@@ -3040,7 +3109,9 @@ unavailable does `canReachPeers()` return false — and then the sweep does not 
 because without peer knowledge "delete everything unreferenced" would delete another
 window's only copy. The sweep runs by itself, once per start-up, after the drafts are
 restored (`use-draft-recovery.ts`); it has no button and no command, and it says nothing,
-whether it deleted blobs, found none or refused.
+whether it deleted blobs, found none or refused. It first removes the manifests of documents left
+open with nothing to restore (no unsaved change, no history) that no window has open, so the
+copies only those held go in the same run.
 
 References are only ever **added**. A window that answers once and dies leaves its keys
 pinned, which costs space; forgetting a live window's keys would cost a document.
@@ -3070,7 +3141,8 @@ lists a snapshot blob between its write and its manifest.
 ### 8.5 Sensitive sessions, drafts and cleanup
 
 Persistence is one callback, `persistDraft`, which the autosave and the flush on the crash screen
-both go through; there is no manual "save the draft now" command, and Settings only deletes the
+both go through (the autosave tries every tab each cycle: a tab whose write fails does not keep the
+later ones from being saved, and the first failure is the one worded); there is no manual "save the draft now" command, and Settings only deletes the
 stored copies of the open document. A restore does not rerun just
 because the UI language changed, one draft whose source cannot be read is reported and skipped (each draft has its own
 guard, and a vault that cannot be read at all is said on the notice line) while the others
@@ -3124,7 +3196,14 @@ the same holds for a window with an operation or a save running. Such a window k
 code and its update banner says to save and reload (`update.saveFirst`); the banner's
 "Close" closes the update in the module, not only in that banner, and the next worker to
 finish installing offers it again (`serviceWorkerUpdate.ts`). A window whose changes a draft
-holds never asks and reloads as before. The password a tab was opened with lives in
+holds never asks and reloads as before. A document a tool produced (`openProducedTab`: a merge, an
+extract, an unlock, a conversion) opens with `unwritten` set: `dirty`, with a `null` saved state that
+no undo can match, so closing it asks, a draft restores it and a window holding it unprotected
+guards the reload, until a Save or an Export records an output (an Export counts when the document
+has no file of its own and either the browser cannot write files or nothing was written yet).
+A document produced while a sensitive tab is in front is marked sensitive as well and stores no
+source copy, so an unlocked copy never reaches the draft store.
+The password a tab was opened with lives in
 `lockedTabs` only as long as the tab: `discardDocument` removes it.
 
 ### 8.6 Interface modes
@@ -3334,7 +3413,7 @@ PDF editor, so each one is stated once:
 |---|---|---|
 | **App / page space** | unrotated page, **top-left**, Y down, points; `x` is the user-space x, `y` the distance below the page box's top edge (a CropBox that does not start at `y = 0` adds nothing) | every overlay, `RedactRect` (`space: 'app-v1'`), `PageRect`, the text engine's rects |
 | **PDF user space** | bottom-left, Y up, points | what the writers write; `topLeftToUserPoint()` in the MuPDF adapter is the one flip |
-| **MuPDF page space** | top-left, Y down, rotation included | what `page.search()` and `toStructuredText()` report; `rectToPageSpace()` converts through the verified four-rotation table |
+| **MuPDF page space** | top-left, Y down, rotation included, user space times the page's `/UserUnit` | what `page.search()` and `toStructuredText()` report; `rectToPageSpace()` converts through the verified four-rotation table and the unit |
 | **Client pixels** | viewport | overlays; `pointToPage()` and each layer's projection handle zoom, rotation and offset |
 
 Three facts are worth holding on to, all measured and recorded in the code:
@@ -3505,9 +3584,16 @@ Versioning is the interesting half:
   directories they are given. Fonts keep their paths and are revalidated, not immutable;
   hashed `/editor/assets/*` are immutable (`! Cache-Control` detaches the `/editor/*` rule).
   A `?retry=N` module import (MuPDF's loader) is looked up and stored without the parameter.
-- The name therefore changes when a pinned asset or the code changes. A release never reads the
-  previous release's cache, and activation deletes only caches in **its own** namespace —
-  the origin's storage is shared with other applications.
+- The name therefore changes when a pinned asset or the code changes. A lookup asks this release's
+  cache first and a previous release's only for what this one lacks, and a previous release's
+  cache is deleted — only caches in **its own** namespace; the origin's storage is shared with
+  other applications — once no window inside the scope is left that could still run that
+  release (`pruneStaleCaches`, at activation and at each navigation, the window a navigation
+  creates not counting). No browser names the window a reload replaces to the worker, so a
+  reloaded window still counts and its old cache goes at the next navigation or activation with no
+  other editor window open. A page held back by unsaved work (§8.5) keeps its old code, and the
+  lazy chunks that code has not loaded yet are no longer on the origin: its cache stays while it
+  is open.
 - Install fills the new cache without touching the old one, so an interrupted preparation
   leaves the working version exactly as it was. It caches the core shell, the scripts and
   styles `index.html` names, and the interface catalogues: each language is a run-time
@@ -3583,7 +3669,7 @@ enters git; a checkout without `node_modules` skips that step with a note.
 
 Because the pins are the identity offline caching keys on, changing a pinned asset changes
 the cache name, the manifest and the worker stamp together, and `verify-assets` also fails on a
-file under `public/engines/**` that no pin names and on an `engine-versions.json` that no
+file under `public/engines/**` or `public/fonts/**` that no pin names and on an `engine-versions.json` that no
 longer matches the pins (`node tools/fetch-engines.mjs --versions` rewrites it).
 
 ### 13.2 Assembling the distribution

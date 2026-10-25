@@ -3,10 +3,17 @@ type PDFObject = ReturnType<
 >;
 
 import { verifySignatures } from 'pdf-core/ops/signature-status';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OperationProgress } from '../../../pdf-core/src/ops/types';
 import { pkcs12Fixture } from '../../../pdf-core/src/signature-pkcs12.fixtures';
-import { mupdfForTests, runContext, runDialog, textPdf } from '../pdf-fixtures';
+import {
+  mupdfForTests,
+  removeFontOrigin,
+  runContext,
+  runDialog,
+  textPdf,
+  useFontOrigin,
+} from '../pdf-fixtures';
 import { signDialog } from './sign';
 
 const PASSWORD = 'gizli';
@@ -59,6 +66,20 @@ async function signaturesOf(bytes: Uint8Array): Promise<Signed[]> {
   }
 }
 
+/** The lines of text the page shows once its widgets are drawn into it, the stamp's among them. */
+async function stampLines(bytes: Uint8Array): Promise<string[]> {
+  const mupdf = await mupdfForTests();
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  try {
+    doc.bake(true, true);
+    const text = doc.loadPage(0).toStructuredText('').asText();
+    return text.split('\n').filter((line) => line.trim() !== '');
+  } finally {
+    doc.destroy();
+  }
+}
+
 const base = (pages = 1, size: readonly [number, number] = [300, 400]) =>
   textPdf(
     Array.from({ length: pages }, (_unused, page) => [`page ${page + 1}`]),
@@ -66,6 +87,9 @@ const base = (pages = 1, size: readonly [number, number] = [300, 400]) =>
   );
 
 describe('signDialog', () => {
+  beforeEach(useFontOrigin);
+  afterEach(removeFontOrigin);
+
   it('signs with the picked identity, stamps the page being viewed, and reports who signed and until when', async () => {
     const progress: OperationProgress[] = [];
     const input = await base(2);
@@ -122,6 +146,30 @@ describe('signDialog', () => {
     );
     const [signed] = await signaturesOf(bytesOf(result));
     expect(signed?.rect).toEqual(rect);
+  });
+
+  it('writes the calendar date of the signer’s own time zone into the stamp, not the one in Greenwich', async () => {
+    const zone = process.env.TZ;
+    // 12:00 UTC is already the next day at UTC+14, so the two dates differ.
+    process.env.TZ = 'Pacific/Kiritimati';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(Date.UTC(2026, 2, 4, 12)));
+    try {
+      const result = await runDialog(
+        signDialog,
+        { file: [await p12File()], password: PASSWORD, visible: true, reason: 'Onay' },
+        await base(),
+      );
+      const lines = await stampLines(bytesOf(result));
+      expect(lines).toEqual(expect.arrayContaining(['İmza Deneme', '2026-03-05', 'Onay']));
+      expect(lines).not.toContain('2026-03-04');
+      const [signed] = await signaturesOf(bytesOf(result));
+      expect(signed?.signedAt).toBe('D:20260304120000Z');
+    } finally {
+      vi.useRealTimers();
+      if (zone === undefined) Reflect.deleteProperty(process.env, 'TZ');
+      else process.env.TZ = zone;
+    }
   });
 
   it('reads the page box from the page: a media box that starts below zero moves the stamp with it', async () => {

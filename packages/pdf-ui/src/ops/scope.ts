@@ -14,7 +14,7 @@
  * fifth parser in the tree, and the first one to disagree about `1,1`.
  */
 
-import { formatPageRanges, parsePageRanges, validateRanges } from 'pdf-core';
+import { parsePageRanges, validateRanges } from 'pdf-core';
 import { ToolError } from 'pdf-shared';
 import type { FieldValue, OpRunContext } from '../dialogs/types';
 
@@ -77,12 +77,13 @@ export function resolveScope(value: FieldValue | undefined, context: OpRunContex
 }
 
 /**
- * The same scope as range text, for operations that take an expression
- * (`SplitOptions.ranges`). Canonical form: the validated page set, formatted by
- * `formatPageRanges`, so the dialog and the operation cannot disagree about what
- * the user asked for — the operation re-parses this string, and a typo'd
- * duplicate the parser rejected once can never reappear in it.
+ * The range text the user typed, for operations that take an expression
+ * (`SplitOptions.ranges`) and give every segment a meaning of its own. It passes
+ * the same checks as `resolveScope` (syntax, duplicates, the document bound) and
+ * then hands the operation the segments as written: `1-3, 4-6` is two ranges, which
+ * a formatted page set would merge into one.
  */
-export function scopeRangeText(value: FieldValue | undefined, context: OpRunContext): string {
-  return formatPageRanges(resolveScope(value, context));
+export function typedRangeText(text: string, context: OpRunContext): string {
+  resolveScope(`${RANGE_PREFIX}${text}`, context);
+  return text.trim();
 }

@@ -25,13 +25,11 @@ import './tools.css';
  * resizes the container**, and pdf.js recomputes a `page-width` fit only when
  * that value is re-applied (its resize observer just updates the container
  * height) — so the fit is re-applied on container resize while the reader has not
- * zoomed away from it. And the reader's own scale is remembered, so leaving
- * presentation gives the pane the view it had.
+ * zoomed away from it. And the reader's own scale and spread layout are remembered,
+ * so leaving presentation gives the pane the view it had.
  *
- * **Gaps:** `ViewerApi` has no `getSpreadMode`, so exiting cannot restore the
- * reader's previous layout (the shell's own spread buttons do) — and there is no
- * scroll-mode API, so "single page" means `setSpreadMode('single')` with
- * continuous scrolling, not pdf.js's own page-snapped presentation scroll mode.
+ * **Gap:** there is no scroll-mode API, so "single page" means `setSpreadMode('single')`
+ * with continuous scrolling, not pdf.js's own page-snapped presentation scroll mode.
  */
 
 /** The class pdf.js's presentation styles hang off (`pdf_viewer.css`): it drops the viewer's bottom padding and page margins so the page fills the screen. */
@@ -115,6 +113,7 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
   const ownsFullscreen = useRef(false);
   /** The reader's own scale, restored on exit. */
   const restoreScale = useRef<number | 'page-width'>('page-width');
+  const restoreSpread = useRef<ReturnType<ViewerApi['getSpreadMode']>>('single');
   const optionsRef = useRef(options);
 
   useEffect(() => {
@@ -142,6 +141,7 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
     setActive(false);
     // The reader gets the view they had: a fixed scale survives the round trip,
     // and a width fit (the pane's opening state) is asked for as a fit again.
+    viewerRef.current?.setSpreadMode(restoreSpread.current);
     viewerRef.current?.setZoom(restoreScale.current);
     release();
     optionsRef.current.onExit?.();
@@ -153,6 +153,7 @@ export function usePresentation(viewer: ViewerApi | null, options: PresentationO
     const dom = findViewerDom(current);
     if (dom === null) return;
     restoreScale.current = isWidthFit(dom.pages, dom.container) ? 'page-width' : current.getZoom();
+    restoreSpread.current = current.getSpreadMode();
     current.setSpreadMode('single');
     current.setZoom('page-width');
     setPage(pageIndexAtTop(dom));

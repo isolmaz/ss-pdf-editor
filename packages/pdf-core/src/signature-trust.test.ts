@@ -14,7 +14,7 @@
  */
 
 import { createPublicKey, X509Certificate } from 'node:crypto';
-import { fromBER, OctetString, Utf8String } from 'asn1js';
+import { fromBER, Integer, ObjectIdentifier, OctetString, Sequence, Utf8String } from 'asn1js';
 import {
   AttributeTypeAndValue,
   CertificateChainValidationEngine,
@@ -327,6 +327,80 @@ describe('certificate path validation', () => {
     ).toMatchObject({ verdict: 'untrusted', reason: 'key-usage' });
   });
 
+  it('refuses a signer certificate whose key usage or purposes leave out signing documents', async () => {
+    const root = await makeCa('Purpose Root');
+    const purposes = (oids: readonly string[], critical = false): Extension =>
+      rawExtension(
+        '2.5.29.37',
+        critical,
+        new Sequence({ value: oids.map((value) => new ObjectIdentifier({ value })) }).toBER(false),
+      );
+    const SERVER_AUTH = '1.3.6.1.5.5.7.3.1';
+    const verdictFor = async (extra: Partial<IssueOptions>) => {
+      const leaf = await makeLeaf('Purpose Leaf', root, extra);
+      return await checkTrust({ signer: leaf.der, roots: [root.der], now: NOW });
+    };
+
+    const refused: Record<string, Partial<IssueOptions>> = {
+      'a keyUsage that only enciphers keys': { keyUsage: ['keyEncipherment'] },
+      'a keyUsage that only signs certificates': { keyUsage: ['keyCertSign'] },
+      'a keyUsage that cannot be read': {
+        keyUsage: undefined,
+        extraExtensions: [rawExtension('2.5.29.15', false, new Integer({ value: 3 }).toBER(false))],
+      },
+      'a TLS server purpose alone': { extraExtensions: [purposes([SERVER_AUTH])] },
+      'a code signing purpose alone, though critical': {
+        extraExtensions: [purposes(['1.3.6.1.5.5.7.3.3'], true)],
+      },
+      'a purpose list that cannot be read': {
+        extraExtensions: [rawExtension('2.5.29.37', false, new Integer({ value: 3 }).toBER(false))],
+      },
+    };
+    for (const [label, extra] of Object.entries(refused)) {
+      expect(await verdictFor(extra), label).toMatchObject({
+        verdict: 'untrusted',
+        reason: 'signer-usage',
+        path: ['Purpose Leaf'],
+      });
+    }
+
+    const accepted: Record<string, Partial<IssueOptions>> = {
+      'no keyUsage and no purposes': { keyUsage: undefined },
+      'non-repudiation alone': { keyUsage: ['nonRepudiation'] },
+      'a signing bit among others': { keyUsage: ['keyEncipherment', 'digitalSignature'] },
+      'any purpose': { extraExtensions: [purposes(['2.5.29.37.0'])] },
+      'e-mail protection': { extraExtensions: [purposes(['1.3.6.1.5.5.7.3.4'])] },
+      'Adobe document signing': { extraExtensions: [purposes(['1.2.840.113583.1.1.5'])] },
+      'Microsoft document signing': { extraExtensions: [purposes(['1.3.6.1.4.1.311.10.3.12'])] },
+      'document signing': { extraExtensions: [purposes(['1.3.6.1.5.5.7.3.36'])] },
+      'a signing purpose beside a TLS one': {
+        extraExtensions: [purposes([SERVER_AUTH, '1.3.6.1.5.5.7.3.4'])],
+      },
+      'a critical signing purpose': { extraExtensions: [purposes(['1.3.6.1.5.5.7.3.4'], true)] },
+    };
+    for (const [label, extra] of Object.entries(accepted)) {
+      expect(await verdictFor(extra), label).toMatchObject({ verdict: 'trusted', reason: null });
+    }
+
+    // A signer that is itself the imported root has no chain, and is held to the same rule.
+    const ca = await makeCa('Signing CA');
+    expect(await checkTrust({ signer: ca.der, roots: [ca.der], now: NOW })).toMatchObject({
+      verdict: 'untrusted',
+      reason: 'signer-usage',
+      path: ['Signing CA'],
+    });
+
+    // A caller that judges the purposes itself (a time-stamping check) is not held to the signing list.
+    const stamping = await makeLeaf('Stamping Leaf', root, {
+      extraExtensions: [purposes(['1.3.6.1.5.5.7.3.8'], true)],
+    });
+    const input = { signer: stamping.der, roots: [root.der], now: NOW };
+    expect(await checkTrust(input)).toMatchObject({ verdict: 'untrusted', reason: 'signer-usage' });
+    expect(await checkTrust({ ...input, leafCriticalExtensions: ['2.5.29.37'] })).toMatchObject({
+      verdict: 'trusted',
+    });
+  });
+
   it('enforces pathLenConstraint on the certificates it applies to', async () => {
     const root = await makeCa('Path Length Root');
     const shortKeyPair = await generateKey({ kind: 'EC', curve: 'P-256' });
@@ -453,7 +527,13 @@ describe('certificate path validation', () => {
     });
 
     // The user imported the signer's own certificate: that *is* the trust statement.
-    expect(await checkTrust({ signer: root.der, roots: [root.der], now: NOW })).toMatchObject({
+    const own = await issueCertificate({
+      subject: 'Own Signer',
+      keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+      ...VALID,
+      keyUsage: ['digitalSignature'],
+    });
+    expect(await checkTrust({ signer: own.der, roots: [own.der], now: NOW })).toMatchObject({
       verdict: 'trusted',
     });
 

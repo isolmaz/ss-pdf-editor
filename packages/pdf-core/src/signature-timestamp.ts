@@ -38,7 +38,6 @@ import { TSTInfo } from 'pkijs';
 import { certificateFor, certificatesOf, octets, readSignedData, sameBytes } from './signature-evidence';
 import {
   checkRevocation,
-  extendedKeyUsage,
   type RevocationCertCheck,
   type RevocationSources,
   summarizeRevocation,
@@ -46,6 +45,7 @@ import {
 import {
   certificateName,
   checkTrust,
+  extendedKeyUsage,
   type TrustReason,
   type TrustVerdict,
   validityOf,
@@ -257,6 +257,7 @@ export async function verifyTimestampToken(input: VerifyTimestampInput): Promise
     leaf: tsaDer,
     leafRole: 'timestamp',
     pool: [...pool, ...(input.roots ?? [])],
+    roots: input.roots ?? [],
     context: { sources: input.sources, validationTime: genTime, now: input.now },
   });
   return {

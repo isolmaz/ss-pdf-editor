@@ -1,6 +1,7 @@
 export const dialogsPart = {
   'dialog.confirm.continue': 'Continue',
   'dialog.field.numberRange': 'This value must be between {min} and {max}.',
+  'dialog.field.integerRange': 'This value must be a whole number between {min} and {max}.',
   'dialog.field.withUnit': '{label} ({unit})',
   'dialog.field.chooseFile': 'Choose file',
   'dialog.field.chooseFiles': 'Choose files',

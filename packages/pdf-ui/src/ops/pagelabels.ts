@@ -73,6 +73,7 @@ export const pageLabelsDialog: OperationDialogSpec = {
     {
       id: 'start',
       kind: 'number',
+      integer: true,
       labelKey: 'labels.dialog.start',
       hintKey: 'labels.dialog.startHint',
       defaultValue: 1,

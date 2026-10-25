@@ -14,6 +14,9 @@ import type { ToolError } from 'pdf-shared';
 import type { AttachmentRow } from 'pdf-ui';
 import { createStore, shallowEqual, useStore } from '../store';
 
+/** The facts that are only shown: a write does not need them, so a read that fails leaves them out. */
+export type UnreadFact = 'fonts' | 'attachments';
+
 export interface DocumentFacts {
   readonly tabId: string;
   readonly bytesKey: string;
@@ -21,6 +24,8 @@ export interface DocumentFacts {
   readonly attachments: readonly AttachmentRow[];
   readonly signatures: readonly SignatureVerification[];
   readonly security: { readonly encrypted: boolean; readonly permissions: readonly string[] };
+  /** The shown facts that could not be read and are empty here; empty when all were read. */
+  readonly unread?: readonly UnreadFact[];
 }
 
 export interface FactsFailure {

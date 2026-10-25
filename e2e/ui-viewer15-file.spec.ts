@@ -63,7 +63,7 @@ test('create from images: two pictures open as a two-page Letter document, one p
   await form.getByText(/^Advanced options/).click();
   await form.getByRole('radio', { name: 'Ignore' }).check();
   await applyForm(form, 'Open in new tab');
-  await expect(page.getByRole('button', { name: 'Images.pdf', exact: true })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Images.pdf Unsaved changes', exact: true })).toBeVisible({
     timeout: 30_000,
   });
   await expect(page.getByRole('option')).toHaveCount(2);

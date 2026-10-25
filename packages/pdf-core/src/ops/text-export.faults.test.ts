@@ -65,7 +65,14 @@ const withItems =
     raw: new Proxy(handle.raw, {
       get(target, property) {
         if (property === 'getPage') {
-          return async () => ({ getTextContent: async () => ({ items, styles: {} }) });
+          return async (number: number) => {
+            const page = await target.getPage(number);
+            return {
+              userUnit: page.userUnit,
+              getViewport: page.getViewport.bind(page),
+              getTextContent: async () => ({ items, styles: {} }),
+            };
+          };
         }
         const value: unknown = Reflect.get(target, property, target);
         return typeof value === 'function' ? value.bind(target) : value;

@@ -66,7 +66,7 @@ describe('ReadingLayers', () => {
   it('turns pages through the viewer', async () => {
     const user = userEvent.setup();
     const goToPage = vi.fn();
-    render(shell({ goToPage } as unknown as ViewerApi, 2));
+    render(shell({ goToPage, document: { pageCount: 5 } } as unknown as ViewerApi, 2));
     act(() => toggleReading());
 
     await user.click(screen.getByRole('button', { name: t('panel.goToPage', { page: 4 }) }));
@@ -76,7 +76,7 @@ describe('ReadingLayers', () => {
   });
 
   it('reports a page it cannot read on the notice line', async () => {
-    render(shell({ goToPage: vi.fn() } as unknown as ViewerApi));
+    render(shell({ goToPage: vi.fn(), document: { pageCount: 1 } } as unknown as ViewerApi));
     act(() => toggleReading());
 
     await waitFor(() => expect(coreStore.get().notice).toBe(t('error.internal.message')));

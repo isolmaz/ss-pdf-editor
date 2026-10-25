@@ -25,8 +25,18 @@ export function streamOf(...tracks: unknown[]): MediaStream {
   return new FakeStream();
 }
 
+/** What the browser tells a page about its camera track: it ended (unplugged, access revoked) or went silent. */
+export type TrackEvent = 'ended' | 'mute' | 'unmute';
+
 export interface FakeCamera {
-  readonly track: { stop: Mock; getSettings: () => FakeTrackSettings };
+  readonly track: {
+    stop: Mock;
+    getSettings: () => FakeTrackSettings;
+    muted: boolean;
+    addEventListener: EventTarget['addEventListener'];
+  };
+  /** Fire `event` on the track, as the browser does. */
+  emit(event: TrackEvent): void;
   readonly stream: MediaStream;
   /** What the next stream's track reports about itself. */
   settings: FakeTrackSettings;
@@ -42,11 +52,18 @@ export const FRONT_CAMERA = { kind: 'videoinput', deviceId: 'front', label: 'Fro
 
 /** Install a camera that streams `settings`' size from the back camera. */
 export function installCamera(initial: FakeTrackSettings = {}): FakeCamera {
+  const events = new EventTarget();
   const camera: FakeCamera = {
     settings: { deviceId: 'back', width: 1920, height: 1080, ...initial },
     track: {
       stop: vi.fn(),
       getSettings: () => camera.settings,
+      muted: false,
+      addEventListener: events.addEventListener.bind(events),
+    },
+    emit: (event) => {
+      camera.track.muted = event === 'mute';
+      events.dispatchEvent(new Event(event));
     },
     stream: undefined as unknown as MediaStream,
     getUserMedia: vi.fn(async () => camera.stream),

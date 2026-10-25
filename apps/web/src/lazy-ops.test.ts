@@ -6,7 +6,14 @@
 
 import { loadMupdf, openPdf } from 'pdf-core/engines/mupdf';
 import { describe, expect, it } from 'vitest';
-import { addImageStamp, convertToPdf, fillFormFields, imagesToPdf, resizeImageStamp } from './lazy-ops';
+import {
+  addImageStamp,
+  convertToPdf,
+  fillFormFields,
+  imagesToPdf,
+  readPageText,
+  resizeImageStamp,
+} from './lazy-ops';
 
 const run = { signal: new AbortController().signal };
 
@@ -87,6 +94,27 @@ describe('convertToPdf through lazy-ops', () => {
     } finally {
       doc.destroy();
     }
+  });
+});
+
+describe('readPageText through lazy-ops', () => {
+  it('reads the characters of a page in the order they are written', async () => {
+    const pdf = await convertToPdf(
+      {
+        name: 'satir.txt',
+        bytes: new TextEncoder().encode('Çalışma notları'),
+        pageSize: 'a4',
+        orientation: 'portrait',
+        marginMm: 15,
+      },
+      run,
+    );
+    const page = await readPageText(pdf.bytes, 0, run);
+    const text = page.blocks
+      .flatMap((block) => block.lines.map((line) => line.chars.map((char) => char.ch).join('')))
+      .join('\n');
+    expect(page.pageIndex).toBe(0);
+    expect(text).toContain('Çalışma notları');
   });
 });
 

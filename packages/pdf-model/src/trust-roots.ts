@@ -14,6 +14,7 @@
  */
 
 import { fromBase64, toBase64 } from './base64';
+import { sha256Hex } from './digest';
 
 export interface TrustRoot {
   readonly id: string;
@@ -31,22 +32,28 @@ export interface TrustRootsFile {
 
 export const EMPTY_TRUST_ROOTS: TrustRootsFile = { version: 1, roots: [] };
 
-/** A root from its DER and a label; the id is derived from the DER, so the same
- * certificate imported twice is the same entry rather than two. */
-export function trustRootFrom(der: Uint8Array, label: string, addedAt = Date.now()): TrustRoot {
-  const encoded = toBase64(der);
-  let hash = 0;
-  for (const character of encoded) hash = (hash * 31 + character.charCodeAt(0)) % 0xffffffff;
-  return { id: `root-${hash.toString(16)}`, label, derBase64: encoded, addedAt };
+/** A root from its DER and a label; the id is the SHA-256 of the DER, so the same
+ * certificate imported twice is the same entry rather than two, and two certificates never
+ * share one. */
+export async function trustRootFrom(
+  der: Uint8Array,
+  label: string,
+  addedAt = Date.now(),
+): Promise<TrustRoot> {
+  return { id: `root-${await sha256Hex(der)}`, label, derBase64: toBase64(der), addedAt };
 }
 
 export function toDer(root: TrustRoot): Uint8Array {
   return fromBase64(root.derBase64);
 }
 
-/** Add, replacing an entry with the same certificate so the list cannot grow duplicates. */
+/**
+ * Add, replacing an entry with the same certificate so the list cannot grow duplicates. The
+ * certificate is what makes two entries the same, not the id: an entry stored under an earlier
+ * kind of id is still recognised.
+ */
 export function addTrustRoot(file: TrustRootsFile, root: TrustRoot): TrustRootsFile {
-  return { version: 1, roots: [...file.roots.filter((entry) => entry.id !== root.id), root] };
+  return { version: 1, roots: [...file.roots.filter((entry) => entry.derBase64 !== root.derBase64), root] };
 }
 
 export function removeTrustRoot(file: TrustRootsFile, id: string): TrustRootsFile {

@@ -59,6 +59,8 @@ function blockStore(method: 'getItem' | 'setItem' | 'removeItem'): void {
 afterEach(() => {
   for (const spy of blocked.splice(0)) spy.mockRestore();
   cleanup();
+  // A language kept in memory while the store was blocked must not reach the next test.
+  applyLocale('tr');
   for (const id of added) {
     registry.splice(
       registry.findIndex((info) => info.id === id),
@@ -167,10 +169,10 @@ describe('pressing a language', () => {
     ).toBe('false');
   });
 
-  it('still switches the interface when the store is blocked, but stores and announces nothing', () => {
+  it('still switches the interface and announces it when the store is blocked, storing nothing', () => {
     blockStore('setItem');
     const heard: unknown[] = [];
-    const listen = (event: Event) => heard.push(event);
+    const listen = (event: Event) => heard.push((event as CustomEvent).detail);
     window.addEventListener('pdf-locale-change', listen);
     render(<LanguageSelector t={t} />);
     fireEvent.click(screen.getByRole('button', { name: 'English' }));
@@ -178,8 +180,26 @@ describe('pressing a language', () => {
 
     expect(pressed()).toEqual(['English']);
     expect(document.documentElement.lang).toBe('en');
-    expect(heard).toEqual([]);
+    expect(heard).toEqual([{ locale: 'en' }]);
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it('moves a selector that did not press the language when the store is blocked', () => {
+    blockStore('setItem');
+    render(<LanguageSelector t={t} />);
+    act(() => applyLocale('en'));
+
+    expect(pressed()).toEqual(['English']);
+  });
+
+  it('starts a selector mounted later in the language picked while the store was blocked', () => {
+    blockStore('setItem');
+    act(() => applyLocale('en'));
+    render(<LanguageSelector t={t} />);
+
+    expect(pressed()).toEqual(['English']);
+    expect(document.documentElement.lang).toBe('en');
+    expect(getStoredLocale()).toBe('en');
   });
 
   it('applyLocale outside a selector stores the language and moves a mounted selector', () => {

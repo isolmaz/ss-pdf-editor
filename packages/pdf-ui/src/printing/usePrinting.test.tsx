@@ -22,6 +22,8 @@ const impose = vi.hoisted(() => ({
   calls: [] as Array<{ bytes: Uint8Array; options: Record<string, unknown>; signal: AbortSignal }>,
   gate: null as Promise<void> | null,
   failure: null as Error | null,
+  /** The operation returns its result although the signal fired after its last check. */
+  finishesDespiteAbort: false,
   progress: [] as Array<{ done?: number; total?: number }>,
 }));
 
@@ -40,6 +42,10 @@ vi.mock('pdf-core/ops/impose', () => ({
     impose.calls.push({ bytes, options, signal: context.signal });
     for (const step of impose.progress) context.onProgress(step);
     await impose.gate;
+    if (context.signal.aborted && !impose.finishesDespiteAbort) {
+      // What pdf-core's `throwIfAborted` raises when the signal fires while the operation works.
+      throw Object.assign(new Error('operation aborted'), { name: 'AbortError' });
+    }
     if (impose.failure !== null) throw impose.failure;
     return { bytes: new Uint8Array([1, 2, 3]) };
   },
@@ -110,6 +116,7 @@ beforeEach(() => {
   impose.calls.length = 0;
   impose.gate = null;
   impose.failure = null;
+  impose.finishesDespiteAbort = false;
   impose.progress = [];
   vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (
     this: HTMLCanvasElement,
@@ -620,9 +627,10 @@ describe('usePrinting produce', () => {
     expect(result.current.phase).toBe('idle');
   });
 
-  it('returns nothing when cancelled while the sheets are imposed', async () => {
+  it('returns nothing when cancelled as the operation finishes the sheets', async () => {
     const gate = Promise.withResolvers<void>();
     impose.gate = gate.promise;
+    impose.finishesDespiteAbort = true;
     const { result } = mount();
     let produced: Promise<Uint8Array | null> = Promise.resolve(null);
     act(() => {
@@ -635,6 +643,65 @@ describe('usePrinting produce', () => {
       gate.resolve();
     });
     expect(await produced).toBeNull();
+  });
+
+  it('returns nothing, instead of the abort error, when cancelled while the operation works', async () => {
+    const gate = Promise.withResolvers<void>();
+    impose.gate = gate.promise;
+    const { result } = mount();
+    let produced: Promise<Uint8Array | null> = Promise.resolve(null);
+    act(() => {
+      produced = result.current.produce(request());
+    });
+    await waitFor(() => expect(impose.calls).toHaveLength(1));
+    act(() => result.current.cancel());
+    expect(result.current.phase).toBe('idle');
+    await act(async () => {
+      gate.resolve();
+    });
+    expect(await produced).toBeNull();
+    expect(result.current.phase).toBe('idle');
+  });
+
+  it('still rejects with a failure that is not a cancellation', async () => {
+    const gate = Promise.withResolvers<void>();
+    impose.gate = gate.promise;
+    impose.failure = new Error('disk full');
+    const { result } = mount();
+    let produced: Promise<Uint8Array | null> = Promise.resolve(null);
+    act(() => {
+      produced = result.current.produce(request());
+    });
+    await waitFor(() => expect(impose.calls).toHaveLength(1));
+    const rejection = expect(produced).rejects.toBe(impose.failure);
+    await act(async () => {
+      gate.resolve();
+    });
+    await rejection;
+  });
+
+  it('leaves the phase of a print job that replaced the production when the production ends', async () => {
+    const gate = Promise.withResolvers<void>();
+    impose.gate = gate.promise;
+    const sheets = Promise.withResolvers<void>();
+    blobGate = sheets.promise;
+    const { result } = mount();
+    let produced: Promise<Uint8Array | null> = Promise.resolve(null);
+    act(() => {
+      produced = result.current.produce(request());
+    });
+    await waitFor(() => expect(impose.calls).toHaveLength(1));
+    act(() => result.current.start(request()));
+    await waitFor(() => expect(canvases).toHaveLength(1));
+    expect(result.current.phase).toBe('preparing');
+    await act(async () => {
+      gate.resolve();
+    });
+    expect(await produced).toBeNull();
+    expect(result.current.phase).toBe('preparing');
+    await act(async () => {
+      sheets.resolve();
+    });
   });
 
   it('lets a second production take over from the first, which then returns nothing', async () => {

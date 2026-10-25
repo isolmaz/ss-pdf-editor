@@ -18,7 +18,7 @@ export const enginesPart = {
   'op.note.redact.emptyMarks':
     'Warning: mark on page {pages} did not overlap any text; no content erased in those areas.',
   'op.note.redact.metadataCleared':
-    'Metadata cleared: title, author, subject, keywords, creator and the XMP packet. Custom properties are kept.',
+    'Metadata cleared: title, author, subject, keywords, creator, the XMP packets and the private application data of the document, its pages and its objects. Custom properties are kept.',
   'op.note.redact.producerKept': 'Producer string preserved.',
   'op.note.redact.attachmentsRemoved': '{count} attachment(s) removed.',
   'op.note.redact.tagTextRemoved':

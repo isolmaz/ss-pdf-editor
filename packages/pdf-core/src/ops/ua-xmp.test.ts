@@ -90,6 +90,38 @@ describe('ua-xmp', () => {
     expect((replaced as string).match(/Old/g)).toBeNull();
   });
 
+  describe('in a packet that claims PDF/A', () => {
+    const PDFAID = 'http://www.aiim.org/pdfa/ns/id/';
+    const claim = `xmlns:pdfaid="${PDFAID}" pdfaid:part="2" pdfaid:conformance="B"`;
+
+    it('describes the pdfuaid schema when it adds the part, so the file still meets the PDF/A schema rule', () => {
+      const edited = editUaPacket(packet(`<rdf:Description rdf:about="" ${claim}/>`), { uaPart: 1 });
+      const parsed = reread(edited as string);
+      expect(parsed.wellFormed).toBe(true);
+      expect(parsed.undescribedNamespaces).toEqual([]);
+      expect(xmpText(parsed, NS_PDFUAID, 'part')).toBe('1');
+      expect(parsed.claim).toEqual({ part: '2', conformance: 'B' });
+    });
+
+    it('adds its description to the extension schemas the packet already lists and keeps theirs', () => {
+      const listed = packet(
+        `<rdf:Description rdf:about="" ${claim} xmlns:xyz="http://example.com/xyz/" xmlns:pdfaExtension="http://www.aiim.org/pdfa/ns/extension/" xmlns:pdfaSchema="http://www.aiim.org/pdfa/ns/schema#"><pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType="Resource"><pdfaSchema:schema>Xyz</pdfaSchema:schema><pdfaSchema:namespaceURI>http://example.com/xyz/</pdfaSchema:namespaceURI><pdfaSchema:prefix>xyz</pdfaSchema:prefix></rdf:li></rdf:Bag></pdfaExtension:schemas><xyz:a>v</xyz:a></rdf:Description>`,
+      );
+      const edited = editUaPacket(listed, { uaPart: 1 }) as string;
+      const parsed = reread(edited);
+      expect(parsed.wellFormed).toBe(true);
+      expect(parsed.undescribedNamespaces).toEqual([]);
+      expect(edited.match(/<pdfaExtension:schemas/g)).toHaveLength(1);
+      expect(edited).toContain('<pdfaSchema:namespaceURI>http://example.com/xyz/</pdfaSchema:namespaceURI>');
+      expect(readUaPart(edited)).toBe(1);
+    });
+
+    it('adds no schema description to a packet that does not claim PDF/A', () => {
+      const edited = editUaPacket(packet('<rdf:Description rdf:about=""/>'), { uaPart: 1 }) as string;
+      expect(edited).not.toContain('pdfaExtension');
+    });
+  });
+
   it('refuses to edit a packet with no description', () => {
     expect(editUaPacket(packet(''), { title: 'T' })).toBeNull();
   });
@@ -99,6 +131,14 @@ describe('ua-xmp', () => {
       '<rdf:Description dc:title="A&#x41;&#66;&copy;&amp;" xmlns:dc="http://purl.org/dc/elements/1.1/"/>',
     );
     expect(readXmpTitle(text)).toBe('AAB&copy;&');
+  });
+
+  it('leaves a character reference that names no character as written', () => {
+    const title = (reference: string) => readXmpTitle(packet(`<rdf:Description dc:title="a${reference}b"/>`));
+    expect(title('&#x110000;')).toBe('a&#x110000;b');
+    expect(title('&#1114112;')).toBe('a&#1114112;b');
+    expect(title(`&#${'9'.repeat(400)};`)).toBe(`a&#${'9'.repeat(400)};b`);
+    expect(title('&#x10FFFF;')).toBe('a\u{10FFFF}b');
   });
 
   it('reads an empty title attribute as no title, and an element title in every shape', () => {
@@ -118,6 +158,15 @@ describe('ua-xmp', () => {
   it('drops control characters from a written title, keeping tab and line breaks', () => {
     const text = buildUaPacket({ title: 'a\u0001b\tc\nd\re\u001ff' });
     expect(readXmpTitle(text)).toBe('ab\tc\nd\ref');
+  });
+
+  it('drops the characters XML 1.0 cannot carry from a written title and keeps astral ones', () => {
+    const title = 'a\u{FFFE}b\u{FFFF}c\u{D800}d\u{DC00}e\u{1F600}f';
+    const built = buildUaPacket({ title });
+    expect(readXmpTitle(built)).toBe('abcde\u{1F600}f');
+    expect(reread(built).wellFormed).toBe(true);
+    const edited = editUaPacket(packet('<rdf:Description rdf:about=""/>'), { title }) as string;
+    expect(readXmpTitle(edited)).toBe('abcde\u{1F600}f');
   });
 
   it('writes only the part when no title is given, in a fresh packet and in an edited one', () => {

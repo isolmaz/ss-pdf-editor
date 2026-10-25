@@ -383,6 +383,26 @@ describe('findReplace', () => {
       code: 'no-match',
     });
   });
+
+  it.each([
+    ['a line break', 'a\nb', 'U+000A'],
+    ['a carriage return and a line break', 'a\r\nb', 'U+000D U+000A'],
+    ['a tab', 'a\tb', 'U+0009'],
+    ['a zero-width joiner', 'a\u{200d}b', 'U+200D'],
+    ['a soft hyphen and a zero-width space', 'a\u{ad}b\u{200b}c', 'U+00AD U+200B'],
+    ['a direction mark and a line separator', 'a\u{200f}b\u{2028}c', 'U+200F U+2028'],
+    ['a word joiner and a direction isolate', 'a\u{2060}b\u{2066}c', 'U+2060 U+2066'],
+    ['the same character twice, named once', 'a\tb\tc\n', 'U+0009 U+000A'],
+  ])(
+    'refuses a replacement with %s instead of drawing it as a space or failing to read it back',
+    async (_name, replace, named) => {
+      const input = await page([{ text: 'Merhaba dunya', y: 330 }]);
+      await expect(findReplace(input, query({ find: 'dunya', replace }), run)).rejects.toMatchObject({
+        code: 'replacement-invalid',
+        details: { params: { chars: named } },
+      });
+    },
+  );
 });
 
 interface Run {

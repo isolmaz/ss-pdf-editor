@@ -227,6 +227,39 @@ describe('sweepVault', () => {
     expect(notice()).toBeNull();
   });
 
+  it('forgets the manifest of a document that closed with nothing to restore, and the blobs only it held', async () => {
+    const release = vi.fn();
+    persistenceStore.set({ channel: fakeChannel({ releaseDraft: release }) });
+    storage.drafts.set('clean-a', manifest('clean-a', { dirty: false, sourceKey: 'src-a' }));
+    storage.drafts.set('clean-b', manifest('clean-b', { dirty: false, sourceKey: 'src-shared' }));
+    storage.drafts.set('edited', manifest('edited', { dirty: true, sourceKey: 'src-shared' }));
+    for (const key of ['src-a', 'src-shared']) storage.sources.set(key, new Uint8Array([1]));
+    await sweepVault(new SessionStore());
+    expect([...storage.drafts.keys()]).toEqual(['edited']);
+    expect([...storage.sources.keys()]).toEqual(['src-shared']);
+    expect(release.mock.calls.map(([id]) => id).sort()).toEqual(['clean-a', 'clean-b']);
+    expect(notice()).toBeNull();
+  });
+
+  it('keeps the manifest of a clean document that is open here or owned by another window', async () => {
+    const session = new SessionStore();
+    session.openDocument({
+      id: 'open-here',
+      name: 'a.pdf',
+      bytes: new Uint8Array([1]),
+      sha256: 'here',
+      pageCount: 1,
+    });
+    persistenceStore.set({ channel: fakeChannel({ claimDraft: async (id) => id !== 'elsewhere' }) });
+    for (const id of ['open-here', 'elsewhere', 'closed']) {
+      storage.drafts.set(id, manifest(id, { dirty: false }));
+      storage.sources.set(`src-${id}`, new Uint8Array([1]));
+    }
+    await sweepVault(session);
+    expect([...storage.drafts.keys()].sort()).toEqual(['elsewhere', 'open-here']);
+    expect([...storage.sources.keys()].sort()).toEqual(['src-elsewhere', 'src-open-here']);
+  });
+
   it('has nothing to do for an empty vault, or a storage that cannot list its sources', async () => {
     await sweepVault(new SessionStore());
     delete storage.listSources;

@@ -21,6 +21,12 @@ export const PAYLOAD = {
 /** The payload of the inline file specification `associatedEdgeCases` carries. */
 export const DIRECT_PAYLOAD = 'DIRECTSPEC-PAYLOAD-2297';
 
+/** The payloads of the files `associatedElsewhere` lists in the `/AF` of an annotation and of a structure element. */
+export const ELSEWHERE_PAYLOAD = {
+  annotation: 'ANNOTAF-PAYLOAD-3305',
+  element: 'ELEMENTAF-PAYLOAD-6618',
+} as const;
+
 /**
  * `/Root /AF` as a producer can write it badly: a file specification written inline (a direct
  * dictionary, its `/EF` holding only `/F`) and a reference to an object that is no longer there.
@@ -35,6 +41,26 @@ export function associatedEdgeCases(): Promise<Uint8Array> {
     const gone = doc.addObject({ Type: 'Filespec', F: doc.newString('gone.txt') });
     doc.getTrailer().get('Root').put('AF', [inline, gone]);
     doc.deleteObject(gone.asIndirect());
+  });
+}
+
+/**
+ * Files that only an `/AF` list names, on a link annotation and on a structure element. The page
+ * also lists an annotation that is no dictionary and one that points nowhere, and a structure
+ * element's `/K` holds a marked-content id.
+ */
+export function associatedElsewhere(): Promise<Uint8Array> {
+  return build([TWO_LINES], (doc) => {
+    const attach = (name: string, payload: string): PDFObject =>
+      doc.addEmbeddedFile(name, 'text/plain', encode(payload), new Date(0), new Date(0));
+    const link = addLink(doc, OUTSIDE_LINK, [60, 60, 190, 80]);
+    link.put('AF', [attach('on-annotation.txt', ELSEWHERE_PAYLOAD.annotation)]);
+    doc.findPage(0).put('Annots', [link, doc.newInteger(7), doc.newIndirect(9999)]);
+    const tree = doc.addObject({ Type: 'StructTreeRoot' });
+    const element = doc.addObject({ Type: 'StructElem', S: 'P', P: tree, K: 0 });
+    element.put('AF', [attach('on-element.txt', ELSEWHERE_PAYLOAD.element)]);
+    tree.put('K', [element]);
+    doc.getTrailer().get('Root').put('StructTreeRoot', tree);
   });
 }
 

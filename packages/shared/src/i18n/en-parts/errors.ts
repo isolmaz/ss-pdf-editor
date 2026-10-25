@@ -29,6 +29,10 @@ export const errorsPart = {
   'error.glyph-missing.message': 'The text has characters that none of the available fonts contain: {chars}',
   'error.glyph-missing.hint':
     'Remove these characters from the text or replace them with ones the font has. Nothing was written; your document is unchanged.',
+  'error.replacement-invalid.message':
+    'The replacement text has line breaks, tabs or invisible characters that cannot be placed: {chars}',
+  'error.replacement-invalid.hint':
+    'Write the replacement on one line and remove these characters. Nothing was written; your document is unchanged.',
   'error.password-policy.message': 'Operation halted by password policy.',
   'error.password-policy.hint': 'Cannot encrypt without an open password.',
 } as const;

@@ -20,25 +20,48 @@
 export const NS_DC = 'http://purl.org/dc/elements/1.1/';
 export const NS_PDFUAID = 'http://www.aiim.org/pdfua/ns/id/';
 const NS_RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+const NS_PDFAID = 'http://www.aiim.org/pdfa/ns/id/';
+const NS_PDFA_EXTENSION = 'http://www.aiim.org/pdfa/ns/extension/';
+const NS_PDFA_SCHEMA = 'http://www.aiim.org/pdfa/ns/schema#';
+const NS_PDFA_PROPERTY = 'http://www.aiim.org/pdfa/ns/property#';
+
+/** The description of the `pdfuaid` namespace that PDF/A asks of every namespace it does not predefine. */
+const UA_SCHEMA_ITEM = [
+  `<rdf:li rdf:parseType="Resource" xmlns:pdfaSchema="${NS_PDFA_SCHEMA}" xmlns:pdfaProperty="${NS_PDFA_PROPERTY}">`,
+  '<pdfaSchema:schema>PDF/UA identification schema</pdfaSchema:schema>',
+  `<pdfaSchema:namespaceURI>${NS_PDFUAID}</pdfaSchema:namespaceURI>`,
+  '<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>',
+  '<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType="Resource">',
+  '<pdfaProperty:name>part</pdfaProperty:name>',
+  '<pdfaProperty:valueType>Integer</pdfaProperty:valueType>',
+  '<pdfaProperty:category>internal</pdfaProperty:category>',
+  '<pdfaProperty:description>Indicates, which part of ISO 14289 standard is followed</pdfaProperty:description>',
+  '</rdf:li></rdf:Seq></pdfaSchema:property>',
+  '</rdf:li>',
+].join('');
+
+/** The end of the `<rdf:Bag>` of the packet's `pdfaExtension:schemas`, where one more schema goes. */
+const SCHEMAS_BAG_END =
+  /<pdfaExtension:schemas\b[^>]*>\s*<rdf:Bag\b[^>]*>[\s\S]*?(<\/rdf:Bag>\s*<\/pdfaExtension:schemas>)/;
 
 const ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 
 function decodeEntities(value: string): string {
   return value.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (match, body: string) => {
-    if (body.startsWith('#x')) return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
-    if (body.startsWith('#')) return String.fromCodePoint(Number(body.slice(1)));
+    if (body.startsWith('#')) {
+      const code = body.startsWith('#x') ? Number.parseInt(body.slice(2), 16) : Number(body.slice(1));
+      return code <= 0x10ffff ? String.fromCodePoint(code) : match;
+    }
     return ENTITIES[body] ?? match;
   });
 }
 
+/** What XML 1.0 cannot carry, a lone surrogate included: a written value drops it. */
+const NOT_XML_CHARACTER = /[^\t\n\r\u{20}-\u{D7FF}\u{E000}-\u{FFFD}\u{10000}-\u{10FFFF}]/gu;
+
 function escapeXml(value: string): string {
-  let clean = '';
-  for (const char of value) {
-    const code = char.codePointAt(0) as number;
-    if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) continue;
-    clean += char;
-  }
-  return clean
+  return value
+    .replace(NOT_XML_CHARACTER, '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -122,7 +145,9 @@ export function buildUaPacket(properties: { readonly title?: string; readonly ua
  * Put a `dc:title` and/or a `pdfuaid:part` into an existing packet. Returns the new packet,
  * or `null` when the packet has no `rdf:Description` to put them in (the caller then builds
  * a fresh packet and reports it). A `pdfuaid:part` that is already there is left as it is —
- * a file that declares part 2 is not rewritten into part 1 by a part-1 tool.
+ * a file that declares part 2 is not rewritten into part 1 by a part-1 tool. A packet that
+ * claims PDF/A gets the description of the `pdfuaid` schema with the part, in its list of
+ * extension schemas when it has one.
  */
 export function editUaPacket(
   packet: string,
@@ -157,6 +182,17 @@ export function editUaPacket(
   if (properties.uaPart !== undefined && readUaPart(result) === null) {
     additions.push(`<pdfuaid:part>${String(properties.uaPart)}</pdfuaid:part>`);
     if (!declared('pdfuaid')) declarations.push(` xmlns:pdfuaid="${NS_PDFUAID}"`);
+    if (result.includes(NS_PDFAID)) {
+      const listed = SCHEMAS_BAG_END.exec(result);
+      if (listed !== null) {
+        const end = listed.index + listed[0].length - (listed[1] as string).length;
+        result = result.slice(0, end) + UA_SCHEMA_ITEM + result.slice(end);
+      } else {
+        additions.push(
+          `<pdfaExtension:schemas xmlns:pdfaExtension="${NS_PDFA_EXTENSION}"><rdf:Bag>${UA_SCHEMA_ITEM}</rdf:Bag></pdfaExtension:schemas>`,
+        );
+      }
+    }
   }
   if (additions.length === 0 && declarations.length === 0) return result;
 

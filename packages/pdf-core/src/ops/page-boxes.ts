@@ -459,7 +459,7 @@ export async function applyPageBoxes(
         });
       }
     }
-    const measured = plan.mode === 'auto-crop' ? measureInkBounds(mupdf, doc, pages, context) : null;
+    const measured = plan.mode === 'auto-crop' ? await measureInkBounds(mupdf, doc, pages, context) : null;
     if (measured !== null) steps.push('measure');
     steps.push('boxes');
 
@@ -844,12 +844,12 @@ export async function readPageBoxes(
  * renders page contents without annotations), so the memory cost is a single page bitmap
  * regardless of how many pages are being measured.
  */
-function measureInkBounds(
+async function measureInkBounds(
   mupdf: Mupdf,
   doc: PDFDocument,
   pages: readonly number[],
   context: OperationContext,
-): Map<number, Rect | null> {
+): Promise<Map<number, Rect | null>> {
   const measured = new Map<number, Rect | null>();
   const scale = AUTOCROP_DPI / 72;
   const pageList = pageObjects(doc);
@@ -884,6 +884,9 @@ function measureInkBounds(
         done: position,
         total: pages.length,
       });
+      // Rendering a page is synchronous work on the main thread: let the progress bar and a
+      // cancel through between pages.
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;

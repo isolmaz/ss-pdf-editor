@@ -116,6 +116,25 @@ describe('useDraftAutosave', () => {
     );
   });
 
+  it('still writes the tabs after one whose write failed, and words the first failure', async () => {
+    const store = new SessionStore();
+    const first = openTab(store, 'one');
+    const second = openTab(store, 'two', 'b.pdf');
+    const third = openTab(store, 'three', 'c.pdf');
+    const refused = new DOMException('full', 'QuotaExceededError');
+    const persist = vi.fn(async (id: string) => {
+      if (id === first.id) throw refused;
+      if (id === second.id) throw new Error('later failure');
+      return 'written';
+    });
+    render(<Autosave store={store} persist={persist} translator={translator} />);
+
+    await act(() => vi.advanceTimersByTimeAsync(600));
+
+    expect(persist.mock.calls).toEqual([[first.id], [second.id], [third.id]]);
+    expect(coreStore.get().notice).toBe(storedCopyWarning(refused, en));
+  });
+
   it('says the stored copy was refused once, however often the write fails', async () => {
     const store = new SessionStore();
     openTab(store);

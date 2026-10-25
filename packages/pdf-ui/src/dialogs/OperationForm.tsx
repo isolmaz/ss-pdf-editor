@@ -44,7 +44,7 @@ export interface OperationFormProps {
   readonly t: Translator;
   readonly spec: OperationDialogSpec;
   /**
-   * The frozen input: bytes, document facts, the translator and whatever the tool
+   * The run input: bytes, document facts, the translator and whatever the tool
    * laid on the page. Deliberately the *run* context — without `signal` and
    * `onProgress`, which the run hook creates and owns — so the form forwards the whole
    * object. A hand-written field list here is how `redactions` was dropped once.
@@ -65,6 +65,23 @@ export interface OperationFormProps {
   readonly onRunningChange?: (running: boolean) => void;
 }
 
+/**
+ * The values the opener and the context decide for the fields, over the spec's own defaults:
+ * what the spec seeds from the context, then the opener's presets.
+ */
+function contextValues(spec: OperationDialogSpec, context: OperationRunContext): DialogParams {
+  const values: Record<string, FieldValue> = {};
+  // A scope that defaults to the selection would open on its own error when nothing is
+  // selected (the Page menu runs with no selection); the page on screen is the same
+  // fallback the page actions use.
+  for (const field of spec.fields) {
+    if (field.kind === 'pageScope' && field.default === 'selection') {
+      values[field.id] = context.selectedPages.length === 0 ? 'current' : 'selection';
+    }
+  }
+  return { ...values, ...(spec.initialValues?.(context) ?? {}), ...(context.presets ?? {}) };
+}
+
 export function OperationForm({
   t,
   spec,
@@ -75,25 +92,23 @@ export function OperationForm({
   renderIntro,
   onRunningChange,
 }: OperationFormProps) {
-  const [values, setValues] = useState<DialogParams>(() => {
-    const defaults: Record<string, FieldValue> = { ...initialParams(spec.fields) };
-    // A scope that defaults to the selection would open on its own error when nothing is
-    // selected (the Page menu runs with no selection); the page on screen is the same
-    // fallback the page actions use.
-    for (const field of spec.fields) {
-      if (
-        field.kind === 'pageScope' &&
-        defaults[field.id] === 'selection' &&
-        context.selectedPages.length === 0
-      ) {
-        defaults[field.id] = 'current';
-      }
-    }
-    return { ...defaults, ...(spec.initialValues?.(context) ?? {}), ...(context.presets ?? {}) };
-  });
+  const seeded = useMemo(() => contextValues(spec, context), [spec, context]);
+  const [values, setValues] = useState<DialogParams>(() => ({ ...initialParams(spec.fields), ...seeded }));
+  /** The fields the user has changed: the context no longer decides what they hold. */
+  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set());
+  const [seen, setSeen] = useState(seeded);
+  // The form stays open while the reader moves on (another page, another selection, another
+  // preset): a field the user has not touched follows what it was seeded from.
+  if (seeded !== seen) {
+    setSeen(seeded);
+    const moved = Object.entries(seeded).filter(
+      ([id, value]) => !touched.has(id) && !Object.is(seen[id], value),
+    );
+    if (moved.length > 0) setValues((previous) => ({ ...previous, ...Object.fromEntries(moved) }));
+  }
 
   /**
-   * Options for the `choice` fields, resolved once from the frozen context. A
+   * Options for the `choice` fields, resolved from the context. A
    * document-derived list (the images of the open file) is read at open time, never
    * while the form is up: a list that could shift under the user would let them pick a
    * target the run no longer finds.
@@ -148,6 +163,7 @@ export function OperationForm({
 
   const change = useCallback((id: string, value: FieldValue) => {
     setValues((previous) => ({ ...previous, [id]: value }));
+    setTouched((previous) => new Set(previous).add(id));
   }, []);
 
   const close = useCallback(() => {

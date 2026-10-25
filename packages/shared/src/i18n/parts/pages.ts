@@ -69,7 +69,7 @@ export const pagesPart = {
     '1 yalnızca üst düzey yer imlerinden böler; daha büyük sayı içlerindeki yer imlerinden de böler.',
   'split.bookmarks.lead': 'Başlangıç',
   'split.ranges': 'Aralıklar',
-  'split.rangesHint': 'Her aralık ayrı bir dosya olur ve artan sırada numaralanır.',
+  'split.rangesHint': 'Her aralık ayrı bir dosya olur ve yazdığınız sırayla numaralanır.',
   'split.everyN': 'Sayfa sayısı',
   'split.everyNHint': 'Her parçadaki sayfa sayısı; forma modunda bir formalık sayfa sayısı.',
   'split.maxSize': 'En büyük parça (MB)',

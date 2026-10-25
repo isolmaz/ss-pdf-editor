@@ -52,10 +52,10 @@ test('flatten XFA when the browser cannot encode a page picture says so and open
   await expect(form.getByRole('alert')).toBeVisible({ timeout: 60_000 });
   await expect(form.getByRole('alert')).toContainText('Not enough memory.');
   await expect(reviewHeading(form)).toHaveCount(0);
-  await expect(page).not.toHaveTitle('xfa-flat.pdf');
+  await expect(page).not.toHaveTitle('xfa-flat.pdf — Unsaved changes');
 
   await page.evaluate(() => Reflect.set(window, '__noBlobs', false));
   await applyForm(form, 'Open in new tab');
-  await expect(page).toHaveTitle('xfa-flat.pdf', { timeout: 60_000 });
+  await expect(page).toHaveTitle('xfa-flat.pdf — Unsaved changes', { timeout: 60_000 });
   expect((await readProducedPageTexts(await exportBytes(page, 'flat.pdf'))).join(' ')).toContain('Customer');
 });

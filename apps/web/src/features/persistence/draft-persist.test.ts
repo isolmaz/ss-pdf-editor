@@ -3,7 +3,7 @@
  * document never reaches the vault, and turning the opt-out on removes what was stored.
  */
 
-import { SessionStore } from 'pdf-model';
+import { isRestorable, SessionStore } from 'pdf-model';
 import { createTranslator } from 'pdf-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { coreStore, initialCoreState } from '../core/core-store';
@@ -135,6 +135,25 @@ describe('persistDraft', () => {
     expect(draft?.workingId).toBeUndefined();
     expect(draft?.overlays).toBeUndefined();
     expect(draft?.engineValues.entries).toEqual([]);
+  });
+
+  it('writes a restorable manifest for a document produced here, whose bytes no file holds', async () => {
+    const session = new SessionStore();
+    const tab = session.openDocument({
+      name: 'made.pdf',
+      bytes: new Uint8Array([1, 2, 3]),
+      sha256: 'made',
+      pageCount: 1,
+      unwritten: true,
+    });
+    outside.handles.set(tab.id, { raw: {} });
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(true);
+
+    expect(await persistDraft(session, tab.id, 'desktop')).toBe('written');
+
+    const draft = storage.drafts.get(tab.id);
+    expect(draft === undefined ? false : isRestorable(draft)).toBe(true);
+    expect(holdsUnprotectedWork(session.getSnapshot())).toBe(false);
   });
 
   it('records the pending overlays in the manifest', async () => {

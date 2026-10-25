@@ -35,7 +35,7 @@
 
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { resolved } from '../engines/mupdf-write';
-import { catalogOf, dictOf, intOf, nameOf, pageNumbers, textOf } from './accessibility';
+import { catalogOf, dictOf, intOf, nameOf, pageNumbers, STRUCT_NODE_LIMIT, textOf } from './accessibility';
 import { resolveRole, STANDARD_ROLES } from './struct-roles';
 
 export { EDITOR_ROLES, resolveRole, STANDARD_ROLES } from './struct-roles';
@@ -104,7 +104,6 @@ export interface StructureModel {
   readonly hasParentTree: boolean;
 }
 
-export const STRUCT_NODE_LIMIT = 30_000;
 const STRUCT_DEPTH_LIMIT = 64;
 
 export const EMPTY_MODEL: StructureModel = {
@@ -680,10 +679,13 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
         if (parent === null) throw new StructEditError('root', 'the root cannot be unwrapped');
         if (!node.editable) throw new StructEditError('not-editable', `${edit.key} cannot be unwrapped`);
         if (parent === holder) throw new StructEditError('root', 'the document element stays');
-        if (node.kids.some((kid) => kid.kind === 'content')) {
+        const children = node.kids.filter((kid) => kid.kind === 'element');
+        if (children.length !== node.kids.length) {
           throw new StructEditError('has-content', 'an element that owns content cannot be unwrapped');
         }
         const position = rawIndexOf(parent, node.key);
+        // The language of an element covers what is inside it: its children keep it where they have none.
+        for (const child of children) child.node.lang ??= node.lang;
         parent.kids.splice(position, 1, ...node.kids);
         break;
       }

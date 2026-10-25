@@ -301,11 +301,20 @@ async function saveHarness({ target, picker, prepare, saveAs = false } = {}) {
   };
 }
 
-function swHarness({ online = true, cacheFailure = false, networkStatus = 200, languages = ['tr-TR'] } = {}) {
+function swHarness({
+  online = true,
+  cacheFailure = false,
+  networkStatus = 200,
+  languages = ['tr-TR'],
+  windows = [],
+} = {}) {
   const handlers = new Map();
   const cached = new Map();
+  /** What the cache of the previous release (`pdf-editor-static-old`) holds, which answers before this one in creation order. */
+  const stale = new Map();
   const deleted = [];
   const requests = [];
+  let claims = 0;
   const cache = {
     async match(request) {
       return cached.get(typeof request === 'string' ? request : request.url)?.clone();
@@ -331,12 +340,24 @@ function swHarness({ online = true, cacheFailure = false, networkStatus = 200, l
       location: { origin: 'https://local.test' },
       navigator: { languages },
       addEventListener: (kind, fn) => handlers.set(kind, fn),
-      clients: { claim: async () => {} },
+      registration: { scope: 'https://local.test/editor/' },
+      clients: {
+        claim: async () => {
+          claims += 1;
+        },
+        matchAll: async () => windows,
+      },
       skipWaiting: async () => {},
     },
     caches: {
       open: async () => cache,
-      match: cache.match,
+      match: async (request, { cacheName } = {}) => {
+        if (cacheName !== undefined)
+          return cacheName === 'pdf-editor-static-v1' ? cache.match(request) : undefined;
+        return (
+          stale.get(typeof request === 'string' ? request : request.url)?.clone() ?? cache.match(request)
+        );
+      },
       keys: async () => ['another-app-v1', 'pdf-editor-static-old', 'pdf-editor-static-v1'],
       delete: async (key) => {
         deleted.push(key);
@@ -385,7 +406,7 @@ function swHarness({ online = true, cacheFailure = false, networkStatus = 200, l
     });
     return { lifetimes, response: () => response };
   }
-  return { dispatch, cached, deleted, requests };
+  return { dispatch, cached, stale, deleted, requests, claims: () => claims };
 }
 
 async function main() {
@@ -665,6 +686,73 @@ async function main() {
     assert.equal(h.deleted.includes('another-app-v1'), false);
     assert.equal(h.deleted.includes('pdf-editor-static-old'), true);
   });
+  await check(
+    'service-worker activation keeps the previous release cache while a window may still run it',
+    async () => {
+      const h = swHarness({ windows: [{ id: 'held', url: 'https://local.test/editor/' }] });
+      const event = h.dispatch('activate');
+      await Promise.all(event.lifetimes);
+      assert.deepEqual(h.deleted, []);
+      assert.equal(h.claims(), 1);
+      // A page of the origin that is not part of the editor does not run its code.
+      const landing = swHarness({ windows: [{ id: 'landing', url: 'https://local.test/' }] });
+      const landed = landing.dispatch('activate');
+      await Promise.all(landed.lifetimes);
+      assert.deepEqual(landing.deleted, ['pdf-editor-static-old']);
+    },
+  );
+  await check(
+    'a navigation with no other editor window open deletes an older release cache, and one beside another window keeps it',
+    async () => {
+      const navigate = async (h) => {
+        const event = h.dispatch('fetch', {
+          request: { method: 'GET', url: 'https://local.test/editor/', cache: 'default', mode: 'navigate' },
+          resultingClientId: 'new-page',
+        });
+        await event.response();
+        await Promise.all(event.lifetimes);
+      };
+      const editor = 'https://local.test/editor/';
+      const alone = swHarness({ windows: [{ id: 'new-page', url: editor }] });
+      await navigate(alone);
+      assert.deepEqual(alone.deleted, ['pdf-editor-static-old']);
+      const held = swHarness({
+        windows: [
+          { id: 'old-page', url: editor },
+          { id: 'held', url: editor },
+        ],
+      });
+      await navigate(held);
+      assert.deepEqual(held.deleted, []);
+    },
+  );
+  await check(
+    'a previous release cache that is still around answers a page only after this release cache',
+    async () => {
+      const shell = '/editor/index.html';
+      const offline = swHarness({ online: false });
+      offline.stale.set(shell, new Response('previous shell'));
+      offline.cached.set(shell, new Response('current shell'));
+      const request = {
+        method: 'GET',
+        url: 'https://local.test/editor/',
+        cache: 'default',
+        mode: 'navigate',
+      };
+      assert.equal(await (await offline.dispatch('fetch', { request }).response()).text(), 'current shell');
+      offline.cached.delete(shell);
+      assert.equal(await (await offline.dispatch('fetch', { request }).response()).text(), 'previous shell');
+
+      // A chunk the origin no longer serves is still there for the page that holds the old code.
+      const chunk = 'https://local.test/editor/assets/chunk-old.js';
+      const deployed = swHarness({ networkStatus: 404 });
+      deployed.stale.set(chunk, new Response('old chunk'));
+      const asked = deployed.dispatch('fetch', {
+        request: { method: 'GET', url: chunk, cache: 'default', mode: 'cors' },
+      });
+      assert.equal(await (await asked.response()).text(), 'old chunk');
+    },
+  );
   /** One request/response with the worker, as the page makes it: the reply arrives on the port. */
   async function askWorker(h, data) {
     const messages = [];
@@ -804,7 +892,7 @@ async function main() {
       assert.notEqual(releaseVersion({ ...base, pins: [{ ...pins[0], sha256: 'cc' }, pins[1]] }), version);
     },
   );
-  await check('verify-assets refuses a file under public/engines that no pin names', async () => {
+  await check('verify-assets refuses a file under public/engines or fonts that no pin names', async () => {
     const { pathToFileURL } = require('node:url');
     const { verifyAssets } = await import(pathToFileURL(path.join(ROOT, 'tools/fetch-engines.mjs')).href);
     const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'pins-'));
@@ -824,6 +912,13 @@ async function main() {
         [{ engine: 'demo', file: 'engines/demo/stray.js', kind: 'unpinned' }],
       );
       fs.rmSync(path.join(dir, 'public/engines/demo/stray.js'));
+      fs.mkdirSync(path.join(dir, 'public/fonts/demo'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'public/fonts/demo/stray.woff2'), 'x');
+      assert.deepEqual(
+        verifyAssets(options).problems.map(({ engine, path: file, kind }) => ({ engine, file, kind })),
+        [{ engine: 'demo', file: 'fonts/demo/stray.woff2', kind: 'unpinned' }],
+      );
+      fs.rmSync(path.join(dir, 'public/fonts/demo/stray.woff2'));
       // The URL versions must be the ones the pins give.
       const versionsPath = path.join(dir, 'versions.json');
       fs.writeFileSync(versionsPath, JSON.stringify({ versions: { demo: 'v000000000000' } }));

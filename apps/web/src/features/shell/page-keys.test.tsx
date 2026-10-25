@@ -46,6 +46,7 @@ function laidOutViewer() {
   const viewer = {
     getZoom: () => 1,
     setZoom: vi.fn(),
+    getSpreadMode: () => 'single' as const,
     setSpreadMode: vi.fn(),
     goToPage,
   } as unknown as ViewerApi;

@@ -14,12 +14,13 @@ recorded here.
 
 ## Result
 
-**Keep Tesseract (`tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 simd-lstm, `tur`+`eng` best_int traineddata) as the
+**Keep Tesseract (`tesseract.js` 6.0.1 + `tesseract.js-core` 6.1.2 simd-lstm, `tur`+`eng` best_int traineddata, which the Word export and the OCR dialog's *High quality* read with;
+the dialog's default, *Fast*, reads with the fast pack) as the
 only engine. No candidate beat it on Turkish text, on the owner's CV, or on speed. Do not add a second engine.**
 
 | config | CER synthetic | CER CV | Turkish-letter recall | WER (all) | cold ms (CV page, incl. load) | warm ms/page (CV page) | download MB (gzip) | licence (code + weights) |
 |---|---|---|---|---|---|---|---|---|
-| **tess tur+eng best_int** (shipped) | 0.03% | **0.27%** | 99.9% | **0.6%** | 7100 | 7097 | **7.7** | Apache-2.0 / Apache-2.0 |
+| **tess tur+eng best_int** (Word export, High quality) | 0.03% | **0.27%** | 99.9% | **0.6%** | 7100 | 7097 | **7.7** | Apache-2.0 / Apache-2.0 |
 | tess tur+eng fast | 0.03% | 0.29% | 99.9% | 0.6% | 7422 | 6824 | 21.6 | Apache-2.0 / Apache-2.0 |
 | tess tur best_int | 0.04% | 0.43% | 100.0% | 1.0% | 5790 | 5760 | 4.7 | Apache-2.0 / Apache-2.0 |
 | tess tur fast | 0.04% | 0.44% | 100.0% | 1.0% | 5974 | 5634 | 10.6 | Apache-2.0 / Apache-2.0 |
@@ -140,7 +141,7 @@ Use < 0.85 for a stricter, mostly-correct flag set. PP-OCR confidences are satur
    `tesseract.js` **6.0.1**, `tesseract.js-core` **6.1.2** (`tesseract-core-simd-lstm.wasm(.js)`), `@tesseract.js-data/tur`
    **1.0.0** and `@tesseract.js-data/eng` **1.0.0** (`best` = best_int quantised, gzip, 4.7 MB for tur alone; whole stack for
    tur+eng 7.7 MB gzip). Run `tur+eng` together when the document may contain English technical terms (CER 0.27 % vs 0.43 %,
-   WER 0.6 % vs 1.0 % on the CV); `fast` data brings no accuracy gain and is 2–3× larger on the wire.
+   WER 0.6 % vs 1.0 % on the CV); `fast` data brings no accuracy gain and is 2–3× larger on the wire; the OCR dialog still defaults to *Fast*, and the offline manifest lists the fast `tur` and `eng` packs.
 2. **No second engine.** The best ONNX alternative (PP-OCRv5 mobile det + latin rec: 15.6 MB gzip, ≈ 9 s/CV page,
    CER CV 0.75 %, WER 1.7 %) is worse on accuracy and not faster. PP-OCRv6 small/medium are worse on Turkish `ı/İ`
    and caps; OnnxTR and PP-OCRv5 server lack Turkish letters in their vocabularies. If a second engine is wanted

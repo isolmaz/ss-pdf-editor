@@ -42,12 +42,11 @@ export const LIMITS: Record<DeviceTier, DocumentLimits> = {
 
 /**
  * Build size targets. `pnpm check:budgets` (`tools/check-build-budgets.mjs`) gates the
- * first-paint JavaScript against `firstPaintJsGzipBytes`; the landing and per-asset numbers are
- * measured by hand. `limits.test.ts` pins the numbers.
+ * first-paint JavaScript against `firstPaintJsGzipBytes`; the per-asset number is measured by
+ * hand. `limits.test.ts` pins the numbers.
  */
 export const BUILD_BUDGETS = {
   firstPaintJsGzipBytes: 250 * 1024,
-  firstPaintLandingBytes: 60 * 1024,
   maxAssetBytes: 25 * MIB,
 } as const;
 

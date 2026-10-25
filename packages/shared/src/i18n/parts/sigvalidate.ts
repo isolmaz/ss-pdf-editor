@@ -32,6 +32,8 @@ export const sigValidatePart = {
     'İptal tarihi imzalayanın beyan ettiği zamandan sonra, ama bu zaman kanıtlanmış değil: iptal edilmiş sayın.',
   'props.sig.rev.why.noList': 'bu yayımcı için CRL ya da OCSP yanıtı yok',
   'props.sig.rev.why.noIssuer': 'yayımcı sertifikası elde yok',
+  'props.sig.rev.why.issuerNotTrusted':
+    'yayımcı, içe aktardığınız bir güven köküne bağlanmıyor; listelerine güvenilmedi',
   'props.sig.rev.why.invalidList':
     'bu yayımcının listesi doğrulanamadı (imza, anahtar kullanımı ya da geçerlilik)',
   'props.sig.rev.why.unsupportedList':

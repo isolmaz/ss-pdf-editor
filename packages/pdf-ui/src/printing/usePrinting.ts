@@ -180,9 +180,7 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
   const cancel = useCallback(() => {
     produceRef.current?.abort();
     produceRef.current = null;
-    const job = jobRef.current;
-    if (job === null) return;
-    job.teardown();
+    jobRef.current?.teardown();
     setState(IDLE);
   }, []);
 
@@ -349,9 +347,17 @@ export function usePrinting(viewer: ViewerApi | null, options: UsePrintingOption
         });
         if (controller.signal.aborted) return null;
         return outcome.bytes;
+      } catch (error) {
+        // The operation reports the abort it was given as an error: cancelling is not a failure.
+        if (controller.signal.aborted) return null;
+        throw error;
       } finally {
-        if (produceRef.current === controller) produceRef.current = null;
-        setState(IDLE);
+        // Only the production that is still current resets the phase: a cancelled one has been
+        // reset by `cancel()`, and a job that replaced it owns the phase now.
+        if (produceRef.current === controller) {
+          produceRef.current = null;
+          setState(IDLE);
+        }
       }
     },
     [cancel, read, viewer],

@@ -112,6 +112,10 @@ export const tr = {
   'conflict.overwrite': 'Üzerine yaz',
   'inspection.loading': 'Belge bilgileri inceleniyor…',
   'inspection.failed': 'Belge bilgileri okunamadı. Kaydetme ve dışa aktarma durduruldu; yeniden deneyin.',
+  'inspection.fonts.failed':
+    'Belgenin yazı tipleri okunamadı. Kaydetme ve dışa aktarma çalışır; yeniden deneyin.',
+  'inspection.attachments.failed':
+    'Belgenin ek dosyaları okunamadı. Kaydetme ve dışa aktarma çalışır; yeniden deneyin.',
   'inspection.retry': 'Yeniden incele',
   'save.done': 'Kaydedildi: {name}',
   'export.explained': 'Yerinde kaydetme yok: belge yeni bir dosya olarak indirildi.',
