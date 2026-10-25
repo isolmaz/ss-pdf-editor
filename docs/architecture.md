@@ -2130,8 +2130,9 @@ a rule set over what MuPDF reports.
 (`readPageLayout`), the table finder's rulings, and one `mupdf.Device` pass that collects
 filled and stroked rectangles, circles (four or more curves and at most one line), rounded
 rectangles, dots and ink. Dotted leaders are rebuilt from runs of dots and periods. All of
-it is in MuPDF's displayed space (top-left origin, `/Rotate` applied) and is converted once
-with `displayToAppRect` into the app space of section 9; the widget `/Rect` is then derived
+it is in MuPDF's displayed space (top-left origin, `/Rotate` applied, `/UserUnit` applied) and
+is converted once with `displayToAppRect` (and the label size divided by the unit) into the
+app space of section 9; the widget `/Rect` is then derived
 with `topLeftRectToUserSpace`, and a turned page gets `/MK /R` so the widget text reads
 upright. The pure rule set, `ops/form-detect-rules.ts` (`detectPageFields`), sees only that
 `DetectionPage` value and is the unit-testable part.

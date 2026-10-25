@@ -541,7 +541,8 @@ export function readDetectionPage(mupdf: Mupdf, page: Page): ReadPage {
 /**
  * A rectangle in MuPDF's displayed space → app space (upright user-space x, y down from the
  * page box's top edge). The inverse of `userToPageSpace` in `engines/mupdf.ts`, composed with
- * the one flip `topLeftToUserPoint` does.
+ * the one flip `topLeftToUserPoint` does. Displayed space is user space times the page's
+ * `/UserUnit`, so the rectangle is divided by it first.
  */
 export function displayToAppRect(rotation: 0 | 90 | 180 | 270, box: UserBox, rect: Box): Box {
   const toApp = (u: number, v: number): readonly [number, number] => {
@@ -556,8 +557,8 @@ export function displayToAppRect(rotation: 0 | 90 | 180 | 270, box: UserBox, rec
         return [u + box.x, v];
     }
   };
-  const [ax, ay] = toApp(rect[0], rect[1]);
-  const [bx, by] = toApp(rect[2], rect[3]);
+  const [ax, ay] = toApp(rect[0] / box.userUnit, rect[1] / box.userUnit);
+  const [bx, by] = toApp(rect[2] / box.userUnit, rect[3] / box.userUnit);
   return [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
 }
 
@@ -683,7 +684,7 @@ export async function detectFormFields(bytes: Uint8Array, context: OperationCont
           label: candidate.label,
           confidence: candidate.confidence,
           source: candidate.source,
-          size: candidate.size,
+          size: candidate.size / pageGeometry.box.userUnit,
           ...(candidate.group === undefined ? {} : { group: `${index}:${candidate.group}` }),
           ...(candidate.option === undefined ? {} : { option: candidate.option }),
           ...(candidate.cells === undefined ? {} : { cells: candidate.cells }),
