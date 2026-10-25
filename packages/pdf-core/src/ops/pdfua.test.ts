@@ -455,6 +455,14 @@ describe('document rules', () => {
       );
     };
 
+  it('reads a title whose character reference names no character as written, instead of failing', async () => {
+    const hostile =
+      '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" dc:title="Report &#x110000;"/></rdf:RDF></x:xmpmeta>';
+    const found = await checked({ pages: [PAGE], title: 'Report', setup: withXmp(hostile) });
+    expect(found.rule('title').state).toBe('pass');
+    expect(found.report.title).toBe('Report &#x110000;');
+  });
+
   it('tells a title that only the Info dictionary has from one the XMP packet carries, and reads a wrong UA part', async () => {
     const none = await checked({ pages: [PAGE] });
     expect(none.rule('title').instances).toEqual([{ reason: 'none' }]);

@@ -48,8 +48,10 @@ const ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>',
 
 function decodeEntities(value: string): string {
   return value.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (match, body: string) => {
-    if (body.startsWith('#x')) return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
-    if (body.startsWith('#')) return String.fromCodePoint(Number(body.slice(1)));
+    if (body.startsWith('#')) {
+      const code = body.startsWith('#x') ? Number.parseInt(body.slice(2), 16) : Number(body.slice(1));
+      return code <= 0x10ffff ? String.fromCodePoint(code) : match;
+    }
     return ENTITIES[body] ?? match;
   });
 }

@@ -133,6 +133,14 @@ describe('ua-xmp', () => {
     expect(readXmpTitle(text)).toBe('AAB&copy;&');
   });
 
+  it('leaves a character reference that names no character as written', () => {
+    const title = (reference: string) => readXmpTitle(packet(`<rdf:Description dc:title="a${reference}b"/>`));
+    expect(title('&#x110000;')).toBe('a&#x110000;b');
+    expect(title('&#1114112;')).toBe('a&#1114112;b');
+    expect(title(`&#${'9'.repeat(400)};`)).toBe(`a&#${'9'.repeat(400)};b`);
+    expect(title('&#x10FFFF;')).toBe('a\u{10FFFF}b');
+  });
+
   it('reads an empty title attribute as no title, and an element title in every shape', () => {
     expect(readXmpTitle(packet('<rdf:Description dc:title=" "/>'))).toBeNull();
     // No x-default entry: the first list item is the title.
