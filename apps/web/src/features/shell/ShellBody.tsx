@@ -85,7 +85,7 @@ export function ShellBody(props: ShellBodyProps) {
                       : 'merge-files',
               );
           }}
-          // The grid is the discovery surface named 'all tools': it lists every tool in either
+          // The grid is the discovery surface named 'all tools': it shows the same tools in either
           // mode (the simple mode filters the menus and the palette, it never disables).
           commands={commands}
           standaloneCommands={STANDALONE_COMMAND_IDS}

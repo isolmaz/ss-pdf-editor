@@ -1288,8 +1288,8 @@ mechanics are arranged around one number, `/ByteRange`:
    the empty field of that name and otherwise creates one, and a reused field also gets
    its `/AP`. The appearance draws the stamp's lines in Helvetica when they are printable
    ASCII (nothing embedded); a line with any other letter makes it draw in the embedded
-   Noto Sans, subset to the glyphs shown, and a character that face lacks (or a control or
-   separator character outside ASCII) is drawn as `?`.
+   Noto Sans, subset to the glyphs shown, and a character that face lacks, or any control or
+   separator character other than the ASCII space (a tab, a non-breaking space), is drawn as `?`.
 3. The `/Contents` placeholder is located in the produced bytes (uniqueness enforced); the
    real ByteRange is computed from those offsets and written over the same digits, with a
    length-equality assertion.
@@ -1542,7 +1542,7 @@ Details that matter:
   tree alone would leave `/Root /AF`, the `/AF` of pages, annotations and structure elements and
   every `/FileAttachment` annotation, and an empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
   reads from the Attachments panel — that list is empty for a file that is attached only as an
-  annotation or in `/AF` — and the step removes every attached file: each file specification of the
+  annotation or in `/AF` — and the step removes the attached files in these places: each file specification of the
   name tree (walked through `/Kids` as well; the tree and a `/Names` that holds nothing else leave
   the catalog), every `/AF` entry (catalog, pages, annotations and structure elements), and every file-attachment annotation
   (through `sweepWhere` of `redact-annots.ts`: popup and replies included), with the file

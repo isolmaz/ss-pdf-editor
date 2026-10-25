@@ -99,9 +99,9 @@ function discardCounted(doc: PDFDocument, spec: PDFObject, counted: Set<number>)
 }
 
 /**
- * The "clean attachments" step: every attached file of the document goes, wherever it lives — the
- * embedded-file name tree (a `/Kids` tree too), every `/AF` entry of the catalog, the pages, their
- * annotations and the structure elements, and every file-attachment annotation on every page with
+ * The "clean attachments" step: the attached files of these places go — the embedded-file name
+ * tree (a `/Kids` tree too), every `/AF` entry of the catalog, the pages, their annotations and
+ * the structure elements, and every file-attachment annotation on every page with
  * its popup and replies — together with the file specifications and embedded-file streams behind
  * them. The name tree leaves the catalog, and with it the `/Names` dictionary when nothing else is
  * in it.

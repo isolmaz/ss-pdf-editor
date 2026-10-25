@@ -19,8 +19,8 @@ export interface RecoveryHost extends RestoreHost {
 }
 
 /**
- * Drafts: the model data of every open tab — never the source bytes of a document the user
- * opened through a handle. On startup the restorable drafts come back as tabs so closing the
+ * Drafts: the model data of every open tab that is not sensitive, beside the copy of its source
+ * stored when it was opened. On startup the restorable drafts come back as tabs so closing the
  * browser is not losing work.
  */
 export function useDraftRecovery({ store, translator, openAndFingerprint }: RecoveryHost): void {

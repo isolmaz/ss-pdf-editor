@@ -1153,10 +1153,11 @@ pnpm worker:deploy:dry      # same, with --dry-run
   count (capability `app`): engines without a tool's code are not "ready". A half-downloaded
   pack is reported as `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release answers
-  from its own cache first. An older cache is kept only while a window may still run that
-  release (a window left on its old code by unsaved work), is read only for a file the new one
-  lacks, and is deleted at the first navigation or worker start with no other editor window
-  open.
+  from its own cache first. An older cache is read only for a file the new one lacks, and is
+  kept while any editor window is open, since that window may still run the older release (one
+  left on its old code by unsaved work). Reloading the only editor window keeps it too: while
+  the new page loads, the browser still counts the old one. It is deleted when the editor is
+  opened, or a new worker starts, with no editor window open.
 - **Engine versions.** Every engine is served from a versioned URL, so a rebuilt engine is
   never answered with old cached bytes under the new editor. Readiness compares those URLs, so
   a cached engine of another version counts as `missing`.

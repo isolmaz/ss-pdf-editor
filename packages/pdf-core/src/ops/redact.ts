@@ -5,7 +5,7 @@
  * layer, the metadata and the neighbouring content): MuPDF redaction annotations over the marked
  * rectangles, `applyRedactions`, a sweep of the annotations and form fields under the marks
  * (`applyRedactions` leaves those alone — `redact-annots.ts`), the marked pages' thumbnails and
- * tag text and, when asked, every attached file (`redact-leaks.ts`), then a full (`garbage`) write.
+ * tag text and, when asked, the attached files (`redact-leaks.ts`), then a full (`garbage`) write.
  *
  * Measured behaviour this file depends on:
  * redaction is **glyph-level** — the glyph run inside the box goes, the
@@ -68,7 +68,7 @@ export interface RedactOptions {
   readonly textMethod: 0 | 1;
   readonly cleanMetadata: boolean;
   /**
-   * Remove every attached file of the document: the embedded-file name tree, every `/AF` list
+   * Remove the attached files of the embedded-file name tree, every `/AF` list
    * (catalog, pages, annotations and structure elements) and every file-attachment annotation,
    * with the file objects behind them.
    */
