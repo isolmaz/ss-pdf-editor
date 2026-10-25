@@ -389,6 +389,23 @@ describe('planFindReplace: one line', () => {
   });
 });
 
+describe('planFindReplace: matching without case', () => {
+  const found = (word: string, find: string, matchCase = false): number =>
+    plan(pageOf([blockOf('b0', [lineOf({ words: [word], baseline: 100 })])]), find, 'x', { matchCase }).found;
+
+  it('matches a capital sigma with a final sigma and with a medial one, in either direction', () => {
+    expect(found('ΜΑΡΚΟΣ', 'Μαρκος')).toBe(1);
+    expect(found('Μαρκος', 'ΜΑΡΚΟΣ')).toBe(1);
+    expect(found('ΟΔΥΣΣΕΥΣ', 'οδυσσευς')).toBe(1);
+    expect(found('Μαρκοσ', 'Μαρκος')).toBe(1);
+  });
+
+  it('keeps σ and ς apart when case counts', () => {
+    expect(found('Μαρκος', 'Μαρκοσ', true)).toBe(0);
+    expect(found('Μαρκος', 'Μαρκος', true)).toBe(1);
+  });
+});
+
 describe('planFindReplace: faces and sizes', () => {
   /** One line, the match at its end, so the replacement is drawn in place. */
   const endOfLine = (look: Look, style: Partial<TextStyle>) =>

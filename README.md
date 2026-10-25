@@ -353,7 +353,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     it uses a close standard font (Helvetica, Times, Courier) or Noto Sans, sized to match,
     and the report names the font.
   - Searching without match case treats `I`/`ı` and `İ`/`i` as Turkish and English
-    readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches `sik`.
+    readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches `sik`. A final sigma
+    `ς` and `σ` are the same letter, so `Μαρκος` finds `ΜΑΡΚΟΣ`.
 - **Export and import.** Export text as plain text or Markdown. Export pages as PNG, JPEG or
   WebP images, or build a PDF from images.
 - **Other documents to PDF.** DOCX, XLSX, PPTX, HTML, TXT/MD, CSV/TSV, EPUB and FB2 are

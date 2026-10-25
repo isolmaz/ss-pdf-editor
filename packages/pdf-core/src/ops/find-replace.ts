@@ -487,6 +487,8 @@ function foldToken(value: string, matchCase: boolean): string {
   if (matchCase) return value;
   if (value === 'I') return EITHER_I;
   if (value === 'İ') return 'i';
+  // A final sigma is the same letter as σ (`Σ` lower-cases to σ only, not by position).
+  if (value === 'ς') return 'σ';
   return value.toLowerCase();
 }
 

@@ -96,6 +96,18 @@ describe('searchPdfText', () => {
     ]);
   });
 
+  it('matches a capital sigma with a final sigma and a long s with an s, offsets kept', async () => {
+    const text = 'ΜΑΡΚΟΣ Μαρκος weiſs WEISS';
+    const find = async (query: string) =>
+      (await searchPdfText(await readerOf(1, () => text), query)).map((match) =>
+        text.slice(match.index, match.index + match.length),
+      );
+    expect(await find('Μαρκος')).toEqual(['ΜΑΡΚΟΣ', 'Μαρκος']);
+    expect(await find('ΜΑΡΚΟΣ')).toEqual(['ΜΑΡΚΟΣ', 'Μαρκος']);
+    expect(await find('weiss')).toEqual(['weiſs', 'WEISS']);
+    expect(await find('WEIſS')).toEqual(['weiſs', 'WEISS']);
+  });
+
   it('clips a snippet to 32 characters of context with ellipses, and offsets the match inside it', async () => {
     const left = 'a'.repeat(50);
     const right = 'b'.repeat(50);

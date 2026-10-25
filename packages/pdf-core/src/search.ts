@@ -64,13 +64,16 @@ async function cachedPageText(document: PdfDocumentHandle, pageIndex: number): P
  * original text: a character whose lowercase form is longer (`İ` → `i̇`) keeps its own
  * form, which also keeps the comparison diacritic-sensitive like the viewer's find
  * (`matchDiacritics`). Deliberately locale-independent — a Turkish `I → ı` fold would
- * stop an English document from matching.
+ * stop an English document from matching. A final sigma folds to σ and a long s to s,
+ * as lower-casing alone leaves them.
  */
 function fold(value: string): string {
   let folded = '';
   for (const char of value) {
     const lower = char.toLowerCase();
-    folded += lower.length === char.length ? lower : char;
+    if (lower === 'ς') folded += 'σ';
+    else if (lower === 'ſ') folded += 's';
+    else folded += lower.length === char.length ? lower : char;
   }
   return folded;
 }
