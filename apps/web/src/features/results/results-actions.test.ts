@@ -268,8 +268,35 @@ describe('printProduced', () => {
 
   it('opens the pages imposed from a document opened with its password as sensitive', async () => {
     session.setSensitive(tab.id, true);
-    await actions().printProduced(printed);
+    const results = actions();
+    await results.readForPrint({ signal: new AbortController().signal });
+    await results.printProduced(printed);
     expect(openProducedTab).toHaveBeenCalledWith('booklet.pdf', printed.bytes, expect.any(AbortSignal), true);
+  });
+
+  it('takes the sensitivity of the tab the pages were read from, not of the tab in front when they arrive', async () => {
+    session.setSensitive(tab.id, true);
+    const results = actions();
+    await results.readForPrint({ signal: new AbortController().signal });
+    // Another file opened while the pages were imposed.
+    session.openDocument({ name: 'b.pdf', bytes: new Uint8Array([4]), sha256: 'other', pageCount: 1 });
+    await results.printProduced(printed);
+    expect(openProducedTab).toHaveBeenLastCalledWith(
+      'booklet.pdf',
+      printed.bytes,
+      expect.any(AbortSignal),
+      true,
+    );
+
+    await results.readForPrint({ signal: new AbortController().signal });
+    session.setActive(tab.id);
+    await results.printProduced(printed);
+    expect(openProducedTab).toHaveBeenLastCalledWith(
+      'booklet.pdf',
+      printed.bytes,
+      expect.any(AbortSignal),
+      false,
+    );
   });
 
   it('says the stored-copy warning when there is one', async () => {

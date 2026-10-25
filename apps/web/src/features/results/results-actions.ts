@@ -66,7 +66,7 @@ export interface PrintedFile {
 export interface ResultsActions {
   readonly applyAccessibility: (outcome: AccessibilityOutcome) => Promise<void>;
   readonly scanDocument: (result: ScannedDocument) => Promise<string | undefined>;
-  /** The print dialog's reader: the working bytes of the tab in front. */
+  /** The print dialog's reader: the working bytes of the tab in front, noting which tab that was. */
   readonly readForPrint: (operation: OperationContext) => Promise<Uint8Array>;
   readonly printProduced: (file: PrintedFile) => Promise<void>;
 }
@@ -128,13 +128,18 @@ export function createResultsActions(deps: ResultsDeps): ResultsActions {
     return undefined;
   }
 
+  // Whether the tab the print dialog last read was sensitive. The dialog stays open while another
+  // file is opened, so the tab in front when the imposed file arrives may not be the one it came from.
+  let printSourceSensitive = false;
+
   function readForPrint(operation: OperationContext): Promise<Uint8Array> {
+    printSourceSensitive = deps.session.active?.sensitive === true;
     return deps.currentBytes(operation);
   }
 
   /**
    * The print dialog's imposed file (N-up, booklet, duplex sides): opened as a new tab, the
-   * place a user can read, save or print it from.
+   * place a user can read, save or print it from, as sensitive as the tab it was read from.
    */
   async function printProduced(file: PrintedFile): Promise<void> {
     if (isBusy() || operationRunning()) {
@@ -142,8 +147,7 @@ export function createResultsActions(deps: ResultsDeps): ResultsActions {
       return;
     }
     if (deps.refuseUnappliedRedactions()) return;
-    // The print dialog is modal, so the tab in front is the one its pages were imposed from.
-    const sensitive = deps.session.active?.sensitive === true;
+    const sensitive = printSourceSensitive;
     const controller = beginOperation();
     setBusy(true);
     try {
