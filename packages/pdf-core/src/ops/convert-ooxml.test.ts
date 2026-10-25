@@ -629,6 +629,27 @@ describe('pptx shapes, text and tables', () => {
     });
   });
 
+  it('keeps a table cell that spans rows as a row span, so the cells beside the skipped ones stay in their columns', async () => {
+    const cell = (body: string, attributes = '') =>
+      `<a:tc${attributes}>${body === '' ? '' : `<a:txBody><a:p>${text(body)}</a:p></a:txBody>`}</a:tc>`;
+    // a spans the first two rows and the second column of the second row is c; d spans two rows and
+    // two columns; the merged cells under them carry no text of their own.
+    const table = `<a:tbl>
+      <a:tr>${cell('a', ' rowSpan="2"')}${cell('b')}</a:tr>
+      <a:tr>${cell('', ' vMerge="1"')}${cell('c')}</a:tr>
+      <a:tr>${cell('d', ' gridSpan="2" rowSpan="2"')}${cell('', ' hMerge="1"')}</a:tr>
+      <a:tr>${cell('', ' vMerge="1" gridSpan="2"')}${cell('', ' hMerge="1" vMerge="1"')}</a:tr>
+    </a:tbl>`;
+    const frame = `<p:graphicFrame><p:xfrm><a:off x="0" y="0"/></p:xfrm><a:graphic><a:graphicData>${table}</a:graphicData></a:graphic></p:graphicFrame>`;
+    expect(await html(frame)).toBe(
+      '<div class="slide"><table>' +
+        '<tr><td rowspan="2"><p>a</p></td><td><p>b</p></td></tr>' +
+        '<tr><td><p>c</p></td></tr>' +
+        '<tr><td colspan="2" rowspan="2"><p>d</p></td></tr>' +
+        '<tr></tr></table></div>',
+    );
+  });
+
   it('takes the size of a picture and of a table frame from their own transform, not from an extension list before it', async () => {
     // PowerPoint writes `a:extLst/a:ext` (a creation id, a DPI hint) ahead of the transform's `a:ext`.
     const creation =

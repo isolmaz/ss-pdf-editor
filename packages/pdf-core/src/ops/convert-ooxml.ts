@@ -674,8 +674,9 @@ function tableHtml(table: Element, width: number | null): string {
     for (const cell of children(row, 'tc')) {
       if (onOff(cell, 'hMerge') || onOff(cell, 'vMerge')) continue;
       const span = Number(attribute(cell, 'gridSpan') ?? 1);
+      const rowSpan = Number(attribute(cell, 'rowSpan') ?? 1);
       const body = child(cell, 'txBody');
-      html += `<td${span > 1 ? ` colspan="${span}"` : ''}>${body === null ? '' : textBodyHtml(body, false)}</td>`;
+      html += `<td${span > 1 ? ` colspan="${span}"` : ''}${rowSpan > 1 ? ` rowspan="${rowSpan}"` : ''}>${body === null ? '' : textBodyHtml(body, false)}</td>`;
     }
     html += '</tr>';
   }
