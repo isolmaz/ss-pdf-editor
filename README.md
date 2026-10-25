@@ -561,6 +561,10 @@ nothing leaving the browser.
     Polish, Czech, Hungarian, Romanian, Swedish, Azerbaijani, Kurdish (Kurmanji), Russian,
     Ukrainian, Bulgarian, Greek, Arabic, Persian, Hebrew, Hindi, Chinese (simplified and
     traditional), Japanese and Korean.
+  - **Quality.** The dialog offers *Fast* (the default) and *High quality*, and Turkish is
+    ticked. Fast reads with the `fast` models, which only Turkish and English have; High quality
+    reads with the integer `best` models. A run that ticks any other language uses High quality
+    whatever is chosen. The scanned pages of the exact Word layout are always read at High quality.
   - The OCR engine and every language pack are served by this origin. Turkish and English are
     the two packs listed in the offline manifest, but Settings → Offline use does not fetch
     them (see [Offline use](#offline-use)). The engine and each pack are downloaded the first
