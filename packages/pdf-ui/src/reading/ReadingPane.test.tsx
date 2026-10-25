@@ -8,6 +8,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator, ToolError } from 'pdf-shared';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReadingPane, type ReadingPaneProps } from './ReadingPane';
 import type { ReadingViewer } from './useReadingText';
@@ -139,6 +140,15 @@ describe('ReadingPane column', () => {
     expect(paragraph.className).toContain('pdf-reading-block-paragraph');
     expect(screen.getByText('• First item').className).toContain('pdf-reading-block-list-item');
     expect(screen.getByText('Figure 1').className).toContain('pdf-reading-block-caption');
+  });
+
+  it('reads the page again after a development remount', async () => {
+    render(
+      <StrictMode>
+        <ReadingPane {...props()} />
+      </StrictMode>,
+    );
+    expect(await screen.findByText('Chapter One')).toBeTruthy();
   });
 
   it('shows a skeleton, not text, while the page is being read', () => {

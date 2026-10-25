@@ -140,10 +140,7 @@ interface ReadingBodyProps {
  */
 function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, lang, onNotice }: ReadingBodyProps) {
   const region = useRef<HTMLDivElement | null>(null);
-  const controller = useMemo(() => new AbortController(), []);
-  useEffect(() => () => controller.abort(), [controller]);
-
-  const { blocks, loading, error } = useReadingText(viewer, pageNumber, controller.signal);
+  const { blocks, loading, error } = useReadingText(viewer, pageNumber);
   const text = useMemo(() => blocks.map((block) => block.text).join(' '), [blocks]);
   const speech = useReadAloud(text, { lang });
 
