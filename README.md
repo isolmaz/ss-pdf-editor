@@ -704,7 +704,7 @@ These describe how the build works; they are not promises.
     full, for example), the document still opens and the notice says that its recovery copy
     could not be stored and why; until a draft save succeeds, its unsaved changes would not
     survive a closed tab or a crash. A later draft save that fails the same way shows the
-    same sentence.
+    same sentence, and the drafts of the other open documents are still saved.
 - **Deleting a draft is not secure erasure.** It does not overwrite the bytes on disk, and
   the UI never claims that it does.
 

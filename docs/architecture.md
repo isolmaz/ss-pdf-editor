@@ -3084,7 +3084,8 @@ lists a snapshot blob between its write and its manifest.
 ### 8.5 Sensitive sessions, drafts and cleanup
 
 Persistence is one callback, `persistDraft`, which the autosave and the flush on the crash screen
-both go through; there is no manual "save the draft now" command, and Settings only deletes the
+both go through (the autosave tries every tab each cycle: a tab whose write fails does not keep the
+later ones from being saved, and the first failure is the one worded); there is no manual "save the draft now" command, and Settings only deletes the
 stored copies of the open document. A restore does not rerun just
 because the UI language changed, one draft whose source cannot be read is reported and skipped (each draft has its own
 guard, and a vault that cannot be read at all is said on the notice line) while the others
