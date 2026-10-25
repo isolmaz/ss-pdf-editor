@@ -36,9 +36,13 @@ export interface ProgressCounts {
   readonly page: number;
 }
 
+/** A figure that is not a finite number (NaN, an infinity) counts as nothing reported. */
+const finiteOrZero = (value: number | undefined): number =>
+  value !== undefined && Number.isFinite(value) ? value : 0;
+
 export function progressCounts(progress: Pick<ProgressReport, 'done' | 'total'>): ProgressCounts {
-  const total = Math.max(0, Math.floor(progress.total ?? 0));
-  const reached = Math.min(Math.max(progress.done ?? 0, 0), total);
+  const total = Math.max(0, Math.floor(finiteOrZero(progress.total)));
+  const reached = Math.min(Math.max(finiteOrZero(progress.done), 0), total);
   const done = Math.floor(reached);
   return {
     done,
