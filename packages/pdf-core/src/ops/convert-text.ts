@@ -7,7 +7,12 @@
  * says which decoding was used when it was not UTF-8.
  *
  * Text keeps its line breaks and runs of spaces (`white-space: pre-wrap`) and wraps at
- * the page edge. A CSV becomes one table: the delimiter is the one that splits the first
+ * the page edge. MuPDF's layout breaks a line at a space or between ideographs and nowhere
+ * else, and ignores `overflow-wrap`, `word-break` and `<wbr>`, so a token longer than the
+ * line (a URL, a hash, base64, minified JSON) would run off the page and be lost. Such a run
+ * is cut with a line break every N characters, N being what the line (for a table, the
+ * cell's share of it) holds; a zero-width space would be drawn as a gap and extracted as
+ * U+FFFD, a soft hyphen would add a hyphen to the text. A CSV becomes one table: the delimiter is the one that splits the first
  * line most consistently (comma, semicolon or tab), and quoted fields may hold the
  * delimiter, doubled quotes and line breaks (RFC 4180). Rows past `MAX_CSV_ROWS` are cut and
  * reported; a table wider than `MAX_CSV_COLUMNS` or past `MAX_CSV_CELLS` cells is refused as
@@ -28,6 +33,27 @@ export const MAX_CSV_COLUMNS = 1_000;
 /** A CSV table (the kept rows × the widest row) of more cells than this is refused. */
 export const MAX_CSV_CELLS = 2_000_000;
 
+/**
+ * The type sizes `GENERATED_CSS` (`ops/convert.ts`) gives plain text and the page body (table
+ * cells included), in points: the line arithmetic below measures against them.
+ */
+export const TEXT_FONT_SIZE = 9.5;
+export const BODY_FONT_SIZE = 10.5;
+/** Advance of a monospace character, in ems. */
+const MONO_ADVANCE = 0.6;
+/**
+ * Advance of the widest letters a URL, hash or base64 string holds, in ems. Proportional letters
+ * average about 0.55; a table's cells are measured by the widest case so that nothing is clipped.
+ */
+const PROPORTIONAL_ADVANCE = 0.7;
+/** A cell's left and right padding plus its border, in points. */
+const CELL_OVERHEAD = 9;
+/** The characters of an ordinary word, a date or an e-mail address: a cell keeps at least this much of a run. */
+const MIN_RUN_LIMIT = 20;
+
+/** What MuPDF cannot break inside: no space, and no ideograph (it breaks between those). */
+const UNBREAKABLE = /[^\s\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu;
+
 export interface DecodedText {
   readonly text: string;
   readonly encoding: 'utf-8' | 'windows-1254';
@@ -41,7 +67,61 @@ export function decodeText(bytes: Uint8Array): DecodedText {
   }
 }
 
-export function textToHtml(bytes: Uint8Array): {
+/**
+ * `text` as HTML where every run of more than `size` characters (code points) is cut into
+ * pieces of `size`, with `separator` between them.
+ */
+function escapeCutting(text: string, size: number, separator: string): string {
+  if (text.length <= size) return escapeHtml(text);
+  let html = '';
+  let from = 0;
+  for (const match of text.matchAll(UNBREAKABLE)) {
+    const run = match[0];
+    if (run.length <= size) continue;
+    const characters = Array.from(run);
+    const pieces: string[] = [];
+    for (let at = 0; at < characters.length; at += size) {
+      pieces.push(escapeHtml(characters.slice(at, at + size).join('')));
+    }
+    html += escapeHtml(text.slice(from, match.index)) + pieces.join(separator);
+    from = match.index + run.length;
+  }
+  return html + escapeHtml(text.slice(from));
+}
+
+/** The longest {@link UNBREAKABLE} run of `text`, in UTF-16 units. */
+function longestRun(text: string): number {
+  let longest = 0;
+  for (const [run] of text.matchAll(UNBREAKABLE)) longest = Math.max(longest, run.length);
+  return longest;
+}
+
+/**
+ * The most characters a cell's run may keep so that every column, as narrow as its longest run, fits
+ * `lineWidth`: the largest limit whose columns together stay inside the line, so only the longest
+ * runs are cut and the others keep their length. A table too wide for its columns anyway does not
+ * get its ordinary words chopped: no run shorter than {@link MIN_RUN_LIMIT} is cut.
+ */
+function runLimit(longest: readonly number[], lineWidth: number): number {
+  const budget = Math.floor(
+    (lineWidth - CELL_OVERHEAD * longest.length) / (PROPORTIONAL_ADVANCE * BODY_FONT_SIZE),
+  );
+  const total = (limit: number): number => longest.reduce((sum, run) => sum + Math.min(run, limit), 0);
+  let low = MIN_RUN_LIMIT;
+  let high = Math.max(MIN_RUN_LIMIT, ...longest);
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (total(middle) <= budget) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
+/** `lineWidth` is the width of a page line in points: page width less both margins. */
+export function textToHtml(
+  bytes: Uint8Array,
+  lineWidth: number,
+): {
   readonly parts: readonly HtmlPart[];
   readonly notes: OperationNote[];
 } {
@@ -49,7 +129,9 @@ export function textToHtml(bytes: Uint8Array): {
   const notes: OperationNote[] = [];
   if (decoded.encoding !== 'utf-8')
     notes.push(note('changed', 'op.note.convert.encoding', { encoding: 'Windows-1254' }));
-  return { parts: [{ html: `<pre class="text">${escapeHtml(decoded.text)}</pre>`, page: null }], notes };
+  const size = Math.floor(lineWidth / (MONO_ADVANCE * TEXT_FONT_SIZE));
+  const html = `<pre class="text">${escapeCutting(decoded.text, size, '\n')}</pre>`;
+  return { parts: [{ html, page: null }], notes };
 }
 
 /**
@@ -116,6 +198,7 @@ export function sniffDelimiter(text: string, hint: string | null): string {
 export function csvToHtml(
   bytes: Uint8Array,
   tabSeparated: boolean,
+  lineWidth: number,
 ): { readonly parts: readonly HtmlPart[]; readonly notes: OperationNote[] } {
   const decoded = decodeText(bytes);
   const notes: OperationNote[] = [];
@@ -141,6 +224,15 @@ export function csvToHtml(
       engineMessage: `${rows.length} rows of ${width} fields make more than ${MAX_CSV_CELLS} cells`,
     });
   }
+  const longest: number[] = new Array<number>(width).fill(0);
+  for (const row of rows) {
+    row.forEach((value, column) => {
+      if (value.length > (longest[column] as number)) {
+        longest[column] = Math.max(longest[column] as number, longestRun(value));
+      }
+    });
+  }
+  const limit = runLimit(longest, lineWidth);
   let html = '<table class="sheet">';
   rows.forEach((row, index) => {
     const cell = index === 0 ? 'th' : 'td';
@@ -148,7 +240,7 @@ export function csvToHtml(
     for (let column = 0; column < width; column += 1) {
       const value = row[column] ?? '';
       const numeric = index > 0 && value !== '' && Number.isFinite(Number(value.replace(',', '.')));
-      html += `<${cell}${numeric ? ' class="n"' : ''}>${escapeHtml(value)}</${cell}>`;
+      html += `<${cell}${numeric ? ' class="n"' : ''}>${escapeCutting(value, limit, '<br>')}</${cell}>`;
     }
     html += '</tr>';
   });

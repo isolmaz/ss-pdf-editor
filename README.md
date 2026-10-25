@@ -369,6 +369,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Headings become the outline. `http:`, `https:` and `mailto:` links and links inside the
     document become link annotations. The title comes from the file or its name.
   - Text and CSV that are not UTF-8 are read as Windows-1254, and the report says so.
+  - A word with no space that is longer than the line (a URL, a hash, base64) is broken onto
+    several lines in text and CSV, in a table cell within the cell's share of the line, so none
+    of it runs off the page. Copying it gives the pieces on separate lines.
   - A Word, Excel or PowerPoint file that unpacks to far more than it weighs (a part over 64 MiB,
     or 256 MiB in all) and a CSV with more than 1000 columns or two million cells are refused
     rather than opened.

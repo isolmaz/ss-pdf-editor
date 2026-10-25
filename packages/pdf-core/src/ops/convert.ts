@@ -29,7 +29,7 @@ import { loadMupdf, mapMupdfError } from '../engines/mupdf';
 import { openForWrite, saveRewrite } from '../engines/mupdf-write';
 import { type ConvertFormat, convertFormatOf, formatLabel } from './convert-formats';
 import { docxToHtml, type HtmlPart, pptxToHtml, xlsxToHtml } from './convert-ooxml';
-import { csvToHtml, textToHtml } from './convert-text';
+import { BODY_FONT_SIZE, csvToHtml, TEXT_FONT_SIZE, textToHtml } from './convert-text';
 import { BLANK_PAGE_SIZES, type BlankOrientation } from './create';
 import { applyLinkEdit, type LinkAdd } from './link-edit';
 import { applyOutlineEdit, type OutlineNodeInput } from './outline-edit';
@@ -67,7 +67,7 @@ export interface ConvertOutcome extends OperationOutcome {
 
 /** The look of the HTML this module generates: readable, neutral, table grid drawn. */
 const GENERATED_CSS = `
-body { font-family: sans-serif; font-size: 10.5pt; line-height: 1.35; margin: 0 }
+body { font-family: sans-serif; font-size: ${BODY_FONT_SIZE}pt; line-height: 1.35; margin: 0 }
 h1 { font-size: 18pt; margin: 0 0 8pt }
 h2 { font-size: 14pt; margin: 0 0 6pt }
 h3 { font-size: 12pt; margin: 0 0 4pt }
@@ -76,7 +76,7 @@ table { border-collapse: collapse; margin: 0 0 8pt }
 td, th { border: 0.75pt solid #888; padding: 2pt 4pt; vertical-align: top }
 th { background-color: #eee; font-weight: bold }
 td.n { text-align: right }
-pre.text { font-family: monospace; font-size: 9.5pt; white-space: pre-wrap; margin: 0 }
+pre.text { font-family: monospace; font-size: ${TEXT_FONT_SIZE}pt; white-space: pre-wrap; margin: 0 }
 img { max-width: 100% }
 .slide { font-size: 18pt }
 .slide h1 { font-size: 30pt; margin: 0 0 12pt }
@@ -182,7 +182,11 @@ export async function convertToPdf(
     sourceTitle = result.title;
     notes.push(...result.notes);
   } else if (format === 'txt' || format === 'csv' || format === 'tsv') {
-    const result = format === 'txt' ? textToHtml(request.bytes) : csvToHtml(request.bytes, format === 'tsv');
+    const lineWidth = chosen.width - 2 * margin;
+    const result =
+      format === 'txt'
+        ? textToHtml(request.bytes, lineWidth)
+        : csvToHtml(request.bytes, format === 'tsv', lineWidth);
     parts = result.parts.map(wrapHtml);
     notes.push(...result.notes);
   } else {
