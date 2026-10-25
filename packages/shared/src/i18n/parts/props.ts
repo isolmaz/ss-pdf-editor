@@ -86,7 +86,7 @@ export const propsPart = {
   'props.sig.roots.remove': 'Kaldır',
   'props.sig.roots.added': '{count} güven kökü eklendi.',
   'props.sig.roots.none': 'Seçilen dosyalarda okunabilir bir sertifika yok.',
-  'props.sig.roots.addedRefused': '{count} güven kökü eklendi; {refused} dosya sertifika olarak okunamadı.',
+  'props.sig.roots.addedRefused': '{count} güven kökü eklendi; {refused} sertifika ya da dosya okunamadı.',
   'props.sig.storeFailed':
     'Güven kökleri ve iptal listelerindeki değişiklik bu cihazda saklanamadı; bu yüzden hiçbir şey değişmedi. {reason}',
   'props.sig.storeUnreadable':

@@ -77,7 +77,7 @@ export const propsPart = {
   'props.sig.roots.added': '{count} trust root(s) added.',
   'props.sig.roots.none': 'No readable certificate found in selected files.',
   'props.sig.roots.addedRefused':
-    '{count} trust root(s) added; {refused} file(s) could not be read as certificate.',
+    '{count} trust root(s) added; {refused} certificate(s) or file(s) could not be read.',
   'props.sig.storeFailed':
     'The change to your trust roots and revocation lists could not be stored on this device, so nothing was changed. {reason}',
   'props.sig.storeUnreadable':

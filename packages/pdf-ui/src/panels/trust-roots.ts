@@ -7,12 +7,23 @@
  * budget). Everything here is therefore inside the dock-panels chunk, which loads when the
  * properties panel opens.
  *
- * A `.pem`/`.crt` is base64 with headers; a `.der`/`.cer` is the DER itself. A file that
- * carries no certificate is refused by name — never added as an empty entry.
+ * A `.pem`/`.crt` is base64 with headers and may hold several certificates (a CA bundle); a
+ * `.der`/`.cer` is the DER itself. A block or a file that carries no certificate is refused
+ * and counted — never added as an empty entry.
  */
 
 import { fromBase64, type TrustRoot, trustRootFrom } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
+
+const PEM_BLOCK = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/g;
+
+/** Every certificate DER of a file: each PEM block (a CA bundle holds several), or the file itself when it has none. */
+function certificateBlobs(bytes: Uint8Array): Uint8Array[] {
+  const blocks = [...new TextDecoder().decode(bytes).matchAll(PEM_BLOCK)];
+  if (blocks.length === 0) return [bytes];
+  // The pattern has one group, which always takes part in a match.
+  return blocks.map((block) => fromBase64(block[1] as string));
+}
 
 export async function importTrustRoots(
   files: readonly File[],
@@ -25,19 +36,16 @@ export async function importTrustRoots(
   const roots: TrustRoot[] = [];
   let refused = 0;
   for (const file of files) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const text = new TextDecoder().decode(bytes);
-    const pem = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(text);
-    // The pattern has one group, which always takes part in a match.
-    const der = pem === null ? bytes : fromBase64(pem[1] as string);
-    if (der.length === 0 || der[0] !== 0x30) {
-      refused += 1;
-      continue;
-    }
-    try {
-      roots.push(trustRootFrom(der, describeCertificate(der).commonName ?? file.name));
-    } catch {
-      refused += 1;
+    for (const der of certificateBlobs(new Uint8Array(await file.arrayBuffer()))) {
+      if (der.length === 0 || der[0] !== 0x30) {
+        refused += 1;
+        continue;
+      }
+      try {
+        roots.push(trustRootFrom(der, describeCertificate(der).commonName ?? file.name));
+      } catch {
+        refused += 1;
+      }
     }
   }
   if (roots.length > 0) onImported(roots);

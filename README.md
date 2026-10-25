@@ -517,8 +517,10 @@ nothing leaving the browser.
   - The signer is the certificate that matches the private key in the PKCS#12 file, not the first one it lists.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
-  - Trust is checked only against certificates you imported. A certificate that is not yet
-    valid is reported with the date it becomes valid; any other shows its expiry date.
+  - Trust is checked only against certificates you imported (a PEM file may hold several, such
+    as a CA bundle; each is added and the ones that cannot be read are counted). A certificate
+    that is not yet valid is reported with the date it becomes valid; any other shows its
+    expiry date.
   - What you import is stored on this device, and a change is applied only once the write
     succeeded: if the browser's storage refuses it, the root or list is neither added nor
     removed and the notice says why. A stored list the browser cannot read is reported too,
