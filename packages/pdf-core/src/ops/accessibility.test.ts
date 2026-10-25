@@ -1535,6 +1535,25 @@ describe('claimsFor and treeOrder', () => {
     const { plan, roles } = await planOf(content, inputOf(0, blockInput('A', 10, 40, 12)));
     expect(claimsFor(plan, roles).claims.map((claim) => claim.mcid)).toEqual([5]);
   });
+  it('numbers the new marked content after the ids the page’s property lists name', async () => {
+    const bytes = pdfOf(['/P /MC0 BDC BT /F 12 Tf 10 150 Td (A) Tj ET EMC'], {
+      resources: () => ({ Properties: { MC0: { MCID: 0 }, Other: { Kind: 'x' } } }),
+    });
+    // The claims read the page's resources, so the document stays open while they are made.
+    const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF() as PDFDocument;
+    try {
+      const result = await planPages(
+        doc,
+        bytes,
+        run,
+        readerOf({ 0: inputOf(0, blockInput('A', 10, 40, 12)) }),
+      );
+      const { claims } = claimsFor(result.plans[0] as PagePlan, result.roles);
+      expect(claims.map((claim) => claim.mcid)).toEqual([1]);
+    } finally {
+      doc.destroy();
+    }
+  });
 
   it('drops a picture drawn inside a run of text it would cut in half', async () => {
     const content = 'BT /F 12 Tf 10 150 Td (A) Tj /Im Do (B) Tj ET';

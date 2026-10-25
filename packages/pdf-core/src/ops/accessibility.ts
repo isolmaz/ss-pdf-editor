@@ -2686,11 +2686,15 @@ export function claimsFor(
   candidates.sort((left, right) => left.first - right.first);
 
   // A page whose stream already carries marked-content ids (an untagged file that lost its
-  // tree, say) must not get a second claim on the same number.
+  // tree, say) must not get a second claim on the same number, whether the id is written
+  // inline or named in a property list of the page's resources.
   let base = 0;
   for (const found of latin1(plan.scan.bytes).matchAll(/\/MCID\s+(\d+)/g)) {
     base = Math.max(base, Number(found[1]) + 1);
   }
+  dictOf(dictOf(plan.pageRef.getInheritable('Resources'))?.get('Properties'))?.forEach((list) => {
+    base = Math.max(base, (intOf(dictOf(list), 'MCID') ?? -1) + 1);
+  });
 
   const claims: Claim[] = [];
   let cursor = -1;
