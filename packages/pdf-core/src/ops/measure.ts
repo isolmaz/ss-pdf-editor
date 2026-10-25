@@ -93,7 +93,7 @@
 
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
-import { mapMupdfError } from '../engines/mupdf';
+import { mapMupdfError, normaliseUserUnit } from '../engines/mupdf';
 import {
   annotsOf,
   openForWrite,
@@ -386,16 +386,6 @@ export function measureGeometry(page: PDFObject): MeasurePageGeometry {
     box: visibleBox(page),
     userUnit: normaliseUserUnit(userUnit?.isNumber() === true ? userUnit.asNumber() : undefined),
   };
-}
-
-/**
- * A `/UserUnit` as a usable factor: the default 1 for an absent, zero, negative or
- * non-finite value — the standard requires a positive number, and a file that holds
- * anything else is read as if the key were not there rather than scaling every
- * measurement by nonsense.
- */
-function normaliseUserUnit(value: number | undefined): number {
-  return value !== undefined && Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 /**

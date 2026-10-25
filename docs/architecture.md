@@ -1279,7 +1279,10 @@ mechanics are arranged around one number, `/ByteRange`:
    `lost` note, as `protectDocument`'s does. The written field is told apart from the
    others by its full name, which a new field may not repeat; a named request fills only
    the empty field of that name and otherwise creates one, and a reused field also gets
-   its `/AP`.
+   its `/AP`. The appearance draws the stamp's lines in Helvetica when they are printable
+   ASCII (nothing embedded); a line with any other letter makes it draw in the embedded
+   Noto Sans, subset to the glyphs shown, and a character that face lacks (or a control
+   character) is drawn as `?`.
 3. The `/Contents` placeholder is located in the produced bytes (uniqueness enforced); the
    real ByteRange is computed from those offsets and written over the same digits, with a
    length-equality assertion.
@@ -1360,7 +1363,12 @@ issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates, e
 signature verified over the child's `tbsCertificate`, validity windows checked against the
 supplied clock, and `basicConstraints` cA (on every issuer but the trust anchor — the user's
 import is the statement that it may issue, and a v1 self-signed root has no extensions) /
-`keyUsage.keyCertSign` / `pathLenConstraint` / `nameConstraints` enforced. Depth and candidate
+`keyUsage.keyCertSign` / `pathLenConstraint` / `nameConstraints` enforced. The signer's own
+certificate has to allow signing a document too: a present `keyUsage` must assert `digitalSignature`
+or `nonRepudiation`, and a present `extKeyUsage` must name `anyExtendedKeyUsage`, e-mail protection,
+Adobe or Microsoft document signing or `id-kp-documentSigning`, otherwise the verdict is `untrusted`
+with reason `signer-usage` (a caller that judges the purposes itself, as the time-stamping check does,
+lists `extKeyUsage` among `leafCriticalExtensions` and is not held to that list). Depth and candidate
 counts bound one path, not the number of paths, so the search is also bounded in work: a
 certificate from which no imported root is reachable is never entered, each (certificate,
 issuer) signature is verified once, and after 2048 expansions or 128 distinct signature
@@ -1398,9 +1406,15 @@ but not including a self-signed root, are checked.
   signed with `id-kp-OCSPSigning`, and its `CertID` (issuer name and key hash, serial) must match.
   This is what stops a PDF from embedding a CA with the real CA's name and a CRL saying nothing
   is revoked (measured: such a CRL is rejected as `invalid-list` and cannot hide a real revocation).
+  The signature alone does not make an issuer genuine, though: a file can carry its own CA, a
+  certificate under it and a list that CA signed. A list therefore speaks for a certificate only when
+  its issuer is one of the roots the user imported or chains to one (`anchoredIssuers`, from the
+  signature-built chain, compared with the imported roots by `tbsCertificate`). Otherwise the
+  certificate is `unknown` with reason `issuer-not-trusted` and neither a `good` nor a `revoked`
+  answer is taken from lists that issuer signed; with no root imported every certificate is `unknown`.
 - **Answers.** `good` (a verified complete list does not name the certificate), `revoked`
   (date and reason from the list; `removeFromCRL` entries are not revocations) or `unknown` with a
-  reason: `no-list`, `no-issuer`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
+  reason: `no-list`, `no-issuer`, `issuer-not-trusted`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
   critical extension), `list-scope` (delta, `onlySomeReasons`, a partition the certificate does not
   name). A `good` carries `coversValidationTime` (was the list issued at or after the signature?)
   and `stale` (past its `nextUpdate` today). A lasting revocation outranks everything; otherwise
@@ -1468,8 +1482,9 @@ sequenceDiagram
 Details that matter:
 
 - Marks travel in **app space** (unrotated user space, top-left origin, Y down from the
-  unrotated CropBox top) and are converted through the verified four-rotation table. A
-  rectangle stored in PDF user space is accepted silently by MuPDF and removes *nothing*, so
+  unrotated CropBox top) and are converted through the verified four-rotation table and
+  scaled by the page's `/UserUnit`, because MuPDF's page space is user space times that unit.
+  A rectangle stored in PDF user space is accepted silently by MuPDF and removes *nothing*, so
   the space of every mark is stated once and converted in one place (§9).
 - `black_boxes: false` is deliberate: a black bar would advertise the redaction and could
   be lifted. The erase is a content-stream operation.
@@ -1507,12 +1522,12 @@ Details that matter:
   unverified.
 - `applyRedactions` does not touch three more things that kept the erased words or a file the
   user asked to clear, and `ops/redact-leaks.ts` cleans them. *Attachments:* MuPDF's
-  `deleteEmbeddedFile` left `/Root /AF`, a page's `/AF` and every `/FileAttachment` annotation, and an
+  `deleteEmbeddedFile` left `/Root /AF`, the `/AF` of pages, annotations and structure elements and every `/FileAttachment` annotation, and an
   empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
   reads from the Attachments panel — that list is empty for a file that is attached only as an
   annotation or in `/AF` — and the step removes every attached file: each file specification of the
   name tree (walked through `/Kids` as well; the tree and a `/Names` that holds nothing else leave
-  the catalog), every `/AF` entry (catalog and pages), and every file-attachment annotation
+  the catalog), every `/AF` entry (catalog, pages, annotations and structure elements), and every file-attachment annotation
   (through `sweepWhere` of `redact-annots.ts`: popup and replies included), with the file
   specification and `/EF` streams behind each (`fileSpecObjects` of `ops/attachments-write.ts`).
   A file reachable two ways counts once, and a reference to nothing not at all. *Thumbnails:* each marked page's
@@ -1537,7 +1552,14 @@ Details that matter:
   and walks the structured text per character; a page where any non-whitespace glyph is
   ≥ 50 % covered throws `verification-failed`. The same pass reads the page's `/Annots`: an
   annotation or widget (anything but `/Redact`) that still shares area with a mark fails the
-  page the same way, so a form field's value cannot hide behind a clean text check.
+  page the same way, so a form field's value cannot hide behind a clean text check. It also
+  walks the marked page's resources (forms, tiling patterns and the groups of `/ExtGState`
+  soft masks, nested ones too, each stream once) and reads their content with the
+  accessibility tokenizer: `applyRedactions` removes the paint operation under a mark but never
+  edits a pattern or a soft-mask group, so one that shows text (`Tj`, `TJ`, `'`, `"`, or a stream the
+  tokenizer cannot delimit) keeps that text in the file. The page is listed in `paintText` and
+  the run throws `verification-failed`; a form XObject's own text is the engine's to erase and
+  is not read.
 - `auditRedactedDocument()` is a raw-byte scan plus a string-object pass, and **documents
   its own blind spot**: it cannot see inside deflated streams or object streams. The
   string pass parses literal `(…)` and hex `<…>` strings outside filtered streams, decodes
@@ -2121,8 +2143,9 @@ a rule set over what MuPDF reports.
 (`readPageLayout`), the table finder's rulings, and one `mupdf.Device` pass that collects
 filled and stroked rectangles, circles (four or more curves and at most one line), rounded
 rectangles, dots and ink. Dotted leaders are rebuilt from runs of dots and periods. All of
-it is in MuPDF's displayed space (top-left origin, `/Rotate` applied) and is converted once
-with `displayToAppRect` into the app space of section 9; the widget `/Rect` is then derived
+it is in MuPDF's displayed space (top-left origin, `/Rotate` applied, `/UserUnit` applied) and
+is converted once with `displayToAppRect` (and the label size divided by the unit) into the
+app space of section 9; the widget `/Rect` is then derived
 with `topLeftRectToUserSpace`, and a turned page gets `/MK /R` so the widget text reads
 upright. The pure rule set, `ops/form-detect-rules.ts` (`detectPageFields`), sees only that
 `DetectionPage` value and is the unit-testable part.
@@ -3364,7 +3387,7 @@ PDF editor, so each one is stated once:
 |---|---|---|
 | **App / page space** | unrotated page, **top-left**, Y down, points; `x` is the user-space x, `y` the distance below the page box's top edge (a CropBox that does not start at `y = 0` adds nothing) | every overlay, `RedactRect` (`space: 'app-v1'`), `PageRect`, the text engine's rects |
 | **PDF user space** | bottom-left, Y up, points | what the writers write; `topLeftToUserPoint()` in the MuPDF adapter is the one flip |
-| **MuPDF page space** | top-left, Y down, rotation included | what `page.search()` and `toStructuredText()` report; `rectToPageSpace()` converts through the verified four-rotation table |
+| **MuPDF page space** | top-left, Y down, rotation included, user space times the page's `/UserUnit` | what `page.search()` and `toStructuredText()` report; `rectToPageSpace()` converts through the verified four-rotation table and the unit |
 | **Client pixels** | viewport | overlays; `pointToPage()` and each layer's projection handle zoom, rotation and offset |
 
 Three facts are worth holding on to, all measured and recorded in the code:

@@ -6,9 +6,11 @@
  * moved when it was filled, and an encrypted file whose placeholders would be encrypted.
  */
 
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { Extension } from 'pkijs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readNumbers, readText } from '../engines/mupdf-write';
 import { readSignedData } from '../signature-evidence';
 import { generateKey, issueCertificate } from '../signature-trust.fixtures';
@@ -16,6 +18,22 @@ import { byteRangeText, signPdf } from './sign';
 import { verifySignatures } from './signature-status';
 
 const run = { signal: new AbortController().signal };
+
+function notoRegular(): Uint8Array<ArrayBuffer> {
+  const require = createRequire(import.meta.url);
+  const file = require.resolve('@expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf', {
+    paths: [process.cwd()],
+  });
+  return new Uint8Array(readFileSync(file));
+}
+
+beforeEach(() => {
+  const font = notoRegular();
+  vi.stubGlobal('fetch', async () => new Response(font));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const abortsAtRead = (limit: number): AbortSignal => {
   let reads = 0;
@@ -361,7 +379,7 @@ describe('signPdf', () => {
     expect(content).toContain('(Ok \\(1\\)) Tj');
     expect(content).toContain('(Ankara) Tj');
     expect(content).toContain('(D:20260601120005Z) Tj');
-    expect(content).toContain('/Helv 9 Tf');
+    expect(content).toContain('/Stamp 9 Tf');
 
     const dated = await signPdf(
       await blank(),
@@ -375,26 +393,26 @@ describe('signPdf', () => {
     expect(await appearanceText(dated.bytes)).toContain('(D:20260102030405Z) Tj');
   });
 
-  it('draws given lines as ASCII text with escapes, shrinks past three, drops the rows that do not fit', async () => {
+  it('draws given ASCII lines in Helvetica with escapes, shrinks past three, drops the rows that do not fit', async () => {
     const out = await signPdf(
       await blank(),
       {
         identity: await identity(),
         field: {
           rect: { x: 10, y: 10, width: 200, height: 60 },
-          lines: ['Ünal \\ (x)', 'ikinci', 'üçüncü', 'dördüncü', 'beşinci'],
+          lines: ['Unal \\ (x)', 'ikinci', 'uc\tuncu', 'dorduncu', 'besinci'],
         },
       },
       run,
     );
     const content = await appearanceText(out.bytes);
-    expect(content).toContain('/Helv 8 Tf 0 0 0 rg 6 48.00 Td (?nal \\\\ \\(x\\)) Tj');
+    expect(content).toContain('/Stamp 8 Tf 0 0 0 rg 6 48.00 Td (Unal \\\\ \\(x\\)) Tj');
     expect(content).toContain('6 37.00 Td (ikinci) Tj');
-    expect(content).toContain('6 26.00 Td (???nc?) Tj');
-    expect(content).toContain('6 15.00 Td (d?rd?nc?) Tj');
+    expect(content).toContain('6 26.00 Td (uc?uncu) Tj');
+    expect(content).toContain('6 15.00 Td (dorduncu) Tj');
     // The fifth row would start at y = 4, below the 6 pt margin: it is not drawn.
     expect(content).not.toContain('6 4.00 Td');
-    expect(content).not.toContain('be?inci');
+    expect(content).not.toContain('besinci');
   });
 
   it('keeps a long list to six rows', async () => {
@@ -868,5 +886,120 @@ describe('signPdf', () => {
         engineMessage: expect.stringMatching(/^the produced signature does not verify: integrity "invalid"/),
       },
     });
+  });
+});
+
+/** The text MuPDF extracts from a page once its widgets are drawn into the content, one entry per line. */
+async function pageLines(bytes: Uint8Array, pageIndex = 0): Promise<string[]> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  try {
+    doc.bake(true, true);
+    const text = doc.loadPage(pageIndex).toStructuredText('').asText();
+    return text.split('\n').filter((line) => line.trim() !== '');
+  } finally {
+    doc.destroy();
+  }
+}
+
+describe('signPdf: the letters of a visible stamp', () => {
+  const rect = { x: 10, y: 10, width: 220, height: 80 };
+
+  it('shows a name with Turkish letters as it is written, in a face the file carries', async () => {
+    const out = await signPdf(
+      await blank(),
+      {
+        identity: await identity(),
+        field: { rect, lines: ['İmza: Ünal Şahin', 'Çankaya, ğış ı'] },
+      },
+      run,
+    );
+    expect(await pageLines(out.bytes)).toEqual(['İmza: Ünal Şahin', 'Çankaya, ğış ı']);
+    expect((await verifySignatures(out.bytes, run.signal))[0]?.integrity).toBe('valid');
+  });
+
+  /** The font the first widget's appearance draws with, and the size of its embedded program. */
+  async function stampFont(bytes: Uint8Array): Promise<{ subtype: string; program: number | null }> {
+    const [first] = await widgetsOf(bytes);
+    const font = first?.widget.get('AP').get('N').get('Resources').get('Font').get('Stamp').resolve();
+    const descendant = font?.get('DescendantFonts');
+    const face = descendant?.isArray() === true ? descendant.get(0).resolve() : font;
+    const descriptor = face?.get('FontDescriptor');
+    const file = descriptor?.isDictionary() === true ? descriptor.get('FontFile2') : undefined;
+    const program = file?.isStream() === true ? file.readStream().asUint8Array().length : null;
+    const subtype = font?.get('Subtype').asName() ?? '';
+    first?.doc.destroy();
+    return { subtype, program };
+  }
+
+  it('embeds only the glyphs the stamp shows, and no face at all for a stamp of plain ASCII', async () => {
+    const turkish = await signPdf(
+      await blank(),
+      { identity: await identity(), field: { rect, lines: ['Şükrü Çağlar'] } },
+      run,
+    );
+    const embedded = await stampFont(turkish.bytes);
+    expect(embedded.subtype).toBe('Type0');
+    expect(embedded.program).toBeGreaterThan(0);
+    // The whole of Noto Sans is over 600 KB.
+    expect(embedded.program).toBeLessThan(50_000);
+
+    const plain = await signPdf(
+      await blank(),
+      { identity: await identity(), field: { rect, lines: ['Sukru Caglar'] } },
+      run,
+    );
+    expect(await stampFont(plain.bytes)).toEqual({ subtype: 'Type1', program: null });
+  });
+
+  it('draws a character the face lacks, a control character and a no-break space as ?', async () => {
+    const out = await signPdf(
+      await blank(),
+      {
+        identity: await identity(),
+        field: { rect, lines: ['Ünal 日本 ok', 'a b\tc'] },
+      },
+      run,
+    );
+    expect(await pageLines(out.bytes)).toEqual(['Ünal ?? ok', 'a?b?c']);
+  });
+
+  it('draws the letters into a signature field the form already had, on its own page', async () => {
+    const out = await signPdf(
+      await withEmptyField(),
+      { identity: await identity(), field: { lines: ['Şahin'] } },
+      run,
+    );
+    expect(await pageLines(out.bytes, 1)).toEqual(['Şahin']);
+    expect((await verifySignatures(out.bytes, run.signal))[0]?.integrity).toBe('valid');
+  });
+
+  it('adds a stamp with the face to a signed file by appending, so the earlier signature stays valid', async () => {
+    const first = await signPdf(
+      await blank(),
+      { identity: await identity(), field: { name: 'Birinci', rect, lines: ['First'] } },
+      run,
+    );
+    const second = await signPdf(
+      first.bytes,
+      { identity: await identity(), field: { name: 'Ikinci', rect: { ...rect, y: 100 }, lines: ['Çağrı'] } },
+      run,
+    );
+    expect(second.report.incremental).toBe(true);
+    expect((await verifySignatures(second.bytes, run.signal)).map((entry) => entry.integrity)).toEqual([
+      'valid',
+      'valid',
+    ]);
+    expect(await pageLines(second.bytes)).toEqual(['First', 'Çağrı']);
+  });
+
+  it('embeds no face for a signature without a visible stamp, whatever letters its reason has', async () => {
+    const out = await signPdf(
+      await blank(),
+      { identity: await identity(), reason: 'İptal şartı', location: 'Çanakkale' },
+      run,
+    );
+    expect(Buffer.from(out.bytes).includes('FontFile2')).toBe(false);
   });
 });

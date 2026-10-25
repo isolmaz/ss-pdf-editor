@@ -8,7 +8,8 @@
  *  - **Attachments.** `/Root /Names /EmbeddedFiles` was all the "clean attachments" step removed
  *    (through MuPDF's `deleteEmbeddedFile`, which also leaves an empty name tree and never touches
  *    `/AF`). A file attached by this editor is also listed in `/Root /AF`; a file can be listed in
- *    a page's `/AF` too, and a `/FileAttachment` annotation carries its own file specification.
+ *    a page's `/AF` too, as can an annotation's and a structure element's, and a `/FileAttachment`
+ *    annotation carries its own file specification.
  *    `purgeAttachments` takes every attached file out of all of them, with the file
  *    specifications and the embedded-file streams (`fileSpecObjects` of `attachments-write.ts`).
  *  - **Thumbnails.** A page's `/Thumb` is a picture of the page as it was.
@@ -23,10 +24,16 @@
  *    are scrubbed whole, used or not, and never in place: a form or a property dictionary can be
  *    shared with pages that carried no mark, so the page gets a copy (and a copy of its resources
  *    that points at it) and the other pages keep the original.
+ *
+ * It also answers one question it cannot fix (`paintResourcesShowText`): whether a tiling pattern or
+ * a soft-mask group among a page's resources shows text. Those are content streams of their own
+ * that `applyRedactions` never edits, so the text stays in the file after the paint operation
+ * under a mark is gone.
  */
 
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { pageContentParts, readName, resolved } from '../engines/mupdf-write';
+import { readInstructions } from './accessibility';
 import { fileSpecObjects, isEmptyDictionary, objectNumber } from './attachments-write';
 import { scanMarkedContent } from './marked-content';
 import { finishSweep, newTally, sweepWhere } from './redact-annots';
@@ -93,10 +100,11 @@ function discardCounted(doc: PDFDocument, spec: PDFObject, counted: Set<number>)
 
 /**
  * The "clean attachments" step: every attached file of the document goes, wherever it lives — the
- * embedded-file name tree (a `/Kids` tree too), every `/AF` entry of the catalog and of the pages,
- * and every file-attachment annotation on every page with its popup and replies — together with
- * the file specifications and embedded-file streams behind them. The name tree leaves the catalog,
- * and with it the `/Names` dictionary when nothing else is in it.
+ * embedded-file name tree (a `/Kids` tree too), every `/AF` entry of the catalog, the pages, their
+ * annotations and the structure elements, and every file-attachment annotation on every page with
+ * its popup and replies — together with the file specifications and embedded-file streams behind
+ * them. The name tree leaves the catalog, and with it the `/Names` dictionary when nothing else is
+ * in it.
  *
  * Returns how many attachments went: a file reachable by more than one way counts once, and a
  * reference to a file that is not there not at all, so a document without attachments answers 0.
@@ -137,11 +145,31 @@ export function purgeAttachments(doc: PDFDocument): number {
   for (const spec of specs) removed += discardCounted(doc, spec, counted);
   finishSweep(doc, swept);
 
-  for (const owner of [root, ...pages]) {
+  const owners = [root, ...pages, ...annotationsOf(pages), ...structureElements(root)];
+  for (const owner of owners) {
     for (const spec of entriesOf(owner.get('AF'))) removed += discardCounted(doc, spec, counted);
     owner.delete('AF');
   }
   return removed;
+}
+
+/** The annotation dictionaries `pages` list; an entry that is no dictionary is not one. */
+function annotationsOf(pages: readonly PDFObject[]): PDFObject[] {
+  const annotations: PDFObject[] = [];
+  for (const page of pages) {
+    for (const entry of entriesOf(page.get('Annots'))) {
+      const annotation = resolved(entry);
+      if (annotation?.isDictionary() === true) annotations.push(annotation);
+    }
+  }
+  return annotations;
+}
+
+/** The dictionaries of the structure tree below `/StructTreeRoot`, none for a document without tags. */
+function structureElements(root: PDFObject): PDFObject[] {
+  const tree = resolved(root.get('StructTreeRoot'));
+  if (tree?.isDictionary() !== true) return [];
+  return reachable(entriesOf(tree.get('K')), (node) => entriesOf(node.get('K'))).map(({ node }) => node);
 }
 
 /** `/MCR` and `/OBJR` dictionaries: references to content, as opposed to child structure elements. */
@@ -362,4 +390,67 @@ export function scrubRedactedPages(doc: PDFDocument, pageIndices: readonly numbe
     removed += scrubPage(doc, page, memo);
   }
   return removed;
+}
+
+/** The operators that show text. */
+const SHOW_TEXT: ReadonlySet<string> = new Set(['Tj', 'TJ', "'", '"']);
+
+/**
+ * A stream a resource dictionary paints through. `showsText` is true for the ones `applyRedactions`
+ * does not edit (a tiling pattern, a soft-mask group); a form XObject is only walked through, for
+ * the resources of its own.
+ */
+interface PaintStream {
+  readonly entry: PDFObject;
+  readonly showsText: boolean;
+}
+
+function paintStreams(resources: PDFObject | null): PaintStream[] {
+  const streams: PaintStream[] = [];
+  if (resources?.isDictionary() !== true) return streams;
+  resolved(resources.get('Pattern'))?.forEach((entry) => {
+    streams.push({ entry, showsText: true });
+  });
+  resolved(resources.get('XObject'))?.forEach((entry) => {
+    streams.push({ entry, showsText: false });
+  });
+  resolved(resources.get('ExtGState'))?.forEach((state) => {
+    const mask = resolved(resolved(state)?.get('SMask'));
+    if (mask?.isDictionary() === true) streams.push({ entry: mask.get('G'), showsText: true });
+  });
+  return streams;
+}
+
+/** Whether a content stream shows text; one this reader cannot delimit may hold text it cannot see. */
+function streamShowsText(stream: PDFObject): boolean {
+  const buffer = stream.readStream();
+  let content: Uint8Array;
+  try {
+    content = new Uint8Array(buffer.asUint8Array());
+  } finally {
+    buffer.destroy();
+  }
+  const instructions = readInstructions(content);
+  return instructions === null || instructions.some((instruction) => SHOW_TEXT.has(instruction.operator));
+}
+
+/**
+ * Whether a tiling pattern or the group of a soft mask that `page`'s resources reach shows text,
+ * through the resources of the forms, patterns and groups on the way too. Redaction removes what
+ * the engine paints under a mark and does not edit these streams, so their text is still in the
+ * file when it is done; a page for which this is true cannot be reported as redacted.
+ */
+export function paintResourcesShowText(page: PDFObject): boolean {
+  const seen = new Set<string>();
+  const pending = paintStreams(resolved(page.getInheritable('Resources')));
+  while (pending.length > 0) {
+    const { entry, showsText } = pending.pop() as PaintStream;
+    if (!entry.isStream()) continue;
+    const key = `${entry.asIndirect()}/${showsText}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (showsText && streamShowsText(entry)) return true;
+    pending.push(...paintStreams(resolved(entry.get('Resources'))));
+  }
+  return false;
 }

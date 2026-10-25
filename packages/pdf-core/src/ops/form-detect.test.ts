@@ -63,6 +63,7 @@ async function pdfWith(
   contents: (doc: import('mupdf').PDFDocument) => { stream: string; resources?: Record<string, unknown> },
   rotation: Rotation = 0,
   pageHeight = PH,
+  adjust?: (page: import('mupdf').PDFObject) => void,
 ): Promise<Uint8Array> {
   const mupdf = await loadMupdf();
   const doc = new mupdf.PDFDocument();
@@ -74,10 +75,9 @@ async function pdfWith(
   });
   const { stream, resources } = contents(doc);
   const [width, height] = rotation === 90 || rotation === 270 ? [pageHeight, PW] : [PW, pageHeight];
-  doc.insertPage(
-    0,
-    doc.addPage([0, 0, width, height], rotation, { Font: { F1: font }, ...resources }, stream),
-  );
+  const page = doc.addPage([0, 0, width, height], rotation, { Font: { F1: font }, ...resources }, stream);
+  adjust?.(page);
+  doc.insertPage(0, page);
   const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
   doc.destroy();
   return bytes;
@@ -115,16 +115,23 @@ function expectClose(actual: readonly number[], expected: readonly number[], tol
 
 describe('displayToAppRect', () => {
   // A 200 x 100 page whose box starts at x = 10; the displayed rectangle is hand-mapped corner by corner.
-  const box = { x: 10, y: 0, width: 200, height: 100 };
+  const box = { x: 10, y: 0, width: 200, height: 100, userUnit: 1 };
   const rect = [10, 20, 50, 40] as const;
-  it.each([
+  const mapped = [
     [0, [20, 20, 60, 40]],
     [90, [30, 50, 50, 90]],
     [180, [160, 60, 200, 80]],
     [270, [170, 10, 190, 50]],
-  ] as const)('maps a displayed rectangle on a page turned %i degrees', (rotation, expected) => {
+  ] as const;
+  it.each(mapped)('maps a displayed rectangle on a page turned %i degrees', (rotation, expected) => {
     expect(displayToAppRect(rotation, box, rect)).toEqual(expected);
   });
+  it.each(mapped)(
+    'divides a displayed rectangle by the unit of a page of /UserUnit 2 turned %i degrees',
+    (rotation, expected) => {
+      expect(displayToAppRect(rotation, { ...box, userUnit: 2 }, [20, 40, 100, 80])).toEqual(expected);
+    },
+  );
 });
 
 describe('detectFormFields', () => {
@@ -424,7 +431,63 @@ describe('detectFormFields: how the drawing is read', () => {
   });
 });
 
+/** The flat form on the sheet of `flatForm`, its page unit being 2 points: half the size in user space, drawn at half scale. */
+function unitTwoForm(): Promise<Uint8Array> {
+  return pdfWith(
+    () => ({
+      stream: `0.5 0 0 0.5 0 0 cm
+${FORM}`,
+    }),
+    0,
+    PH,
+    (page) => {
+      page.put('MediaBox', [0, 0, PW / 2, PH / 2]);
+      page.put('UserUnit', 2);
+    },
+  );
+}
+
+/** The flat form on a page cropped to x 20–575, y 30–812, its boxes written as `order` lists their corners. */
+function croppedForm(order: 'ascending' | 'reversed'): Promise<Uint8Array> {
+  const crop = [20, 30, PW - 20, PH - 30] as const;
+  return pdfWith(
+    () => ({ stream: FORM }),
+    0,
+    PH,
+    (page) => {
+      page.put('MediaBox', order === 'reversed' ? [PW, PH, 0, 0] : [0, 0, PW, PH]);
+      page.put('CropBox', order === 'reversed' ? [crop[2], crop[3], crop[0], crop[1]] : [...crop]);
+    },
+  );
+}
+
 describe('detectFormFields: the document around the page', () => {
+  it('reads a page whose boxes list the upper corner first as the page they describe', async () => {
+    const ordered = (await detectFormFields(await croppedForm('ascending'), run)).candidates;
+    const reversed = (await detectFormFields(await croppedForm('reversed'), run)).candidates;
+    expect(reversed.length).toBeGreaterThan(0);
+    expect(reversed.map((candidate) => [candidate.kind, candidate.name, ...candidate.rect])).toEqual(
+      ordered.map((candidate) => [candidate.kind, candidate.name, ...candidate.rect]),
+    );
+  });
+
+  it('proposes the fields of a page whose /UserUnit is 2 in user space, at half the size of the same sheet at unit 1', async () => {
+    const plain = (await detectFormFields(await flatForm(), run)).candidates;
+    const scaled = (await detectFormFields(await unitTwoForm(), run)).candidates;
+    expect(scaled.map((candidate) => [candidate.kind, candidate.name])).toEqual(
+      plain.map((candidate) => [candidate.kind, candidate.name]),
+    );
+    for (const [at, candidate] of scaled.entries()) {
+      const was = plain[at] as FieldCandidate;
+      expectClose(
+        candidate.rect,
+        was.rect.map((value) => value / 2),
+        0.01,
+      );
+      expect(candidate.size).toBeCloseTo(was.size / 2, 5);
+    }
+  });
+
   it('reads a page with an odd /Rotate without refusing it, where creating a field on it is refused', async () => {
     const mupdf = await loadMupdf();
     const doc = mupdf.PDFDocument.openDocument((await flatForm(0)).slice(), 'application/pdf').asPDF();
@@ -542,6 +605,47 @@ describe('createDetectedFields', () => {
     expect(widgets.find((field) => field.name === 'Status')?.widgets).toHaveLength(2);
 
     // Created fields are not proposed again, and are counted instead.
+    const again = await detectFormFields(out.bytes, run);
+    expect(again.candidates).toEqual([]);
+    expect(again.alreadyFields).toBe(candidates.length);
+  });
+
+  it('places fields on a page whose boxes list the upper corner first from the top of its crop box', async () => {
+    const bytes = await croppedForm('reversed');
+    const { candidates } = await detectFormFields(bytes, run);
+    const out = await createDetectedFields(bytes, candidates, run);
+    const widgets = await readFormWidgets(out.bytes);
+    // App y counts down from the crop box's top edge, user y 812.
+    for (const candidate of candidates.filter((entry) => entry.kind !== 'radio')) {
+      const widget = widgets.find((field) => field.name === candidate.name)?.widgets[0];
+      expectClose(
+        widget?.rect ?? [],
+        [candidate.rect[0], PH - 30 - candidate.rect[3], candidate.rect[2], PH - 30 - candidate.rect[1]],
+        0.75,
+      );
+    }
+  });
+
+  it('creates the fields of a page whose /UserUnit is 2 on the spots of the same sheet at unit 1, and does not propose them again', async () => {
+    const created = async (bytes: Uint8Array) => {
+      const { candidates } = await detectFormFields(bytes, run);
+      const out = await createDetectedFields(bytes, candidates, run);
+      return { candidates, out, widgets: await readFormWidgets(out.bytes) };
+    };
+    const plain = await created(await flatForm());
+    const { candidates, out, widgets } = await created(await unitTwoForm());
+    for (const field of plain.widgets) {
+      const widget = widgets.find((entry) => entry.name === field.name)?.widgets;
+      expect(widget).toHaveLength(field.widgets.length);
+      for (const [at, was] of field.widgets.entries()) {
+        // The sheet is the same; its user space is half the size, so is a widget's rectangle.
+        expectClose(
+          widget?.[at]?.rect ?? [],
+          was.rect.map((value) => value / 2),
+          0.75,
+        );
+      }
+    }
     const again = await detectFormFields(out.bytes, run);
     expect(again.candidates).toEqual([]);
     expect(again.alreadyFields).toBe(candidates.length);

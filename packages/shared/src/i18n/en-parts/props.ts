@@ -58,6 +58,8 @@ export const propsPart = {
     'A certificate in the chain is not valid at the check time (expired or not yet valid).',
   'props.sig.trustReason.notACa': 'An issuer has no basicConstraints extension with cA set.',
   'props.sig.trustReason.keyUsage': "An issuer's keyUsage extension does not assert the keyCertSign bit.",
+  'props.sig.trustReason.signerUsage':
+    "The signer's keyUsage or extKeyUsage extension does not allow signing documents.",
   'props.sig.trustReason.pathLength': "An issuer's pathLenConstraint is exceeded.",
   'props.sig.trustReason.nameConstraint':
     'A subordinate certificate has names outside the permitted subtrees, or inside an excluded one.',

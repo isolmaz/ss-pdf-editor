@@ -481,12 +481,18 @@ nothing leaving the browser.
   - The file is rewritten as a single revision, and the output is re-checked glyph by glyph
     and for any annotation or field still under a mark. An object-level audit reports any
     remaining terms, earlier revisions and leftover structure.
+  - The engine does not edit text drawn through a tiling pattern or a soft-mask group. A marked
+    page whose patterns or masks show text is refused as unverified and nothing is written,
+    instead of being reported as redacted.
   - The verification covers the marked areas only. Document properties and bookmark titles
     are not checked; the metadata option clears the title, author, subject, keywords and
-    creator fields and the XMP packet, and the notices say exactly that.
+    creator fields, every XMP packet (the document's, and those of pages and of the forms and
+    images they draw) and the private application data (`/PieceInfo`) of the document, its pages
+    and its objects, and the notices say exactly that.
   - The attachments option removes every attached file of the document, wherever it lives, not
-    only the ones the Attachments list shows (a file attached only as an annotation is
-    cleaned too). The report counts each file once and counts only a file that was there.
+    only the ones the Attachments list shows (a file attached only as an annotation or listed
+    only in the associated files of a page, an annotation or a structure element is cleaned
+    too). The report counts each file once and counts only a file that was there.
   - Each page that carried a mark also loses its thumbnail and the alternative text,
     replacement text and expansions its tags carry; the report counts them.
   - A staged mark stays an intent until you apply it. While marks are still staged, saving
@@ -546,11 +552,18 @@ nothing leaving the browser.
     refused). Without one, the first empty signature field is filled where it sits. Either
     way the field gets a drawn appearance; the stamp position you pick applies to a new
     field, or to an existing one that has no area of its own.
+  - The stamp is drawn in Helvetica when its lines are plain ASCII. A line with other letters
+    (such as `ş`, `ğ` or `İ`) is drawn in an embedded subset of Noto Sans, and a character
+    that face lacks (for example Chinese) shows as `?`.
   - The signer is the certificate that matches the private key in the PKCS#12 file, not the first one it lists.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
   - Trust is checked only against certificates you imported. A certificate that is not yet
     valid is reported with the date it becomes valid; any other shows its expiry date.
+  - The signer's own certificate has to allow signing documents: a key usage without digital
+    signature or non-repudiation, or an extended key usage without a signing purpose (e-mail
+    protection, Adobe or Microsoft document signing, document signing, any purpose), is reported
+    as not trusted, however well the chain is built.
   - What you import is stored on this device, and a change is applied only once the write
     succeeded: if the browser's storage refuses it, the root or list is neither added nor
     removed and the notice says why. A stored list the browser cannot read is reported too,
@@ -559,6 +572,9 @@ nothing leaving the browser.
     the signature panel (DER or PEM, kept in the app's own storage until you remove them) and
     the CRLs and OCSP responses stored in the PDF (its validation data and the signature's own). Each certificate in the chain is reported not revoked, revoked (with
     date and reason, and whether that is before or after the signature) or unknown. A list
+    counts only when the certificate that signed it is a root you imported or chains to one: a
+    PDF that carries its own CA, a certificate under it and a list that CA signed gets
+    "unknown", and with no root imported every certificate is unknown. A list
     issued before the signature, or one past its next-update date when no trusted timestamp
     fixes the signing time, cannot rule out a revocation: the summary then says the lists are
     too old instead of "not revoked".
@@ -1145,7 +1161,7 @@ The fonts the app ships are fetched by `pnpm fetch:engines` from pinned npm pack
 the same origin and pinned by size and SHA-256 in `tools/asset-pins.json`. All are SIL Open Font
 License 1.1 (the licence texts are copied to `dist/licenses/`):
 
-- **Document text.** Noto Sans is embedded by watermarks, Bates numbers, headers and the OCR text layer. A scan exported
+- **Document text.** Noto Sans is embedded by watermarks, Bates numbers, headers, the OCR text layer and signature stamps whose lines go beyond ASCII. A scan exported
   to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
   Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten families, Noto Sans included, are static TrueType in regular, italic, bold and bold italic.
   Each covers the Turkish letters. Lato is not offered: its faces lack Ğ/ğ, İ and Ş/ş.

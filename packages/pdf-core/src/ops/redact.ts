@@ -46,7 +46,8 @@ import {
   newTally,
   sweepPage,
 } from './redact-annots';
-import { purgeAttachments, scrubRedactedPages } from './redact-leaks';
+import { paintResourcesShowText, purgeAttachments, scrubRedactedPages } from './redact-leaks';
+import { forEachDictionary } from './sanitize-graph';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 /** The XFA writers bring an XML parser with them: they load only for a form that has XFA. */
@@ -68,7 +69,8 @@ export interface RedactOptions {
   readonly cleanMetadata: boolean;
   /**
    * Remove every attached file of the document: the embedded-file name tree, every `/AF` list
-   * (catalog and pages) and every file-attachment annotation, with the file objects behind them.
+   * (catalog, pages, annotations and structure elements) and every file-attachment annotation,
+   * with the file objects behind them.
    */
   readonly cleanAttachments: boolean;
 }
@@ -78,6 +80,11 @@ export interface RedactVerification {
   readonly marksCleared: boolean;
   /** Page indices where a probe still found content (verification failure). */
   readonly remaining: readonly number[];
+  /**
+   * Page indices whose tiling patterns or soft-mask groups show text. Those streams are not edited
+   * by the engine, so the text is still in the file whatever the marks covered.
+   */
+  readonly paintText: readonly number[];
 }
 
 /**
@@ -92,6 +99,9 @@ const CONTENT_INFO_KEYS = [
   'META_INFO_KEYWORDS',
   'META_INFO_CREATOR',
 ] as const satisfies readonly (keyof Mupdf['Document'])[];
+
+/** The entries that hold an XMP packet or an application's private data, in any dictionary. */
+const EMBEDDED_METADATA_KEYS = ['Metadata', 'PieceInfo'] as const;
 
 /**
  * Line art touched by a mark is removed (`REDACT_LINE_ART_REMOVE_IF_TOUCHED` = 2):
@@ -190,7 +200,10 @@ export async function redactDocument(
     // engine message for the report and the bug report.
     throw new ToolError('verification-failed', {
       engine: 'mupdf',
-      engineMessage: `redaction left text or annotations inside marks on page(s) ${verification.remaining.join(', ')}`,
+      engineMessage:
+        verification.remaining.length > 0
+          ? `redaction left text or annotations inside marks on page(s) ${verification.remaining.join(', ')}`
+          : `a tiling pattern or soft-mask group of page(s) ${verification.paintText.join(', ')} shows text that redaction does not erase`,
     });
   }
   context.onProgress?.({ phase: 'redact', labelKey: 'op.progress.redact.save', done: 1, total: 1 });
@@ -276,6 +289,7 @@ export async function verifyRedaction(
   try {
     const pageCount = doc.countPages();
     const remaining: number[] = [];
+    const paintText: number[] = [];
     for (const [pageIndex, rects] of byPage) {
       if (pageIndex < 0 || pageIndex >= pageCount) {
         remaining.push(pageIndex);
@@ -323,6 +337,7 @@ export async function verifyRedaction(
             rects.map((rect) => topLeftRectToUserSpace(box, rect)),
           );
           if (leftover || annotated) remaining.push(pageIndex);
+          if (paintResourcesShowText(page.getObject())) paintText.push(pageIndex);
         } finally {
           text.destroy();
         }
@@ -330,7 +345,7 @@ export async function verifyRedaction(
         page.destroy();
       }
     }
-    return { marksCleared: remaining.length === 0, remaining };
+    return { marksCleared: remaining.length === 0 && paintText.length === 0, remaining, paintText };
   } catch (error) {
     throw mapMupdfError(error, 'verify-redaction');
   } finally {
@@ -458,8 +473,10 @@ function applyMarks(
 }
 
 /**
- * Drop the content-bearing Info keys and the XMP packet, then re-stamp the producer
- * line. Returns whether anything was there to clean.
+ * Drop the content-bearing Info keys, the XMP packet of the catalog, every other `/Metadata`
+ * packet (a page's, a form's or an image's) and every `/PieceInfo` (the private data an application
+ * keeps on the catalog, a page or an object), then re-stamp the producer line. Returns whether
+ * anything was there to clean.
  *
  * MuPDF's metadata API is write-only per key (`setMetaData`), so Info fields are set
  * to an empty string rather than removed — the key stays, its content does not, which
@@ -477,6 +494,13 @@ function cleanInfoAndXmp(mupdf: Mupdf, doc: PDFDocument): boolean {
     }
   }
   if (removeXmpPacket(doc)) cleaned = true;
+  forEachDictionary(doc, (dictionary) => {
+    for (const key of EMBEDDED_METADATA_KEYS) {
+      if (dictionary.get(key).isNull()) continue;
+      dictionary.delete(key);
+      cleaned = true;
+    }
+  });
   // Product policy: the producer line is merged back, never stripped.
   doc.setMetaData(Document.META_INFO_PRODUCER, PRODUCER_LINE);
   return cleaned;
