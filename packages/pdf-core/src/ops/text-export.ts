@@ -212,7 +212,8 @@ export async function exportText(
       let text: string;
       try {
         const page = await handle.raw.getPage(pageIndex + 1);
-        const viewport = page.getViewport({ scale: 1 });
+        // pdf.js scales the viewport by `/UserUnit`; the widths and sizes below stay in user space.
+        const viewport = page.getViewport({ scale: 1 / page.userUnit });
         const content = await page.getTextContent();
         // Marked-content markers carry structure, not text; only `TextItem`s have
         // `str` and a text matrix. Written as an explicit loop so the pdf.js item

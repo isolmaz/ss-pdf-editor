@@ -312,6 +312,28 @@ describe('exportText', () => {
     },
   );
 
+  it('groups the words and lines of a page with a /UserUnit as on a page without one', async () => {
+    // "Mer" and "haba" are two pieces of one word; the second line is 14 pt below the first.
+    const line = (x: number, y: number, text: string) => `BT /F 12 Tf ${x} ${y} Td (${text}) Tj ET`;
+    const content = [
+      line(50, 300, 'Mer'),
+      line(70.664, 300, 'haba'),
+      line(116, 300, 'dunya'),
+      line(50, 286, 'nasilsin'),
+    ];
+    const plain = await turnedPage(0, content.join('\n'));
+    const mupdf = await loadMupdf();
+    const doc = mupdf.PDFDocument.openDocument(plain.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    doc.findPage(0).put('UserUnit', 2);
+    const scaled = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    for (const bytes of [plain, scaled]) {
+      const result = await exportText(bytes, { pages: [0], format: 'text', baseName: 'x' }, run);
+      expect(decode(result.file.bytes).slice(1)).toBe('Merhaba dunya\nnasilsin\n');
+    }
+  });
+
   it('reports progress per page', async () => {
     const events: string[] = [];
     await exportText(
