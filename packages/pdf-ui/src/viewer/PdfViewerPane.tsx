@@ -1225,7 +1225,13 @@ export function PdfViewerPane({
             }}
             className="h-6 w-52 rounded-sm border border-kumo-line bg-kumo-base px-2 text-xs text-kumo-default outline-none focus:ring-1 focus:ring-kumo-focus"
           />
-          <span className="min-w-16 text-center text-xs tabular-nums text-kumo-subtle">{countLabel}</span>
+          <span
+            role="status"
+            aria-live="polite"
+            className="min-w-16 text-center text-xs tabular-nums text-kumo-subtle"
+          >
+            {countLabel}
+          </span>
           <button
             type="button"
             aria-label={t('viewer.find.previous')}
