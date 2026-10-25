@@ -154,6 +154,17 @@ describe('fieldErrors', () => {
     expect(fieldErrors(t, [count], { n: 5 }, 1, 0)).toEqual({});
   });
 
+  it('refuses a fraction only in a number field that takes whole numbers, with the message that says so', () => {
+    const whole: FieldSpec = { ...count, integer: true };
+    for (const value of [1.5, 0, 6, Number.NaN]) {
+      expect(fieldErrors(t, [whole], { n: value }, 1, 0), String(value)).toEqual({
+        n: 'dialog.field.integerRange',
+      });
+    }
+    expect(fieldErrors(t, [whole], { n: 4 }, 1, 0)).toEqual({});
+    expect(fieldErrors(t, [count], { n: 1.5 }, 1, 0)).toEqual({});
+  });
+
   it('does not judge a field that is hidden', () => {
     const hidden: FieldSpec = { ...count, visibleWhen: { field: 'mode', equals: ['on'] } };
     expect(fieldErrors(t, [hidden], { mode: 'off', n: 99 }, 1, 0)).toEqual({});

@@ -2570,7 +2570,9 @@ Every capability the menus can run is described by exactly one `OperationDialogS
 noticeKey }, resultKind, destructive, changesPageGeometry }`. Fields are a 15-variant
 union (`pageScope`, `radio`, `select`, `number`, `text`, `choice`, `multiline`, `password`,
 `checkbox`, `checkboxList`, `color`, `image`, `files`, `scan`, `readOnlyText`), and validation is
-`fieldErrors()` from `dialogs/fields.tsx`. A `choice` (a select of document data) with
+`fieldErrors()` from `dialogs/fields.tsx`: a page scope or a `pageRanges` text that does not parse
+against the page count, and a `number` outside its `min`/`max` (or, when marked `integer`, with a
+fraction: page numbers and counts). A `choice` (a select of document data) with
 nothing picked keeps the run waiting, but only shows "no items to select in this document"
 when the document's list really is empty. A run's `noticeKey` is the sentence the shell
 shows whatever the result kind (replace, new tab, download); without one it says what

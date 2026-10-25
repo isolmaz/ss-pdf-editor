@@ -195,6 +195,21 @@ describe('BatchDialog step settings', () => {
     expect((await savedRuleSet(onDownload)).steps).toEqual([{ kind: 'pages', params: { pages: [0, 1, 3] } }]);
   });
 
+  it('shows a fraction in a whole-number setting as an error under the field, and a whole number clears it', async () => {
+    show();
+    await stepsOnly(STEPS.stamp);
+    await user.click(screen.getByRole('radio', { name: 'Bates numbering' }));
+    const digits = number('Number of digits');
+    const described = () => {
+      const id = digits.getAttribute('aria-describedby');
+      return id === null ? null : document.getElementById(id)?.textContent;
+    };
+    replace(digits, '2.5');
+    expect(described()).toBe('This value must be a whole number between 1 and 12.');
+    replace(digits, '8');
+    expect(described()).toBeNull();
+  });
+
   it('writes the structure method with the clear-metadata choice', async () => {
     const { onDownload } = show();
     await stepsOnly(STEPS.compress);

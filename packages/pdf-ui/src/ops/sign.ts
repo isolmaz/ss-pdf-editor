@@ -143,6 +143,7 @@ export const signDialog: OperationDialogSpec = {
     { kind: 'checkbox', id: 'visible', labelKey: 'sign.field.visible', defaultValue: true },
     {
       kind: 'number',
+      integer: true,
       id: 'page',
       labelKey: 'sign.field.page',
       defaultValue: 1,

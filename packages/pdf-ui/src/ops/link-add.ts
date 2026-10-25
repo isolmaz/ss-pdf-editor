@@ -68,6 +68,7 @@ export const linkAddDialog: OperationDialogSpec = {
     },
     {
       kind: 'number',
+      integer: true,
       id: 'page',
       labelKey: 'link.field.page',
       defaultValue: 1,

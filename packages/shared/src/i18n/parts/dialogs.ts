@@ -25,6 +25,8 @@ export const dialogsPart = {
 
   /** A number field whose value fell outside the range its spec declares. */
   'dialog.field.numberRange': 'Bu değer {min} ile {max} arasında olmalı.',
+  /** A number field that takes whole numbers only (a page number, a count) and got a fraction or a value outside its range. */
+  'dialog.field.integerRange': 'Bu değer {min} ile {max} arasında bir tam sayı olmalı.',
   /** A number field's label followed by its unit, so the unit is part of the field's accessible name. */
   'dialog.field.withUnit': '{label} ({unit})',
   'dialog.field.chooseFile': 'Dosya seç',

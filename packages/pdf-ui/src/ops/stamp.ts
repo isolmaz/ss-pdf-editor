@@ -82,6 +82,7 @@ export const pageNumbersDialog: OperationDialogSpec = {
       id: 'startAt',
       advanced: true,
       kind: 'number',
+      integer: true,
       labelKey: 'stamp.startAt',
       defaultValue: 1,
       min: 1,

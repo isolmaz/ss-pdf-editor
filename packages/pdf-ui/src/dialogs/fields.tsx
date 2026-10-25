@@ -201,9 +201,9 @@ function rangeProblem(t: Translator, typed: string, pageCount: number): string |
 /**
  * Validate the visible fields, keyed by field id; an empty record means the
  * dialog may run. Only three kinds can be wrong before an engine is involved — a
- * page scope, a page-range text and a number outside its declared range — because
- * every other field's legality belongs to the capability, which reports it from
- * `run` as a `ToolError`.
+ * page scope, a page-range text and a number outside its declared range (or with a
+ * fraction where only whole numbers are accepted) — because every other field's
+ * legality belongs to the capability, which reports it from `run` as a `ToolError`.
  */
 export function fieldErrors(
   t: Translator,
@@ -246,8 +246,11 @@ export function fieldErrors(
 
     if (field.kind === 'number') {
       const value = values[field.id];
-      if (typeof value !== 'number' || Number.isNaN(value) || value < field.min || value > field.max) {
-        errors[field.id] = t('dialog.field.numberRange', { min: field.min, max: field.max });
+      const outside =
+        typeof value !== 'number' || Number.isNaN(value) || value < field.min || value > field.max;
+      if (outside || (field.integer === true && !Number.isInteger(value))) {
+        const key = field.integer === true ? 'dialog.field.integerRange' : 'dialog.field.numberRange';
+        errors[field.id] = t(key, { min: field.min, max: field.max });
       }
     }
   }

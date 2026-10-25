@@ -127,6 +127,7 @@ export const splitDialog: OperationDialogSpec = {
     {
       id: 'chunkSize',
       kind: 'number',
+      integer: true,
       labelKey: 'split.everyN',
       hintKey: 'split.everyNHint',
       defaultValue: 1,
@@ -149,6 +150,7 @@ export const splitDialog: OperationDialogSpec = {
     {
       id: 'bookmarkLevel',
       kind: 'number',
+      integer: true,
       labelKey: 'split.bookmarkLevel',
       hintKey: 'split.bookmarkLevelHint',
       defaultValue: 1,

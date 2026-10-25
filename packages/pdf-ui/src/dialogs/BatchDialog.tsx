@@ -200,6 +200,7 @@ const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
     {
       id: 'startAt',
       kind: 'number',
+      integer: true,
       labelKey: 'labels.dialog.range',
       hintKey: 'labels.dialog.rangeHint',
       defaultValue: 1,
@@ -230,6 +231,7 @@ const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
     {
       id: 'start',
       kind: 'number',
+      integer: true,
       labelKey: 'labels.dialog.start',
       hintKey: 'labels.dialog.startHint',
       defaultValue: 1,
@@ -292,6 +294,7 @@ const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
     {
       id: 'startAt',
       kind: 'number',
+      integer: true,
       labelKey: 'stamp.startAt',
       defaultValue: 1,
       min: 1,
@@ -316,6 +319,7 @@ const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
     {
       id: 'digits',
       kind: 'number',
+      integer: true,
       labelKey: 'stamp.bates.digits',
       defaultValue: 6,
       min: 1,

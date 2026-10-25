@@ -71,6 +71,8 @@ export type FieldSpec =
       readonly min: number;
       readonly max: number;
       readonly step?: number;
+      /** Only whole numbers are accepted: a page number, a count. */
+      readonly integer?: boolean;
       /** The unit, shown after the label (`Width (pt)`), so it is part of the field's accessible name. */
       readonly unitKey?: MessageKey;
     } & FieldBase)

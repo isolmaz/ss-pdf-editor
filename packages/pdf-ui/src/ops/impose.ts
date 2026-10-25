@@ -129,6 +129,7 @@ export const imposeDialog: OperationDialogSpec = {
     {
       id: 'columns',
       kind: 'number',
+      integer: true,
       labelKey: 'impose.columns',
       defaultValue: 2,
       min: 1,
@@ -139,6 +140,7 @@ export const imposeDialog: OperationDialogSpec = {
     {
       id: 'rows',
       kind: 'number',
+      integer: true,
       labelKey: 'impose.rows',
       defaultValue: 2,
       min: 1,
