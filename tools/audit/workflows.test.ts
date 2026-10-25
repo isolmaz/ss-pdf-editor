@@ -5,6 +5,7 @@
  * pipe in the deploy's head check turned a failed lookup into a green run.
  */
 
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -40,6 +41,10 @@ describe('ci.yml', () => {
     // the four shards are required one by one, as `e2e (1/4)` to `e2e (4/4)`
     expect(names.filter((name) => /^e2e \(\$\{\{ matrix\.shard \}\}\/4\)$/.test(name))).toHaveLength(1);
     expect(job('e2e')).toMatch(/shard: \[1, 2, 3, 4\]/);
+  });
+
+  it('checks the tracked tree against the rules of the git hooks, in verify', () => {
+    expect(commandsOf(job('verify'))).toContain('node tools/hooks/guard.mjs tracked');
   });
 
   it('builds the production site once, in verify, and uploads what it assembled', () => {
@@ -89,6 +94,16 @@ describe('ci.yml', () => {
     for (const name of ['worker:deploy', 'worker:deploy:dry']) {
       expect(manifest.scripts[name], name).toContain(`pnpm dlx wrangler@${pinned} deploy`);
     }
+  });
+});
+
+describe('git hooks', () => {
+  it('are executable in the index: git on Linux and macOS skips a hook that is not', () => {
+    const listing = execFileSync('git', ['ls-files', '-s', '.githooks'], { cwd: root, encoding: 'utf8' });
+    const modes = Object.fromEntries(
+      [...listing.matchAll(/^(\d+) \w+ \d\t(.+)$/gm)].map((match) => [match[2], match[1]]),
+    );
+    expect(modes).toEqual({ '.githooks/pre-commit': '100755', '.githooks/pre-push': '100755' });
   });
 });
 

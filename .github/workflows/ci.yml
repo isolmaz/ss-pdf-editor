@@ -56,6 +56,9 @@ jobs:
       - run: pnpm verify:assets
       - run: pnpm check:licenses
       - run: pnpm assemble:dist
+      # The hygiene rules of the git hooks, for a pull request from a fork and a commit made with
+      # --no-verify.
+      - run: node tools/hooks/guard.mjs tracked
       # Validates wrangler.jsonc and bundles dist/ exactly as the deploy job will, without credentials.
       - run: pnpm dlx "wrangler@$WRANGLER_VERSION" deploy --dry-run
 

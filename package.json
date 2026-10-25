@@ -33,7 +33,7 @@
     "audit:regressions": "node tools/audit/regressions.cjs",
     "audit:model-types": "node tools/audit/typecheck-model.cjs",
     "ci:behavior": "node tools/behavior/editor-flow-check.mjs && node tools/behavior/text-edit-check.mjs && tsx tools/behavior/sign-check.mts",
-    "ci:verify": "pnpm install --frozen-lockfile && pnpm typecheck && pnpm check && pnpm check:docs && pnpm fetch:engines --sync && pnpm unit && pnpm audit:model-types && pnpm build && pnpm check:budgets && pnpm verify:assets && pnpm check:licenses && pnpm assemble:dist",
+    "ci:verify": "pnpm install --frozen-lockfile && pnpm typecheck && pnpm check && pnpm check:docs && pnpm fetch:engines --sync && pnpm unit && pnpm audit:model-types && pnpm build && pnpm check:budgets && pnpm verify:assets && pnpm check:licenses && pnpm assemble:dist && node tools/hooks/guard.mjs tracked",
     "ci:full": "pnpm ci:verify && pnpm ci:behavior",
     "worker:deploy": "pnpm run assemble:dist && pnpm dlx wrangler@4.135.0 deploy",
     "worker:deploy:dry": "pnpm run assemble:dist && pnpm dlx wrangler@4.135.0 deploy --dry-run"

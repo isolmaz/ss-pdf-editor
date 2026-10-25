@@ -37,6 +37,7 @@ pnpm check:budgets           # the first-paint JavaScript stays inside its gzip 
 pnpm verify:assets
 pnpm check:licenses
 pnpm assemble:dist
+node tools/hooks/guard.mjs tracked   # the rules of the pre-push hook (no engine builds, keys, env files or oversized blobs)
 pnpm e2e                     # Playwright against the assembled dist/ (signing specs need openssl)
 pnpm ci:behavior             # the behaviour checks in tools/behavior/ (needs openssl)
 ```
@@ -64,8 +65,8 @@ and on manual dispatch:
 
 - **`verify`** installs with the frozen lockfile and runs `pnpm typecheck`, `pnpm check`,
   `pnpm check:docs`, `pnpm fetch:engines --sync`, `pnpm unit`, `pnpm audit:model-types`,
-  `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist` and
-  `wrangler deploy --dry-run`, then uploads the assembled `dist/` as the `dist` artifact. It is the
+  `pnpm build`, `pnpm check:budgets`, `pnpm verify:assets`, `pnpm check:licenses`, `pnpm assemble:dist`,
+  `node tools/hooks/guard.mjs tracked` and `wrangler deploy --dry-run`, then uploads the assembled `dist/` as the `dist` artifact. It is the
   only job that builds the production site: the jobs below that serve or publish the site download
   that artifact, so the bytes the browser tests ran against are the bytes `deploy` uploads.
 - **`e2e`** (after `verify`) runs the Playwright suite in four shards. Each shard downloads the
@@ -256,7 +257,9 @@ page, the camera picture and the magnifier lens.
 ## Repository hygiene
 
 `pnpm install` installs the git hooks: its `prepare` script runs `tools/hooks/install.mjs`,
-which sets `core.hooksPath` to `.githooks`. Both hooks run `tools/hooks/guard.mjs`.
+which sets `core.hooksPath` to `.githooks`. Both hooks run `tools/hooks/guard.mjs`, and git runs
+them only while they are executable (mode 100755 in the index). The `verify` job runs the
+pre-push rules on every pull request, so a fork or a commit made with `--no-verify` is checked too.
 
 The pre-commit hook checks the staged files. It refuses engine builds, traineddata, wasm
 and font binaries, private keys and env files, then runs `biome check --staged`. The

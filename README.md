@@ -969,6 +969,7 @@ The PDF → Word export is not measured round trip in CI; its unit tests and the
   10. `verify:assets`
   11. `check:licenses`
   12. `assemble:dist`
+  13. `node tools/hooks/guard.mjs tracked` (the hygiene rules of the git hooks)
 - **`pnpm ci:full`** adds `ci:behavior`:
   - `tools/behavior/editor-flow-check.mjs` drives a real browser through one editing session
     end to end: open, search, highlight, comment, fill a form, delete two pages and add one,
