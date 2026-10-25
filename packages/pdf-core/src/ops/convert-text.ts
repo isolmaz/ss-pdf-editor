@@ -1,10 +1,11 @@
 /**
  * Plain text and CSV read into HTML, for the conversion to PDF (`ops/convert.ts`).
  *
- * The bytes are decoded as UTF-8 first (a BOM is honoured), and only when that fails
- * as Windows-1254 — the Turkish code page, which every older Turkish text file and
- * Excel CSV export is written in — so `ş`, `ğ` and `ı` survive either way. The report
- * says which decoding was used when it was not UTF-8.
+ * Bytes that open with a UTF-16 byte-order mark (what Notepad's "Unicode" and Excel's
+ * "Unicode Text" write) are decoded as UTF-16. Any other are decoded as UTF-8 first (a BOM
+ * is honoured), and only when that fails as Windows-1254 — the Turkish code page, which
+ * every older Turkish text file and Excel CSV export is written in — so `ş`, `ğ` and `ı`
+ * survive either way. The report says which decoding was used when it was not UTF-8.
  *
  * Text keeps its line breaks and runs of spaces (`white-space: pre-wrap`) and wraps at
  * the page edge. MuPDF's layout breaks a line at a space or between ideographs and nowhere
@@ -56,15 +57,33 @@ const UNBREAKABLE = /[^\s\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/
 
 export interface DecodedText {
   readonly text: string;
-  readonly encoding: 'utf-8' | 'windows-1254';
+  readonly encoding: 'utf-8' | 'utf-16le' | 'utf-16be' | 'windows-1254';
 }
 
+/** How the report names an encoding other than UTF-8. */
+const ENCODING_LABELS = {
+  'utf-16le': 'UTF-16 LE',
+  'utf-16be': 'UTF-16 BE',
+  'windows-1254': 'Windows-1254',
+} as const;
+
 export function decodeText(bytes: Uint8Array): DecodedText {
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return { text: new TextDecoder('utf-16le').decode(bytes), encoding: 'utf-16le' };
+  }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return { text: new TextDecoder('utf-16be').decode(bytes), encoding: 'utf-16be' };
+  }
   try {
     return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), encoding: 'utf-8' };
   } catch {
     return { text: new TextDecoder('windows-1254').decode(bytes), encoding: 'windows-1254' };
   }
+}
+
+function encodingNotes(decoded: DecodedText): OperationNote[] {
+  if (decoded.encoding === 'utf-8') return [];
+  return [note('changed', 'op.note.convert.encoding', { encoding: ENCODING_LABELS[decoded.encoding] })];
 }
 
 /**
@@ -126,9 +145,7 @@ export function textToHtml(
   readonly notes: OperationNote[];
 } {
   const decoded = decodeText(bytes);
-  const notes: OperationNote[] = [];
-  if (decoded.encoding !== 'utf-8')
-    notes.push(note('changed', 'op.note.convert.encoding', { encoding: 'Windows-1254' }));
+  const notes = encodingNotes(decoded);
   const size = Math.floor(lineWidth / (MONO_ADVANCE * TEXT_FONT_SIZE));
   const html = `<pre class="text">${escapeCutting(decoded.text, size, '\n')}</pre>`;
   return { parts: [{ html, page: null }], notes };
@@ -201,9 +218,7 @@ export function csvToHtml(
   lineWidth: number,
 ): { readonly parts: readonly HtmlPart[]; readonly notes: OperationNote[] } {
   const decoded = decodeText(bytes);
-  const notes: OperationNote[] = [];
-  if (decoded.encoding !== 'utf-8')
-    notes.push(note('changed', 'op.note.convert.encoding', { encoding: 'Windows-1254' }));
+  const notes = encodingNotes(decoded);
   const text = decoded.text.replace(/^﻿/, '');
   let rows = parseCsv(text, sniffDelimiter(text, tabSeparated ? '\t' : null), MAX_CSV_COLUMNS);
   if (rows.length > MAX_CSV_ROWS) {

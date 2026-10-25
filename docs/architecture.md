@@ -481,7 +481,7 @@ writer does, and the steps it reports:
   `corrupt-document`; an attribute is read through `attribute()`, which answers `null` when it is
   absent, because xmldom's `getAttribute` answers `''` and no default would ever apply; one it had to repair, such as a sheet cut off mid-row, is converted and
   named in a `lost` note; a boolean attribute is read through `onOff()`, which takes `1`, `true` and `on`
-  as on and `0`, `false` and `off` as off), text and CSV by `ops/convert-text.ts` (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are.
+  as on and `0`, `false` and `off` as off), text and CSV by `ops/convert-text.ts` (UTF-16 behind a byte-order mark, else UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are.
   The reads are bounded by what actually comes out, not by what a file declares: every ZIP entry is
   inflated through JSZip's `internalStream`, which counts the bytes chunk by chunk and stops at 64 MiB
   for one entry or 256 MiB for one package (`file-too-large`; images count too), and a DOCX package is

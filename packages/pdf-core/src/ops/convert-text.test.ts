@@ -21,6 +21,15 @@ const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 /** An A4 line between 15 mm margins, in points. */
 const LINE = 510;
 
+/** `text` as UTF-16 behind a byte-order mark, the way Notepad and Excel's "Unicode Text" write it. */
+function utf16(text: string, littleEndian: boolean): Uint8Array {
+  const out = new Uint8Array(2 + text.length * 2);
+  const view = new DataView(out.buffer);
+  view.setUint16(0, 0xfeff, littleEndian);
+  for (let at = 0; at < text.length; at += 1) view.setUint16(2 + at * 2, text.charCodeAt(at), littleEndian);
+  return out;
+}
+
 /** What `run` throws, or `null` when it returns. */
 function refusal(run: () => unknown): unknown {
   try {
@@ -41,6 +50,32 @@ describe('convert-text', () => {
     const html = textToHtml(legacy, LINE);
     expect(html.parts[0]?.html).toBe('<pre class="text">Şiığ</pre>');
     expect(html.notes.map((entry) => entry.key)).toEqual(['op.note.convert.encoding']);
+  });
+
+  it.each([
+    [true, 'utf-16le', 'UTF-16 LE'],
+    [false, 'utf-16be', 'UTF-16 BE'],
+  ] as const)(
+    'reads UTF-16 behind its byte-order mark (little endian: %s) and says so',
+    (littleEndian, encoding, label) => {
+      const text = 'Şişli çay ığ 😀';
+      expect(decodeText(utf16(text, littleEndian))).toEqual({ text, encoding });
+      const html = textToHtml(utf16(text, littleEndian), LINE);
+      expect(html.parts[0]?.html).toBe(`<pre class="text">${text}</pre>`);
+      expect(html.notes).toEqual([
+        { kind: 'changed', key: 'op.note.convert.encoding', params: { encoding: label } },
+      ]);
+    },
+  );
+
+  it('reads a UTF-16 CSV, which is how Excel writes "Unicode Text", with its tab delimiter', () => {
+    const { parts, notes } = csvToHtml(utf16('Ad\tTutar\nÇiğdem\t12,5', true), false, LINE);
+    expect(parts[0]?.html).toBe(
+      '<table class="sheet"><tr><th>Ad</th><th>Tutar</th></tr><tr><td>Çiğdem</td><td class="n">12,5</td></tr></table>',
+    );
+    expect(notes).toEqual([
+      { kind: 'changed', key: 'op.note.convert.encoding', params: { encoding: 'UTF-16 LE' } },
+    ]);
   });
 
   it('escapes markup in plain text', () => {

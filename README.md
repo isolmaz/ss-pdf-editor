@@ -368,7 +368,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     order.
   - Headings become the outline. `http:`, `https:` and `mailto:` links and links inside the
     document become link annotations. The title comes from the file or its name.
-  - Text and CSV that are not UTF-8 are read as Windows-1254, and the report says so.
+  - Text and CSV that open with a UTF-16 byte-order mark (as Notepad and Excel's *Unicode Text*
+    save them) are read as UTF-16; other text that is not UTF-8 is read as Windows-1254. The
+    report says which.
   - A word with no space that is longer than the line (a URL, a hash, base64) is broken onto
     several lines in text and CSV, in a table cell within the cell's share of the line, so none
     of it runs off the page. Copying it gives the pieces on separate lines.

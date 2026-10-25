@@ -47,6 +47,25 @@ describe('convertToPdf', () => {
     expect(pdf.title).toBe('notlar');
   });
 
+  it('converts a UTF-16 text file, as Notepad saves it, with its Turkish letters and a note about the encoding', async () => {
+    const text = 'Çalışma notları\nİkinci satır ığ';
+    const units = [0xfeff, ...Array.from(text, (character) => character.charCodeAt(0))];
+    const bytes = new Uint8Array(units.length * 2);
+    units.forEach((unit, index) => {
+      bytes[index * 2] = unit & 0xff;
+      bytes[index * 2 + 1] = unit >> 8;
+    });
+    const out = await convertToPdf({ ...base, name: 'notlar.txt', bytes }, run);
+    const pdf = await read(out.bytes);
+    expect(pdf.pages[0]?.text).toContain('Çalışma notları');
+    expect(pdf.pages[0]?.text).toContain('İkinci satır ığ');
+    expect(out.report.notes).toContainEqual({
+      kind: 'changed',
+      key: 'op.note.convert.encoding',
+      params: { encoding: 'UTF-16 LE' },
+    });
+  });
+
   it('converts a semicolon CSV to a table whose cells all extract, and honours landscape', async () => {
     const out = await convertToPdf(
       {
