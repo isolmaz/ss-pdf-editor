@@ -1406,7 +1406,9 @@ but not including a self-signed root, are checked.
   (`checkTrustPath` hands it over; `evaluateEvidence` and the timestamp check pass it on), then
   whatever stands above the root. A certificate with the same name and key that the file carries
   ahead of the real one (a copy another CA issued, with other dates or uses) is not on that path
-  and decides nothing. Without a trusted path the chain is rebuilt from *signatures* (each
+  and decides nothing. The path ends at the imported root itself: a certificate with an imported
+  root's `tbsCertificate` that the file carries (signed again by anyone) stands for that root, on
+  the path and in the pool alike, so no issuer is looked for above such a copy. Without a trusted path the chain is rebuilt from *signatures* (each
   certificate's issuer is the pool member whose key verifies it; each step tries at most eight
   same-named candidates, the key-identifier match first and each distinct certificate once, and
   the chain ends where it would loop back on itself, so a pool of hundreds of same-named

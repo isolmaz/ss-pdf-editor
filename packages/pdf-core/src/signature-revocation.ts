@@ -894,19 +894,26 @@ export async function checkRevocation(input: {
 }): Promise<readonly RevocationCertCheck[]> {
   const subtle = globalThis.crypto?.subtle;
   if (subtle === undefined) return [];
-  const leaf = parseCertificate(input.leaf);
-  if (leaf === null) return [];
-  const pool = input.pool.map(parseCertificate).filter((entry): entry is Certificate => entry !== null);
+  const roots = input.roots.map(parseCertificate).filter((entry): entry is Certificate => entry !== null);
+  // A file's copy of an imported root (the same tbsCertificate) stands for the root: the copy's
+  // outer signature is anyone's, so an issuer found above it would be whoever made that signature.
+  const asRoot = (certificate: Certificate): Certificate =>
+    roots.find((root) => sameBytes(new Uint8Array(root.tbsView), new Uint8Array(certificate.tbsView))) ??
+    certificate;
+  const parsedLeaf = parseCertificate(input.leaf);
+  if (parsedLeaf === null) return [];
+  const leaf = asRoot(parsedLeaf);
+  const pool = input.pool
+    .map(parseCertificate)
+    .filter((entry): entry is Certificate => entry !== null)
+    .map(asRoot);
   // The walk parsed every one of these, so none is dropped here.
   const path = input.trustedPath
     .map(parseCertificate)
     .filter((entry): entry is Certificate => entry !== null);
 
   const links = await linksToCheck(subtle, leaf, path, pool);
-  const anchored = anchoredIssuers(
-    links,
-    input.roots.map(parseCertificate).filter((entry): entry is Certificate => entry !== null),
-  );
+  const anchored = anchoredIssuers(links, roots);
   const checks: RevocationCertCheck[] = [];
   for (const [index, link] of links.entries()) {
     if (link.selfSigned && index > 0) continue;

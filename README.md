@@ -600,7 +600,8 @@ nothing leaving the browser.
     "unknown", and with no root imported no certificate is reported not revoked. When the
     chain reaches a root you imported, the certificates checked are the ones on that chain, so
     a copy of a CA certificate that the PDF carries (the same name and key under another CA)
-    cannot decide which lists count. A revocation counts whoever vouches for the issuer, since
+    cannot decide which lists count, and a copy of a root you imported that the PDF carries stands
+    for that root, so no list is looked for above it. A revocation counts whoever vouches for the issuer, since
     only the key that issued the certificate can sign it. A list
     issued before the signature, or one past its next-update date when no trusted timestamp
     fixes the signing time, cannot rule out a revocation: the summary then says the lists are

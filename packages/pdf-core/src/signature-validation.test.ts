@@ -8,9 +8,11 @@
  * judged at its own time.
  */
 
-import { fromBER } from 'asn1js';
+import { BitString, fromBER } from 'asn1js';
+import { Certificate } from 'pkijs';
 import { describe, expect, it } from 'vitest';
 import {
+  CRL_REASON,
   extKeyUsageExtension,
   issueCrl,
   issueTimestampToken,
@@ -21,7 +23,7 @@ import {
   withUnsigned,
 } from './signature-revocation.fixtures';
 import type { CertificateFixture } from './signature-trust.fixtures';
-import { generateKey, issueCertificate } from './signature-trust.fixtures';
+import { ecdsaRawToDer, generateKey, issueCertificate } from './signature-trust.fixtures';
 import { evaluateDocumentTimestamp, evaluateEvidence, NO_DSS } from './signature-validation';
 
 const day = (month: number, date: number): Date => new Date(Date.UTC(2026, month - 1, date));
@@ -353,5 +355,120 @@ describe('evaluateDocumentTimestamp', () => {
 
     const mismatch = await evaluateDocumentTimestamp({ ...base, covered: new Uint8Array([1, 2, 3]) });
     expect(mismatch.timestamp).toMatchObject({ status: 'invalid', reason: 'imprint-mismatch' });
+  });
+});
+
+describe('evaluateEvidence along the trusted path', () => {
+  const key = () => generateKey({ kind: 'EC', curve: 'P-256' });
+  const authority = async (
+    subject: string,
+    keyPair: CryptoKeyPair,
+    issuer?: CertificateFixture,
+    notAfter?: Date,
+  ) =>
+    await issueCertificate(
+      {
+        subject,
+        keyPair,
+        ...VALID,
+        ...(notAfter === undefined ? {} : { notAfter }),
+        basicConstraints: { cA: true },
+        keyUsage: ['keyCertSign', 'cRLSign'],
+      },
+      issuer,
+    );
+  const holder = async (
+    subject: string,
+    issuer: CertificateFixture,
+    notAfter = VALID.notAfter,
+    stamping = false,
+  ) =>
+    await issueCertificate(
+      {
+        subject,
+        keyPair: await key(),
+        notBefore: VALID.notBefore,
+        notAfter,
+        basicConstraints: { cA: false },
+        keyUsage: ['digitalSignature'],
+        ...(stamping ? { extraExtensions: [extKeyUsageExtension([KP_TIME_STAMPING])] } : {}),
+      },
+      issuer,
+    );
+  const LIST_DATES = { thisUpdate: day(5, 1), nextUpdate: day(7, 1) };
+  const evidence = (
+    signer: CertificateFixture,
+    chain: readonly Uint8Array[],
+    roots: readonly CertificateFixture[],
+    extra: { importedCrls?: Uint8Array[]; dss?: Partial<typeof NO_DSS> } = {},
+  ) =>
+    evaluateEvidence({
+      contents: new Uint8Array([1, 2, 3]),
+      signatureValue: null,
+      signer: signer.der,
+      chain: [...chain],
+      claimedAt: SIGNED_AT.toISOString(),
+      roots: roots.map((entry) => entry.der),
+      importedCrls: extra.importedCrls ?? [],
+      dss: { ...NO_DSS, ...extra.dss },
+      now: NOW,
+    });
+  const rows = (checks: readonly { subject: string; status: string }[]) =>
+    checks.map((entry) => [entry.subject, entry.status]);
+
+  /** The root's own tbsCertificate, signed again with `keyPair`: a copy anyone can make. */
+  async function resigned(root: CertificateFixture, keyPair: CryptoKeyPair): Promise<Uint8Array> {
+    const copy = Certificate.fromBER(root.der.slice().buffer);
+    const raw = await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      keyPair.privateKey,
+      new Uint8Array(copy.tbsView).slice().buffer,
+    );
+    copy.signatureValue = new BitString({ valueHex: ecdsaRawToDer(new Uint8Array(raw)).slice().buffer });
+    return new Uint8Array(copy.toSchema(false).toBER(false));
+  }
+
+  it('lets no list speak for an imported root through a copy of it that another key signed', async () => {
+    const root = await authority('Root', await key());
+    const intermediate = await authority('Intermediate', await key(), root);
+    const importedCrls = [
+      await issueCrl({ issuer: intermediate, ...LIST_DATES }),
+      await issueCrl({ issuer: root, ...LIST_DATES }),
+    ];
+    // A certificate named like the root under another key, the root's tbsCertificate signed with
+    // that key, and a list in the root's name saying the root is revoked.
+    const attackerKey = await key();
+    const namesake = await authority('Root', attackerKey);
+    const copy = await resigned(root, attackerKey);
+    const forged = await issueCrl({
+      issuer: namesake,
+      ...LIST_DATES,
+      revoked: [{ cert: root, at: day(2, 1), reason: CRL_REASON.keyCompromise }],
+    });
+
+    const signer = await holder('Signer', intermediate);
+    const alongPath = await evidence(signer, [intermediate.der, copy], [root], {
+      importedCrls,
+      dss: { certs: [namesake.der], crls: [forged] },
+    });
+    expect(alongPath.trust).toMatchObject({ verdict: 'trusted', path: ['Signer', 'Intermediate', 'Root'] });
+    expect(rows(alongPath.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Intermediate', 'good'],
+    ]);
+    expect(alongPath.revocation).toBe('not-revoked');
+
+    // Expired by now, with no timestamp: no trusted path, so the chain is built by signatures.
+    const expired = await holder('Signer', intermediate, day(4, 1));
+    const withoutPath = await evidence(expired, [intermediate.der], [root], {
+      importedCrls,
+      dss: { certs: [copy, namesake.der], crls: [forged] },
+    });
+    expect(withoutPath.trust?.verdict).not.toBe('trusted');
+    expect(rows(withoutPath.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Intermediate', 'good'],
+    ]);
+    expect(withoutPath.revocation).toBe('not-revoked');
   });
 });

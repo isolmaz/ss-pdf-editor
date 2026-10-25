@@ -1082,7 +1082,7 @@ export async function checkTrustPath(input: TrustInput): Promise<TrustPath> {
       return allowed
         ? {
             trust: { verdict: 'trusted', path: [name], validity, notBefore, notAfter, reason: null },
-            certificates: [input.signer],
+            certificates: [ders.get(root) as Uint8Array],
           }
         : unanchored({
             verdict: 'untrusted',
@@ -1134,7 +1134,14 @@ export async function checkTrustPath(input: TrustInput): Promise<TrustPath> {
         notAfter,
         reason: null,
       },
-      certificates: found.map((certificate) => ders.get(certificate) as Uint8Array), // every node was parsed from one
+      // The path ends at a certificate with an imported root's tbsCertificate, often a copy the file
+      // carries: the imported bytes are handed back, since the copy's outer signature is anyone's.
+      certificates: found.map(
+        (certificate) =>
+          ders.get(
+            roots.find((root) => sameBytes(root.tbsView, certificate.tbsView)) ?? certificate,
+          ) as Uint8Array, // every node was parsed from one
+      ),
     };
   }
 
