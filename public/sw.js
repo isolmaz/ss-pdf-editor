@@ -167,8 +167,9 @@ self.addEventListener('install', (event) => {
  * Deletes the caches of this application's previous releases, unless a window may still run one
  * of them: a page left on its old code (an update waits for unsaved work) loads its remaining
  * chunks through the worker that took it over, and the previous release's cache is where those
- * chunks still are. `except` names the windows that do not count: the one a navigation replaces
- * and the one it creates. Only this application's caches are touched — the namespace is shared
+ * chunks still are. `except` names the windows that do not count: the one a navigation creates.
+ * No browser tells the worker which window a reload replaces, so that window still counts, and
+ * its release's cache goes at the next navigation or activation with no other window open. Only this application's caches are touched — the namespace is shared
  * by the whole origin, so an unfiltered delete would reach another app's storage.
  */
 async function pruneStaleCaches(except = []) {
@@ -291,12 +292,10 @@ self.addEventListener('fetch', (event) => {
     request.mode === 'navigate' || url.pathname === '/editor/' || url.pathname === '/editor/index.html';
   const key = engineKey(request);
 
-  // A navigation is where a page moves onto the current release: the window it replaces is
-  // gone as soon as the response commits, so it no longer holds an older release's cache.
+  // A navigation is where a page moves onto the current release: with no other window of the
+  // editor open, nothing can still need an older release's cache.
   if (request.mode === 'navigate') {
-    event.waitUntil(
-      pruneStaleCaches([event.resultingClientId, event.replacesClientId]).catch(() => undefined),
-    );
+    event.waitUntil(pruneStaleCaches([event.resultingClientId]).catch(() => undefined));
   }
 
   // User performed a force refresh (Ctrl+F5 / Ctrl+Shift+R): bypass cache completely.

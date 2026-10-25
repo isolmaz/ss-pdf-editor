@@ -702,26 +702,20 @@ async function main() {
     },
   );
   await check(
-    'the navigation that replaces the last window of an older release deletes that release cache',
+    'a navigation with no other editor window open deletes an older release cache, and one beside another window keeps it',
     async () => {
       const navigate = async (h) => {
         const event = h.dispatch('fetch', {
           request: { method: 'GET', url: 'https://local.test/editor/', cache: 'default', mode: 'navigate' },
-          replacesClientId: 'old-page',
           resultingClientId: 'new-page',
         });
         await event.response();
         await Promise.all(event.lifetimes);
       };
       const editor = 'https://local.test/editor/';
-      const reloaded = swHarness({
-        windows: [
-          { id: 'old-page', url: editor },
-          { id: 'new-page', url: editor },
-        ],
-      });
-      await navigate(reloaded);
-      assert.deepEqual(reloaded.deleted, ['pdf-editor-static-old']);
+      const alone = swHarness({ windows: [{ id: 'new-page', url: editor }] });
+      await navigate(alone);
+      assert.deepEqual(alone.deleted, ['pdf-editor-static-old']);
       const held = swHarness({
         windows: [
           { id: 'old-page', url: editor },

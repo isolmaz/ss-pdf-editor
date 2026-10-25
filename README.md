@@ -1144,7 +1144,8 @@ pnpm worker:deploy:dry      # same, with --dry-run
 - **Release isolation.** The cache name carries a release identity, so a new release answers
   from its own cache first. An older cache is kept only while a window may still run that
   release (a window left on its old code by unsaved work), is read only for a file the new one
-  lacks, and is deleted once that window reloads or closes.
+  lacks, and is deleted at the first navigation or worker start with no other editor window
+  open.
 - **Engine versions.** Every engine is served from a versioned URL, so a rebuilt engine is
   never answered with old cached bytes under the new editor. Readiness compares those URLs, so
   a cached engine of another version counts as `missing`.

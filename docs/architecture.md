@@ -3587,9 +3587,11 @@ Versioning is the interesting half:
   cache is deleted — only caches in **its own** namespace; the origin's storage is shared with
   other applications — once no window inside the scope is left that could still run that
   release (`pruneStaleCaches`, at activation and at each navigation, the window a navigation
-  replaces not counting). A page held back by unsaved work (§8.5) keeps its old code, and the lazy
-  chunks that code has not loaded yet are no longer on the origin: its cache stays until it
-  reloads or closes.
+  creates not counting). No browser names the window a reload replaces to the worker, so a
+  reloaded window still counts and its old cache goes at the next navigation or activation with no
+  other editor window open. A page held back by unsaved work (§8.5) keeps its old code, and the
+  lazy chunks that code has not loaded yet are no longer on the origin: its cache stays while it
+  is open.
 - Install fills the new cache without touching the old one, so an interrupted preparation
   leaves the working version exactly as it was. It caches the core shell, the scripts and
   styles `index.html` names, and the interface catalogues: each language is a run-time
