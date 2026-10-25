@@ -156,7 +156,7 @@ export const contentWritersPart = {
 
   'image.title': 'Görseli değiştir',
   'image.intro':
-    'Belgedeki bir görseli seçin; değiştirin, sıkıştırın, döndürün, kırpın ya da soluklaştırın. Döndürme ve kırpma görselin çerçevesini yeni biçimine uyarlar.',
+    'Belgedeki bir görseli seçin; değiştirin, sıkıştırın, döndürün, kırpın ya da soluklaştırın. Döndürme ve kırpma çerçeveyi uyarlar; sayfanın kalanı değişmez.',
   'image.field.target': 'Görsel',
   'image.field.targetHint': 'Sayfa, nesne adı, piksel boyutu ve dosyadaki biçimi.',
   'image.field.action': 'İşlem',

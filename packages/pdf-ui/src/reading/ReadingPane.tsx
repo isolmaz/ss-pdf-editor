@@ -166,8 +166,7 @@ function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, lang, onNot
       if (step === null) return;
       event.preventDefault();
       // The upper end is the engine's own clamp (`ViewerApi.goToPage` bounds against the
-      // page count); the first page is the only one this pane can bound itself, because
-      // its props carry no page count.
+      // page count), so only the first page is bounded here.
       onPageChange(step < 0 ? Math.max(0, pageNumber - 1) : pageNumber + 1);
     };
     window.addEventListener('keydown', onKeyDown);

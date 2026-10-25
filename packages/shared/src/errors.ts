@@ -79,7 +79,7 @@ export const TOOL_ERROR_HINT_KEYS = TOOL_ERROR_CODES.reduce<Record<ToolErrorCode
 );
 
 export interface ToolErrorDetails {
-  /** Which engine/subsystem produced the failure (`pdfjs`, `mupdf`, `tesseract`, `ghostscript`, `fonts`, `model`, `ui`, `fs`). */
+  /** Which engine/subsystem produced the failure (`pdfjs`, `mupdf`, `tesseract`, `ghostscript`, `fonts`, `pdf-text-engine`, `model`, `ui`, `fs`). */
   readonly engine: string;
   readonly pageIndex?: number;
   readonly path?: string;

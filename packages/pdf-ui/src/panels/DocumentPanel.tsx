@@ -92,7 +92,7 @@ export interface DocumentPanelProps {
   readonly onWriteLayers?: (request: LayerWriteRequest) => void;
   /** Embed files in the document (`ops/attachments-write.ts`); the shell does the write. */
   readonly onAddAttachments: (files: readonly File[]) => void;
-  /** Remove embedded files by name. */
+  /** Remove embedded files by their name-tree keys. */
   readonly onRemoveAttachments: (ids: readonly string[]) => void;
   /**
    * The visible tab. Absent leaves the panel in charge of its own selection; the shell

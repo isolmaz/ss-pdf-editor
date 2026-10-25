@@ -44,7 +44,7 @@ export interface OperationFormProps {
   readonly t: Translator;
   readonly spec: OperationDialogSpec;
   /**
-   * The frozen input: bytes, document facts, the translator and whatever the tool
+   * The run input: bytes, document facts, the translator and whatever the tool
    * laid on the page. Deliberately the *run* context — without `signal` and
    * `onProgress`, which the run hook creates and owns — so the form forwards the whole
    * object. A hand-written field list here is how `redactions` was dropped once.
@@ -108,7 +108,7 @@ export function OperationForm({
   }
 
   /**
-   * Options for the `choice` fields, resolved once from the frozen context. A
+   * Options for the `choice` fields, resolved from the context. A
    * document-derived list (the images of the open file) is read at open time, never
    * while the form is up: a list that could shift under the user would let them pick a
    * target the run no longer finds.
