@@ -169,13 +169,10 @@ describe('evaluateEvidence', () => {
     expect(imported.revocationChecks[0]).toMatchObject({ status: 'revoked', timing: 'after-signing' });
     expect(imported.revocation).toBe('revoked');
 
-    // The CA that signed the list is only whatever the file carries until a root vouches for it.
+    // A revocation signed by the key that issued the signer stands before a root vouches for that key.
     const unanchored = await evaluateEvidence(input(cms, signer, ca, { importedCrls: [crl] }));
-    expect(unanchored.revocationChecks[0]).toMatchObject({
-      status: 'unknown',
-      unknownReason: 'issuer-not-trusted',
-    });
-    expect(unanchored.revocation).toBe('indeterminate');
+    expect(unanchored.revocationChecks[0]).toMatchObject({ status: 'revoked', unknownReason: null });
+    expect(unanchored.revocation).toBe('revoked');
 
     const viaDss = await evaluateEvidence({
       ...input(cms, signer, ca, { roots: [ca.der] }),

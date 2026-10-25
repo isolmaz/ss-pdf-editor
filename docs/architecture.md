@@ -1414,11 +1414,13 @@ but not including a self-signed root, are checked.
   This is what stops a PDF from embedding a CA with the real CA's name and a CRL saying nothing
   is revoked (measured: such a CRL is rejected as `invalid-list` and cannot hide a real revocation).
   The signature alone does not make an issuer genuine, though: a file can carry its own CA, a
-  certificate under it and a list that CA signed. A list therefore speaks for a certificate only when
+  certificate under it and a list that CA signed. A list therefore clears a certificate only when
   its issuer is one of the roots the user imported or chains to one (`anchoredIssuers`, from the
-  signature-built chain, compared with the imported roots by `tbsCertificate`). Otherwise the
-  certificate is `unknown` with reason `issuer-not-trusted` and neither a `good` nor a `revoked`
-  answer is taken from lists that issuer signed; with no root imported every certificate is `unknown`.
+  signature-built chain, compared with the imported roots by name and key, so a re-issued or
+  cross-signed copy of a root is the same issuer). Otherwise a `good` answer becomes `unknown` with
+  reason `issuer-not-trusted`; with no root imported no certificate is cleared. A `revoked` answer is
+  taken whoever vouches for the issuer: the list is verified with the key that issued the
+  certificate, and a revocation can only make the verdict stricter.
   A certificate that no list or response names is `no-list` whoever its issuer is: there is no list
   to set aside.
 - **Answers.** `good` (a verified complete list does not name the certificate), `revoked`

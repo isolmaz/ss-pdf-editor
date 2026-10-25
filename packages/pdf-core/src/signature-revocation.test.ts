@@ -280,7 +280,7 @@ describe('which issuers a list may come from', () => {
     expect(summarizeRevocation(anchored, false)).toBe('not-revoked');
   });
 
-  it('does not rely on an OCSP response, or on a revocation, from an issuer no imported root stands behind', async () => {
+  it('does not rely on an OCSP response from an issuer no imported root stands behind, and takes its revocation as stated', async () => {
     const ca = await makeCa('Embedded CA');
     const leaf = await makeLeaf('Signer', ca);
     const response = await issueOcspResponse({
@@ -296,12 +296,30 @@ describe('which issuers a list may come from', () => {
       status: 'good',
     });
 
+    // The key that issued the certificate signed the list: a revocation only makes the verdict stricter.
     const revoking = await issueCrl({ issuer: ca, ...CRL_DATES, revoked: [{ cert: leaf, at: day(2, 1) }] });
     expect((await check(leaf, [ca], [revoking], SIGNED_AT, []))[0]).toMatchObject({
-      status: 'unknown',
-      unknownReason: 'issuer-not-trusted',
+      status: 'revoked',
+      unknownReason: null,
     });
     expect((await check(leaf, [ca], [revoking], SIGNED_AT, [ca]))[0]).toMatchObject({ status: 'revoked' });
+  });
+
+  it('takes a copy of an imported root that the file carries first, with the same name and key, as that root', async () => {
+    const keyPair = await generateKey({ kind: 'EC', curve: 'P-256' });
+    const root = {
+      subject: 'Root',
+      keyPair,
+      basicConstraints: { cA: true },
+      keyUsage: ['keyCertSign', 'cRLSign'],
+    } as const;
+    const imported = await issueCertificate({ ...root, ...VALID });
+    const reissued = await issueCertificate({ ...root, notBefore: day(1, 2), notAfter: VALID.notAfter });
+    const leaf = await makeLeaf('Signer', imported);
+    const crl = await issueCrl({ issuer: imported, ...CRL_DATES });
+
+    const [signer] = await check(leaf, [reissued, imported], [crl], SIGNED_AT, [imported]);
+    expect(signer).toMatchObject({ subject: 'Signer', status: 'good', unknownReason: null });
   });
 
   it('accepts a list from an intermediate that chains to an imported root, and not one that chains to another', async () => {

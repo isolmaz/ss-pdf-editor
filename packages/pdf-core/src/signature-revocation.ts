@@ -615,10 +615,16 @@ async function buildChain(
  * For each link, whether its issuer is a certificate the user imported or sits under one on this
  * chain. The chain was built by signatures, so an anchored issuer is vouched for by an imported
  * root; an issuer that is not is only whatever the file says it is, and so are the lists it signs.
+ * An issuer is an imported root when it has the root's name and key: a re-issued or cross-signed
+ * copy of a root that a file carries ahead of the imported one is the same issuer.
  */
 function anchoredIssuers(links: readonly Link[], roots: readonly Certificate[]): boolean[] {
+  const keyOf = (certificate: Certificate): Uint8Array =>
+    new Uint8Array(certificate.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView);
   const isRoot = (certificate: Certificate): boolean =>
-    roots.some((root) => sameBytes(new Uint8Array(root.tbsView), new Uint8Array(certificate.tbsView)));
+    roots.some(
+      (root) => root.subject.isEqual(certificate.subject) && sameBytes(keyOf(root), keyOf(certificate)),
+    );
   const anchored: boolean[] = [];
   for (let index = links.length - 1; index >= 0; index -= 1) {
     const { issuer } = links[index] as Link; // `index < links.length`
@@ -837,11 +843,13 @@ function decidedCheck(
  * certificate at the top is not checked (nothing above it publishes a list for it) unless it
  * is the leaf itself, where an absent list is an honest `unknown`.
  *
- * A list or response speaks for a certificate only when the issuer that signed it is one of the
+ * A list or response clears a certificate only when the issuer that signed it is one of the
  * `roots` the user imported or chains to one: a file can carry its own CA, a certificate under
  * it and a list that CA signed, and that proves nothing about the certificate. Otherwise the
- * certificate is `unknown` (`'issuer-not-trusted'`); one that no list or response names at all
- * is `'no-list'` whoever its issuer is.
+ * certificate is `unknown` (`'issuer-not-trusted'`). A revocation is taken whoever vouches for
+ * the issuer: the list is verified with the key that issued the certificate, and it can only
+ * make the verdict stricter. A certificate that no list or response names at all is
+ * `'no-list'` whoever its issuer is.
  */
 export async function checkRevocation(input: {
   readonly leaf: Uint8Array;
@@ -878,16 +886,11 @@ export async function checkRevocation(input: {
       checks.push(unknownCheck(link, role, 'no-list'));
       continue;
     }
-    if (anchored[index] !== true) {
-      checks.push(unknownCheck(link, role, 'issuer-not-trusted'));
-      continue;
-    }
     const decided = decisive(evidence, input.context.validationTime);
-    checks.push(
-      decided === null
-        ? unknownCheck(link, role, failure ?? 'list-scope')
-        : decidedCheck(link, role, decided, input.context),
-    );
+    if (decided === null) checks.push(unknownCheck(link, role, failure ?? 'list-scope'));
+    else if (decided.status === 'good' && anchored[index] !== true) {
+      checks.push(unknownCheck(link, role, 'issuer-not-trusted'));
+    } else checks.push(decidedCheck(link, role, decided, input.context));
   }
   return checks;
 }
