@@ -20,7 +20,8 @@
  *  - `streams` — no LZW, no external stream (`/F`, `/FFilter`), over **every** object;
  *  - `xmp`, `xmp-claim`, `xmp-schemas`, `xmp-info` — the metadata stream, the `pdfaid`
  *    identification, properties from schemas the packet does not describe, and (part 1) the
- *    Information dictionary agreeing with the packet;
+ *    Information dictionary agreeing with the packet: its text entries, `/CreationDate` and
+ *    `/ModDate` (the same instant, in whatever time zone) and `/Trapped`;
  *  - `output-intent` — the profile of each PDF/A output intent (header, class, components);
  *  - `device-colour` — DeviceGray/RGB/CMYK painted without a matching output intent or
  *    `Default*` space, found by reading the content streams (`pdfa-content.ts`);
@@ -46,6 +47,7 @@ import type { PDFDocument, PDFObject } from 'mupdf';
 import { hexStringToLatin1, loadMupdf, openPdf } from '../engines/mupdf';
 import { readName, resolved } from '../engines/mupdf-write';
 import { engineFailure } from './accessibility';
+import { parsePdfDate } from './annotation-threads';
 import { nameOf, numberOf, type Operand, scanContent } from './pdfa-content';
 import { NS_DC, NS_PDF, NS_XMP, parseXmp, type XmpPacket, xmpList, xmpText } from './pdfa-xmp';
 import { throwIfAborted } from './types';
@@ -420,9 +422,30 @@ function checkAllObjects(doc: PDFDocument, part: PdfAPart, findings: Findings): 
  * Metadata
  * ------------------------------------------------------------------ */
 
+const XMP_DATE =
+  /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?)?)?$/;
+
+/** An XMP date (ISO 8601, any of its shorter forms) as milliseconds since the epoch; a zone-less one is UTC. */
+function xmpDateMillis(value: string): number | null {
+  const match = XMP_DATE.exec(value.trim());
+  if (match === null) return null;
+  const [, year, month = '', day = '', hour = '', minute = '', second = '', zone = ''] = match;
+  return parsePdfDate(`D:${year}${month}${day}${hour}${minute}${second}${zone.replace(':', "'")}`);
+}
+
+/** A PDF date and an XMP date name the same second, whatever time zone each is written in. */
+function sameInstant(fromInfo: string, fromXmp: string): boolean {
+  const instant = parsePdfDate(fromInfo);
+  return instant !== null && instant === xmpDateMillis(fromXmp);
+}
+
 const INFO_KEYS: readonly {
   readonly info: string;
   readonly read: (packet: XmpPacket) => string | null;
+  /** The Information entry is a name (`/Trapped`), not a text string. */
+  readonly name?: true;
+  /** How the two values are compared; trimmed text equality when absent. */
+  readonly same?: (fromInfo: string, fromXmp: string) => boolean;
 }[] = [
   { info: 'Title', read: (packet) => xmpText(packet, NS_DC, 'title') },
   { info: 'Author', read: (packet) => (xmpList(packet, NS_DC, 'creator') ?? []).join(', ') || null },
@@ -430,6 +453,9 @@ const INFO_KEYS: readonly {
   { info: 'Keywords', read: (packet) => xmpText(packet, NS_PDF, 'Keywords') },
   { info: 'Creator', read: (packet) => xmpText(packet, NS_XMP, 'CreatorTool') },
   { info: 'Producer', read: (packet) => xmpText(packet, NS_PDF, 'Producer') },
+  { info: 'CreationDate', read: (packet) => xmpText(packet, NS_XMP, 'CreateDate'), same: sameInstant },
+  { info: 'ModDate', read: (packet) => xmpText(packet, NS_XMP, 'ModifyDate'), same: sameInstant },
+  { info: 'Trapped', read: (packet) => xmpText(packet, NS_PDF, 'Trapped'), name: true },
 ];
 
 function infoText(info: PDFObject | null, name: string): string | null {
@@ -482,12 +508,12 @@ function checkMetadata(trailer: PDFObject, loaded: LoadedMetadata, part: PdfAPar
   if (part === 1) {
     const info = resolved(trailer.get('Info'));
     for (const entry of INFO_KEYS) {
-      const fromInfo = infoText(info, entry.info);
+      const fromInfo = entry.name === true ? readName(info?.get(entry.info)) : infoText(info, entry.info);
       if (fromInfo === null || fromInfo === '') continue;
       const fromXmp = entry.read(packet);
       if (fromXmp === null)
         findings.add('xmp-info', { detail: `${entry.info}: missing from the metadata stream` });
-      else if (fromXmp.trim() !== fromInfo.trim()) {
+      else if (!(entry.same?.(fromInfo, fromXmp) ?? fromXmp.trim() === fromInfo.trim())) {
         findings.add('xmp-info', { detail: `${entry.info}: differs from the metadata stream` });
       }
     }

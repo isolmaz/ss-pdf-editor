@@ -499,6 +499,89 @@ describe('metadata stream and claim', () => {
     expect(details(noCreator, 'xmp-info')).toEqual(['Author: missing from the metadata stream']);
   });
 
+  it('compares the dates and the trapped flag in part 1, an instant written in another time zone being the same date', async () => {
+    const xmpDates = (created: string, modified: string, trapped: string) =>
+      `<xmp:CreateDate>${created}</xmp:CreateDate><xmp:ModifyDate>${modified}</xmp:ModifyDate><pdf:Trapped>${trapped}</pdf:Trapped>`;
+    const infoDates = (entries: Record<string, string>, trapped?: string) => (doc: PDFDocument) => {
+      const dictionary = doc.newDictionary();
+      for (const [key, value] of Object.entries(entries)) dictionary.put(key, doc.newString(value));
+      if (trapped !== undefined) dictionary.put('Trapped', doc.newName(trapped));
+      doc.getTrailer().put('Info', doc.addObject(dictionary));
+    };
+
+    const same = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('2026-01-02T10:00:00Z', '2026-03-04T05:06:07.250-05:00', 'False'),
+        xmpDeclarations: NS,
+        catalog: infoDates(
+          { CreationDate: "D:20260102120000+02'00'", ModDate: 'D:20260304100607Z' },
+          'False',
+        ),
+      }),
+    );
+    expect(rule(same, 'xmp-info')?.state).toBe('pass');
+
+    const dateOnly = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('2026-01-02', '2026-03-04T10:06Z', 'Unknown'),
+        xmpDeclarations: NS,
+        catalog: infoDates({ CreationDate: 'D:20260102', ModDate: 'D:20260304100600' }, 'Unknown'),
+      }),
+    );
+    expect(rule(dateOnly, 'xmp-info')?.state).toBe('pass');
+
+    const coarse = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('2026', '2026-03', 'False'),
+        xmpDeclarations: NS,
+        catalog: infoDates({ CreationDate: 'D:2026', ModDate: 'D:202603' }),
+      }),
+    );
+    expect(rule(coarse, 'xmp-info')?.state).toBe('pass');
+
+    const wrong = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('2026-01-02T10:00:00Z', '2026-03-04T10:06:07Z', 'True'),
+        xmpDeclarations: NS,
+        catalog: infoDates({ CreationDate: 'D:20260102120000Z', ModDate: 'D:20260304100608Z' }, 'False'),
+      }),
+    );
+    expect(details(wrong, 'xmp-info')).toEqual([
+      'CreationDate: differs from the metadata stream',
+      'ModDate: differs from the metadata stream',
+      'Trapped: differs from the metadata stream',
+    ]);
+
+    const notDates = await checkPdfA(
+      build({
+        claim: '1',
+        xmpExtra: xmpDates('yesterday', '2026-13-45T00:00:00Z', 'True'),
+        xmpDeclarations: NS,
+        catalog: infoDates({ CreationDate: 'D:20260102120000Z', ModDate: 'not a date' }),
+      }),
+    );
+    expect(details(notDates, 'xmp-info')).toEqual([
+      'CreationDate: differs from the metadata stream',
+      'ModDate: differs from the metadata stream',
+    ]);
+
+    const absent = await checkPdfA(
+      build({
+        claim: '1',
+        catalog: infoDates({ CreationDate: 'D:20260102120000Z', ModDate: 'D:20260304100607Z' }, 'True'),
+      }),
+    );
+    expect(details(absent, 'xmp-info')).toEqual([
+      'CreationDate: missing from the metadata stream',
+      'ModDate: missing from the metadata stream',
+      'Trapped: missing from the metadata stream',
+    ]);
+  });
+
   it('asks for the pdfaid part and a conformance that part allows', async () => {
     const noConformance = await checkPdfA(build({ conformance: null }));
     expect(details(noConformance, 'xmp-claim')).toEqual(['no pdfaid:conformance']);
