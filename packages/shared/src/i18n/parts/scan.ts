@@ -27,6 +27,9 @@ export const scanPart = {
   'scan.camera.busyHint': 'Kamerayı kullanan uygulamayı kapatıp yeniden deneyin.',
   'scan.camera.failed': 'Kamera açılamadı.',
   'scan.camera.failedHint': 'Yeniden deneyin ya da aşağıdan fotoğraf seçin.',
+  'scan.camera.stopped': 'Kamera durdu.',
+  'scan.camera.stoppedHint':
+    'Bağlantısı kopmuş ya da erişim geri alınmış olabilir. Kontrol edip yeniden deneyin ya da aşağıdan fotoğraf seçin.',
   'scan.capture': 'Fotoğraf çek',
   'scan.capture.failed': 'Fotoğraf alınamadı. Yeniden deneyin.',
   'scan.choose': 'Fotoğraf seç',

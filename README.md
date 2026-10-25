@@ -416,7 +416,9 @@ nothing leaving the browser.
   camera picker on a laptop; the photograph is taken at the highest resolution the camera
   offers. **Choose photos** takes pictures from files instead, which is also the way on a
   device without a camera or when the camera permission is refused. Denied, missing,
-  in-use and insecure-connection cases each say what to do, in Turkish and English.
+  in-use and insecure-connection cases each say what to do, in Turkish and English, and so
+  does a camera that is unplugged or loses its permission while scanning; the shutter waits
+  while the camera delivers no picture.
 - **The page is found for you.** An outline follows the page in the preview, and the
   photograph is analysed again on capture. A small detector (no OpenCV) finds the page's four
   straight edges even where a finger or glare breaks them. If it is not sure it says so and
