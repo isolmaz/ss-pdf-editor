@@ -192,6 +192,21 @@ describe('closeTab', () => {
     expect(saveStore.get().closeRequest).toBeNull();
   });
 
+  it('asks first when the tab holds bytes no file holds, although nothing was edited in it', () => {
+    const made = session.openDocument({
+      name: 'made.pdf',
+      bytes: new Uint8Array([1]),
+      sha256: 'made',
+      pageCount: 1,
+      unwritten: true,
+    });
+
+    closeTab(host(), made.id);
+
+    expect(discardTab).not.toHaveBeenCalled();
+    expect(saveStore.get().closeRequest).toBe(made.id);
+  });
+
   it('asks first when the tab holds unsaved overlay edits, remembering what had the focus', () => {
     const first = open('a.pdf');
     const second = open('b.pdf');

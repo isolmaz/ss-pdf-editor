@@ -612,3 +612,29 @@ describe('what a tab carries from its inputs', () => {
     expect(store.active?.journal.entries[0]?.labelParams).toEqual({ count: 2 });
   });
 });
+
+describe('a document whose bytes no file holds', () => {
+  it('opens as unsaved work that undoing every step cannot make clean, until an output records it', () => {
+    const store = new SessionStore();
+    const tab = store.openDocument({ ...document('made.pdf'), unwritten: true });
+    expect(tab.dirty).toBe(true);
+    store.setOverlays(tab.id, { redactions: ['intent'] }, 'ann.engineEdit');
+    store.undo(tab.id);
+    expect(store.active?.working.stateId).toBe('source');
+    expect(store.active?.dirty).toBe(true);
+
+    const current = store.active;
+    if (current === null) throw new Error('missing tab');
+    store.addOutput(tab.id, {
+      id: 'output',
+      fromWorkingVersion: current.working.id,
+      fromState: current.working.stateId,
+      encrypted: false,
+      steps: [],
+      appliedSteps: [],
+      incremental: false,
+      writtenTo: { fileName: 'made.pdf', savedAt: 1, sha256: 'output-hash' },
+    });
+    expect(store.active?.dirty).toBe(false);
+  });
+});

@@ -277,8 +277,12 @@ export async function exportDocument(host: SaveHost, tabId: string | undefined):
     // Where a download is the only way to keep work — no file to write over, no picker to ask
     // for one — Export is the user's Save, and Save's download is recorded as saved: left
     // unrecorded, a document that was exported stays "unsaved" and closing it warns of a loss.
-    // Anywhere else Export is a copy, and the document stays as dirty as it was.
-    if (tab.source.handle === undefined && !hasSavePicker()) recordOutput(session, prepared);
+    // A document no file holds yet (`savedState` is `null`) has nothing but this download to
+    // keep, so its first Export is its save as well. Anywhere else Export is a copy, and the
+    // document stays as dirty as it was.
+    if (tab.source.handle === undefined && (!hasSavePicker() || tab.savedState === null)) {
+      recordOutput(session, prepared);
+    }
     // The browser-matrix contract: without an in-place handle the user
     // must know why this writes a *new* file instead of saving the one they opened.
     // The verification table travels with it either way: an export is a

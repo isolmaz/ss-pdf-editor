@@ -595,6 +595,24 @@ describe('exportDocument', () => {
     expect(session.getSnapshot().tabs[0]?.dirty).toBe(true);
   });
 
+  it('is the save of a document no file holds yet, even where the browser can write files', async () => {
+    vi.stubGlobal('window', { showSaveFilePicker: vi.fn() });
+    const tab = session.openDocument({
+      name: 'made.pdf',
+      bytes: new Uint8Array([1, 2, 3]),
+      sha256: 'made',
+      pageCount: 1,
+      unwritten: true,
+    });
+    expect(tab.dirty).toBe(true);
+    prepareOutput.mockImplementation(async () => prepared(tab));
+
+    await exportDocument(host, tab.id);
+
+    expect(session.getSnapshot().tabs[0]?.outputs).toHaveLength(1);
+    expect(session.getSnapshot().tabs[0]?.dirty).toBe(false);
+  });
+
   it('reports a saved copy when the document has a file of its own, and records nothing', async () => {
     const tab = await open('copy.pdf', fakeFile().file);
     prepareOutput.mockResolvedValue(prepared(tab));

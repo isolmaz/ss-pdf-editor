@@ -657,7 +657,9 @@ These describe how the build works; they are not promises.
   - A window with unsaved changes that no draft protects (a sensitive session, or a draft that
     is still being written or could not be written) asks before it is closed or reloaded, and
     an update of the app never reloads it by itself: the update banner asks you to save and
-    reload instead. A window whose changes a draft holds asks nothing.
+    reload instead. A window whose changes a draft holds asks nothing. A document that a tool
+    produced (a merge, a split, a conversion) opens as unsaved changes, because no file holds
+    it, until it is saved or exported; closing its tab asks first, and a draft brings it back.
   - The recent list keeps the file name, size, page count, when it was last opened and
     whether it is starred in `localStorage`. In Chromium it also keeps a *handle* to the
     file in IndexedDB — a reference the browser asks permission for again, never the file's
