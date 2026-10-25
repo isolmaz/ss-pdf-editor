@@ -192,7 +192,7 @@ export function createAttachmentActions(deps: AttachmentDeps): AttachmentActions
   /**
    * The attachments panel's two writes (“attachments add/remove”), run on the working
    * document through the shared writer pipeline: the panel hands over the picked files (or the
-   * names to drop) and the shell journals what the writer produced.
+   * name-tree keys to drop) and the shell journals what the writer produced.
    */
   async function write(request: AttachmentWrite): Promise<void> {
     await withDocument(

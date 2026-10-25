@@ -1288,8 +1288,8 @@ mechanics are arranged around one number, `/ByteRange`:
    the empty field of that name and otherwise creates one, and a reused field also gets
    its `/AP`. The appearance draws the stamp's lines in Helvetica when they are printable
    ASCII (nothing embedded); a line with any other letter makes it draw in the embedded
-   Noto Sans, subset to the glyphs shown, and a character that face lacks (or a control
-   character) is drawn as `?`.
+   Noto Sans, subset to the glyphs shown, and a character that face lacks (or a control or
+   separator character outside ASCII) is drawn as `?`.
 3. The `/Contents` placeholder is located in the produced bytes (uniqueness enforced); the
    real ByteRange is computed from those offsets and written over the same digits, with a
    length-equality assertion.
@@ -1421,8 +1421,8 @@ but not including a self-signed root, are checked.
   reason `issuer-not-trusted`; with no root imported no certificate is cleared. A `revoked` answer is
   taken whoever vouches for the issuer: the list is verified with the key that issued the
   certificate, and a revocation can only make the verdict stricter.
-  A certificate that no list or response names is `no-list` whoever its issuer is: there is no list
-  to set aside.
+  A certificate for which the file holds no list or response from its issuer is `no-list`
+  whoever its issuer is: there is no list to set aside.
 - **Answers.** `good` (a verified complete list does not name the certificate), `revoked`
   (date and reason from the list; `removeFromCRL` entries are not revocations) or `unknown` with a
   reason: `no-list`, `no-issuer`, `issuer-not-trusted`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
@@ -1532,9 +1532,9 @@ Details that matter:
   save-time check measures a removed field as a declared change instead of calling the run
   unverified.
 - `applyRedactions` does not touch three more things that kept the erased words or a file the
-  user asked to clear, and `ops/redact-leaks.ts` cleans them. *Attachments:* MuPDF's
-  `deleteEmbeddedFile` left `/Root /AF`, the `/AF` of pages, annotations and structure elements and every `/FileAttachment` annotation, and an
-  empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
+  user asked to clear, and `ops/redact-leaks.ts` cleans them. *Attachments:* clearing the name
+  tree alone would leave `/Root /AF`, the `/AF` of pages, annotations and structure elements and
+  every `/FileAttachment` annotation, and an empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
   reads from the Attachments panel — that list is empty for a file that is attached only as an
   annotation or in `/AF` — and the step removes every attached file: each file specification of the
   name tree (walked through `/Kids` as well; the tree and a `/Names` that holds nothing else leave
@@ -1569,8 +1569,9 @@ Details that matter:
   accessibility tokenizer: `applyRedactions` removes the paint operation under a mark but never
   edits a pattern or a soft-mask group, so one that shows text (`Tj`, `TJ`, `'`, `"`, or a stream the
   tokenizer cannot delimit) keeps that text in the file. The page is listed in `paintText` and
-  the run throws `verification-failed`; a form XObject's own text is the engine's to erase and
-  is not read.
+  the run throws `verification-failed`; a form XObject the page draws is the engine's to erase
+  and its own text is not read, while one that a pattern or a soft-mask group draws is read like
+  them.
 - `auditRedactedDocument()` is a raw-byte scan plus a string-object pass, and **documents
   its own blind spot**: it cannot see inside deflated streams or object streams. The
   string pass parses literal `(…)` and hex `<…>` strings outside filtered streams, decodes
@@ -1827,8 +1828,9 @@ combining accent that are glyphs of their own compare as the letter they make (`
 `é`), and a match takes the marks after its last letter with it. A match that would begin or end
 inside one glyph is skipped and counted. A line-end hyphen before a lower-case letter is read
 as hyphenation and joins the word. Without match case (`case-fold.ts`, which the document search
-`search.ts` uses too), `I` matches both `i` and `ı`, `İ` matches `i`, `ı` matches only `ı` —
-folding `ı` to `i` would make Turkish `sık` and `sik` one word — and a final sigma `ς` is `σ`.
+`search.ts` uses too), `I` matches both `i` and `ı`, `İ` matches `i`, and `ı` matches `ı` and `I`
+but not `i` — folding `ı` to `i` would make Turkish `sık` and `sik` one word — and a final sigma
+`ς` is `σ`.
 Whole-word mode refuses a letter, digit or mark on either side. The replacement is one line of words: a
 control character (line break, tab), a line or paragraph separator, or a zero-width, soft-hyphen or
 direction character in it is refused before any page is read (`replacement-invalid`, naming the code
@@ -2922,7 +2924,7 @@ file) records the file it wrote as the entry's handle (`putRecentHandle`, never 
 session) and the written size and page count as the entry's, so a draft restored later is measured
 against the file it last wrote, and `addRecentDocument` replaces an earlier entry by id or by the
 same name, size and page count, never by name alone. The prune after the start-up restore keeps the
-handle of every open tab and of every draft the vault holds, as clearing the list does. A handle read back this way holds no write access
+handle of every open tab and of every draft the vault holds. A handle read back this way holds no write access
 (a reopened entry asked for `read` only), so `saveActive` asks for `readwrite`
 (`ensureWriteAccess`) as the first await of the click that saves, before the preparation uses
 up the gesture; a refusal is `permission-denied`, and nothing is written. A write the browser

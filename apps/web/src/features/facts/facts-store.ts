@@ -24,7 +24,7 @@ export interface DocumentFacts {
   readonly attachments: readonly AttachmentRow[];
   readonly signatures: readonly SignatureVerification[];
   readonly security: { readonly encrypted: boolean; readonly permissions: readonly string[] };
-  /** The shown facts that could not be read and are empty here; absent when all were read. */
+  /** The shown facts that could not be read and are empty here; empty when all were read. */
   readonly unread?: readonly UnreadFact[];
 }
 

@@ -87,10 +87,10 @@ The editor starts in **Simple mode**, which keeps the features people reach for 
 opening, merging, converting and saving, organising pages, markup, text editing, forms,
 signing and PDF to Word or Excel. The menu bar, the palette, the tool rail and the docks
 leave out the rest (redaction, encryption, OCR, measurement, comparison, watermarks, Bates
-numbering, compression, layers and attachments among them). **Settings → Interface →
-Advanced mode** shows everything, and so does the **Advanced mode** button the palette
-offers when a search has matches hidden by Simple mode. The home screen's **All tools**
-lists every tool in either mode. The choice is kept on the device.
+numbering and layers among them). **Settings → Interface → Advanced mode** shows everything,
+and so does the **Advanced mode** button the palette offers when a search has matches hidden by
+Simple mode. The home screen's **All tools** shows the same tools in either mode. The choice is
+kept on the device.
 
 ### Reading and navigation
 
@@ -385,8 +385,8 @@ lists every tool in either mode. The choice is kept on the device.
   - A letter and an accent drawn as two glyphs (`e` and U+0301) are compared as the letter
     they make, so `café` finds either spelling, and a match takes the combining marks that
     follow its last letter with it.
-  - The new text is one line of words. A line break, a tab or an invisible character in it (a
-    zero-width joiner, a soft hyphen, a direction mark) is refused before anything is read,
+  - The new text is one line of words. A line break, a tab and invisible characters such as a
+    zero-width joiner, a soft hyphen or a direction mark are refused before anything is read,
     and the message names the code points.
 - **Export and import.** Export text as plain text or Markdown. Export pages as PNG, JPEG or
   WebP images, or build a PDF from images.
@@ -408,8 +408,9 @@ lists every tool in either mode. The choice is kept on the device.
     save them) are read as UTF-16; other text that is not UTF-8 is read as Windows-1254. The
     report says which.
   - A word with no space that is longer than the line (a URL, a hash, base64) is broken onto
-    several lines in text and CSV, in a table cell within the cell's share of the line, so none
-    of it runs off the page. Copying it gives the pieces on separate lines.
+    several lines in text and CSV, in a table cell within the cell's share of the line, down to
+    20 characters a piece (a table with very many columns can still run wider than the page).
+    Copying it gives the pieces on separate lines.
   - A Word, Excel or PowerPoint file that unpacks to far more than it weighs (a part over 64 MiB,
     or 256 MiB in all) and a CSV with more than 1000 columns or two million cells are refused
     rather than opened.
@@ -505,10 +506,10 @@ nothing leaving the browser.
     creator fields, every XMP packet (the document's, and those of pages and of the forms and
     images they draw) and the private application data (`/PieceInfo`) of the document, its pages
     and its objects, and the notices say exactly that.
-  - The attachments option removes every attached file of the document, wherever it lives, not
-    only the ones the Attachments list shows (a file attached only as an annotation or listed
-    only in the associated files of a page, an annotation or a structure element is cleaned
-    too). The report counts each file once and counts only a file that was there.
+  - The attachments option removes the attached files of the name tree, the file-attachment
+    annotations and the associated files (`/AF`) of the document, its pages, annotations and
+    structure elements, not only the ones the Attachments list shows. Associated files of form
+    or image objects and of marked content are not removed. The report counts each file once and counts only a file that was there.
   - Each page that carried a mark also loses its thumbnail and the alternative text,
     replacement text and expansions its tags carry; the report counts them.
   - A staged mark stays an intent until you apply it. While marks are still staged, saving
@@ -555,9 +556,10 @@ nothing leaving the browser.
     browser's local storage only, and every saved entry can be deleted from the dialog.
 - **Replace image.** **Tools → Replace image** edits an image the document already contains:
   it swaps in a new PNG or JPEG, recompresses it as JPEG, rotates it by 90, 180 or 270
-  degrees, crops it by percent or changes its opacity. Placement stays as it was, because the
-  image object is edited in place; an image that several pages share changes wherever it is
-  drawn.
+  degrees, crops it by percent or changes its opacity. The image object is edited in place, so
+  an image that several pages share changes wherever it is drawn; a quarter turn or a crop also
+  reshapes its frame on the page, and a picture drawn only from inside a form is refused for
+  those two.
 - **Signing.** PAdES B-B from a PKCS#12 identity, with a visible stamp.
   - Signing a file that already carries a signature appends the new one as a revision, so
     the earlier signatures keep validating. Only a file the engine cannot append to (one it
@@ -570,7 +572,8 @@ nothing leaving the browser.
     field, or to an existing one that has no area of its own.
   - The stamp is drawn in Helvetica when its lines are plain ASCII. A line with other letters
     (such as `ş`, `ğ` or `İ`) is drawn in an embedded subset of Noto Sans, and a character
-    that face lacks (for example Chinese) shows as `?`.
+    that face lacks (for example Chinese) or a control or separator character (a non-breaking
+    space, a zero-width joiner, a soft hyphen) shows as `?`.
   - The signer is the certificate that matches the private key in the PKCS#12 file, not the first one it lists.
   - The visible stamp shows the signer's name, the date in your own time zone and the reason;
     the signature itself records the same moment in UTC.
@@ -1190,7 +1193,7 @@ The fonts the app ships are fetched by `pnpm fetch:engines` from pinned npm pack
 the same origin and pinned by size and SHA-256 in `tools/asset-pins.json`. All are SIL Open Font
 License 1.1 (the licence texts are copied to `dist/licenses/`):
 
-- **Document text.** Noto Sans is embedded by watermarks, Bates numbers, headers, the OCR text layer and signature stamps whose lines go beyond ASCII. A scan exported
+- **Document text.** Noto Sans is embedded by watermarks, Bates numbers, headers, Add text, form field appearances, the OCR text layer and signature stamps whose lines go beyond ASCII. A scan exported
   to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
   Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten families, Noto Sans included, are static TrueType in regular, italic, bold and bold italic.
   Each covers the Turkish letters. Lato is not offered: its faces lack Ğ/ğ, İ and Ş/ş.
