@@ -563,6 +563,13 @@ async function issuedBy(subtle: SubtleCrypto, child: Certificate, parent: Certif
   return outcome === 'ok';
 }
 
+/** Self-issued (its issuer is its own name) and verified by its own key. */
+async function isSelfSigned(subtle: SubtleCrypto, certificate: Certificate): Promise<boolean> {
+  return (
+    certificate.subject.isEqual(certificate.issuer) && (await issuedBy(subtle, certificate, certificate))
+  );
+}
+
 /**
  * The certificates worth a signature check as the issuer of `child`: `child` itself (a
  * self-signed certificate answers by its own key) and the pool's name matches, the key-id
@@ -633,7 +640,7 @@ async function linksToCheck(
         certificate,
         issuer: path[index + 1] as Certificate,
         // A self-signed certificate inside the path (a CA's re-issued root) is a root of its own.
-        selfSigned: await issuedBy(subtle, certificate, certificate),
+        selfSigned: await isSelfSigned(subtle, certificate),
       }),
     ),
   );

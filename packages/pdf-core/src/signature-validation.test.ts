@@ -505,6 +505,30 @@ describe('evaluateEvidence along the trusted path', () => {
     expect(outcome.revocation).toBe('not-revoked');
   });
 
+  it('checks a CA certificate inside the path that holds the root key under another name', async () => {
+    const root = await authority('Foo', await key());
+    // The root's own key under a new name, issued by the root: it verifies under its own key, but it
+    // is not self-issued, so the root's list speaks for it.
+    const renamed = await authority('Bar', root.keyPair, root);
+    const signer = await holder('Signer', renamed);
+    const importedCrls = [
+      await issueCrl({ issuer: renamed, ...LIST_DATES }),
+      await issueCrl({
+        issuer: root,
+        ...LIST_DATES,
+        revoked: [{ cert: renamed, at: day(2, 1), reason: CRL_REASON.keyCompromise }],
+      }),
+    ];
+
+    const outcome = await evidence(signer, [renamed.der], [root], { importedCrls });
+    expect(outcome.trust).toMatchObject({ verdict: 'trusted', path: ['Signer', 'Bar', 'Foo'] });
+    expect(rows(outcome.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Bar', 'revoked'],
+    ]);
+    expect(outcome.revocation).toBe('revoked');
+  });
+
   it('checks the signer and a document timestamp along the paths their trust walks validated', async () => {
     const root = await authority('Root', await key());
     const intermediate = await authority('Intermediate', await key(), root);
