@@ -233,7 +233,7 @@ export function Magnifier({ viewer, active, t, zoom, onZoomChange }: MagnifierPr
       document.removeEventListener('pointerout', onPointerOut, true);
       window.removeEventListener('wheel', onWheel, { capture: true });
       window.removeEventListener('keydown', onKeyDown);
-      stop();
+      hide();
       windowRef.current = null;
       pointerRef.current = null;
     };
