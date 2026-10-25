@@ -68,6 +68,7 @@ const withItems =
           return async (number: number) => {
             const page = await target.getPage(number);
             return {
+              userUnit: page.userUnit,
               getViewport: page.getViewport.bind(page),
               getTextContent: async () => ({ items, styles: {} }),
             };
