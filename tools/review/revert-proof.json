@@ -726,5 +726,21 @@
     "tests": ["packages/pdf-core/src/signature-revocation.test.ts"],
     "run": ["packages/pdf-core/src/signature-revocation.test.ts"],
     "filter": "says no list was found, not that the issuer is untrusted, when nothing speaks for the certificate"
+  },
+  {
+    "commit": "8f5c6d411e9fa8cfbb3d3c28367aaad913395203",
+    "title": "Start a language selector mounted later in the language picked while the store refused to keep it",
+    "kind": "unit",
+    "tests": ["packages/pdf-ui/src/components/LanguageSelector.dom.test.tsx"],
+    "run": ["packages/pdf-ui/src/components/LanguageSelector.dom.test.tsx"],
+    "filter": "starts a selector mounted later in the language picked while the store was blocked"
+  },
+  {
+    "commit": "74cc705f4df21b7bd6308673e50747f3bc5a4784",
+    "title": "Keep Run batch off while any field of a chosen step does not read, not only its page range",
+    "kind": "unit",
+    "tests": ["packages/pdf-ui/src/dialogs/BatchDialog.test.tsx"],
+    "run": ["packages/pdf-ui/src/dialogs/BatchDialog.test.tsx"],
+    "filter": "keeps Run off while a whole-number setting holds a fraction"
   }
 ]
