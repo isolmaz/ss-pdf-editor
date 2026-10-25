@@ -682,6 +682,17 @@ function tableHtml(table: Element, width: number | null): string {
   return `${html}</table>`;
 }
 
+/**
+ * The size a shape has on the slide: the `a:ext` of its own transform. A `p:graphicFrame` holds the
+ * `p:xfrm` itself, a `p:pic` in its `p:spPr`. An `a:ext` further down (an extension list written
+ * before the transform) is a different element.
+ */
+function slideExtent(shape: Element): Element | null {
+  const transform =
+    shape.localName === 'graphicFrame' ? child(shape, 'xfrm') : child(child(shape, 'spPr'), 'xfrm');
+  return child(transform, 'ext');
+}
+
 /** The shapes of a tree in reading order: top to bottom, then left to right. */
 function readingOrder(shapes: Element[]): Element[] {
   const position = (shape: Element): readonly [number, number] => {
@@ -715,7 +726,7 @@ async function shapeTreeHtml(tree: Element, context: SlideContext): Promise<stri
     if (shape.localName === 'graphicFrame') {
       const table = descendants(shape, 'tbl')[0];
       // The frame's width on the slide (`p:xfrm/a:ext/@cx`), so a table is as wide as drawn.
-      const frameWidth = Number(descendants(shape, 'ext')[0]?.getAttribute('cx') ?? 0) / EMU_PER_POINT;
+      const frameWidth = Number(slideExtent(shape)?.getAttribute('cx') ?? 0) / EMU_PER_POINT;
       if (table !== undefined) html += tableHtml(table, frameWidth > 0 ? frameWidth : null);
       continue;
     }
@@ -729,7 +740,7 @@ async function shapeTreeHtml(tree: Element, context: SlideContext): Promise<stri
       context.skippedImages += 1;
       continue;
     }
-    const extent = descendants(shape, 'ext')[0];
+    const extent = slideExtent(shape);
     const width = Number(extent?.getAttribute('cx') ?? 0) / EMU_PER_POINT;
     const height = Number(extent?.getAttribute('cy') ?? 0) / EMU_PER_POINT;
     html +=

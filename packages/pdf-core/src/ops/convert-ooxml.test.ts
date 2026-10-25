@@ -629,6 +629,31 @@ describe('pptx shapes, text and tables', () => {
     });
   });
 
+  it('takes the size of a picture and of a table frame from their own transform, not from an extension list before it', async () => {
+    // PowerPoint writes `a:extLst/a:ext` (a creation id, a DPI hint) ahead of the transform's `a:ext`.
+    const creation =
+      '<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{6A3C1B0E-0000-4000-8000-000000000000}"/></a:ext></a:extLst>';
+    const dpi =
+      '<a:extLst><a:ext uri="{28A0092B-C50C-407E-A947-70E740481C1C}"><a14:useLocalDpi xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main" val="0"/></a:ext></a:extLst>';
+    const pic = `<p:pic><p:nvPicPr><p:cNvPr id="4" name="Picture 3">${creation}</p:cNvPr><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId1">${dpi}</a:blip></p:blipFill><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="635000"/></a:xfrm></p:spPr></p:pic>`;
+    const cell = `<a:tc><a:txBody><a:p>${text('a')}</a:p></a:txBody></a:tc>`;
+    const frame = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="5" name="Table 4">${creation}</p:cNvPr><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="0" y="9"/><a:ext cx="635000" cy="10"/></p:xfrm><a:graphic><a:graphicData><a:tbl><a:tr>${cell}</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+    const bytes = await deck(
+      { s1: slideXml(pic + frame) },
+      {
+        files: {
+          'ppt/slides/_rels/s1.xml.rels': relsXml([rel('rId1', '../media/p.png')]),
+          'ppt/media/p.png': Buffer.from(PNG_BASE64, 'base64'),
+        },
+      },
+    );
+    const result = await pptxToHtml(bytes, 'p.pptx');
+    expect(result.parts[0]?.html).toBe(
+      `<div class="slide"><p><img src="data:image/png;base64,${PNG_BASE64}" style="width:100.0pt;height:50.0pt"></p>` +
+        '<table style="width:50.0pt"><tr><td><p>a</p></td></tr></table></div>',
+    );
+  });
+
   it('keeps every picture of a slide, in the order they are drawn, and reports nothing skipped', async () => {
     const pic = (embed: string, cx: number, cy: number) =>
       `<p:pic><p:blipFill><a:blip r:embed="${embed}"/></p:blipFill><p:spPr><a:xfrm><a:ext cx="${cx}" cy="${cy}"/></a:xfrm></p:spPr></p:pic>`;
