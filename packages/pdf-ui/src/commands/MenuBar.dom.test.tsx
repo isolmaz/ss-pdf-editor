@@ -372,6 +372,15 @@ describe('MenuBar keys in a menu', () => {
     await userEvent.keyboard('{ArrowDown}');
   }
 
+  it('marks only the keyboard-active entry, so it is drawn highlighted like a hovered one', async () => {
+    await openFile();
+    const marked = () => items().filter((el) => el.hasAttribute('data-active'));
+    expect(marked().map((el) => el.textContent)).toEqual(['Pages']);
+    await userEvent.keyboard('{ArrowDown}');
+    expect(marked().map((el) => el.textContent)).toEqual(['AttachmentsCtrl+A']);
+    expect(marked()[0]?.className).toContain('data-[active]:bg-kumo-tint');
+  });
+
   it('walks the enabled entries with the arrows, skipping a disabled one and wrapping at either end', async () => {
     await openFile();
     expect(activeLabel()).toBe('Pages');
