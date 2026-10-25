@@ -231,6 +231,35 @@ describe('ReadingPane paging', () => {
     expect(given.onPageChange).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['menu', 'menuitem'],
+    ['menubar', 'menuitem'],
+    ['listbox', 'option'],
+    ['tablist', 'tab'],
+    ['dialog', 'button'],
+  ])('leaves the keys of a %s to it: neither paging nor closing', async (role, childRole) => {
+    const { given } = await opened();
+    const widget = document.body.appendChild(document.createElement('div'));
+    widget.setAttribute('role', role);
+    const child = widget.appendChild(document.createElement('div'));
+    child.setAttribute('role', childRole);
+    for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'Escape']) {
+      expect(fireEvent.keyDown(child, { key })).toBe(true);
+    }
+    expect(given.onPageChange).not.toHaveBeenCalled();
+    expect(given.onClose).not.toHaveBeenCalled();
+  });
+
+  it('leaves a key that something nearer already handled', async () => {
+    const { given } = await opened();
+    const owner = document.body.appendChild(document.createElement('div'));
+    owner.addEventListener('keydown', (event) => event.preventDefault());
+    fireEvent.keyDown(owner, { key: 'ArrowDown' });
+    fireEvent.keyDown(owner, { key: 'Escape' });
+    expect(given.onPageChange).not.toHaveBeenCalled();
+    expect(given.onClose).not.toHaveBeenCalled();
+  });
+
   it('pages on a key that was not pressed on an element', async () => {
     const { given } = await opened({ pageNumber: 1 });
     expect(fireEvent.keyDown(window, { key: 'PageDown' })).toBe(false);

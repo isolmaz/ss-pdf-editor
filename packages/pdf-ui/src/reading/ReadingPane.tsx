@@ -59,6 +59,19 @@ function languageName(lang: string, locale: string): string {
 const SKELETON_LINES = ['92%', '78%', '96%', '64%', '88%', '72%'];
 
 /**
+ * Widgets that keep the keys pressed inside them: menus, lists and tabs move within themselves,
+ * and a dialog's Escape closes the dialog, not the reader behind it.
+ */
+const KEY_OWNERS =
+  '[role="menubar"],[role="menu"],[role="listbox"],[role="tree"],[role="grid"],[role="tablist"],[role="combobox"],[role="dialog"],[role="alertdialog"],[data-owns-page-keys]';
+
+/** Whether a key press belongs to something else: already handled, or made inside a widget that owns its keys. */
+function ownedElsewhere(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented) return true;
+  return event.target instanceof Element && event.target.closest(KEY_OWNERS) !== null;
+}
+
+/**
  * Which way a key pages through the document. Arrows are included on purpose: this is a
  * *paged* reader (one page per screen of text), so the column is scrolled with the wheel
  * and the paging keys stay unambiguous. Modifier combinations (browser tab switching)
@@ -146,6 +159,7 @@ function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, lang, onNot
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (ownedElsewhere(event)) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         onClose();
