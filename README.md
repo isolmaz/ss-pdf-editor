@@ -1059,8 +1059,10 @@ pnpm worker:deploy:dry      # same, with --dry-run
   fetches; OCR, cached on first use, is not counted against it. The editor's own scripts
   count (capability `app`): engines without a tool's code are not "ready". A half-downloaded
   pack is reported as `missing`, with the missing paths named.
-- **Release isolation.** The cache name carries a release identity, so a new release never
-  reads an older cache.
+- **Release isolation.** The cache name carries a release identity, so a new release answers
+  from its own cache first. An older cache is kept only while a window may still run that
+  release (a window left on its old code by unsaved work), is read only for a file the new one
+  lacks, and is deleted once that window reloads or closes.
 - **Engine versions.** Every engine is served from a versioned URL, so a rebuilt engine is
   never answered with old cached bytes under the new editor. Readiness compares those URLs, so
   a cached engine of another version counts as `missing`.

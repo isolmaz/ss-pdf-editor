@@ -3512,9 +3512,14 @@ Versioning is the interesting half:
   directories they are given. Fonts keep their paths and are revalidated, not immutable;
   hashed `/editor/assets/*` are immutable (`! Cache-Control` detaches the `/editor/*` rule).
   A `?retry=N` module import (MuPDF's loader) is looked up and stored without the parameter.
-- The name therefore changes when a pinned asset or the code changes. A release never reads the
-  previous release's cache, and activation deletes only caches in **its own** namespace —
-  the origin's storage is shared with other applications.
+- The name therefore changes when a pinned asset or the code changes. A lookup asks this release's
+  cache first and a previous release's only for what this one lacks, and a previous release's
+  cache is deleted — only caches in **its own** namespace; the origin's storage is shared with
+  other applications — once no window inside the scope is left that could still run that
+  release (`pruneStaleCaches`, at activation and at each navigation, the window a navigation
+  replaces not counting). A page held back by unsaved work (§8.5) keeps its old code, and the lazy
+  chunks that code has not loaded yet are no longer on the origin: its cache stays until it
+  reloads or closes.
 - Install fills the new cache without touching the old one, so an interrupted preparation
   leaves the working version exactly as it was. It caches the core shell, the scripts and
   styles `index.html` names, and the interface catalogues: each language is a run-time
