@@ -15,7 +15,7 @@
  */
 
 import { fromBase64, toBase64 } from './base64';
-import { sha256Hex } from './source';
+import { sha256Hex } from './digest';
 
 export interface RevocationList {
   readonly id: string;
