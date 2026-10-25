@@ -194,7 +194,7 @@ The entry chunk is not all of the first paint: the `modulepreload` links the bui
 it (Kumo's shared dialog chunk, the React runtime, the `mupdf-write` vocabulary and the few
 `pdf-core` modules the shell's hooks and the editor chunk share) download with it. The first
 paint is the entry chunk plus every one of those links, gzipped at Node's default level:
-249.9 KiB over ten files, of which the entry chunk is 212.1 KiB (the compiled `App` and status
+246.5 KiB over ten files, of which the entry chunk is 208.5 KiB (the compiled `App` and status
 bar are about 5 KiB of it). The 250 KiB target
 (`BUILD_BUDGETS.firstPaintJsGzipBytes`) is checked on that sum: `pnpm check:budgets`
 (`tools/check-build-budgets.mjs`) reads the built `apps/web/dist/index.html`, prints each file's
