@@ -532,6 +532,16 @@ describe('annotation data with Turkish text and a thread', () => {
     expect(mark?.review).toEqual({ state: 'Accepted', author: 'Mehmet', at: '2026-10-03T08:00:00.000Z' });
   });
 
+  it('reads a JSON file that starts with a UTF-8 byte order mark, as a Windows editor saves it', () => {
+    const json = serializeAnnotationsJson([threaded()], 3);
+    const marked = Uint8Array.from([0xef, 0xbb, 0xbf, ...json]);
+    expect(() => parseAnnotationData(marked)).not.toThrow();
+    const parsed = parseAnnotationData(marked);
+    expect(parsed.marks).toHaveLength(1);
+    expect(parsed.marks[0]?.contents).toBe('Şişli ığüöç (kontrol) \\ İĞÜŞÖÇ');
+    expect(parsed.pageCount).toBe(3);
+  });
+
   it('refuses text that is neither FDF nor JSON, and an FDF that carries no annotation records', () => {
     expect(() => parseAnnotationData(new TextEncoder().encode('hello'))).toThrow(/annotation data file/);
     const form = serializeFdf([{ name: 'customer', value: 'Ada' }]);
