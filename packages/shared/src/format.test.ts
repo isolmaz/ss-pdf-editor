@@ -15,6 +15,20 @@ describe('formatBytes', () => {
     expect(formatBytes(5.25 * 1024 * 1024, 'tr')).toBe('5,3 MB');
     expect(formatBytes(900, 'tr')).toBe('900 B');
   });
+
+  it('moves to megabytes where the kilobytes would round up to 1,024', () => {
+    expect(formatBytes(1024 * 1024 - 1, 'en')).toBe('1.0 MB');
+    expect(formatBytes(1024 * 1024 - 51, 'en')).toBe('1.0 MB');
+    expect(formatBytes(1024 * 1024 - 52, 'en')).toBe('1,023.9 KB');
+    expect(formatBytes(1024 * 1024 - 1, 'tr')).toBe('1,0 MB');
+  });
+
+  it('answers a dash for a size that is not a finite, non-negative number', () => {
+    for (const bytes of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -5]) {
+      expect(formatBytes(bytes, 'en')).toBe('—');
+    }
+    expect(formatBytes(0, 'en')).toBe('0 B');
+  });
 });
 
 describe('formatPercent', () => {
