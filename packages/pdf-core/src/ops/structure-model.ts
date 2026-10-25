@@ -35,7 +35,7 @@
 
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { resolved } from '../engines/mupdf-write';
-import { catalogOf, dictOf, intOf, nameOf, pageNumbers, textOf } from './accessibility';
+import { catalogOf, dictOf, intOf, nameOf, pageNumbers, STRUCT_NODE_LIMIT, textOf } from './accessibility';
 import { resolveRole, STANDARD_ROLES } from './struct-roles';
 
 export { EDITOR_ROLES, resolveRole, STANDARD_ROLES } from './struct-roles';
@@ -104,7 +104,6 @@ export interface StructureModel {
   readonly hasParentTree: boolean;
 }
 
-export const STRUCT_NODE_LIMIT = 30_000;
 const STRUCT_DEPTH_LIMIT = 64;
 
 export const EMPTY_MODEL: StructureModel = {

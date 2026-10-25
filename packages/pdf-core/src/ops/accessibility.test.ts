@@ -2479,3 +2479,70 @@ describe('the figure index: every way a structure tree can own a picture', () =>
     });
   });
 });
+
+describe('the figure index of a tree with many elements or many levels', () => {
+  /**
+   * One page that draws picture `A` in marked content 0, which the only `Figure` owns. The figure
+   * comes after `before` paragraphs and sits `depth` levels down.
+   */
+  function figureAfter(before: number, depth = 0): Uint8Array {
+    return pdfOf(['/Figure <</MCID 0>> BDC /A Do EMC'], {
+      resources: (doc) => {
+        const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceGray, [0, 0, 2, 2], false);
+        pixmap.clear(0);
+        return { XObject: { A: doc.addImage(new mupdf.Image(pixmap)) } };
+      },
+      edit: (doc, pages) => {
+        const element = (extra: Record<string, unknown>) =>
+          doc.addObject({ Type: 'StructElem', ...extra } as never);
+        let figure = element({ S: 'Figure', Pg: pages[0], Alt: doc.newString('Alt A'), K: [0] });
+        for (let level = 0; level < depth; level += 1) figure = element({ S: 'Div', K: [figure] });
+        const kids = doc.newArray();
+        for (let count = 0; count < before; count += 1) kids.push(element({ S: 'P' }));
+        kids.push(figure);
+        const root = doc.addObject({ Type: 'StructTreeRoot', K: kids } as never);
+        catalogOf(doc).put('StructTreeRoot', root);
+      },
+    });
+  }
+
+  const figureAlt = (bytes: Uint8Array) =>
+    withPages(bytes, (doc) => {
+      const kids = catalogOf(doc).get('StructTreeRoot').get('K');
+      return kids.get(kids.length - 1).get('Alt');
+    });
+
+  it('finds the figure of a picture past the 4,000th element, as the PDF/UA check does', async () => {
+    const bytes = figureAfter(4100);
+    const report = await checkAccessibility(bytes, run);
+    expect(report.images).toMatchObject([{ name: 'A', alt: 'Alt A' }]);
+    expect(findingsOf(report, 'image-alt')).toMatchObject([{ state: 'ok' }]);
+
+    const edited = await setImageAlt(
+      bytes,
+      [{ kind: 'image', pageIndex: 0, name: 'A', alt: 'New alt' }],
+      run,
+    );
+    expect(figureAlt(edited.bytes).asString()).toBe('New alt');
+    withPages(edited.bytes, (_doc, pages) => {
+      expect(pages[0]?.get('Resources').get('XObject').get('A').get('Alt').isNull()).toBe(true);
+    });
+  });
+
+  it.each([
+    ['more elements than the model reads', 30_000, 0],
+    ['more levels than the model descends', 0, 70],
+  ])(
+    'does not call a picture unowned in a tree with %s, and refuses to write its alt text',
+    async (_name, before, depth) => {
+      const bytes = figureAfter(before, depth);
+      const report = await checkAccessibility(bytes, run);
+      expect(report.images).toMatchObject([{ name: 'A', alt: null }]);
+      expect(findingsOf(report, 'image-alt')).toMatchObject([{ state: 'unchecked' }]);
+
+      await expect(
+        setImageAlt(bytes, [{ kind: 'image', pageIndex: 0, name: 'A', alt: 'New alt' }], run),
+      ).rejects.toMatchObject({ code: 'unsupported' });
+    },
+  );
+});

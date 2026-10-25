@@ -1610,7 +1610,10 @@ deliberately not a score:
   file (the check reads it from there too) and on the image XObject when no figure owns it,
   and `/TU` on the form field itself — the parent of a radio group's widgets, not one of
   them; an empty alt text is refused, because decorative content would belong in an
-  `/Artifact`, which the tags editor below writes.
+  `/Artifact`, which the tags editor below writes. The figure walk reads `STRUCT_NODE_LIMIT`
+  elements and 64 levels, the bound of the structure model; in a tree it could not read to the
+  end, a picture with no figure found is reported `unchecked` instead of missing, and its alt
+  text is refused instead of written on the XObject.
 
 `tagDocument()` places each block's shows into marked-content sequences that stay inside
 one text object, one `q` level and the marked-content sequences the page already has

@@ -139,6 +139,7 @@ export const A11Y_KEYS = {
   checkStructTree: dictKey('op.a11y.check.structTree'),
   checkStructTreeOk: dictKey('op.a11y.check.structTreeOk'),
   checkStructTruncated: dictKey('op.a11y.check.structTruncated'),
+  checkFigureTreeTruncated: dictKey('op.a11y.check.figureTreeTruncated'),
   checkMarkInfo: dictKey('op.a11y.check.markInfo'),
   checkMarkInfoOk: dictKey('op.a11y.check.markInfoOk'),
   checkLang: dictKey('op.a11y.check.lang'),
@@ -392,6 +393,8 @@ const MAX_HEADING_LEVELS = 6;
 export const FORM_DEPTH_LIMIT = 3;
 /** Elements the structure-tree walk visits before it stops and says so. */
 const STRUCT_WALK_LIMIT = 4000;
+/** Elements the structure model, and the walk that finds the figure of a picture, read before they stop. */
+export const STRUCT_NODE_LIMIT = 30_000;
 /** AcroForm fields the walk visits (a `/Kids` cycle cannot run forever). */
 export const FIELD_WALK_LIMIT = 3000;
 /** Distinct image XObjects the check lists. */
@@ -1676,6 +1679,7 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
 
   const listed: AccessibilityImage[] = [];
   let missingAlt = 0;
+  let unjudged = 0;
   for (const [ref, image] of images) {
     const figures = figureIndex === null ? [] : figuresOf(figureIndex, pageFigures, Number.parseInt(ref, 10));
     const alt = altOf(figures, image.dict);
@@ -1688,7 +1692,10 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
       width: intOf(image.dict, 'Width'),
       height: intOf(image.dict, 'Height'),
     });
-    if (alt === null) {
+    // A picture whose figure the walk may not have reached is not called unowned.
+    if (alt === null && figures.length === 0 && figureIndex?.truncated === true) {
+      unjudged += 1;
+    } else if (alt === null) {
       missingAlt += 1;
       if (missingAlt <= FINDING_ROW_LIMIT) {
         findings.push(
@@ -1708,7 +1715,10 @@ function inspect(doc: PDFDocument, context: OperationContext): AccessibilityRepo
       }),
     );
   }
-  if (listed.length > 0 && missingAlt === 0) {
+  if (unjudged > 0) {
+    findings.push(finding('image-alt', 'unchecked', A11Y_KEYS.checkFigureTreeTruncated));
+  }
+  if (listed.length > 0 && missingAlt === 0 && unjudged === 0) {
     findings.push(
       finding('image-alt', 'ok', A11Y_KEYS.checkImageAltOk, { params: { count: listed.length } }),
     );
@@ -1891,6 +1901,8 @@ interface FigureIndex {
   readonly byContent: ReadonlyMap<string, FigureElement>;
   /** Object number of an annotation or XObject → the figures that point at it with an `OBJR`. */
   readonly byObject: ReadonlyMap<number, readonly FigureElement[]>;
+  /** The tree has more elements or levels than the walk reads: a figure may be missing from the index. */
+  readonly truncated: boolean;
 }
 
 /**
@@ -1901,7 +1913,8 @@ interface FigureIndex {
  * (ISO 14289-1 §7.3): an `/Alt` on the image XObject is a key no reader looks at. A figure
  * owns its content through marked-content ids (`/K` integers and `MCR`s, found on the page
  * by the id of the sequence around the `Do`) or through an `OBJR` to the XObject itself.
- * `/RoleMap` is followed, so a custom type mapped onto `Figure` is one.
+ * `/RoleMap` is followed, so a custom type mapped onto `Figure` is one. A tree the walk could not
+ * read to the end says so (`truncated`): a picture with no figure in the index may have one.
  */
 function readFigureIndex(catalog: PDFObject, pageRefs: ReadonlyMap<number, number>): FigureIndex | null {
   const root = dictOf(catalog.get('StructTreeRoot'));
@@ -1919,10 +1932,14 @@ function readFigureIndex(catalog: PDFObject, pageRefs: ReadonlyMap<number, numbe
     value.isIndirect() ? (pageRefs.get(value.asIndirect()) ?? null) : null;
   const byContent = new Map<string, FigureElement>();
   const byObject = new Map<number, FigureElement[]>();
-  const budget = { left: STRUCT_WALK_LIMIT };
+  const budget = { left: STRUCT_NODE_LIMIT };
+  let truncated = false;
 
   const visit = (element: PDFObject, inherited: number | null, depth: number): void => {
-    if (depth > 64) return;
+    if (depth > 64) {
+      truncated = true;
+      return;
+    }
     const page = pageOf(element.get('Pg')) ?? inherited;
     const figure: FigureElement | null = isFigure(nameOf(element.get('S')))
       ? { dict: element, alt: textOf(element.get('Alt')) }
@@ -1934,7 +1951,10 @@ function readFigureIndex(catalog: PDFObject, pageRefs: ReadonlyMap<number, numbe
       for (let index = 0; index < kids.length; index += 1) entries.push(kids.get(index));
     } else entries.push(element.get('K'));
     for (const entry of entries) {
-      if (budget.left <= 0) return;
+      if (budget.left <= 0) {
+        truncated = true;
+        return;
+      }
       if (entry.isNumber()) {
         if (figure !== null && page !== null) byContent.set(`${page}:${entry.asNumber()}`, figure);
         continue;
@@ -1961,7 +1981,7 @@ function readFigureIndex(catalog: PDFObject, pageRefs: ReadonlyMap<number, numbe
     }
   };
   visit(root, null, 0);
-  return { byContent, byObject };
+  return { byContent, byObject, truncated };
 }
 
 /**
@@ -2993,6 +3013,13 @@ export async function setImageAlt(
         figureIndex === null || pageFigures === null
           ? []
           : figuresOf(figureIndex, pageFigures, target.number);
+      if (figures.length === 0 && figureIndex?.truncated === true) {
+        throw new ToolError('unsupported', {
+          engine: 'mupdf',
+          path: 'edits',
+          engineMessage: 'the structure tree is too large to find the figure that owns the image',
+        });
+      }
       if (figures.length === 0) target.dict.put('Alt', text(doc, edit.alt));
       for (const figure of figures) figure.dict.put('Alt', text(doc, edit.alt));
       applied.push({ pageIndex: edit.pageIndex, name: edit.name, alt: edit.alt, number: target.number });
