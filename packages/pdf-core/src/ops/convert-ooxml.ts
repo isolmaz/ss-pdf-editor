@@ -412,9 +412,10 @@ const DAY_MILLIS = 86_400_000;
  * serial 60 is that day, and 61 is 1900-03-01. So from 1900-03-01 on, serial 0 is 1899-12-30;
  * but serials 1–59 sit before the phantom day and count from 1899-12-31. Serial 60 is written
  * as `1900-02-29`, the date Excel shows for it, though no calendar has it. A serial below 1 is
- * a time with no date; it keeps the 1899-12-30 base, as does anything below zero.
+ * a time with no date; it keeps the 1899-12-30 base, as does anything below zero. A serial that
+ * is not a number or lands outside years 0–9999 (Excel's last day is 9999-12-31) is no date: `null`.
  */
-function serialDate(serial: number, date1904: boolean): string {
+function serialDate(serial: number, date1904: boolean): string | null {
   const millis = Math.round(serial * DAY_MILLIS);
   const beforePhantomDay = !date1904 && millis >= DAY_MILLIS && millis < 60 * DAY_MILLIS;
   const phantomDay = !date1904 && millis >= 60 * DAY_MILLIS && millis < 61 * DAY_MILLIS;
@@ -423,7 +424,10 @@ function serialDate(serial: number, date1904: boolean): string {
     : beforePhantomDay
       ? Date.UTC(1899, 11, 31)
       : Date.UTC(1899, 11, 30);
-  const iso = new Date(epoch + millis).toISOString();
+  const moment = new Date(epoch + millis);
+  const year = moment.getUTCFullYear();
+  if (!(year >= 0 && year <= 9999)) return null;
+  const iso = moment.toISOString();
   const date = phantomDay ? '1900-02-29' : iso.slice(0, 10);
   return millis % DAY_MILLIS === 0 ? date : `${date} ${iso.slice(11, 19)}`;
 }
@@ -495,10 +499,17 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
     const grid = new Map<number, Map<number, string>>();
     let maxRow = -1;
     let maxColumn = -1;
+    // `r` is optional on a row and on a cell: each follows the one before it.
+    let rowIndex = -1;
     for (const row of descendants(document, 'row')) {
+      const rowNumber = Number(attribute(row, 'r'));
+      rowIndex = Number.isInteger(rowNumber) && rowNumber >= 1 ? rowNumber - 1 : rowIndex + 1;
+      let columnIndex = -1;
       for (const cell of children(row, 'c')) {
-        const at = cellIndex(attribute(cell, 'r') ?? '');
+        const reference = attribute(cell, 'r');
+        const at = reference === null ? { column: columnIndex + 1, row: rowIndex } : cellIndex(reference);
         if (at === null) continue;
+        columnIndex = at.column;
         if (at.row >= MAX_SHEET_ROWS || at.column >= MAX_SHEET_COLUMNS) {
           truncated += 1;
           continue;
@@ -510,7 +521,7 @@ export async function xlsxToHtml(bytes: Uint8Array, path: string): Promise<Ooxml
         else if (type === 'inlineStr') value = sharedString(child(cell, 'is') ?? cell);
         else if (type === 'b') value = raw === '1' ? 'TRUE' : 'FALSE';
         else if (type === 'n' && raw !== '' && dateStyles[Number(attribute(cell, 's') ?? 0)] === true) {
-          value = serialDate(Number(raw), date1904);
+          value = serialDate(Number(raw), date1904) ?? raw;
         } else value = raw;
         if (value === '') continue;
         let line = grid.get(at.row);
