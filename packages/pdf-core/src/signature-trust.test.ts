@@ -382,6 +382,14 @@ describe('certificate path validation', () => {
       expect(await verdictFor(extra), label).toMatchObject({ verdict: 'trusted', reason: null });
     }
 
+    // A signer that is itself the imported root has no chain, and is held to the same rule.
+    const ca = await makeCa('Signing CA');
+    expect(await checkTrust({ signer: ca.der, roots: [ca.der], now: NOW })).toMatchObject({
+      verdict: 'untrusted',
+      reason: 'signer-usage',
+      path: ['Signing CA'],
+    });
+
     // A caller that judges the purposes itself (a time-stamping check) is not held to the signing list.
     const stamping = await makeLeaf('Stamping Leaf', root, {
       extraExtensions: [purposes(['1.3.6.1.5.5.7.3.8'], true)],
@@ -519,7 +527,13 @@ describe('certificate path validation', () => {
     });
 
     // The user imported the signer's own certificate: that *is* the trust statement.
-    expect(await checkTrust({ signer: root.der, roots: [root.der], now: NOW })).toMatchObject({
+    const own = await issueCertificate({
+      subject: 'Own Signer',
+      keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+      ...VALID,
+      keyUsage: ['digitalSignature'],
+    });
+    expect(await checkTrust({ signer: own.der, roots: [own.der], now: NOW })).toMatchObject({
       verdict: 'trusted',
     });
 

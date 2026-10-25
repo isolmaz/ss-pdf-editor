@@ -1059,10 +1059,13 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
   const roots = parse(input.roots ?? []);
   const pool = [...parse(input.chain ?? []), ...roots];
 
-  // An imported root that *is* the signer: trusted, with nothing to verify.
+  // An imported root that *is* the signer: no chain to verify, but it still has to allow signing.
   for (const root of roots) {
     if (sameBytes(root.tbsView, signer.tbsView)) {
-      return { verdict: 'trusted', path: [name], validity, notBefore, notAfter, reason: null };
+      const allowed = allowsSigning(signer, (input.leafCriticalExtensions ?? []).includes(OID_EXT_KEY_USAGE));
+      return allowed
+        ? { verdict: 'trusted', path: [name], validity, notBefore, notAfter, reason: null }
+        : { verdict: 'untrusted', path: [name], validity, notBefore, notAfter, reason: 'signer-usage' };
     }
   }
   if (roots.length === 0) {
