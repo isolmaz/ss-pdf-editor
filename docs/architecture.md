@@ -94,8 +94,8 @@ are; the header, the shell body, the home screen, the banners, the dialog hosts 
 `features/` hooks and stores are not (the rule and its exclusions are in `vite.config.ts`).
 Over the nine profiled sessions (cold load, open a 12-page PDF, scroll, zoom, tool switches,
 search, highlight, command palette, ten idle seconds) this scope renders 4,604 components
-against 9,606 uncompiled and 3,530 with the whole first paint compiled; the whole-first-paint
-build is 262.8 KiB gzip, 12.8 KiB over the budget.
+against 9,606 uncompiled and 3,530 with the whole first paint compiled; compiling the whole
+first paint puts the first paint over the budget, which is why that scope is not used.
 
 One rule follows from compiling: a component keeps its output while its inputs are the same,
 so it must not read mutable imperative state while rendering unless a React input says when
@@ -193,7 +193,7 @@ The entry chunk is not all of the first paint: the `modulepreload` links the bui
 it (Kumo's shared dialog chunk, the React runtime, the `mupdf-write` vocabulary and the few
 `pdf-core` modules the shell's hooks and the editor chunk share) download with it. The first
 paint is the entry chunk plus every one of those links, gzipped at Node's default level:
-245.5 KiB over nine files, of which the entry chunk is 198.7 KiB (the compiled `App` and status
+249.9 KiB over ten files, of which the entry chunk is 212.1 KiB (the compiled `App` and status
 bar are about 5 KiB of it). The 250 KiB target
 (`BUILD_BUDGETS.firstPaintJsGzipBytes`) is checked on that sum: `pnpm check:budgets`
 (`tools/check-build-budgets.mjs`) reads the built `apps/web/dist/index.html`, prints each file's

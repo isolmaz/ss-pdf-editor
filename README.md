@@ -41,15 +41,15 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | | |
 | --- | --- |
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
-| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
+| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · typed text · links · pictures and signatures · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · detect fields on a flat form · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
-| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder (page grid) · rotate · extract · split · replace · merge (several files, in any order, or the front and back sides of a double-sided scan alternating) · reverse order · remove blank pages · split two-up scans · page boxes and auto-crop · straighten tilted scans · labels |
+| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder (page grid) · rotate · extract · split · replace · merge (several files, in any order, or the front and back sides of a double-sided scan alternating) · add a document · reverse order · remove blank pages · split two-up scans · page boxes and auto-crop · straighten tilted scans · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
-| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · repair of damaged PDFs · PDF/A conversion and check |
+| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · replace, recompress, rotate, crop or fade an embedded image · repair of damaged PDFs · PDF/A conversion and check |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
-| ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes (chosen in Settings) · offline |
+| ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · rename the document · simple and advanced modes (chosen in Settings) · offline |
 
 ## Quick start
 
@@ -82,6 +82,15 @@ pnpm dev                    # http://localhost:5173
 
 Every capability below is implemented in this repository. You can reach each one from the
 UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home screen.
+
+The editor starts in **Simple mode**, which keeps the features people reach for most:
+opening, merging, converting and saving, organising pages, markup, text editing, forms,
+signing and PDF to Word or Excel. The menu bar, the palette, the tool rail and the docks
+leave out the rest (redaction, encryption, OCR, measurement, comparison, watermarks, Bates
+numbering, compression, layers and attachments among them). **Settings → Interface →
+Advanced mode** shows everything, and so does the **Advanced mode** button the palette
+offers when a search has matches hidden by Simple mode. The home screen's **All tools**
+lists every tool in either mode. The choice is kept on the device.
 
 ### Reading and navigation
 
@@ -123,6 +132,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   reopens a document by its identity, never by its file name. In Chromium-based browsers it
   reopens the file itself (the browser asks for permission again, and once more for write
   access the first time you save over it); elsewhere it asks you to choose the file.
+- **Rename.** **Edit → Rename** edits the open document's name, shown in the header and on
+  its tab.
 - **The document never moves under you.** Marks, selections, measurements and staged
   redactions scroll and zoom with their page. Tools, progress and notices never shift
   the page.
@@ -146,11 +157,18 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   field, a menu, a list and a dialog, and only on an open document (the tools that write also
   need it to be editable). Each tool's letter is in its rail tooltip and in the shortcut list.
   `F4` toggles the page panel and `Shift+F4` the tools dock; `F5` is the browser's reload.
+- **Other shortcuts.** `Ctrl+O` opens, `Ctrl+S` saves, `Ctrl+Shift+S` exports a copy and
+  `Ctrl+P` prints; these four and `Ctrl+K` also work while a field has the focus. `Ctrl+Z`
+  undoes, `Ctrl+Shift+Z` or `Ctrl+Y` redoes. `Ctrl+0` fits the page to the width and `Ctrl+1`
+  shows it at actual size (100 %). `F9` toggles reading mode, `Ctrl+Shift+D` opens the document
+  properties. In reading mode `→`, `↓` and `PageDown` turn to the next page, `←`, `↑` and
+  `PageUp` to the previous one, and `Esc` leaves it.
 
 ### Annotating, forms, measuring
 
-- **Markup.** Highlight (selected text or freehand), ink, notes, stamps, underline,
-  strike-out, squiggly and geometric shapes are all available.
+- **Markup.** Highlight (selected text or freehand), ink, notes, underline, strike-out,
+  squiggly and geometric shapes are all available. Pictures and signatures are placed as
+  stamp annotations (see *Simple signatures and images* below); there are no preset stamps.
 - **Add text.** Click and type. The text is written as a `/FreeText` annotation with
   embedded Noto Sans, so Turkish letters survive in every reader. It stays upright on
   rotated pages.
@@ -270,6 +288,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     orientation.
   - Merging several files builds a new document in the order you set; its metadata comes
     from the first file, and the report says so.
+  - **File → Add document** appends another PDF to the open one, or inserts it at the start
+    or after the current page; the result replaces the open document, which keeps its own
+    metadata.
   - Outlines, form fields and page labels travel with the pages.
   - *Reverse page order* flips the whole document, or the selected pages among the places they
     hold when two or more are selected. It is one journaled step, undone like any page action.
@@ -504,6 +525,11 @@ nothing leaving the browser.
     re-encoded.
   - **Remember on this device** is off by default. When ticked, the picture stays in this
     browser's local storage only, and every saved entry can be deleted from the dialog.
+- **Replace image.** **Tools → Replace image** edits an image the document already contains:
+  it swaps in a new PNG or JPEG, recompresses it as JPEG, rotates it by 90, 180 or 270
+  degrees, crops it by percent or changes its opacity. Placement stays as it was, because the
+  image object is edited in place; an image that several pages share changes wherever it is
+  drawn.
 - **Signing.** PAdES B-B from a PKCS#12 identity, with a visible stamp.
   - Signing a file that already carries a signature appends the new one as a revision, so
     the earlier signatures keep validating. Only a file the engine cannot append to (one it
@@ -545,7 +571,11 @@ nothing leaving the browser.
     Polish, Czech, Hungarian, Romanian, Swedish, Azerbaijani, Kurdish (Kurmanji), Russian,
     Ukrainian, Bulgarian, Greek, Arabic, Persian, Hebrew, Hindi, Chinese (simplified and
     traditional), Japanese and Korean.
-  - The OCR engine and every language pack are served by this site. Turkish and English are
+  - **Quality.** The dialog offers *Fast* (the default) and *High quality*, and Turkish is
+    ticked. Fast reads with the `fast` models, which only Turkish and English have; High quality
+    reads with the integer `best` models. A run that ticks any other language uses High quality
+    whatever is chosen. The scanned pages of the exact Word layout are always read at High quality.
+  - The OCR engine and every language pack are served by this origin. Turkish and English are
     the two packs listed in the offline manifest, but Settings → Offline use does not fetch
     them (see [Offline use](#offline-use)). The engine and each pack are downloaded the first
     time you run OCR with them; after that they work offline too. If the engine or a language
@@ -725,10 +755,9 @@ The limits are defined once, in
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
   newest versions are always kept, and an evicted step is shown as **unavailable**.
 - **Build budgets.** `BUILD_BUDGETS` in `packages/shared/src/limits.ts` holds them: at most
-  250 KiB gzip of first-paint JavaScript, 60 KiB for the landing page (now built in the
-  ss-pdf-editor-site repository) and 25 MiB per asset.
+  250 KiB gzip of first-paint JavaScript and 25 MiB per asset.
   `pnpm check:budgets` (a step of `pnpm ci:verify`, after `pnpm build`) enforces the first; the
-  other two are measured by hand. How the first-paint budget is met: `docs/architecture.md` §2.
+  second is measured by hand. How the first-paint budget is met: `docs/architecture.md` §2.
 
 ## Honest limits
 
@@ -906,7 +935,7 @@ The limits are defined once, in
 | `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
 | `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist |
-| `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
+| `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of `packages/pdf-model`, `packages/shared`, `packages/pdf-text-engine` and `apps/web/src/drafts.ts` (the DOM lib is on, so it does not prove they are DOM-free) |
 | `pnpm ci:behavior` | The behaviour checks in `tools/behavior/` against the assembled `dist/`: the editor flow (`editor-flow-check.mjs`), the text-edit round trip (`text-edit-check.mjs`), then the signing check (`sign-check.mts`, needs `openssl`) |
 | `pnpm ci:verify` / `ci:full` | The full local gate / the same plus `ci:behavior` |
 | `pnpm worker:deploy[:dry]` | `assemble:dist`, then `wrangler deploy` |
@@ -926,7 +955,7 @@ packages/
   pdf-text-engine/  text model, editability, reflow, fonts
   pdf-ui/           React surfaces: viewer, panels, dialogs, tools, printing
 public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English),
-                    manifest
+                    manifest, favicon.svg, theme-boot.js
 tools/              dist assembly and preview, engine pins, licence audit, regression and docs
                     checks (audit/), coverage report, deploy smoke check,
                     revert-proof, git hook guard (hooks/), Vite hosting plugins (vite/),
@@ -998,7 +1027,7 @@ The PDF → Word export is not measured round trip in CI; its unit tests and the
 | Source | Lands at |
 |---|---|
 | `apps/web/dist` | `dist/editor/` |
-| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `en/404.html`, manifest, `engines/**`, `fonts/**`) |
+| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `en/404.html`, manifest, `favicon.svg`, `theme-boot.js`, `engines/**`, `fonts/**`) |
 
 The landing and legal pages of the same host (`/`, `/en/`, `/gizlilik`, `/kosullar`,
 `/en/privacy`, `/en/terms`) are not in this repository: they are the private
@@ -1101,8 +1130,8 @@ The fonts the app ships are fetched by `pnpm fetch:engines` from pinned npm pack
 the same origin and pinned by size and SHA-256 in `tools/asset-pins.json`. All are SIL Open Font
 License 1.1 (the licence texts are copied to `dist/licenses/`):
 
-- **Document text.** Noto Sans is embedded by stamps, headers and the OCR text layer. A scan exported
+- **Document text.** Noto Sans is embedded by watermarks, Bates numbers, headers and the OCR text layer. A scan exported
   to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
-  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic.
+  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten families, Noto Sans included, are static TrueType in regular, italic, bold and bold italic.
   Each covers the Turkish letters. Lato is not offered: its faces lack Ğ/ğ, İ and Ş/ş.
 - **Interface and signatures:** Space Grotesk, DM Sans, Dancing Script and Great Vibes.

@@ -1,6 +1,5 @@
 # Normalize line endings for a Windows/macOS/Linux-friendly repo
 * text=auto eol=lf
 
-# The binaries the repository commits (README clips, the site footer image)
+# The binaries the repository commits (the README clips)
 *.webp binary
-*.jpg binary

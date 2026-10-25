@@ -100,10 +100,6 @@ describe('checkDocumentLimits', () => {
     expect(checkDocumentLimits('mobile', 400, 300 * MIB + 1)).toEqual({ kind: 'blocked', reason: 'bytes' });
     expect(checkDocumentLimits('desktop', 2001, 300 * MIB + 1)).toEqual({ kind: 'blocked', reason: 'pages' });
   });
-
-  it('keeps the landing-page budget as well', () => {
-    expect(BUILD_BUDGETS.firstPaintLandingBytes).toBe(60 * 1024);
-  });
 });
 
 describe('detectDeviceTier', () => {

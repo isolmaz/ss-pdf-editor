@@ -25,7 +25,7 @@ describe('ToolError contract', () => {
   });
 
   it('keeps the engine text for diagnostics without using it as the user message', () => {
-    const error = new ToolError('unsupported', { engine: 'qpdf', engineMessage: 'Unable to process' });
+    const error = new ToolError('unsupported', { engine: 'mupdf', engineMessage: 'Unable to process' });
     expect(error.message).toContain('Unable to process');
     expect(error.code).toBe('unsupported');
     expect(tr[error.messageKey as keyof typeof tr]).not.toContain('Unable to process');
@@ -116,9 +116,9 @@ describe('ToolError contract', () => {
 
   it('keeps the original failure as the cause, and the engine text of whatever was thrown', () => {
     const original = new Error('kaboom');
-    const wrapped = toToolError(original, 'qpdf');
+    const wrapped = toToolError(original, 'mupdf');
     expect(wrapped.cause).toBe(original);
-    expect(wrapped.message).toBe('[internal] qpdf: kaboom');
+    expect(wrapped.message).toBe('[internal] mupdf: kaboom');
 
     const thrownString = toToolError('plain text', 'fs');
     expect(thrownString.code).toBe('internal');
