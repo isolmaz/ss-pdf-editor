@@ -452,9 +452,9 @@ function flag(value: FieldValue | undefined): boolean {
   return value === true;
 }
 
-function number(value: FieldValue | undefined, fallback: number): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+/** A number field's value: a rule set is built from the form only once every shown number reads (`fieldErrors`). */
+function number(value: FieldValue | undefined): number {
+  return value as number;
 }
 
 /**
@@ -474,8 +474,8 @@ function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['par
         ? {
             mode: 'raster',
             pages: pageSelection(values.pages),
-            dpi: number(values.dpi, 150),
-            quality: number(values.quality, 0.7),
+            dpi: number(values.dpi),
+            quality: number(values.quality),
             greyscale: flag(values.greyscale),
           }
         : { mode: 'structure', stripMetadata: flag(values.stripMetadata), keepProducer: true };
@@ -485,26 +485,26 @@ function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['par
         // A checkbox list always holds an array (the table seeds it with one).
         languages: values.languages as readonly 'tur'[],
         quality: values.quality === 'best' ? 'best' : 'fast',
-        dpi: number(values.dpi, 200),
+        dpi: number(values.dpi),
         existingText: values.existingText === 'overwrite' ? 'overwrite' : 'skip',
       };
     case 'page-labels':
       return {
         ranges: [
           {
-            startPage: Math.max(0, number(values.startAt, 1) - 1),
+            startPage: Math.max(0, number(values.startAt) - 1),
             style: text(values.style) as 'decimal',
             prefix: text(values.prefix),
-            start: number(values.start, 1),
+            start: number(values.start),
           },
         ],
       };
     case 'stamp': {
       const pages = pageSelection(values.pages);
       const anchor = text(values.anchor) as 'bottom-center';
-      const fontSize = number(values.fontSize, 10);
-      const marginMm = number(values.marginMm, 12);
-      const startAt = number(values.startAt, 1);
+      const fontSize = number(values.fontSize);
+      const marginMm = number(values.marginMm);
+      const startAt = number(values.startAt);
       return values.mode === 'bates'
         ? {
             kind: 'bates',
@@ -512,7 +512,7 @@ function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['par
             anchor,
             prefix: text(values.prefix),
             startAt,
-            digits: number(values.digits, 6),
+            digits: number(values.digits),
             fontSize,
             marginMm,
           }
@@ -720,7 +720,8 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
 
   const running = status === 'running';
   const chosen = OFFERED_STEPS.filter((kind) => enabled[kind] === true);
-  // A loaded rule set runs as it is; the form's own fields only matter when the form is the source.
+  // A loaded rule set runs as it is (its numbers are the operations' to check); the form's own
+  // fields only matter when the form is the source, for Run and for Save ruleset alike.
   const fieldsRead = loaded !== null || chosen.every((kind) => stepReads(kind, values[kind], t));
   const usable = chosen.length > 0 && fieldsRead && (loaded !== null || files.length > 0);
 
@@ -982,7 +983,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
               </p>
             )}
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" disabled={running} onClick={saveTemplate}>
+              <Button variant="outline" disabled={running || !fieldsRead} onClick={saveTemplate}>
                 {t('batch.template.save')}
               </Button>
               <Button variant="outline" disabled={running} onClick={() => templateInput.current?.click()}>

@@ -699,10 +699,13 @@ nothing leaving the browser.
   report of what finished. The steps are extract pages, compress, OCR, page labels, header/footer and page
   numbering, document properties, text export and security (password and permissions).
   - A step's page range is checked as it is typed, with the same rules as every other range
-    field (pages 1–2000, no page twice, no backwards range); *Run* waits until it reads.
+    field (pages 1–2000, no page twice, no backwards range), and so is every number (a whole
+    number where one is counted, such as a Bates start); *Run* and *Save ruleset* wait until
+    every field reads.
   - A set of steps can be saved as a JSON ruleset and loaded again. A loaded ruleset runs as
     it is, with the dialog's own steps disabled, until you choose *Discard loaded ruleset*;
-    choosing files afterwards does not discard it.
+    choosing files afterwards does not discard it. Its values are checked by each step as it
+    runs: a fractional Bates or page-number start fails that file, it is never stamped.
   - Where the browser offers a directory picker (Chromium), *Watch Folder* queues the PDFs
     of a folder and queues them again when the folder changes.
 

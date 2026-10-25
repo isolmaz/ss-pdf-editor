@@ -250,6 +250,16 @@ function requireRange(value: number, min: number, max: number, field: string): n
   return value;
 }
 
+/** A whole number from 1, refused like a value out of range otherwise. */
+function requireWhole(value: number, field: string): void {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new ToolError('value-out-of-range', {
+      engine: 'model',
+      engineMessage: `${field} must be a whole number from 1`,
+    });
+  }
+}
+
 /** `{page}`, `{total}`, `{date}`, `{file}`; an unknown token stays visible, never dropped. */
 function resolveTemplate(
   template: string,
@@ -565,6 +575,9 @@ async function stampOpened(
   if ('fontSize' in options) requireRange(options.fontSize, 4, 200, 'fontSize');
   if (options.kind !== 'watermark') requireRange(options.marginMm, 0, 100, 'marginMm');
   else requireRange(options.opacity, 0, 1, 'opacity');
+  // A page or Bates number is counted, so `1.5` would be stamped as `0001.5`.
+  if ('startAt' in options) requireWhole(options.startAt, 'startAt');
+  if (options.kind === 'bates') requireWhole(options.digits, 'digits');
 
   // The picture watermark is the only stamp without text: everything else needs the face.
   let drawing: Drawing;
@@ -600,7 +613,7 @@ async function stampOpened(
 
     let text = '';
     if (options.kind === 'bates') {
-      text = batesText(options.prefix, options.startAt + index, Math.max(1, Math.floor(options.digits)));
+      text = batesText(options.prefix, options.startAt + index, options.digits);
     } else if (options.kind === 'header-footer') {
       const template =
         options.firstPageTemplate !== undefined && pageIndex === 0

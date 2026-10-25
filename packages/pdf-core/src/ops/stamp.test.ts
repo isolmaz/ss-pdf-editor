@@ -657,6 +657,16 @@ describe('stampDocument refusals', () => {
   });
 
   it('refuses numbers outside their range with value-out-of-range, naming the field', async () => {
+    const bates = {
+      kind: 'bates',
+      pages: [0],
+      anchor: 'top-right',
+      prefix: 'DAVA-',
+      startAt: 1,
+      digits: 4,
+      fontSize: 9,
+      marginMm: 8,
+    } as const;
     const cases: [StampOptions, string][] = [
       [footer({ fontSize: 2 }), 'fontSize must be between 4 and 200'],
       [footer({ marginMm: 101 }), 'marginMm must be between 0 and 100'],
@@ -664,6 +674,10 @@ describe('stampDocument refusals', () => {
       [textWatermark({ scale: 9 }), 'scale must be between 0.05 and 5'],
       [textWatermark({ tile: true, tileSpacing: 2 }), 'tileSpacing must be between 5 and 500'],
       [footer({ fontSize: Number.NaN }), 'fontSize must be between 4 and 200'],
+      [footer({ startAt: 1.5 }), 'startAt must be a whole number from 1'],
+      [footer({ startAt: 0 }), 'startAt must be a whole number from 1'],
+      [{ ...bates, startAt: 2.5 }, 'startAt must be a whole number from 1'],
+      [{ ...bates, digits: 3.5 }, 'digits must be a whole number from 1'],
     ];
     for (const [options, message] of cases) {
       await expect(stampDocument(await twoPages(), options, run)).rejects.toMatchObject({
