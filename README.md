@@ -545,7 +545,7 @@ nothing leaving the browser.
     Polish, Czech, Hungarian, Romanian, Swedish, Azerbaijani, Kurdish (Kurmanji), Russian,
     Ukrainian, Bulgarian, Greek, Arabic, Persian, Hebrew, Hindi, Chinese (simplified and
     traditional), Japanese and Korean.
-  - The OCR engine and every language pack are served by this site. Turkish and English are
+  - The OCR engine and every language pack are served by this origin. Turkish and English are
     the two packs listed in the offline manifest, but Settings → Offline use does not fetch
     them (see [Offline use](#offline-use)). The engine and each pack are downloaded the first
     time you run OCR with them; after that they work offline too. If the engine or a language
@@ -925,7 +925,7 @@ packages/
   pdf-text-engine/  text model, editability, reflow, fonts
   pdf-ui/           React surfaces: viewer, panels, dialogs, tools, printing
 public/             _headers, sw.js, 404.html (Turkish) and en/404.html (English),
-                    manifest
+                    manifest, favicon.svg, theme-boot.js
 tools/              dist assembly and preview, engine pins, licence audit, regression and docs
                     checks (audit/), coverage report, deploy smoke check,
                     revert-proof, git hook guard (hooks/), Vite hosting plugins (vite/),
@@ -997,7 +997,7 @@ The PDF → Word export is not measured round trip in CI; its unit tests and the
 | Source | Lands at |
 |---|---|
 | `apps/web/dist` | `dist/editor/` |
-| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `en/404.html`, manifest, `engines/**`, `fonts/**`) |
+| `public/` | `dist/` root (`_headers`, `sw.js`, `404.html`, `en/404.html`, manifest, `favicon.svg`, `theme-boot.js`, `engines/**`, `fonts/**`) |
 
 The landing and legal pages of the same host (`/`, `/en/`, `/gizlilik`, `/kosullar`,
 `/en/privacy`, `/en/terms`) are not in this repository: they are the private

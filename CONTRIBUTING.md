@@ -136,8 +136,9 @@ jobs and `deploy` download, the strict shell of the deploy's head check, the lab
    the branch must be up to date with `main`, review conversations must be resolved, and
    force-pushes and deletion are blocked.
 3. A reviewer who did not write the change reads it and records PASS or FAIL on the pull
-   request. Documentation (README, CONTRIBUTING, `docs/`, the site's Turkish and English pages)
-   is part of the review: a behaviour change that is not reflected there is a FAIL.
+   request. Documentation (README, CONTRIBUTING, `docs/`) is part of the review: a behaviour
+   change that is not reflected there is a FAIL. The landing and legal pages (Turkish and
+   English) live in the private ss-pdf-editor-site repository and are reviewed there.
 4. The pull request is merged with a merge commit, never squashed or rebased, so each commit
    keeps naming one fix and its test.
 5. A push to `main` runs the `deploy` job above. If the smoke check of the live site fails,
