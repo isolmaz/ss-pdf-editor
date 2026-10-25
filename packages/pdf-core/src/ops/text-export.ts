@@ -139,14 +139,32 @@ function joinLine(pieces: readonly TextPiece[]): string {
   return result.replace(/\s+/g, ' ').trim();
 }
 
+/** What Markdown reads as syntax wherever it stands: an escape, code, emphasis, a link, a tag, strike-through, an entity. */
+const MARKDOWN_INLINE = /[\\`*_[<~]|&(?=#?\w+;)/g;
+/** What opens a heading, a quote or a list item at the start of a paragraph. */
+const MARKDOWN_BLOCK = /^[#>+-]/;
+/** A numbered item, `1.` or `1)`; the dot or bracket is what gets escaped. */
+const MARKDOWN_NUMBER = /^(\d{1,9})([.)])(?=\s|$)/;
+
+/** A paragraph's text so that Markdown shows it as written instead of reading it. */
+function escapeMarkdown(paragraph: string): string {
+  return paragraph
+    .replace(MARKDOWN_INLINE, '\\$&')
+    .replace(MARKDOWN_BLOCK, '\\$&')
+    .replace(MARKDOWN_NUMBER, '$1\\$2');
+}
+
 /**
  * Plain text keeps the document's own line breaks and marks paragraphs with a
- * blank line. Markdown re-flows them (a wrapped line is one paragraph line) and
- * separates pages with a thematic break, which is both valid Markdown and easy to
- * spot.
+ * blank line. Markdown re-flows them (a wrapped line is one paragraph line, so only
+ * the first can open a heading or a list) and escapes what it would otherwise read as
+ * syntax, and separates pages with a thematic break, which is both valid Markdown and
+ * easy to spot.
  */
 function formatPage(paragraphs: readonly string[][], format: TextExportFormat): string {
-  const lines = paragraphs.map((paragraph) => paragraph.join(format === 'markdown' ? ' ' : '\n'));
+  const lines = paragraphs.map((paragraph) =>
+    format === 'markdown' ? escapeMarkdown(paragraph.join(' ')) : paragraph.join('\n'),
+  );
   return lines.join('\n\n');
 }
 

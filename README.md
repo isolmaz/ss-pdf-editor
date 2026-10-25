@@ -365,6 +365,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     and the message names the code points.
 - **Export and import.** Export text as plain text or Markdown. Export pages as PNG, JPEG or
   WebP images, or build a PDF from images.
+  - Markdown export escapes what Markdown would read as syntax (a line `# of users` stays text
+    instead of becoming a heading), so the rendered file shows the page's own words.
 - **Other documents to PDF.** DOCX, XLSX, PPTX, HTML, TXT/MD, CSV/TSV, EPUB and FB2 are
   converted in the browser by MuPDF's layout engine. The result is real text you can select
   and search.
