@@ -65,6 +65,9 @@ export const inspectProtection: Lazy<typeof import('pdf-core/ops/security').insp
   ...args
 ) => (await import('pdf-core/ops/security')).inspectProtection(...args);
 
+export const readPageText: Lazy<typeof import('pdf-core/text-source').readPageText> = async (...args) =>
+  (await import('pdf-core/text-source')).readPageText(...args);
+
 export const listPdfImages: Lazy<typeof import('pdf-core/ops/image-edit').listPdfImages> = async (...args) =>
   (await import('pdf-core/ops/image-edit')).listPdfImages(...args);
 

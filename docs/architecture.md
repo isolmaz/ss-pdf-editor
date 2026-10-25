@@ -138,7 +138,8 @@ The readers and writers the shell calls only from a user action go through
 its module on the first call. They are annotation removal, layer writes, attachments, the
 redaction audit, the font inventory, placed pictures, conversion of other formats and of
 images to PDF, XFA inspection and sync, signature verification, the protection check, the
-image list, form read and fill, composition and the session-annotation writer. Only a
+image list, form read and fill, composition, the session-annotation writer and the page-text
+reader that finds the words under redaction marks. Only a
 module that nothing else in the entry graph imports by value can be listed there; one that is
 also imported statically stays in the entry chunk. The comment data formats
 (`annotation-data`, `annotation-xfdf`), form-field detection, `unlockDocument` and the review
