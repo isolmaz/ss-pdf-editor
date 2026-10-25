@@ -297,6 +297,30 @@ describe('MenuBar keys on a trigger', () => {
     },
   );
 
+  it.each([['{ArrowDown}'], ['{Enter}']])(
+    '%j enters a menu a press already opened and highlights its first entry',
+    async (key) => {
+      show();
+      await userEvent.click(trigger('File'));
+      expect(document.activeElement).toBe(trigger('File'));
+      await userEvent.keyboard(key);
+
+      expect(document.activeElement).toBe(menu());
+      expect(activeLabel()).toBe('Pages');
+    },
+  );
+
+  it('does not carry the request to enter a menu over to the next menu a press opens', async () => {
+    show();
+    await userEvent.click(trigger('File'));
+    await userEvent.keyboard('{ArrowDown}{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    await userEvent.click(trigger('View'));
+    expect(screen.getByRole('menu', { name: 'View' })).toBeTruthy();
+    expect(document.activeElement).toBe(trigger('View'));
+  });
+
   it('opens on the last enabled entry with ArrowUp', async () => {
     show([pages, attachments, command('closed', 'panel.comments', 'file', { disabled: true })]);
     trigger('File').focus();

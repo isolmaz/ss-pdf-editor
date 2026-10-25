@@ -84,7 +84,10 @@ export function MenuBar({ t, commands }: MenuBarProps) {
     setOpenGroup(group);
     setAnchorGroup(group);
     setHighlight(fromEnd ? Math.max(available.length - 1, 0) : 0);
-    if (focusPanel) focusPanelOnRender.current = true;
+    if (!focusPanel) return;
+    // The panel of a menu that is already open exists, so no render is coming to focus it.
+    if (group === openGroup) panelRef.current?.focus();
+    else focusPanelOnRender.current = true;
   };
 
   const closeMenu = (refocus: boolean) => {
