@@ -3,10 +3,17 @@ type PDFObject = ReturnType<
 >;
 
 import { verifySignatures } from 'pdf-core/ops/signature-status';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { OperationProgress } from '../../../pdf-core/src/ops/types';
 import { pkcs12Fixture } from '../../../pdf-core/src/signature-pkcs12.fixtures';
-import { mupdfForTests, runContext, runDialog, textPdf } from '../pdf-fixtures';
+import {
+  mupdfForTests,
+  removeFontOrigin,
+  runContext,
+  runDialog,
+  textPdf,
+  useFontOrigin,
+} from '../pdf-fixtures';
 import { signDialog } from './sign';
 
 const PASSWORD = 'gizli';
@@ -66,6 +73,9 @@ const base = (pages = 1, size: readonly [number, number] = [300, 400]) =>
   );
 
 describe('signDialog', () => {
+  beforeEach(useFontOrigin);
+  afterEach(removeFontOrigin);
+
   it('signs with the picked identity, stamps the page being viewed, and reports who signed and until when', async () => {
     const progress: OperationProgress[] = [];
     const input = await base(2);

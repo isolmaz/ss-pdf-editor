@@ -1274,7 +1274,10 @@ mechanics are arranged around one number, `/ByteRange`:
    `lost` note, as `protectDocument`'s does. The written field is told apart from the
    others by its full name, which a new field may not repeat; a named request fills only
    the empty field of that name and otherwise creates one, and a reused field also gets
-   its `/AP`.
+   its `/AP`. The appearance draws the stamp's lines in Helvetica when they are printable
+   ASCII (nothing embedded); a line with any other letter makes it draw in the embedded
+   Noto Sans, subset to the glyphs shown, and a character that face lacks (or a control
+   character) is drawn as `?`.
 3. The `/Contents` placeholder is located in the produced bytes (uniqueness enforced); the
    real ByteRange is computed from those offsets and written over the same digits, with a
    length-equality assertion.

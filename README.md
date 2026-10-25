@@ -520,6 +520,9 @@ nothing leaving the browser.
     refused). Without one, the first empty signature field is filled where it sits. Either
     way the field gets a drawn appearance; the stamp position you pick applies to a new
     field, or to an existing one that has no area of its own.
+  - The stamp is drawn in Helvetica when its lines are plain ASCII. A line with other letters
+    (such as `ş`, `ğ` or `İ`) is drawn in an embedded subset of Noto Sans, and a character
+    that face lacks (for example Chinese) shows as `?`.
   - The signer is the certificate that matches the private key in the PKCS#12 file, not the first one it lists.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
@@ -1114,7 +1117,7 @@ The fonts the app ships are fetched by `pnpm fetch:engines` from pinned npm pack
 the same origin and pinned by size and SHA-256 in `tools/asset-pins.json`. All are SIL Open Font
 License 1.1 (the licence texts are copied to `dist/licenses/`):
 
-- **Document text.** Noto Sans is embedded by stamps, headers and the OCR text layer. A scan exported
+- **Document text.** Noto Sans is embedded by stamps, headers, the OCR text layer and signature stamps whose lines go beyond ASCII. A scan exported
   to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
   Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic.
   Each covers the Turkish letters. Lato is not offered: its faces lack Ğ/ğ, İ and Ş/ş.
