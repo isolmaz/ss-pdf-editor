@@ -29,7 +29,8 @@
     "kind": "unit",
     "tests": ["packages/pdf-ui/src/reading/ReadingPane.test.tsx"],
     "run": ["packages/pdf-ui/src/reading/ReadingPane.test.tsx"],
-    "filter": "reads the page again after a development remount"
+    "filter": "reads the page again after a development remount",
+    "failure": "Unable to find an element with the text: Chapter One"
   },
   {
     "commit": "9e8c978449433ccaf7176fd37cab8f0bbbb26724",
@@ -145,7 +146,8 @@
     "kind": "unit",
     "tests": ["packages/pdf-core/src/ops/pdfua.test.ts", "packages/pdf-core/src/ops/ua-xmp.test.ts"],
     "run": ["packages/pdf-core/src/ops/pdfua.test.ts", "packages/pdf-core/src/ops/ua-xmp.test.ts"],
-    "filter": "reads a title whose character reference names no character as written, instead of failing|leaves a character reference that names no character as written"
+    "filter": "reads a title whose character reference names no character as written, instead of failing|leaves a character reference that names no character as written",
+    "failure": "Invalid code point 1114112"
   },
   {
     "commit": "7510887e36fcdd96ab3de4c9a6f021e15d405b52",
@@ -261,7 +263,8 @@
     "kind": "unit",
     "tests": ["packages/pdf-ui/src/viewer/PdfViewerPane.test.tsx"],
     "run": ["packages/pdf-ui/src/viewer/PdfViewerPane.test.tsx"],
-    "filter": "announces the count as a polite status that is there before the first search"
+    "filter": "announces the count as a polite status that is there before the first search",
+    "failure": "Unable to find an accessible element with the role .status."
   },
   {
     "commit": "9f52c70de9377cf2c43b70277a60997de9eebd22",
@@ -521,7 +524,8 @@
     "kind": "unit",
     "tests": ["packages/pdf-core/src/ops/form-detect.test.ts", "packages/pdf-core/src/ops/redact.test.ts"],
     "run": ["packages/pdf-core/src/ops/form-detect.test.ts", "packages/pdf-core/src/ops/redact.test.ts"],
-    "filter": "reads a page whose boxes list the upper corner first as the page they describe|places fields on a page whose boxes list the upper corner first from the top of its crop box|erases on a page whose /MediaBox lists the upper corner first|measures the marks from the top and left of a /CropBox that lists the upper corner first"
+    "filter": "reads a page whose boxes list the upper corner first as the page they describe|places fields on a page whose boxes list the upper corner first from the top of its crop box|erases on a page whose /MediaBox lists the upper corner first|measures the marks from the top and left of a /CropBox that lists the upper corner first",
+    "failure": "page has no readable CropBox/MediaBox|redaction left text or annotations inside marks"
   },
   {
     "commit": "5cb6a2a9d5813d4d5ad055cb611bfb7517d1a4bb",
@@ -673,7 +677,7 @@
     "kind": "unit",
     "tests": ["packages/pdf-core/src/ops/find-replace.test.ts", "packages/shared/src/errors.test.ts"],
     "run": ["packages/pdf-core/src/ops/find-replace.test.ts", "packages/shared/src/errors.test.ts"],
-    "filter": "puts the code points a replacement-invalid refusal names into its message, in both languages"
+    "filter": "refuses a replacement with .+ instead of drawing it as a space or failing to read it back|puts the code points a replacement-invalid refusal names into its message, in both languages"
   },
   {
     "commit": "b1b41498fffe567ae82da920eb244281c6a748d5",
