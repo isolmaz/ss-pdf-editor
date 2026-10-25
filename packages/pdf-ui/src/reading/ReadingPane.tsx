@@ -199,6 +199,7 @@ function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, lang, onNot
             icon={<CaretRight className="rtl:-scale-x-100" />}
             aria-label={t('panel.goToPage', { page: nextPage })}
             title={t('panel.goToPage', { page: nextPage })}
+            disabled={viewer !== null && pageNumber + 1 >= viewer.document.pageCount}
             onClick={() => onPageChange(pageNumber + 1)}
           />
         </div>
@@ -260,8 +261,8 @@ function ReadingBody({ viewer, pageNumber, onPageChange, onClose, t, lang, onNot
           onClick={onClose}
         />
       </header>
-
-      <div className="pdf-reading-scroll" aria-busy={loading}>
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling column must be a tab stop, or its overflow is out of keyboard reach. */}
+      <div className="pdf-reading-scroll" aria-busy={loading} tabIndex={0}>
         {error !== null ? (
           <p className="pdf-reading-status">{t(error)}</p>
         ) : loading ? (

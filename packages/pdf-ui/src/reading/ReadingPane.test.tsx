@@ -37,7 +37,11 @@ function viewerOf(getPage: (page: number) => Promise<unknown>): ReadingViewer {
   return { document: { raw: { getPage } } } as unknown as ReadingViewer;
 }
 
-const pageViewer = () => viewerOf(async () => ({ getTextContent: async () => ({ items: PAGE_ITEMS }) }));
+const pageViewer = (pageCount?: number) => {
+  const viewer = viewerOf(async () => ({ getTextContent: async () => ({ items: PAGE_ITEMS }) }));
+  if (pageCount !== undefined) (viewer.document as { pageCount: number }).pageCount = pageCount;
+  return viewer;
+};
 
 class FakeUtterance {
   voice: unknown = null;
@@ -200,6 +204,22 @@ describe('ReadingPane paging', () => {
     await opened({ pageNumber: 0 });
     expect(button('Go to page 1').disabled).toBe(true);
     expect(button('Go to page 2').disabled).toBe(false);
+  });
+
+  it('cannot go past the last page', async () => {
+    await opened({ viewer: pageViewer(3), pageNumber: 2 });
+    expect(button('Go to page 4').disabled).toBe(true);
+    expect(button('Go to page 2').disabled).toBe(false);
+  });
+
+  it('can go on while the page after the current one exists', async () => {
+    await opened({ viewer: pageViewer(3), pageNumber: 1 });
+    expect(button('Go to page 3').disabled).toBe(false);
+  });
+
+  it('puts the scrolling column in the tab order so overflowing text can be scrolled by key', async () => {
+    const { view } = await opened();
+    expect(view.container.querySelector('.pdf-reading-scroll')?.getAttribute('tabindex')).toBe('0');
   });
 
   it.each([
