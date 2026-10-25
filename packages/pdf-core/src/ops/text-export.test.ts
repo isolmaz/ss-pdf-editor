@@ -313,18 +313,23 @@ describe('exportText', () => {
   );
 
   it('groups the words and lines of a page with a /UserUnit as on a page without one', async () => {
-    // "Mer" and "haba" are two pieces of one word; the second line is 14 pt below the first.
-    const line = (x: number, y: number, text: string) => `BT /F 12 Tf ${x} ${y} Td (${text}) Tj ET`;
+    // "Mer" and "haba" are two pieces of one word, in two fonts so that they reach the export apart;
+    // the second line is 14 pt below the first.
+    const line = (font: string, x: number, y: number, text: string) =>
+      `BT /${font} 12 Tf ${x} ${y} Td (${text}) Tj ET`;
     const content = [
-      line(50, 300, 'Mer'),
-      line(70.664, 300, 'haba'),
-      line(116, 300, 'dunya'),
-      line(50, 286, 'nasilsin'),
+      line('F', 50, 300, 'Mer'),
+      line('G', 70.664, 300, 'haba'),
+      line('F', 116, 300, 'dunya'),
+      line('F', 50, 286, 'nasilsin'),
     ];
-    const plain = await turnedPage(0, content.join('\n'));
     const mupdf = await loadMupdf();
-    const doc = mupdf.PDFDocument.openDocument(plain.slice(), 'application/pdf').asPDF();
-    if (doc === null) throw new Error('not a PDF');
+    const doc = new mupdf.PDFDocument();
+    const helvetica = (face: string) =>
+      doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: face, Encoding: 'WinAnsiEncoding' });
+    const fonts = { F: helvetica('Helvetica'), G: helvetica('Helvetica-Bold') };
+    doc.insertPage(0, doc.addPage([0, 0, 600, 400], 0, { Font: fonts }, content.join('\n')));
+    const plain = new Uint8Array(doc.saveToBuffer('').asUint8Array());
     doc.findPage(0).put('UserUnit', 2);
     const scaled = new Uint8Array(doc.saveToBuffer('').asUint8Array());
     doc.destroy();
