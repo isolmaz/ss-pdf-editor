@@ -397,22 +397,24 @@ const SHOW_TEXT: ReadonlySet<string> = new Set(['Tj', 'TJ', "'", '"']);
 
 /**
  * A stream a resource dictionary paints through. `showsText` is true for the ones `applyRedactions`
- * does not edit (a tiling pattern, a soft-mask group); a form XObject is only walked through, for
- * the resources of its own.
+ * does not edit (a tiling pattern, a soft-mask group, and a form either of them draws); a form the
+ * page draws itself is only walked through, for the resources of its own.
  */
 interface PaintStream {
   readonly entry: PDFObject;
   readonly showsText: boolean;
 }
 
-function paintStreams(resources: PDFObject | null): PaintStream[] {
+/** `unedited`: the resources belong to a stream the engine does not edit, so neither are its forms. */
+function paintStreams(resources: PDFObject | null, unedited: boolean): PaintStream[] {
   const streams: PaintStream[] = [];
   if (resources?.isDictionary() !== true) return streams;
   resolved(resources.get('Pattern'))?.forEach((entry) => {
     streams.push({ entry, showsText: true });
   });
   resolved(resources.get('XObject'))?.forEach((entry) => {
-    streams.push({ entry, showsText: false });
+    const subtype = entry.get('Subtype');
+    streams.push({ entry, showsText: unedited && subtype.isName() && subtype.asName() === 'Form' });
   });
   resolved(resources.get('ExtGState'))?.forEach((state) => {
     const mask = resolved(resolved(state)?.get('SMask'));
@@ -442,7 +444,7 @@ function streamShowsText(stream: PDFObject): boolean {
  */
 export function paintResourcesShowText(page: PDFObject): boolean {
   const seen = new Set<string>();
-  const pending = paintStreams(resolved(page.getInheritable('Resources')));
+  const pending = paintStreams(resolved(page.getInheritable('Resources')), false);
   while (pending.length > 0) {
     const { entry, showsText } = pending.pop() as PaintStream;
     if (!entry.isStream()) continue;
@@ -450,7 +452,7 @@ export function paintResourcesShowText(page: PDFObject): boolean {
     if (seen.has(key)) continue;
     seen.add(key);
     if (showsText && streamShowsText(entry)) return true;
-    pending.push(...paintStreams(resolved(entry.get('Resources'))));
+    pending.push(...paintStreams(resolved(entry.get('Resources')), showsText));
   }
   return false;
 }

@@ -1080,6 +1080,14 @@ describe('verifyRedaction', () => {
         const group = groupForm(doc, '', { Pattern: { P1: tilingPattern(doc, shown) } });
         drawOnPage(doc, 'q /GS1 gs 40 290 200 30 re f Q', { ExtGState: { GS1: softMaskState(doc, group) } });
       },
+      'a form a pattern draws': (doc) => {
+        const pattern = tilingPattern(doc, '/Fm1 Do', { XObject: { Fm1: groupForm(doc, shown) } });
+        drawOnPage(doc, '/Pattern cs /P1 scn 40 290 200 30 re f', { Pattern: { P1: pattern } });
+      },
+      'a form a soft-mask group draws': (doc) => {
+        const group = groupForm(doc, '/Fm1 Do', { XObject: { Fm1: groupForm(doc, shown) } });
+        drawOnPage(doc, 'q /GS1 gs 40 290 200 30 re f Q', { ExtGState: { GS1: softMaskState(doc, group) } });
+      },
       'resources the page tree supplies': (doc) => {
         addPatternText(doc);
         const page = doc.findPage(0);
