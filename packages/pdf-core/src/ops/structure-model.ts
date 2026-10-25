@@ -683,6 +683,8 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
           throw new StructEditError('has-content', 'an element that owns content cannot be unwrapped');
         }
         const position = rawIndexOf(parent, node.key);
+        // The language of an element covers what is inside it: its children keep it where they have none.
+        for (const kid of node.kids) if (kid.kind === 'element') kid.node.lang ??= node.lang;
         parent.kids.splice(position, 1, ...node.kids);
         break;
       }

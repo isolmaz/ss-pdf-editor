@@ -802,7 +802,11 @@ function applyEdit(state: WriteState, edit: StructEdit, current: StructureModel)
       const children = kidsOf(node).filter(isElementEntry);
       entries.splice(position, 1, ...children);
       writeKids(doc, parent, entries);
-      for (const child of children) child.put('P', parent);
+      const lang = node.get('Lang');
+      for (const child of children) {
+        child.put('P', parent);
+        if (!lang.isNull() && child.get('Lang').isNull()) child.put('Lang', lang);
+      }
       // An element that owns content cannot be unwrapped, so every kid of `found` is an element.
       for (const kid of elementKids(found.node)) {
         pinPage(state, handleOf(state, kid.key), kid.pageIndex);
