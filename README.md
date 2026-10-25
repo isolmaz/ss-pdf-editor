@@ -83,6 +83,15 @@ pnpm dev                    # http://localhost:5173
 Every capability below is implemented in this repository. You can reach each one from the
 UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home screen.
 
+The editor starts in **Simple mode**, which keeps the features people reach for most:
+opening, merging, converting and saving, organising pages, markup, text editing, forms,
+signing and PDF to Word or Excel. The menu bar, the palette, the tool rail and the docks
+leave out the rest (redaction, encryption, OCR, measurement, comparison, watermarks, Bates
+numbering, compression, layers and attachments among them). **Settings → Interface →
+Advanced mode** shows everything, and so does the **Advanced mode** button the palette
+offers when a search has matches hidden by Simple mode. The home screen's **All tools**
+lists every tool in either mode. The choice is kept on the device.
+
 ### Reading and navigation
 
 - **Home screen.** *Start* opens a PDF (or several, each in its own tab: drop them on the
