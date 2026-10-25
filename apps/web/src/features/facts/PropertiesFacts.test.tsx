@@ -91,7 +91,7 @@ const facts: DocumentFacts = {
   tabId: tab.id,
   bytesKey: workingBytesKey(tab),
   fonts: [{ baseFont: 'Helvetica' } as never],
-  attachments: [{ name: 'a.txt', description: '', size: 1 }],
+  attachments: [{ id: 'a.txt', name: 'a.txt', description: '', size: 1 }],
   signatures: [],
   security: { encrypted: false, permissions: [] },
 };
