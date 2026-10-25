@@ -1555,10 +1555,13 @@ Identity-H with a `/ToUnicode` CMap — which is what makes the words selectable
 searchable at all. Noto Sans has no Arabic, Hebrew or CJK glyphs: such a word would encode as
 glyph 0 and come back as nothing, so those words use the glyph-less font, whose codes are the
 text's UTF-16 units. A right-to-left word is written in visual order (grapheme clusters
-reversed), the order extractors undo with the bidi algorithm; written logically it would come
-back reversed. Words of Devanagari, Arabic, Hebrew, Korean and the glyph-less font get a space
-beside them, because MuPDF finds no gap between them and would join `नमस्ते दुनिया` into one
-word. All of this is measured through both MuPDF and pdf.js extraction.
+reversed, a number or Latin word inside it kept as it reads: `displayOrder` in `ops/bidi.ts`, UAX #9
+without the mirrored glyphs), the order extractors undo with the bidi algorithm; written logically
+it would come back reversed. pdf.js runs that algorithm over the drawn text; MuPDF places the
+digits and brackets beside a right-to-left word differently, so a word that mixes scripts reads
+back in the intended order through pdf.js and not always through MuPDF. Words of Devanagari, Arabic, Hebrew, Korean and the glyph-less
+font get a space beside them, because MuPDF finds no gap between them and would join `नमस्ते दुनिया`
+into one word. All of this is measured through both MuPDF and pdf.js extraction.
 
 There are 27 languages (`OCR_LANGUAGE_CODES_ALL`). Turkish and English ship both models and
 are in the offline package; the others ship `4.0.0_best_int` only. The `4.0.0` packs add the

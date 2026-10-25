@@ -102,6 +102,26 @@ describe('glyph-less font', () => {
     expect(visualOrder('Çarşı 123')).toBe('Çarşı 123');
   });
 
+  it('keeps the digits and Latin letters inside a right-to-left word in their own order', async () => {
+    // pdf.js is the reader of the viewer's find, copy and export. It undoes the bidirectional
+    // algorithm on what the page draws, so a word written with its number reversed read back
+    // with the number reversed.
+    // The page holds four lines.
+    for (const words of [
+      ['שנת2024', 'עד100', 'מחיר3.14', 'שלוםabc'],
+      ['בשעה10:30', '12/05/2024תאריך', 'abc-שלום'],
+    ]) {
+      expect(await pdfjsText(await pageWith(words.map(visualOrder)))).toEqual(words);
+    }
+  });
+
+  it('does not reverse the digits that stand beside a right-to-left letter', async () => {
+    // pdf.js cannot return `ב-2024` as written whatever order it is drawn in, and MuPDF reads a
+    // number beside a right-to-left word in yet another order, so only the digits are asked about.
+    const [text] = await pdfjsText(await pageWith([visualOrder('ב-2024')]));
+    expect(text).toContain('2024');
+  });
+
   it('encodes one CID per UTF-16 code unit and measures half an em per unit', async () => {
     const mupdf = await import('mupdf');
     const doc = new mupdf.PDFDocument();

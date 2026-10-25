@@ -60,6 +60,7 @@ import {
   type RecognizeResult,
   recognizePage,
 } from '../engines/tesseract';
+import { bidiClass, displayOrder } from './bidi';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 export type OcrQuality = 'fast' | 'best';
@@ -408,9 +409,9 @@ export interface OcrLayerPage {
  *
  * A word Noto Sans can spell is drawn in it; any other (Arabic, Hebrew, Devanagari, CJK)
  * in the glyph-less font (`engines/glyphless-font.ts`), whose CIDs are the word's UTF-16
- * code units. A right-to-left word is written in visual order, its grapheme clusters
- * reversed, the order a PDF producer draws glyphs in and the order extractors undo with
- * the Unicode bidi algorithm; written in logical order it came back reversed.
+ * code units. A right-to-left word is written in visual order (`visualOrder`), the order a
+ * PDF producer draws glyphs in and the order extractors undo with the Unicode bidi
+ * algorithm; written in logical order it came back reversed.
  */
 export async function writeOcrLayer(
   bytes: Uint8Array,
@@ -513,15 +514,18 @@ function withGap(text: string): string {
 const RIGHT_TO_LEFT = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 
 /**
- * A right-to-left word in the order its glyphs stand on the page: grapheme clusters
- * reversed, so an Arabic letter keeps its marks. Any other word is returned as it is.
+ * A right-to-left word in the order its glyphs stand on the page: its grapheme clusters reversed
+ * (so an Arabic letter keeps its marks), but a number or a Latin word inside it kept as it reads
+ * (`displayOrder`, UAX #9). Any other word is returned as it is.
  */
 export function visualOrder(text: string): string {
   if (!RIGHT_TO_LEFT.test(text)) return text;
   const clusters = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map(
     (part) => part.segment,
   );
-  return clusters.reverse().join('');
+  return displayOrder(clusters.map(bidiClass))
+    .map((at) => clusters[at] as string)
+    .join('');
 }
 
 function clamp(value: number, min: number, max: number): number {

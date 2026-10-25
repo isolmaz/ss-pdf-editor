@@ -642,4 +642,50 @@ describe('visualOrder', () => {
     expect(visualOrder('abc')).toBe('abc');
     expect(visualOrder('שלום')).toBe('םולש');
   });
+
+  // The word as it stands on the page, left to right (UAX #9, rule L2, for a right-to-left
+  // paragraph): the letters of the right-to-left script run from the right, a number or a Latin
+  // word inside the word keeps its own left-to-right order.
+  it.each([
+    ['ב-2024', '2024-ב'],
+    ['שנת2024', '2024תנש'],
+    ['עד100', '100דע'],
+    ['שלוםabc', 'abcםולש'],
+    ['abc-שלום', 'םולש-abc'],
+    ['שלוםab-cd', 'ab-cdםולש'],
+    ['שלוםab 12', 'ab 12םולש'],
+  ])('keeps the digits and Latin letters of %s in order', (logical, onThePage) => {
+    expect(visualOrder(logical)).toBe(onThePage);
+  });
+
+  it.each([
+    ['מחיר3.14', '3.14ריחמ'],
+    ['בשעה10:30', '10:30העשב'],
+    ['12/05/2024תאריך', 'ךיראת12/05/2024'],
+    ['ש1+2', '1+2ש'],
+    ['שלום100%', '100%םולש'],
+    ['$100שלום', 'םולש$100'],
+  ])('keeps the separators and signs of the number in %s with it', (logical, onThePage) => {
+    expect(visualOrder(logical)).toBe(onThePage);
+  });
+
+  it.each([
+    ['سعر3.14', '3.14رعس'],
+    ['عام٢٠٢٤', '٢٠٢٤ماع'],
+    ['عام٣٫١٤', '٣٫١٤ماع'],
+  ])('keeps the Arabic and the Arabic-Indic digits of %s in order', (logical, onThePage) => {
+    expect(visualOrder(logical)).toBe(onThePage);
+  });
+
+  it('reverses brackets and punctuation with the word, unmirrored: the layer draws nothing', () => {
+    // pdf.js reverses them with the letters and reads them back as written; a mirrored pair would
+    // come back swapped.
+    expect(visualOrder('(עברית)')).toBe(')תירבע(');
+    expect(visualOrder('"שלום",')).toBe(',"םולש"');
+  });
+
+  it('keeps a letter with its combining marks', () => {
+    // Shin with a dot and a vowel, lamed, vav with a vowel, final mem.
+    expect(visualOrder('שָׁלוֹם')).toBe('םוֹלשָׁ');
+  });
 });

@@ -556,7 +556,9 @@ nothing leaving the browser.
     language or an engine package is missing, and the next run tries again.
   - Words in scripts the embedded Noto Sans cannot spell (Arabic, Hebrew, CJK) are written in
     a glyph-less font whose codes are the text itself, so they can be searched and copied.
-    Right-to-left words come back in reading order.
+    Right-to-left words come back in reading order, a number or Latin word inside one with its
+    digits and letters in order. That holds for this editor's viewer (pdf.js); another reader,
+    MuPDF's text extraction for one, can order a word that mixes scripts differently.
   - Why Tesseract and no other engine, and why words below 90 % confidence are the ones
     flagged: [docs/ocr-evaluation.md](docs/ocr-evaluation.md). The same OCR reads scanned pages
     for the exact Word layout (see [PDF to Word, Excel and CSV](#text)).
