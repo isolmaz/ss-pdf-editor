@@ -725,10 +725,9 @@ The limits are defined once, in
 - **Undo history.** Kept snapshots are limited to `max(3 × file size, 64 MB)`. The two
   newest versions are always kept, and an evicted step is shown as **unavailable**.
 - **Build budgets.** `BUILD_BUDGETS` in `packages/shared/src/limits.ts` holds them: at most
-  250 KiB gzip of first-paint JavaScript, 60 KiB for the landing page (now built in the
-  ss-pdf-editor-site repository) and 25 MiB per asset.
+  250 KiB gzip of first-paint JavaScript and 25 MiB per asset.
   `pnpm check:budgets` (a step of `pnpm ci:verify`, after `pnpm build`) enforces the first; the
-  other two are measured by hand. How the first-paint budget is met: `docs/architecture.md` §2.
+  second is measured by hand. How the first-paint budget is met: `docs/architecture.md` §2.
 
 ## Honest limits
 
