@@ -43,6 +43,7 @@ export interface ViewerApi {
   goToPage(pageIndex: number): void;
   /** Reading layout: one page, odd spreads (book) or even spreads. */
   setSpreadMode(mode: 'single' | 'book' | 'book-even'): void;
+  getSpreadMode(): 'single' | 'book' | 'book-even';
   /** Opens the find bar and focuses the field (Ctrl+F and the toolbar button). */
   openFind(): void;
   /**
@@ -879,6 +880,8 @@ export function PdfViewerPane({
         setSpreadMode: (mode) => {
           viewer.spreadMode = mode === 'single' ? 0 : mode === 'book' ? 1 : 2;
         },
+        getSpreadMode: () =>
+          viewer.spreadMode === 1 ? 'book' : viewer.spreadMode === 2 ? 'book-even' : 'single',
         goToPage: (pageIndex) => {
           // pdf.js clamps through its own setter; +1 because the viewer is 1-based.
           viewer.currentPageNumber = Math.min(Math.max(pageIndex + 1, 1), viewer.pagesCount);
@@ -1225,7 +1228,13 @@ export function PdfViewerPane({
             }}
             className="h-6 w-52 rounded-sm border border-kumo-line bg-kumo-base px-2 text-xs text-kumo-default outline-none focus:ring-1 focus:ring-kumo-focus"
           />
-          <span className="min-w-16 text-center text-xs tabular-nums text-kumo-subtle">{countLabel}</span>
+          <span
+            role="status"
+            aria-live="polite"
+            className="min-w-16 text-center text-xs tabular-nums text-kumo-subtle"
+          >
+            {countLabel}
+          </span>
           <button
             type="button"
             aria-label={t('viewer.find.previous')}

@@ -38,6 +38,7 @@ const PROBLEM_KEYS: Readonly<Record<CameraProblem, { message: MessageKey; hint: 
   unsupported: { message: 'scan.camera.unsupported', hint: 'scan.camera.unsupportedHint' },
   busy: { message: 'scan.camera.busy', hint: 'scan.camera.busyHint' },
   failed: { message: 'scan.camera.failed', hint: 'scan.camera.failedHint' },
+  stopped: { message: 'scan.camera.stopped', hint: 'scan.camera.stoppedHint' },
 };
 
 /** How often the outline is recomputed, and how many misses in a row clear it. */
@@ -247,7 +248,7 @@ export function CameraView({ t, onPhotos, pageCount, onShowPages, disabled }: Ca
         <Button
           variant="primary"
           aria-label={t('scan.capture')}
-          disabled={!live || capturing || disabled}
+          disabled={!live || camera.muted || capturing || disabled}
           onClick={() => void shoot()}
           data-testid="scan-shutter"
         >

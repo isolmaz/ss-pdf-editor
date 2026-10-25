@@ -84,7 +84,10 @@ export function MenuBar({ t, commands }: MenuBarProps) {
     setOpenGroup(group);
     setAnchorGroup(group);
     setHighlight(fromEnd ? Math.max(available.length - 1, 0) : 0);
-    if (focusPanel) focusPanelOnRender.current = true;
+    if (!focusPanel) return;
+    // The panel of a menu that is already open exists, so no render is coming to focus it.
+    if (group === openGroup) panelRef.current?.focus();
+    else focusPanelOnRender.current = true;
   };
 
   const closeMenu = (refocus: boolean) => {
@@ -269,6 +272,7 @@ export function MenuBar({ t, commands }: MenuBarProps) {
                           // Why it is unavailable, for a pointer (a native tooltip) and a screen reader.
                           {...(reason === undefined ? {} : { title: reason, 'aria-description': reason })}
                           tabIndex={-1}
+                          data-active={command === current ? '' : undefined}
                           onClick={() => activate(command)}
                           onPointerEnter={() => {
                             const at = enabled.indexOf(command);
@@ -277,7 +281,7 @@ export function MenuBar({ t, commands }: MenuBarProps) {
                           // A disabled class naming a text token Kumo does not declare would
                           // render a disabled row exactly like an enabled one. `subtle` is
                           // Kumo's own disabled text and stays legible.
-                          className={`flex w-full items-center gap-2 rounded-sm px-2 py-1 text-start text-xs hover:bg-kumo-tint disabled:text-kumo-subtle disabled:hover:bg-transparent ${
+                          className={`flex w-full items-center gap-2 rounded-sm px-2 py-1 text-start text-xs hover:bg-kumo-tint data-[active]:bg-kumo-tint disabled:text-kumo-subtle disabled:hover:bg-transparent ${
                             command.danger === true ? 'text-kumo-danger' : 'text-kumo-default'
                           }`}
                         >

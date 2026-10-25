@@ -572,6 +572,16 @@ describe('going inactive', () => {
     expect(onZoomChange).not.toHaveBeenCalled();
   });
 
+  it('hides the lens it had shown when the document it magnifies is replaced', async () => {
+    const { container, update } = show();
+    await move(250, 250);
+    runFrames();
+    expect(lensIn(container).style.visibility).toBe('visible');
+    update({ viewer: { ...viewer } });
+    expect(lensIn(container).style.visibility).toBe('hidden');
+    expect(frames.size).toBe(0);
+  });
+
   it('starts from nothing when it is turned on again', async () => {
     const { container, update } = show();
     await move(250, 250);

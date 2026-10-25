@@ -7,7 +7,7 @@
  * consumes: the api handed to `onReady`, the callbacks, the find bar and the overlay host.
  */
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PDFJS_ASSETS } from 'pdf-core/assets';
 import type { PdfDocumentHandle } from 'pdf-core/engines/pdfjs-handle';
@@ -915,6 +915,16 @@ describe('the api', () => {
   });
 
   it.each([
+    [0, 'single'],
+    [1, 'book'],
+    [2, 'book-even'],
+  ] as const)('reads pdf.js spread mode %i back as the %s reading layout', async (spreadMode, expected) => {
+    const pane = await mount();
+    lastViewer().spreadMode = spreadMode;
+    expect(apiOf(pane).getSpreadMode()).toBe(expected);
+  });
+
+  it.each([
     [-5, 1],
     [0, 1],
     [1, 2],
@@ -1276,6 +1286,17 @@ describe('the find bar', () => {
     expect(counter()).toBe('2 of 7 matches');
     emit(lastBus(), 'updatefindmatchescount', { matchesCount: { total: 7, current: 3 } });
     expect(counter()).toBe('3 of 7 matches');
+  });
+
+  it('announces the count as a polite status that is there before the first search', async () => {
+    const pane = await mount();
+    const status = () => within(findBar()).getByRole('status');
+    act(() => apiOf(pane).openFind());
+    expect(status().textContent).toBe('');
+    act(() => apiOf(pane).find('tax'));
+    emit(lastBus(), 'updatefindcontrolstate', { state: 0, matchesCount: { total: 7, current: 2 } });
+    expect(status().textContent).toBe('2 of 7 matches');
+    expect(status().getAttribute('aria-live')).toBe('polite');
   });
 
   it('shows no count for an empty query', async () => {

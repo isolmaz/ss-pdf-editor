@@ -21,6 +21,7 @@ interface Rig {
   readonly container: HTMLElement;
   readonly setZoom: Mock;
   readonly setSpreadMode: Mock;
+  readonly spread: { mode: 'single' | 'book' | 'book-even' };
   readonly goToPage: Mock;
   readonly state: { zoom: number; scrollTop: number; pageWidth: number };
   readonly fullscreen: { element: Element | null };
@@ -57,12 +58,21 @@ function mountRig(pageCount = 3, state = { zoom: 1.5, scrollTop: 0, pageWidth: 5
   const setZoom = vi.fn((value: number | string) => {
     state.zoom = typeof value === 'number' ? value : 1.2;
   });
-  const setSpreadMode = vi.fn();
+  const spread: Rig['spread'] = { mode: 'single' };
+  const setSpreadMode = vi.fn((mode: Rig['spread']['mode']) => {
+    spread.mode = mode;
+  });
   const goToPage = vi.fn((index: number) => {
     state.scrollTop = index * PAGE_HEIGHT;
   });
-  const viewer = { getZoom: () => state.zoom, setZoom, setSpreadMode, goToPage } as unknown as ViewerApi;
-  return { viewer, container, setZoom, setSpreadMode, goToPage, state, fullscreen };
+  const viewer = {
+    getZoom: () => state.zoom,
+    setZoom,
+    getSpreadMode: () => spread.mode,
+    setSpreadMode,
+    goToPage,
+  } as unknown as ViewerApi;
+  return { viewer, container, setZoom, setSpreadMode, spread, goToPage, state, fullscreen };
 }
 
 /** The browser grants full screen on `rig.container` and leaves it again on `exitFullscreen`. */
@@ -230,6 +240,16 @@ describe('leaving presentation', () => {
     expect(rig.container.classList.contains('pdfPresentationMode')).toBe(false);
     expect(onExit).toHaveBeenCalledOnce();
     expect(result.current.active).toBe(false);
+  });
+
+  it.each(['single', 'book', 'book-even'] as const)('gives the pane the %s layout it had', (mode) => {
+    const rig = mountRig();
+    rig.spread.mode = mode;
+    const { result } = mountHook(rig);
+    act(() => result.current.enter());
+    expect(rig.spread.mode).toBe('single');
+    act(() => result.current.exit());
+    expect(rig.spread.mode).toBe(mode);
   });
 
   it('asks for the width fit again when the pane was showing one', () => {

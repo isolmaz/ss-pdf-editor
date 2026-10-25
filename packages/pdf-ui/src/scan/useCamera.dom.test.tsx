@@ -173,6 +173,37 @@ describe('useCamera start', () => {
   });
 });
 
+describe('useCamera track events', () => {
+  it('names a camera that ended as a problem and lets go of its stream', async () => {
+    render(<Harness />);
+    await startAndWait();
+    act(() => camera.emit('ended'));
+    expect(current.status).toBe('problem');
+    expect(current.problem).toBe('stopped');
+    expect(videoElement().srcObject).toBeNull();
+    expect(camera.track.stop).toHaveBeenCalledTimes(1);
+    await expect(current.capture()).rejects.toThrow('camera is not live');
+  });
+
+  it('follows the track going silent and coming back', async () => {
+    render(<Harness />);
+    await startAndWait();
+    expect(current.muted).toBe(false);
+    act(() => camera.emit('mute'));
+    expect(current.muted).toBe(true);
+    expect(current.status).toBe('live');
+    act(() => camera.emit('unmute'));
+    expect(current.muted).toBe(false);
+  });
+
+  it('starts out muted when the track already is', async () => {
+    camera.track.muted = true;
+    render(<Harness />);
+    await startAndWait();
+    expect(current.muted).toBe(true);
+  });
+});
+
 describe('useCamera restarts and unmounting', () => {
   it('stops the stream it replaces, and ignores a stream that arrives after a newer start', async () => {
     const late = { stop: vi.fn() };

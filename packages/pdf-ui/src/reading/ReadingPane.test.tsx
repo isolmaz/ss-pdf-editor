@@ -8,6 +8,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator, ToolError } from 'pdf-shared';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReadingPane, type ReadingPaneProps } from './ReadingPane';
 import type { ReadingViewer } from './useReadingText';
@@ -36,7 +37,11 @@ function viewerOf(getPage: (page: number) => Promise<unknown>): ReadingViewer {
   return { document: { raw: { getPage } } } as unknown as ReadingViewer;
 }
 
-const pageViewer = () => viewerOf(async () => ({ getTextContent: async () => ({ items: PAGE_ITEMS }) }));
+const pageViewer = (pageCount?: number) => {
+  const viewer = viewerOf(async () => ({ getTextContent: async () => ({ items: PAGE_ITEMS }) }));
+  if (pageCount !== undefined) (viewer.document as { pageCount: number }).pageCount = pageCount;
+  return viewer;
+};
 
 class FakeUtterance {
   voice: unknown = null;
@@ -141,6 +146,15 @@ describe('ReadingPane column', () => {
     expect(screen.getByText('Figure 1').className).toContain('pdf-reading-block-caption');
   });
 
+  it('reads the page again after a development remount', async () => {
+    render(
+      <StrictMode>
+        <ReadingPane {...props()} />
+      </StrictMode>,
+    );
+    expect(await screen.findByText('Chapter One')).toBeTruthy();
+  });
+
   it('shows a skeleton, not text, while the page is being read', () => {
     const never = Promise.withResolvers<never>();
     const { container } = render(<ReadingPane {...props({ viewer: viewerOf(() => never.promise) })} />);
@@ -192,6 +206,22 @@ describe('ReadingPane paging', () => {
     expect(button('Go to page 2').disabled).toBe(false);
   });
 
+  it('cannot go past the last page', async () => {
+    await opened({ viewer: pageViewer(3), pageNumber: 2 });
+    expect(button('Go to page 4').disabled).toBe(true);
+    expect(button('Go to page 2').disabled).toBe(false);
+  });
+
+  it('can go on while the page after the current one exists', async () => {
+    await opened({ viewer: pageViewer(3), pageNumber: 1 });
+    expect(button('Go to page 3').disabled).toBe(false);
+  });
+
+  it('puts the scrolling column in the tab order so overflowing text can be scrolled by key', async () => {
+    const { view } = await opened();
+    expect(view.container.querySelector('.pdf-reading-scroll')?.getAttribute('tabindex')).toBe('0');
+  });
+
   it.each([
     ['PageDown', 6],
     ['ArrowDown', 6],
@@ -229,6 +259,35 @@ describe('ReadingPane paging', () => {
     editable.setAttribute('contenteditable', 'true');
     expect(fireEvent.keyDown(editable, { key: 'ArrowRight' })).toBe(true);
     expect(given.onPageChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['menu', 'menuitem'],
+    ['menubar', 'menuitem'],
+    ['listbox', 'option'],
+    ['tablist', 'tab'],
+    ['dialog', 'button'],
+  ])('leaves the keys of a %s to it: neither paging nor closing', async (role, childRole) => {
+    const { given } = await opened();
+    const widget = document.body.appendChild(document.createElement('div'));
+    widget.setAttribute('role', role);
+    const child = widget.appendChild(document.createElement('div'));
+    child.setAttribute('role', childRole);
+    for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'Escape']) {
+      expect(fireEvent.keyDown(child, { key })).toBe(true);
+    }
+    expect(given.onPageChange).not.toHaveBeenCalled();
+    expect(given.onClose).not.toHaveBeenCalled();
+  });
+
+  it('leaves a key that something nearer already handled', async () => {
+    const { given } = await opened();
+    const owner = document.body.appendChild(document.createElement('div'));
+    owner.addEventListener('keydown', (event) => event.preventDefault());
+    fireEvent.keyDown(owner, { key: 'ArrowDown' });
+    fireEvent.keyDown(owner, { key: 'Escape' });
+    expect(given.onPageChange).not.toHaveBeenCalled();
+    expect(given.onClose).not.toHaveBeenCalled();
   });
 
   it('pages on a key that was not pressed on an element', async () => {

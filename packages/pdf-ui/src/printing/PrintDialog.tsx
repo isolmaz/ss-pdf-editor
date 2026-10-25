@@ -147,6 +147,7 @@ export function PrintDialog({ t, viewer, read, open, onClose, onNotice, onProduc
   });
 
   const startPrint = () => {
+    if (busy) return;
     const pages = selectedPages();
     if (pages === null) return;
     printing.start(request(pages));
