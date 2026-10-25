@@ -59,6 +59,8 @@ function blockStore(method: 'getItem' | 'setItem' | 'removeItem'): void {
 afterEach(() => {
   for (const spy of blocked.splice(0)) spy.mockRestore();
   cleanup();
+  // A language kept in memory while the store was blocked must not reach the next test.
+  applyLocale('tr');
   for (const id of added) {
     registry.splice(
       registry.findIndex((info) => info.id === id),
@@ -188,6 +190,16 @@ describe('pressing a language', () => {
     act(() => applyLocale('en'));
 
     expect(pressed()).toEqual(['English']);
+  });
+
+  it('starts a selector mounted later in the language picked while the store was blocked', () => {
+    blockStore('setItem');
+    act(() => applyLocale('en'));
+    render(<LanguageSelector t={t} />);
+
+    expect(pressed()).toEqual(['English']);
+    expect(document.documentElement.lang).toBe('en');
+    expect(getStoredLocale()).toBe('en');
   });
 
   it('applyLocale outside a selector stores the language and moves a mounted selector', () => {
