@@ -184,11 +184,26 @@ function isKeywordScope(value: string): value is KeywordScope {
 }
 
 /**
+ * What is wrong with a typed page range, as the shared error vocabulary words it — what happened and
+ * what to type instead; undefined when it reads. The parser owns the wording, so a new parser rule
+ * cannot leave this message behind.
+ */
+function rangeProblem(t: Translator, typed: string, pageCount: number): string | undefined {
+  try {
+    parsePageRanges(typed, pageCount);
+    return undefined;
+  } catch (cause) {
+    const failure = toToolError(cause, 'ui');
+    return `${t(failure.messageKey)} ${t(failure.hintKey)}`;
+  }
+}
+
+/**
  * Validate the visible fields, keyed by field id; an empty record means the
- * dialog may run. Only two kinds can be wrong before an engine is involved — a
- * page scope and a number outside its declared range — because every other
- * field's legality belongs to the capability, which reports it from `run` as a
- * `ToolError`.
+ * dialog may run. Only three kinds can be wrong before an engine is involved — a
+ * page scope, a page-range text and a number outside its declared range — because
+ * every other field's legality belongs to the capability, which reports it from
+ * `run` as a `ToolError`.
  */
 export function fieldErrors(
   t: Translator,
@@ -208,15 +223,16 @@ export function fieldErrors(
         continue;
       }
       if (!value.startsWith(RANGE_PREFIX)) continue;
-      try {
-        parsePageRanges(scopeText(value), pageCount);
-      } catch (cause) {
-        // Both halves of the shared error vocabulary — what happened and what to
-        // type instead. The parser owns the wording, so a new parser rule cannot
-        // leave this message behind.
-        const failure = toToolError(cause, 'ui');
-        errors[field.id] = `${t(failure.messageKey)} ${t(failure.hintKey)}`;
-      }
+      const problem = rangeProblem(t, scopeText(value), pageCount);
+      if (problem !== undefined) errors[field.id] = problem;
+      continue;
+    }
+
+    if (field.kind === 'text' && field.pageRanges === true) {
+      const typed = String(values[field.id]).trim();
+      if (typed === '' || typed === 'all') continue;
+      const problem = rangeProblem(t, typed, pageCount);
+      if (problem !== undefined) errors[field.id] = problem;
       continue;
     }
 

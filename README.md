@@ -619,6 +619,8 @@ nothing leaving the browser.
   than 1 GiB in total (1024 MB in the notice) is refused before the run starts. *Cancel* stops the run and leaves the dialog open on the
   report of what finished. The steps are extract pages, compress, OCR, page labels, header/footer and page
   numbering, document properties, text export and security (password and permissions).
+  - A step's page range is checked as it is typed, with the same rules as every other range
+    field (pages 1–2000, no page twice, no backwards range); *Run* waits until it reads.
   - A set of steps can be saved as a JSON ruleset and loaded again. A loaded ruleset runs as
     it is, with the dialog's own steps disabled, until you choose *Discard loaded ruleset*;
     choosing files afterwards does not discard it.

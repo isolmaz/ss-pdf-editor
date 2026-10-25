@@ -801,28 +801,72 @@ describe('BatchDialog rulesets from a file', () => {
     expect(screen.queryByText('Processing')).toBeNull();
   });
 
-  it('refuses a page range it cannot read and says which field', async () => {
+  it('keeps Run off while a page range is above the page limit or runs backwards, and says so under the field', async () => {
     show();
     await stepsOnly(STEPS.pages);
-    replace(field('Page range'), 'zzz');
     await user.upload(pdfInput(), await pdfFile('a.pdf'));
-    await user.click(screen.getByRole('button', { name: 'Run batch' }));
-    const alert = await screen.findByRole('alert');
-    // The hint is the range error's own sentence from the dictionary, then where the text was typed.
-    expect(Array.from(alert.querySelectorAll('p')).map((line) => line.textContent)).toEqual([
-      'Could not read step settings.',
-      'Enter a range like 1-3, 5 or 8-10. Step “Extract pages”, page range “zzz”.',
-    ]);
-    expect(alert.textContent).not.toContain('Error');
+    const run = screen.getByRole('button', { name: 'Run batch' }) as HTMLButtonElement;
+    const refusal = 'Page range could not be parsed. Enter a range like 1-3, 5 or 8-10.';
+    expect(run.disabled).toBe(false);
+
+    for (const typed of ['1-5000', '3000', '3-1', '2, 2']) {
+      replace(field('Page range'), typed);
+      expect(screen.getByText(refusal), typed).toBeTruthy();
+      expect(run.disabled, typed).toBe(true);
+    }
+
+    replace(field('Page range'), '2-3');
+    expect(screen.queryByText(refusal)).toBeNull();
+    expect(run.disabled).toBe(false);
   });
 
-  it('names the step whose page range it cannot read', async () => {
-    show();
-    await stepsOnly(STEPS.textExport);
-    replace(field('Page range'), 'q');
+  it('shows the refusal under the step whose range does not read, and Save ruleset refuses it too', async () => {
+    const { onDownload } = show();
+    await stepsOnly(STEPS.pages, STEPS.textExport);
     await user.upload(pdfInput(), await pdfFile('a.pdf'));
-    await user.click(screen.getByRole('button', { name: 'Run batch' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('Step “Export text”, page range “q”.');
+    replace(field('Page range', 1), 'q');
+
+    const described = (index: number) => {
+      const id = field('Page range', index).getAttribute('aria-describedby');
+      return id === null ? null : document.getElementById(id)?.textContent;
+    };
+    expect(described(0)).toBeNull();
+    expect(described(1)).toBe('Page range could not be parsed. Enter a range like 1-3, 5 or 8-10.');
+    expect((screen.getByRole('button', { name: 'Run batch' }) as HTMLButtonElement).disabled).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: 'Save ruleset (JSON)' }));
+    expect(onDownload).not.toHaveBeenCalled();
+    const alert = await screen.findByRole('alert');
+    expect(Array.from(alert.querySelectorAll('p')).map((line) => line.textContent)).toEqual([
+      'Page range could not be parsed.',
+      'Enter a range like 1-3, 5 or 8-10.',
+    ]);
+  });
+
+  it('runs a loaded ruleset as it is while the form holds a page range it cannot read', async () => {
+    show();
+    await stepsOnly(STEPS.pages);
+    await user.upload(pdfInput(), await pdfFile('a.pdf'));
+    replace(field('Page range'), 'zzz');
+    const run = screen.getByRole('button', { name: 'Run batch' }) as HTMLButtonElement;
+    expect(run.disabled).toBe(true);
+
+    await user.upload(
+      templateInput(),
+      new File(
+        [
+          JSON.stringify({
+            version: 1,
+            name: 'Loaded',
+            steps: [{ kind: 'compress', params: { mode: 'structure' } }],
+          }),
+        ],
+        'r.batch.json',
+        { type: 'application/json' },
+      ),
+    );
+    await screen.findByText('Loaded ruleset contains 1 step(s); batch will run with this set.');
+    expect(run.disabled).toBe(false);
   });
 });
 

@@ -122,6 +122,26 @@ describe('fieldErrors', () => {
     }
   });
 
+  it('judges a page-range text against the page count, and reads empty and "all" as every page', () => {
+    const typed: FieldSpec = {
+      kind: 'text',
+      id: 'pages',
+      labelKey: 'op.scope',
+      defaultValue: '',
+      pageRanges: true,
+    };
+    const plain: FieldSpec = { ...typed, id: 'plain', pageRanges: undefined };
+    for (const range of ['', '  ', 'all', ' 1-3, 5 ']) {
+      expect(fieldErrors(t, [typed], { pages: range }, 5, 0), range).toEqual({});
+    }
+    for (const range of ['abc', '9', '3-1', '2, 2', '1-6']) {
+      expect(fieldErrors(t, [typed], { pages: range }, 5, 0).pages, range).toMatch(
+        /^error\.\S+\.message error\.\S+\.hint$/,
+      );
+    }
+    expect(fieldErrors(t, [plain], { plain: 'abc' }, 5, 0)).toEqual({});
+  });
+
   it('refuses an unpicked choice, a number outside its range and a number that is not one', () => {
     expect(fieldErrors(t, [choice], { c: '' }, 1, 0)).toEqual({ c: 'dialog.field.choiceEmpty' });
     expect(fieldErrors(t, [choice], { c: 'x' }, 1, 0)).toEqual({});

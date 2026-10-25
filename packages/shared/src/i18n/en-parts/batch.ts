@@ -24,8 +24,6 @@ export const batchPart = {
   'batch.report.skipped': 'Skipped (run stopped).',
   'batch.report.cancelled': 'Batch cancelled. Completed files: {names}',
   'batch.report.summary': '{completed} completed, {failed} failed, {skipped} skipped',
-  'batch.error.range': 'Step “{step}”, page range “{value}”.',
   'batch.error.total': 'The queued files add up to more than {max} MB.',
   'batch.error.total.hint': 'Remove some files from the queue and run again.',
-  'batch.error.queue': 'Could not read step settings.',
 } as const;

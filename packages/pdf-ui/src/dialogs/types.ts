@@ -80,6 +80,11 @@ export type FieldSpec =
       readonly placeholderKey?: MessageKey;
       readonly maxLength?: number;
       readonly tokens?: readonly FieldToken[];
+      /**
+       * The text is a page range (`1-3, 5`) checked against the dialog's page count; empty and `all`
+       * stand for every page. A range that does not read is an error under the field.
+       */
+      readonly pageRanges?: boolean;
     } & FieldBase)
   | ({
       /**

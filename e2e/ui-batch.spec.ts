@@ -234,18 +234,22 @@ test.describe('a damaged file in the queue', () => {
   });
 });
 
-test('a page range that cannot be read stops the run before any file is touched', async ({ page }) => {
+test('a page range that cannot be read is shown under its field and keeps Run off', async ({ page }) => {
   const dialog = await openBatch(page);
   await queue(dialog, [{ name: 'memo.pdf', bytes: labelledPdf('Memo', 2) }]);
   await onlySteps(dialog, ['Extract pages']);
-  await dialog.getByRole('textbox', { name: 'Page range' }).fill('two to three');
-  await dialog.getByRole('button', { name: 'Run batch' }).click();
-  const alert = dialog.getByRole('alert');
-  await expect(alert).toContainText('Could not read step settings.');
-  await expect(alert).toContainText('Enter a range like 1-3, 5 or 8-10.');
-  await expect(alert).toContainText('Step “Extract pages”, page range “two to three”.');
+  const run = dialog.getByRole('button', { name: 'Run batch' });
+  const range = dialog.getByRole('textbox', { name: 'Page range' });
+  const refusal = dialog.getByText('Page range could not be parsed. Enter a range like 1-3, 5 or 8-10.');
+  for (const typed of ['two to three', '3-1', '1-5000']) {
+    await range.fill(typed);
+    await expect(refusal).toBeVisible();
+    await expect(run).toBeDisabled();
+  }
   await expect(fileReport(dialog)).toHaveCount(0);
-  await expect(dialog.getByRole('button', { name: 'Download finished files' })).toHaveCount(0);
+  await range.fill('1-2');
+  await expect(refusal).toHaveCount(0);
+  await expect(run).toBeEnabled();
 });
 
 test('the run needs a queue and at least one step', async ({ page }) => {
