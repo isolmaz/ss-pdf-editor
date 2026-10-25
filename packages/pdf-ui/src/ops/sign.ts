@@ -34,6 +34,12 @@ const CORNERS: Record<string, { readonly x: number; readonly y: number }> = {
 /** A stamp 200×60 pt with a 24 pt margin — the size a reader shows a signature box at. */
 const STAMP = { width: 200, height: 60, margin: 24 };
 
+/** The calendar date (`YYYY-MM-DD`) a moment falls on in the signer's own time zone. */
+function localDay(moment: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${moment.getFullYear()}-${pad(moment.getMonth() + 1)}-${pad(moment.getDate())}`;
+}
+
 /**
  * The page's own media box as a lower-left corner plus extents, for the page the stamp is
  * asked to sit on. The box is read, never assumed: a page whose `/MediaBox` starts at
@@ -181,6 +187,7 @@ export const signDialog: OperationDialogSpec = {
     const pageIndex = Math.min(Math.max(Number(params.page ?? 1), 1), context.pageCount) - 1;
     const reason = String(params.reason ?? '').trim();
     const location = String(params.location ?? '').trim();
+    const signedAt = new Date();
 
     const rect = visible
       ? stampRect(
@@ -197,17 +204,16 @@ export const signDialog: OperationDialogSpec = {
           name: String(params.fieldName ?? '').trim() || undefined,
           pageIndex: visible ? pageIndex : undefined,
           rect,
-          // The stamp's three lines, in the order a reader shows them; the date is the
-          // signing moment the op writes into `/M` as well, so the box and the dictionary
-          // never disagree.
-          lines: visible
-            ? [described.commonName ?? '', new Date().toISOString().slice(0, 10), reason]
-            : undefined,
+          // The stamp's three lines, in the order a reader shows them; the date is the day the
+          // signer's clock shows at the moment `/M` records, so the box and the dictionary
+          // name the same moment.
+          lines: visible ? [described.commonName ?? '', localDay(signedAt), reason] : undefined,
         },
         digest: (params.digest ?? 'SHA-256') as 'SHA-256' | 'SHA-384' | 'SHA-512',
         reason: reason === '' ? undefined : reason,
         location: location === '' ? undefined : location,
         signerName: described.commonName ?? undefined,
+        date: signedAt,
       },
       { signal: context.signal, onProgress: context.onProgress },
     );

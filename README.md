@@ -515,6 +515,8 @@ nothing leaving the browser.
     way the field gets a drawn appearance; the stamp position you pick applies to a new
     field, or to an existing one that has no area of its own.
   - The signer is the certificate that matches the private key in the PKCS#12 file, not the first one it lists.
+  - The visible stamp shows the signer's name, the date in your own time zone and the reason;
+    the signature itself records the same moment in UTC.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
   - Trust is checked only against certificates you imported (a PEM file may hold several, such
