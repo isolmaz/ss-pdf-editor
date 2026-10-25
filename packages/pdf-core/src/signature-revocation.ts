@@ -571,16 +571,15 @@ async function isSelfSigned(subtle: SubtleCrypto, certificate: Certificate): Pro
 }
 
 /**
- * The certificates worth a signature check as the issuer of `child`: `child` itself (a
- * self-signed certificate answers by its own key) and the pool's name matches, the key-id
- * matches first, each distinct certificate once, at most {@link MAX_ISSUER_CANDIDATES} in all.
+ * The certificates worth a signature check as the issuer of `child`: the pool's name matches,
+ * the key-id matches first, each distinct certificate once, at most {@link MAX_ISSUER_CANDIDATES} in all.
  * The same certificate usually sits in the pool several times (the CMS, the `/DSS` and the
  * user's roots all carry the chain), and two certificates with the same `tbsCertificate` have
  * the same key, so the second copy cannot answer differently from the first.
  */
 function issuerCandidates(child: Certificate, pool: readonly Certificate[]): Certificate[] {
   const out: Certificate[] = [];
-  for (const candidate of candidatesFor(child, [child, ...pool])) {
+  for (const candidate of candidatesFor(child, pool)) {
     if (out.some((kept) => sameBytes(new Uint8Array(kept.tbsView), new Uint8Array(candidate.tbsView)))) {
       continue;
     }
@@ -590,17 +589,27 @@ function issuerCandidates(child: Certificate, pool: readonly Certificate[]): Cer
   return out;
 }
 
-/** From the leaf up: each certificate's issuer, found by its signature and not its name. */
+/**
+ * From the leaf up, at most `maxLinks` links: each certificate's issuer, found by its signature
+ * and not its name.
+ */
 async function buildChain(
   subtle: SubtleCrypto,
   leaf: Certificate,
   pool: readonly Certificate[],
+  maxLinks = MAX_CHAIN,
 ): Promise<Link[]> {
   const links: Link[] = [];
   const onPath: Certificate[] = [];
   let current = leaf;
-  for (let depth = 0; depth < MAX_CHAIN; depth += 1) {
+  for (let depth = 0; depth < maxLinks; depth += 1) {
     onPath.push(current);
+    // A self-signed certificate answers by its own key first: a file's certificate with its name and
+    // key under another CA may rank above it among the candidates.
+    if (await isSelfSigned(subtle, current)) {
+      links.push({ certificate: current, issuer: current, selfSigned: true });
+      break;
+    }
     let found: Certificate | null = null;
     for (const candidate of issuerCandidates(current, pool)) {
       if (await issuedBy(subtle, current, candidate)) {
@@ -608,10 +617,8 @@ async function buildChain(
         break;
       }
     }
-    const selfSigned =
-      found !== null && sameBytes(new Uint8Array(found.tbsView), new Uint8Array(current.tbsView));
-    links.push({ certificate: current, issuer: found, selfSigned });
-    if (found === null || selfSigned) break;
+    links.push({ certificate: current, issuer: found, selfSigned: false });
+    if (found === null) break;
     // An issuer already on the path closes a loop (two CAs that certify each other). It is
     // proven and recorded as this link's issuer; walking on would only list the same
     // certificates again, each with a verification, until the depth limit.
@@ -623,8 +630,10 @@ async function buildChain(
 }
 
 /**
- * The links to check: the trusted path's, then the walk above its root (a self-signed root closes
- * it at once). Without a trusted path, the chain built by signatures from the leaf.
+ * The links to check: the trusted path's, then its root's own link (none when it is self-signed)
+ * and nothing above it: a certificate a file adds above the root, one for its issuer's key under
+ * the file's own CA, is no one the user trusts. Without a trusted path, the chain built by
+ * signatures from the leaf.
  */
 async function linksToCheck(
   subtle: SubtleCrypto,
@@ -644,7 +653,7 @@ async function linksToCheck(
       }),
     ),
   );
-  return [...below, ...(await buildChain(subtle, top, pool))];
+  return [...below, ...(await buildChain(subtle, top, pool, 1))];
 }
 
 /**
@@ -880,15 +889,17 @@ function decidedCheck(
  * is the leaf itself, where an absent list is an honest `unknown`.
  *
  * When the trust walk validated a path to an imported root (`trustedPath`, `checkTrustPath`),
- * the certificates checked are that path's, each with the issuer the walk proved, so no other
+ * the certificates checked are that path's, each with the issuer the walk proved, then the root's
+ * own link and nothing above it, so no other
  * certificate with the same name and key — one the file carries ahead of the real one, valid
  * for other dates or allowed other uses — decides which lists count.
  *
  * A list or response clears a certificate only when the issuer that signed it is one of the
  * `roots` the user imported or chains to one: a file can carry its own CA, a certificate under
  * it and a list that CA signed, and that proves nothing about the certificate. Otherwise the
- * certificate is `unknown` (`'issuer-not-trusted'`). A revocation is taken whoever vouches for
- * the issuer, and a CRL's revocation even when the issuer certificate at hand does not allow
+ * certificate is `unknown` (`'issuer-not-trusted'`). A revocation of the leaf, or of a certificate
+ * on the trusted path, is taken whoever vouches for the issuer (without a trusted path, one above
+ * the leaf needs an anchored issuer too), and a CRL's revocation even when the issuer certificate at hand does not allow
  * signing lists: it is verified with the key that issued the certificate, so only that key's
  * holder can have made it. A certificate for which no list from its issuer was seen, and that no
  * response names, is `'no-list'` whoever its issuer is.
@@ -913,10 +924,15 @@ export async function checkRevocation(input: {
   const parsedLeaf = parseCertificate(input.leaf);
   if (parsedLeaf === null) return [];
   const leaf = asRoot(parsedLeaf);
-  const pool = input.pool
-    .map(parseCertificate)
-    .filter((entry): entry is Certificate => entry !== null)
-    .map(asRoot);
+  // The imported roots are tried first as issuers, so a certificate a file adds with a root's name
+  // and key under another CA never stands in for the root.
+  const pool = [
+    ...roots,
+    ...input.pool
+      .map(parseCertificate)
+      .filter((entry): entry is Certificate => entry !== null)
+      .map(asRoot),
+  ];
   // The walk parsed every one of these, so none is dropped here.
   const path = input.trustedPath
     .map(parseCertificate)
@@ -943,7 +959,10 @@ export async function checkRevocation(input: {
     }
     const decided = decisive(evidence, input.context.validationTime);
     if (decided === null) checks.push(unknownCheck(link, role, failure ?? 'list-scope'));
-    else if (decided.status === 'good' && anchored[index] !== true) {
+    // Without a trusted path a CA certificate is whatever the file says it is: anyone can issue one
+    // for a CA's key under a CA of their own and revoke it. So above the leaf a revocation, like a
+    // clearance everywhere, counts only from an anchored issuer.
+    else if (anchored[index] !== true && (decided.status === 'good' || (path.length === 0 && index > 0))) {
       checks.push(unknownCheck(link, role, 'issuer-not-trusted'));
     } else checks.push(decidedCheck(link, role, decided, input.context));
   }

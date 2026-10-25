@@ -346,10 +346,10 @@ describe('which issuers a list may come from', () => {
 
     const [signer] = await checkAlongTrust(leaf, [reissued], [imported], [crl]);
     expect(signer).toMatchObject({ subject: 'Signer', status: 'good', unknownReason: null });
-    // Without a trusted path the copy is only what the file says: it vouches for nothing.
+    // Without a trusted path the imported root is tried first as the issuer, so the copy decides nothing either.
     expect((await check(leaf, [reissued, imported], [crl], SIGNED_AT, [imported]))[0]).toMatchObject({
-      status: 'unknown',
-      unknownReason: 'issuer-not-trusted',
+      status: 'good',
+      unknownReason: null,
     });
   });
 

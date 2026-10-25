@@ -24,7 +24,13 @@ import {
   withUnsigned,
 } from './signature-revocation.fixtures';
 import type { CertificateFixture } from './signature-trust.fixtures';
-import { ecdsaRawToDer, generateKey, issueCertificate } from './signature-trust.fixtures';
+import {
+  authorityKeyIdentifierExtension,
+  ecdsaRawToDer,
+  generateKey,
+  issueCertificate,
+  subjectKeyIdentifierExtension,
+} from './signature-trust.fixtures';
 import { evaluateDocumentTimestamp, evaluateEvidence, NO_DSS } from './signature-validation';
 
 const day = (month: number, date: number): Date => new Date(Date.UTC(2026, month - 1, date));
@@ -366,6 +372,7 @@ describe('evaluateEvidence along the trusted path', () => {
     keyPair: CryptoKeyPair,
     issuer?: CertificateFixture,
     notAfter?: Date,
+    extraExtensions?: ReturnType<typeof subjectKeyIdentifierExtension>[],
   ) =>
     await issueCertificate(
       {
@@ -373,6 +380,7 @@ describe('evaluateEvidence along the trusted path', () => {
         keyPair,
         ...VALID,
         ...(notAfter === undefined ? {} : { notAfter }),
+        ...(extraExtensions === undefined ? {} : { extraExtensions }),
         basicConstraints: { cA: true },
         keyUsage: ['keyCertSign', 'cRLSign'],
       },
@@ -527,6 +535,116 @@ describe('evaluateEvidence along the trusted path', () => {
       ['Bar', 'revoked'],
     ]);
     expect(outcome.revocation).toBe('revoked');
+  });
+
+  it('lets no certificate a file adds for a CA key under its own CA decide a revocation', async () => {
+    const root = await authority('Root', await key());
+    const intermediate = await authority('Intermediate', await key(), root);
+    const importedCrls = [
+      await issueCrl({ issuer: intermediate, ...LIST_DATES }),
+      await issueCrl({ issuer: root, ...LIST_DATES }),
+    ];
+    const evil = await authority('Evil CA', await key());
+    /** A CA's name and public key under the attacker's CA, and a list of that CA revoking it. */
+    const wrap = async (
+      ca: CertificateFixture,
+      extraExtensions?: ReturnType<typeof subjectKeyIdentifierExtension>[],
+    ) => {
+      const wrapper = await issueCertificate(
+        {
+          subject: ca.subject,
+          keyPair: ca.keyPair,
+          ...VALID,
+          basicConstraints: { cA: true },
+          keyUsage: ['keyCertSign', 'cRLSign'],
+          ...(extraExtensions === undefined ? {} : { extraExtensions }),
+        },
+        evil,
+      );
+      const list = await issueCrl({
+        issuer: evil,
+        ...LIST_DATES,
+        revoked: [{ cert: wrapper, at: day(2, 1), reason: CRL_REASON.keyCompromise }],
+      });
+      return { wrapper, list };
+    };
+    const signer = await holder('Signer', intermediate);
+
+    // Above a trusted path's root: the user imported the intermediate and the root, and the walk
+    // stops at the intermediate.
+    const aboveRoot = await wrap(root);
+    const bundle = await evidence(
+      signer,
+      [intermediate.der, aboveRoot.wrapper.der, evil.der],
+      [intermediate, root],
+      {
+        importedCrls,
+        dss: { crls: [aboveRoot.list] },
+      },
+    );
+    expect(bundle.trust).toMatchObject({ verdict: 'trusted', path: ['Signer', 'Intermediate'] });
+    expect(rows(bundle.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Intermediate', 'good'],
+    ]);
+    expect(bundle.revocation).toBe('not-revoked');
+
+    // The signer's own certificate imported as the root: the intermediate's key under the attacker's CA
+    // stands above it, ahead of the real intermediate.
+    const forIntermediate = await wrap(intermediate);
+    const ownRoot = await evidence(
+      signer,
+      [forIntermediate.wrapper.der, evil.der, intermediate.der],
+      [signer],
+      {
+        importedCrls,
+        dss: { crls: [forIntermediate.list] },
+      },
+    );
+    expect(ownRoot.trust).toMatchObject({ verdict: 'trusted', path: ['Signer'] });
+    expect(rows(ownRoot.revocationChecks)).toEqual([['Signer', 'unknown']]);
+    expect(ownRoot.revocation).toBe('indeterminate');
+
+    // A root whose authority key id is not its own: a certificate carrying that id would rank above
+    // the root as its issuer.
+    const oddRoot = await authority('Odd Root', await key(), undefined, undefined, [
+      subjectKeyIdentifierExtension(Uint8Array.from([1, 1, 1, 1])),
+      authorityKeyIdentifierExtension(Uint8Array.from([2, 2, 2, 2])),
+    ]);
+    const underOdd = await authority('Odd Intermediate', await key(), oddRoot);
+    const oddSigner = await holder('Signer', underOdd);
+    const oddWrapped = await wrap(oddRoot, [subjectKeyIdentifierExtension(Uint8Array.from([2, 2, 2, 2]))]);
+    const odd = await evidence(oddSigner, [underOdd.der, evil.der], [oddRoot], {
+      importedCrls: [
+        await issueCrl({ issuer: underOdd, ...LIST_DATES }),
+        await issueCrl({ issuer: oddRoot, ...LIST_DATES }),
+      ],
+      dss: { certs: [oddWrapped.wrapper.der], crls: [oddWrapped.list] },
+    });
+    expect(rows(odd.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Odd Intermediate', 'good'],
+    ]);
+    expect(odd.revocation).toBe('not-revoked');
+
+    // No trusted path (the file carries the intermediate only in its validation data): the
+    // intermediate's key under the attacker's CA, ahead of the real certificate.
+    const withoutPath = await evidence(signer, [forIntermediate.wrapper.der, evil.der], [root], {
+      importedCrls,
+      dss: { certs: [intermediate.der], crls: [forIntermediate.list] },
+    });
+    expect(withoutPath.trust?.verdict).not.toBe('trusted');
+    expect(rows(withoutPath.revocationChecks)).toEqual([
+      ['Signer', 'unknown'],
+      ['Intermediate', 'unknown'],
+    ]);
+    expect(withoutPath.revocation).toBe('indeterminate');
+    // The same file without the attacker's certificates: the imported root vouches for the chain.
+    const plain = await evidence(signer, [], [root], { importedCrls, dss: { certs: [intermediate.der] } });
+    expect(rows(plain.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Intermediate', 'good'],
+    ]);
   });
 
   it('checks the signer and a document timestamp along the paths their trust walks validated', async () => {
