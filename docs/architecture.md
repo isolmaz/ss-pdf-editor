@@ -2862,7 +2862,12 @@ that reopens the file is something saved. A recent entry then reopens the file i
 browser asks for read permission again on that click (`requestPermission` needs the gesture),
 a refusal is reported and taken as the answer, and a file that has moved or gone is reported
 before the picker is offered. A tab restored from a draft gets its handle back, so it can still
-Save over its file rather than only Export. A handle read back this way holds no write access
+Save over its file rather than only Export. A Save as (or the first Save of a document with no
+file) records the file it wrote as the entry's handle (`putRecentHandle`, never for a sensitive
+session) and the written size and page count as the entry's, so a draft restored later is measured
+against the file it last wrote, and `addRecentDocument` replaces an earlier entry by id or by the
+same name, size and page count, never by name alone. The prune after the start-up restore keeps the
+handle of every open tab and of every draft the vault holds, as clearing the list does. A handle read back this way holds no write access
 (a reopened entry asked for `read` only), so `saveActive` asks for `readwrite`
 (`ensureWriteAccess`) as the first await of the click that saves, before the preparation uses
 up the gesture; a refusal is `permission-denied`, and nothing is written. A write the browser

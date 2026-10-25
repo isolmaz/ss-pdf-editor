@@ -29,7 +29,17 @@ const doc = (id: string, name: string, extra: { starred?: boolean; openedAt?: nu
 });
 
 describe('recent documents', () => {
-  it('adds the newest first and replaces an earlier opening of the same id or name', () => {
+  it('keeps two different files that share a name, and replaces only an opening of the same file', () => {
+    addRecentDocument({ ...doc('a', 'scan.pdf'), sizeBytes: 10, pageCount: 2 });
+    addRecentDocument({ ...doc('b', 'scan.pdf'), sizeBytes: 20, pageCount: 2 });
+    addRecentDocument({ ...doc('c', 'scan.pdf'), sizeBytes: 10, pageCount: 5 });
+    expect(loadRecentDocuments().map((item) => item.id)).toEqual(['c', 'b', 'a']);
+
+    const reopened = addRecentDocument({ ...doc('d', 'scan.pdf'), sizeBytes: 20, pageCount: 2 });
+    expect(reopened.map((item) => item.id)).toEqual(['d', 'c', 'a']);
+  });
+
+  it('adds the newest first and replaces an earlier opening of the same id or file', () => {
     addRecentDocument(doc('a', 'one.pdf'));
     addRecentDocument(doc('b', 'two.pdf'));
     const list = addRecentDocument(doc('c', 'one.pdf', { openedAt: 5 }));

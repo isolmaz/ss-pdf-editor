@@ -8,11 +8,12 @@
  * the duration.
  */
 
-import { type SessionStore, type SessionTab, sha256Hex } from 'pdf-model';
+import { type SessionStore, type SessionTab, sha256Hex, workingPageCount } from 'pdf-model';
 import { ToolError, type Translator, toToolError } from 'pdf-shared';
 import { noticeLine, verificationNotices } from '../../notices';
 import { downloadFiles } from '../../operations';
-import { ensureWriteAccess } from '../../recent-handles';
+import { addRecentDocument } from '../../recent';
+import { ensureWriteAccess, putRecentHandle } from '../../recent-handles';
 import type { SaveStepDescription } from '../../save-plan';
 import {
   beginOperation,
@@ -239,12 +240,23 @@ export async function saveDocument(
       // succeeded would make the next Save write in place over a file this one never
       // managed to commit.
       session.setHandle(preparedTab.id, destination.file);
+      // The recent entry reopens, and a draft restored later saves over, the file written last.
+      if (destination.file !== tab.source.handle && !preparedTab.sensitive) {
+        await putRecentHandle(preparedTab.id, destination.file);
+      }
     } else {
       // Direct download fallback when File System Access is not available
       downloadFiles([{ name: pdfName(tab.name), bytes, mime: 'application/pdf' }]);
     }
 
     recordOutput(session, prepared);
+    // The entry describes the file as it is now, so opening it again finds the same document.
+    addRecentDocument({
+      id: preparedTab.id,
+      name: preparedTab.name,
+      sizeBytes: bytes.byteLength,
+      pageCount: workingPageCount(preparedTab),
+    });
     showNotice(
       noticeLine(
         [{ key: 'save.done', params: { name: preparedTab.name } }, ...verificationNotices(verification)],

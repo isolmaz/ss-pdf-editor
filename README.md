@@ -120,7 +120,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   subtag) or, when the file declares none, for the interface language; without such a
   voice it is unavailable and says so.
 - **Navigation aids.** Thumbnails, the outline and document tabs. The recent-files list
-  reopens a document by its identity, never by its file name. In Chromium-based browsers it
+  reopens a document by its identity, never by its file name: two files with the same name
+  are two entries, and opening a file again replaces its earlier entry only when its name, size
+  and page count match. In Chromium-based browsers it
   reopens the file itself (the browser asks for permission again, and once more for write
   access the first time you save over it); elsewhere it asks you to choose the file.
 - **The document never moves under you.** Marks, selections, measurements and staged
@@ -668,7 +670,9 @@ These describe how the build works; they are not promises.
     bytes. A sensitive session keeps no handle: marking a document sensitive, or purging it,
     forgets its handle, and so do removing an entry and clearing the list — except that
     clearing keeps the handle of a document that is open in a tab or has a stored draft, so
-    a restored tab can still save over its file.
+    a restored tab can still save over its file; so does the clean-up after the start-up
+    restore. *Save as* makes the new file the one its entry reopens and a restored tab saves
+    over.
   - A signature picture is kept only when you tick **Remember on this device**: in
     `localStorage`, at most six, each deletable from the signature dialog. A sensitive
     session does not offer it.

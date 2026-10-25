@@ -17,9 +17,18 @@ import {
 import { exportDocument, type SaveHost, saveDocument } from './save-actions';
 import { initialSaveState, isSaveLocked, saveLocked, saveStore } from './save-store';
 
-const mocks = vi.hoisted(() => ({ downloadFiles: vi.fn(), ensureWriteAccess: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  downloadFiles: vi.fn(),
+  ensureWriteAccess: vi.fn(),
+  putRecentHandle: vi.fn(),
+  addRecentDocument: vi.fn(),
+}));
 vi.mock('../../operations', () => ({ downloadFiles: mocks.downloadFiles }));
-vi.mock('../../recent-handles', () => ({ ensureWriteAccess: mocks.ensureWriteAccess }));
+vi.mock('../../recent-handles', () => ({
+  ensureWriteAccess: mocks.ensureWriteAccess,
+  putRecentHandle: mocks.putRecentHandle,
+}));
+vi.mock('../../recent', () => ({ addRecentDocument: mocks.addRecentDocument }));
 
 const t = ((key: string, params?: Record<string, string>) =>
   params === undefined ? key : `${key} ${Object.values(params).join(' ')}`) as Translator;
@@ -115,6 +124,7 @@ beforeEach(() => {
   prepareOutput = vi.fn();
   host = { session, t, prepareOutput } as SaveHost;
   mocks.ensureWriteAccess.mockResolvedValue(true);
+  mocks.putRecentHandle.mockResolvedValue(undefined);
 });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -367,6 +377,50 @@ describe('saveDocument', () => {
     expect(chosen.bytes()).toEqual(output);
     expect(own.createWritable).not.toHaveBeenCalled();
     expect(session.getSnapshot().tabs[0]?.source.handle).toBe(chosen.file);
+  });
+
+  it('makes the file Save as wrote the one the recent entry reopens, and an in-place save leaves it alone', async () => {
+    const own = fakeFile([9, 9]);
+    const tab = await open('a.pdf', own.file);
+    const chosen = fakeFile([]);
+    vi.stubGlobal('window', { showSaveFilePicker: vi.fn(async () => chosen.file) });
+    prepareOutput.mockImplementation(async () => prepared(tab));
+    mocks.putRecentHandle.mockClear();
+
+    expect(await saveDocument(host, tab.id, { saveAs: true })).toBe(true);
+    expect(mocks.putRecentHandle).toHaveBeenCalledExactlyOnceWith(tab.id, chosen.file);
+
+    chosen.replace([1, 2, 3]);
+    expect(await saveDocument(host, tab.id, { overwrite: chosen.file })).toBe(true);
+    expect(mocks.putRecentHandle).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps no file handle of a sensitive session, not even the one Save as wrote', async () => {
+    const tab = await open('a.pdf');
+    session.setSensitive(tab.id, true);
+    const chosen = fakeFile([]);
+    vi.stubGlobal('window', { showSaveFilePicker: vi.fn(async () => chosen.file) });
+    prepareOutput.mockImplementation(async () => prepared(tab));
+
+    expect(await saveDocument(host, tab.id)).toBe(true);
+
+    expect(session.getSnapshot().tabs[0]?.source.handle).toBe(chosen.file);
+    expect(mocks.putRecentHandle).not.toHaveBeenCalled();
+  });
+
+  it('records the size and page count of the file it wrote on the recent entry, so reopening it finds the same document', async () => {
+    const target = fakeFile();
+    const tab = await open('a.pdf', target.file);
+    prepareOutput.mockResolvedValue(prepared(tab));
+
+    expect(await saveDocument(host, tab.id)).toBe(true);
+
+    expect(mocks.addRecentDocument).toHaveBeenCalledWith({
+      id: tab.id,
+      name: 'a.pdf',
+      sizeBytes: output.byteLength,
+      pageCount: 1,
+    });
   });
 
   it('refuses to write over a file the user would not grant access to', async () => {
