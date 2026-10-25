@@ -84,16 +84,51 @@ describe('searchPdfText', () => {
   });
 
   it('keeps offsets valid in the original text when a character folds to a longer string', async () => {
-    // `İ` lowercases to `i̇` (two code units); the fold keeps it as it is, so the offset of
-    // the second word is its position in the page's own text and `İstanbul` is not `istanbul`.
+    // `İ` lowercases to `i̇` (two code units); it is the dotted i, so it is found by `istanbul`, and the
+    // offset of the later words is still their position in the page's own text.
     const text = 'İstanbul istanbul ISTANBUL';
     const matches = await searchPdfText(await readerOf(1, () => text), 'istanbul');
     expect(
       matches.map((match) => [match.index, text.slice(match.index, match.index + match.length)]),
     ).toEqual([
+      [0, 'İstanbul'],
       [9, 'istanbul'],
       [18, 'ISTANBUL'],
     ]);
+  });
+
+  it('keeps offsets valid after characters of two UTF-16 units', async () => {
+    const text = '😀 İ 😀 sık';
+    const [match] = await searchPdfText(await readerOf(1, () => text), 'sık');
+    expect(match).toMatchObject({ index: 8, length: 3 });
+    expect(text.slice(8, 11)).toBe('sık');
+  });
+
+  it('reads I and ı, İ and i as the Turkish and the English reader do, as find and replace does', async () => {
+    const text = 'İstanbul ISTANBUL sık sik SIK';
+    const find = async (query: string) =>
+      (await searchPdfText(await readerOf(1, () => text), query)).map((match) =>
+        text.slice(match.index, match.index + match.length),
+      );
+    // `İ` is the dotted i, so a Latin search finds it.
+    expect(await find('istanbul')).toEqual(['İstanbul', 'ISTANBUL']);
+    expect(await find('İSTANBUL')).toEqual(['İstanbul', 'ISTANBUL']);
+    // `ı` is not `i`: each finds its own word, and a capital `I` is both.
+    expect(await find('sık')).toEqual(['sık', 'SIK']);
+    expect(await find('sik')).toEqual(['sik', 'SIK']);
+    expect(await find('SIK')).toEqual(['sık', 'sik', 'SIK']);
+  });
+
+  it('matches a capital sigma with a final sigma and a long s with an s, offsets kept', async () => {
+    const text = 'ΜΑΡΚΟΣ Μαρκος weiſs WEISS';
+    const find = async (query: string) =>
+      (await searchPdfText(await readerOf(1, () => text), query)).map((match) =>
+        text.slice(match.index, match.index + match.length),
+      );
+    expect(await find('Μαρκος')).toEqual(['ΜΑΡΚΟΣ', 'Μαρκος']);
+    expect(await find('ΜΑΡΚΟΣ')).toEqual(['ΜΑΡΚΟΣ', 'Μαρκος']);
+    expect(await find('weiss')).toEqual(['weiſs', 'WEISS']);
+    expect(await find('WEIſS')).toEqual(['weiſs', 'WEISS']);
   });
 
   it('clips a snippet to 32 characters of context with ellipses, and offsets the match inside it', async () => {

@@ -206,7 +206,7 @@ CI `verify` job, after `pnpm build`.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (40 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (41 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
 | `format.ts` | `formatBytes(bytes, locale)`, `formatPercent(fraction, locale)` and `formatDegrees(degrees, locale)`: sizes, percentages and angles the way the interface language writes them (`1,5 KB`, `%140` and `1,8°` in Turkish, `1.5 KB`, `140%` and `1.8°` in English), through `Intl.NumberFormat`; a size that is not a finite, non-negative number is written as `—`, and a size that rounds up to 1,024 KB is written in MB. Report notes never format a size or an angle: they carry the numbers and the sentence asks for them with a `{name:bytes}`, `{name:percent}` or `{name:degrees}` placeholder, which `createTranslator` writes in its own locale. |
 | `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`; the gauge and the limit-profile badge are drawn only while the limit verdict is not `ok` or the gauge is at 75 % or more (from 768 px up). |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
@@ -482,7 +482,7 @@ writer does, and the steps it reports:
   `corrupt-document`; an attribute is read through `attribute()`, which answers `null` when it is
   absent, because xmldom's `getAttribute` answers `''` and no default would ever apply; one it had to repair, such as a sheet cut off mid-row, is converted and
   named in a `lost` note; a boolean attribute is read through `onOff()`, which takes `1`, `true` and `on`
-  as on and `0`, `false` and `off` as off), text and CSV by `ops/convert-text.ts` (UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are.
+  as on and `0`, `false` and `off` as off), text and CSV by `ops/convert-text.ts` (UTF-16 behind a byte-order mark, else UTF-8, else Windows-1254) — and HTML, EPUB and FB2 go to MuPDF as they are.
   The reads are bounded by what actually comes out, not by what a file declares: every ZIP entry is
   inflated through JSZip's `internalStream`, which counts the bytes chunk by chunk and stops at 64 MiB
   for one entry or 256 MiB for one package (`file-too-large`; images count too), and a DOCX package is
@@ -1582,10 +1582,13 @@ Identity-H with a `/ToUnicode` CMap — which is what makes the words selectable
 searchable at all. Noto Sans has no Arabic, Hebrew or CJK glyphs: such a word would encode as
 glyph 0 and come back as nothing, so those words use the glyph-less font, whose codes are the
 text's UTF-16 units. A right-to-left word is written in visual order (grapheme clusters
-reversed), the order extractors undo with the bidi algorithm; written logically it would come
-back reversed. Words of Devanagari, Arabic, Hebrew, Korean and the glyph-less font get a space
-beside them, because MuPDF finds no gap between them and would join `नमस्ते दुनिया` into one
-word. All of this is measured through both MuPDF and pdf.js extraction.
+reversed, a number or Latin word inside it kept as it reads: `displayOrder` in `ops/bidi.ts`, UAX #9
+without the mirrored glyphs), the order extractors undo with the bidi algorithm; written logically
+it would come back reversed. pdf.js runs that algorithm over the drawn text; MuPDF places the
+digits and brackets beside a right-to-left word differently, so a word that mixes scripts reads
+back in the intended order through pdf.js and not always through MuPDF. Words of Devanagari, Arabic, Hebrew, Korean and the glyph-less
+font get a space beside them, because MuPDF finds no gap between them and would join `नमस्ते दुनिया`
+into one word. All of this is measured through both MuPDF and pdf.js extraction.
 
 There are 27 languages (`OCR_LANGUAGE_CODES_ALL`). Turkish and English ship both models and
 are in the offline package; the others ship `4.0.0_best_int` only. The `4.0.0` packs add the
@@ -1808,11 +1811,17 @@ through a `FaceSource`), and hands one `TextEditRequest` to the text editor's wr
 own. Steps: `text.find` (declared read-only in `OPERATION_TABLE`) and the writer's.
 
 **Matching.** A block is a list of units — glyphs, word gaps and line breaks — and the search
-compares NFKC-normalised code points, so `ﬁ` matches `fi`; a match that would begin or end
+compares NFKC-normalised code points, so `ﬁ` matches `fi` and `m2` matches `m²`; a letter and a
+combining accent that are glyphs of their own compare as the letter they make (`e` + U+0301 is
+`é`), and a match takes the marks after its last letter with it. A match that would begin or end
 inside one glyph is skipped and counted. A line-end hyphen before a lower-case letter is read
-as hyphenation and joins the word. Without match case, `I` matches both `i` and `ı`, `İ`
-matches `i`, and `ı` matches only `ı` — folding `ı` to `i` would make Turkish `sık` and `sik`
-one word. Whole-word mode refuses a letter, digit or mark on either side.
+as hyphenation and joins the word. Without match case (`case-fold.ts`, which the document search
+`search.ts` uses too), `I` matches both `i` and `ı`, `İ` matches `i`, `ı` matches only `ı` —
+folding `ı` to `i` would make Turkish `sık` and `sik` one word — and a final sigma `ς` is `σ`.
+Whole-word mode refuses a letter, digit or mark on either side. The replacement is one line of words: a
+control character (line break, tab), a line or paragraph separator, or a zero-width, soft-hyphen or
+direction character in it is refused before any page is read (`replacement-invalid`, naming the code
+points), since the first kind would be drawn as a plain gap and the second kind cannot be read back.
 
 **Placement**, per line of matches:
 

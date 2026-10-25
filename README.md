@@ -377,10 +377,21 @@ lists every tool in either mode. The choice is kept on the device.
     new text needs (in a merged file, the copy of the font the page itself uses). Otherwise
     it uses a close standard font (Helvetica, Times, Courier) or Noto Sans, sized to match,
     and the report names the font.
-  - Searching without match case treats `I`/`ı` and `İ`/`i` as Turkish and English
-    readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches `sik`.
+  - Searching without match case, here and in the search panel, treats `I`/`ı` and `İ`/`i` as
+    Turkish and English readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches
+    `sik`. A final sigma `ς` and `σ` are the same letter, so `Μαρκος` finds `ΜΑΡΚΟΣ`.
+  - Text is compared in its compatibility form, so `m2` also finds `m²`, `fi` finds the ligature
+    `ﬁ`, and a full-width `Ａ` finds `A`; every match is replaced, whichever form it was in.
+  - A letter and an accent drawn as two glyphs (`e` and U+0301) are compared as the letter
+    they make, so `café` finds either spelling, and a match takes the combining marks that
+    follow its last letter with it.
+  - The new text is one line of words. A line break, a tab or an invisible character in it (a
+    zero-width joiner, a soft hyphen, a direction mark) is refused before anything is read,
+    and the message names the code points.
 - **Export and import.** Export text as plain text or Markdown. Export pages as PNG, JPEG or
   WebP images, or build a PDF from images.
+  - Markdown export escapes what Markdown would read as syntax (a line `# of users` stays text
+    instead of becoming a heading), so the rendered file shows the page's own words.
 - **Other documents to PDF.** DOCX, XLSX, PPTX, HTML, TXT/MD, CSV/TSV, EPUB and FB2 are
   converted in the browser by MuPDF's layout engine. The result is real text you can select
   and search.
@@ -393,7 +404,12 @@ lists every tool in either mode. The choice is kept on the device.
     order.
   - Headings become the outline. `http:`, `https:` and `mailto:` links and links inside the
     document become link annotations. The title comes from the file or its name.
-  - Text and CSV that are not UTF-8 are read as Windows-1254, and the report says so.
+  - Text and CSV that open with a UTF-16 byte-order mark (as Notepad and Excel's *Unicode Text*
+    save them) are read as UTF-16; other text that is not UTF-8 is read as Windows-1254. The
+    report says which.
+  - A word with no space that is longer than the line (a URL, a hash, base64) is broken onto
+    several lines in text and CSV, in a table cell within the cell's share of the line, so none
+    of it runs off the page. Copying it gives the pieces on separate lines.
   - A Word, Excel or PowerPoint file that unpacks to far more than it weighs (a part over 64 MiB,
     or 256 MiB in all) and a CSV with more than 1000 columns or two million cells are refused
     rather than opened.
@@ -605,7 +621,9 @@ nothing leaving the browser.
     language or an engine package is missing, and the next run tries again.
   - Words in scripts the embedded Noto Sans cannot spell (Arabic, Hebrew, CJK) are written in
     a glyph-less font whose codes are the text itself, so they can be searched and copied.
-    Right-to-left words come back in reading order.
+    Right-to-left words come back in reading order, a number or Latin word inside one with its
+    digits and letters in order. That holds for this editor's viewer (pdf.js); another reader,
+    MuPDF's text extraction for one, can order a word that mixes scripts differently.
   - Why Tesseract and no other engine, and why words below 90 % confidence are the ones
     flagged: [docs/ocr-evaluation.md](docs/ocr-evaluation.md). The same OCR reads scanned pages
     for the exact Word layout (see [PDF to Word, Excel and CSV](#text)).

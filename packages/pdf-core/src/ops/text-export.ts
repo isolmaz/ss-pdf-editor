@@ -9,9 +9,10 @@
  * `getPageText()` (the adapter's convenience call) joins items with single spaces
  * and loses both line and paragraph breaks. Items are grouped into lines by
  * baseline and lines into paragraphs by the vertical gap; the numbers are in
- * `pageToParagraphs`. The heuristic assumes upright text — a page of sideways
- * text still exports its characters, but its line grouping is content order, and
- * the report says so.
+ * `pageToParagraphs`. The heuristic assumes text that reads left to right on the
+ * page as it is shown: positions go through the page's viewport, so a page with a
+ * `/Rotate` groups like an upright one. Text set sideways on the shown page still
+ * exports its characters, but not in reading order, and nothing in the result says so.
  *
  * A line with right-to-left text (Hebrew, Arabic) is joined in reading order, not
  * left to right: pdf.js turns each item's text into reading order and says which way
@@ -138,14 +139,32 @@ function joinLine(pieces: readonly TextPiece[]): string {
   return result.replace(/\s+/g, ' ').trim();
 }
 
+/** What Markdown reads as syntax wherever it stands: an escape, code, emphasis, a link, a tag, strike-through, an entity. */
+const MARKDOWN_INLINE = /[\\`*_[<~]|&(?=#?\w+;)/g;
+/** What opens a heading, a quote or a list item at the start of a paragraph. */
+const MARKDOWN_BLOCK = /^[#>+-]/;
+/** A numbered item, `1.` or `1)`; the dot or bracket is what gets escaped. */
+const MARKDOWN_NUMBER = /^(\d{1,9})([.)])(?=\s|$)/;
+
+/** A paragraph's text so that Markdown shows it as written instead of reading it. */
+function escapeMarkdown(paragraph: string): string {
+  return paragraph
+    .replace(MARKDOWN_INLINE, '\\$&')
+    .replace(MARKDOWN_BLOCK, '\\$&')
+    .replace(MARKDOWN_NUMBER, '$1\\$2');
+}
+
 /**
  * Plain text keeps the document's own line breaks and marks paragraphs with a
- * blank line. Markdown re-flows them (a wrapped line is one paragraph line) and
- * separates pages with a thematic break, which is both valid Markdown and easy to
- * spot.
+ * blank line. Markdown re-flows them (a wrapped line is one paragraph line, so only
+ * the first can open a heading or a list) and escapes what it would otherwise read as
+ * syntax, and separates pages with a thematic break, which is both valid Markdown and
+ * easy to spot.
  */
 function formatPage(paragraphs: readonly string[][], format: TextExportFormat): string {
-  const lines = paragraphs.map((paragraph) => paragraph.join(format === 'markdown' ? ' ' : '\n'));
+  const lines = paragraphs.map((paragraph) =>
+    format === 'markdown' ? escapeMarkdown(paragraph.join(' ')) : paragraph.join('\n'),
+  );
   return lines.join('\n\n');
 }
 
@@ -193,6 +212,7 @@ export async function exportText(
       let text: string;
       try {
         const page = await handle.raw.getPage(pageIndex + 1);
+        const viewport = page.getViewport({ scale: 1 });
         const content = await page.getTextContent();
         // Marked-content markers carry structure, not text; only `TextItem`s have
         // `str` and a text matrix. Written as an explicit loop so the pdf.js item
@@ -200,10 +220,13 @@ export async function exportText(
         const pieces: TextPiece[] = [];
         for (const item of content.items) {
           if (!('str' in item)) continue;
+          // The text matrix is in the page's own space, which `/Rotate` turns before it is shown.
+          // The viewport's y grows downwards; the grouping reads a larger y as higher on the page.
+          const [x, top] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
           pieces.push({
             text: item.str,
-            x: item.transform[4],
-            y: item.transform[5],
+            x,
+            y: -top,
             size: Math.hypot(item.transform[1], item.transform[3]) || item.height || 1,
             width: item.width,
             direction: item.dir === 'rtl' ? 'rtl' : letterCounts(item.str).ltr > 0 ? 'ltr' : null,

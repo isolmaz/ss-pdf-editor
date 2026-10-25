@@ -177,6 +177,20 @@ describe('xlsx cells: types, dates, merges and limits', () => {
     );
   });
 
+  it('shows the stored value of a date-formatted cell that holds no date, and still converts the whole workbook', async () => {
+    const parts = { 'xl/styles.xml': styles('', '<xf/><xf numFmtId="14"/>') };
+    const serials = ['2958465', '2958466', '1000000000', '1e300', 'abc', 'Infinity', '45000'];
+    const rows = `<row r="1">${serials
+      .map((serial, index) => `<c r="${String.fromCharCode(65 + index)}1" s="1"><v>${serial}</v></c>`)
+      .join('')}</row>`;
+    // 2958465 is 9999-12-31, the last day Excel has; the next serial, a billion days and the rest
+    // are not dates, so they are shown as stored.
+    expect(await cells(await book(sheetXml(rows), parts))).toBe(
+      '<h2>S</h2><table class="sheet"><tr><td>9999-12-31</td><td class="n">2958466</td>' +
+        '<td class="n">1000000000</td><td class="n">1e300</td><td>abc</td><td>Infinity</td><td>2023-03-15</td></tr></table>',
+    );
+  });
+
   it.each([
     ['1', true],
     ['true', true],
@@ -203,14 +217,13 @@ describe('xlsx cells: types, dates, merges and limits', () => {
     ).toBe('<h2>S</h2><table class="sheet"><tr><td class="n">45000</td></tr></table>');
   });
 
-  it('reads booleans, inline rich text, shared strings out of range and cells without a reference', async () => {
+  it('reads booleans, inline rich text, shared strings out of range and a cell with an unreadable reference', async () => {
     const sheet = sheetXml(`<row r="1">
       <c r="A1" t="b"><v>0</v></c>
       <c r="B1" t="inlineStr"><is><r><t>a</t></r><r><t>b</t></r><r/></is></c>
       <c r="C1" t="inlineStr"/>
       <c r="D1" t="s"><v>99</v></c>
       <c r="E1" t="s"><v>0</v></c>
-      <c><v>7</v></c>
       <c r="??"><v>8</v></c>
       <c r="F1"/></row>`);
     const html = await cells(
@@ -220,6 +233,28 @@ describe('xlsx cells: types, dates, merges and limits', () => {
     );
     expect(html).toBe(
       '<h2>S</h2><table class="sheet"><tr><td>FALSE</td><td>ab</td><td>&#160;</td><td>&#160;</td><td>xy</td></tr></table>',
+    );
+  });
+
+  it('places a cell or a row that has no reference after the one before it', async () => {
+    // `r` is optional on `c` and on `row` (ECMA-376 §18.3.1.4, §18.3.1.73): a cell follows the one
+    // before it in its row, a row the one before it in the sheet, and either may restart the count.
+    const text = (value: string, reference = '') =>
+      `<c${reference === '' ? '' : ` r="${reference}"`} t="inlineStr"><is><t>${value}</t></is></c>`;
+    const sheet = sheetXml(
+      `<row>${text('a')}${text('b')}${text('c', 'E1')}${text('d')}</row>
+       <row>${text('e')}${text('f')}</row>
+       <row r="5">${text('g')}</row>
+       <row>${text('h')}</row>`,
+    );
+    expect(await cells(await book(sheet))).toBe(
+      '<h2>S</h2><table class="sheet">' +
+        '<tr><td>a</td><td>b</td><td>&#160;</td><td>&#160;</td><td>c</td><td>d</td></tr>' +
+        '<tr><td>e</td><td>f</td><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td></tr>' +
+        '<tr><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td></tr>' +
+        '<tr><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td></tr>' +
+        '<tr><td>g</td><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td></tr>' +
+        '<tr><td>h</td><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td><td>&#160;</td></tr></table>',
     );
   });
 
@@ -627,6 +662,52 @@ describe('pptx shapes, text and tables', () => {
       key: 'op.note.convert.imagesSkipped',
       params: { count: 6 },
     });
+  });
+
+  it('keeps a table cell that spans rows as a row span, so the cells beside the skipped ones stay in their columns', async () => {
+    const cell = (body: string, attributes = '') =>
+      `<a:tc${attributes}>${body === '' ? '' : `<a:txBody><a:p>${text(body)}</a:p></a:txBody>`}</a:tc>`;
+    // a spans the first two rows and the second column of the second row is c; d spans two rows and
+    // two columns; the merged cells under them carry no text of their own.
+    const table = `<a:tbl>
+      <a:tr>${cell('a', ' rowSpan="2"')}${cell('b')}</a:tr>
+      <a:tr>${cell('', ' vMerge="1"')}${cell('c')}</a:tr>
+      <a:tr>${cell('d', ' gridSpan="2" rowSpan="2"')}${cell('', ' hMerge="1"')}</a:tr>
+      <a:tr>${cell('', ' vMerge="1" gridSpan="2"')}${cell('', ' hMerge="1" vMerge="1"')}</a:tr>
+    </a:tbl>`;
+    const frame = `<p:graphicFrame><p:xfrm><a:off x="0" y="0"/></p:xfrm><a:graphic><a:graphicData>${table}</a:graphicData></a:graphic></p:graphicFrame>`;
+    expect(await html(frame)).toBe(
+      '<div class="slide"><table>' +
+        '<tr><td rowspan="2"><p>a</p></td><td><p>b</p></td></tr>' +
+        '<tr><td><p>c</p></td></tr>' +
+        '<tr><td colspan="2" rowspan="2"><p>d</p></td></tr>' +
+        '<tr></tr></table></div>',
+    );
+  });
+
+  it('takes the size of a picture and of a table frame from their own transform, not from an extension list before it', async () => {
+    // PowerPoint writes `a:extLst/a:ext` (a creation id, a DPI hint) ahead of the transform's `a:ext`.
+    const creation =
+      '<a:extLst><a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}"><a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{6A3C1B0E-0000-4000-8000-000000000000}"/></a:ext></a:extLst>';
+    const dpi =
+      '<a:extLst><a:ext uri="{28A0092B-C50C-407E-A947-70E740481C1C}"><a14:useLocalDpi xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main" val="0"/></a:ext></a:extLst>';
+    const pic = `<p:pic><p:nvPicPr><p:cNvPr id="4" name="Picture 3">${creation}</p:cNvPr><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId1">${dpi}</a:blip></p:blipFill><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="635000"/></a:xfrm></p:spPr></p:pic>`;
+    const cell = `<a:tc><a:txBody><a:p>${text('a')}</a:p></a:txBody></a:tc>`;
+    const frame = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="5" name="Table 4">${creation}</p:cNvPr><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="0" y="9"/><a:ext cx="635000" cy="10"/></p:xfrm><a:graphic><a:graphicData><a:tbl><a:tr>${cell}</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+    const bytes = await deck(
+      { s1: slideXml(pic + frame) },
+      {
+        files: {
+          'ppt/slides/_rels/s1.xml.rels': relsXml([rel('rId1', '../media/p.png')]),
+          'ppt/media/p.png': Buffer.from(PNG_BASE64, 'base64'),
+        },
+      },
+    );
+    const result = await pptxToHtml(bytes, 'p.pptx');
+    expect(result.parts[0]?.html).toBe(
+      `<div class="slide"><p><img src="data:image/png;base64,${PNG_BASE64}" style="width:100.0pt;height:50.0pt"></p>` +
+        '<table style="width:50.0pt"><tr><td><p>a</p></td></tr></table></div>',
+    );
   });
 
   it('keeps every picture of a slide, in the order they are drawn, and reports nothing skipped', async () => {

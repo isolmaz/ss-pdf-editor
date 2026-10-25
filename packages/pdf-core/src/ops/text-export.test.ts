@@ -67,6 +67,34 @@ async function hebrewPage(content: string): Promise<Uint8Array> {
   return bytes;
 }
 
+/** One 600×400 page shown turned by `rotate` degrees, Helvetica as `/F`. */
+async function turnedPage(rotate: 0 | 90 | 180 | 270, content: string): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const font = doc.addObject({
+    Type: 'Font',
+    Subtype: 'Type1',
+    BaseFont: 'Helvetica',
+    Encoding: 'WinAnsiEncoding',
+  });
+  doc.insertPage(0, doc.addPage([0, 0, 600, 400], rotate, { Font: { F: font } }, content));
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/**
+ * `text` set to read left to right once the page is shown. `shown` is the matrix that turns the text
+ * so (a quarter turn of the page needs the text turned the other way), `x` and `y` the start of the
+ * line in the page's own space.
+ */
+const upright = (shown: string, x: number, y: number, text: string) =>
+  `BT /F 12 Tf ${shown} ${x} ${y} Tm (${text}) Tj ET`;
+
+/** One line of ASCII `text` as a hex string, which needs no escaping in the content stream. */
+const hexAt = (y: number, text: string) =>
+  `BT /F 12 Tf 50 ${y} Td <${[...text].map((character) => character.charCodeAt(0).toString(16).padStart(2, '0')).join('')}> Tj ET`;
+
 /** A heading, a two-line paragraph, a gap, and a second paragraph; words and kerning on one line. */
 const ARTICLE = [
   at(50, 360, 'Baslik', 24),
@@ -110,6 +138,64 @@ describe('exportText', () => {
     expect(decode(result.file.bytes)).toBe(
       'Baslik\n\nBirinci paragraf ikinci satir\n\nHello World again\n\n---\n\nIkinci sayfa\n',
     );
+  });
+
+  it('escapes what opens a heading, a quote, a list or a numbered item at the start of a Markdown paragraph', async () => {
+    const lines = [
+      '# of users',
+      '> not a quote',
+      '- not a list',
+      '+ not a list',
+      '1. Introduction',
+      '2) Second',
+    ];
+    const result = await exportText(
+      await pages(lines.map((line, index) => hexAt(360 - index * 40, line)).join('\n')),
+      { pages: [0], format: 'markdown', baseName: 'x' },
+      run,
+    );
+    expect(decode(result.file.bytes)).toBe(
+      '\\# of users\n\n\\> not a quote\n\n\\- not a list\n\n\\+ not a list\n\n1\\. Introduction\n\n2\\) Second\n',
+    );
+  });
+
+  it('leaves a paragraph that only starts like Markdown alone, and a marker that is not at its start', async () => {
+    const content = [
+      hexAt(360, '3.5 million users'),
+      hexAt(320, 'Total'),
+      hexAt(305, '# of users'),
+      hexAt(265, 'Costs 5 - 3 > 1 + 1 # 2'),
+    ].join('\n');
+    const result = await exportText(
+      await pages(content),
+      { pages: [0], format: 'markdown', baseName: 'x' },
+      run,
+    );
+    expect(decode(result.file.bytes)).toBe(
+      '3.5 million users\n\nTotal # of users\n\nCosts 5 - 3 > 1 + 1 # 2\n',
+    );
+  });
+
+  it('escapes emphasis, code, links, tags, strike-through, entities and the backslash wherever they stand', async () => {
+    const line = 'A *b* c_d `e` [f](g) <h>i</h> ~~j~~ k\\l &amp; &#35; AT&T';
+    const result = await exportText(
+      await pages(hexAt(360, line)),
+      { pages: [0], format: 'markdown', baseName: 'x' },
+      run,
+    );
+    expect(decode(result.file.bytes)).toBe(
+      'A \\*b\\* c\\_d \\`e\\` \\[f](g) \\<h>i\\</h> \\~\\~j\\~\\~ k\\\\l \\&amp; \\&#35; AT&T\n',
+    );
+  });
+
+  it('writes plain text exactly as the page has it, Markdown characters included', async () => {
+    const lines = ['# of users', '*a* [b]'];
+    const result = await exportText(
+      await pages(lines.map((line, index) => hexAt(360 - index * 40, line)).join('\n')),
+      { pages: [0], format: 'text', baseName: 'x' },
+      run,
+    );
+    expect(decode(result.file.bytes).slice(1)).toBe('# of users\n\n*a* [b]\n');
   });
 
   it('numbers the pages between them in plain text, in document order whatever the selection order', async () => {
@@ -194,6 +280,37 @@ describe('exportText', () => {
     );
     expect(decode(lone.file.bytes).slice(1)).toBe('xyzuvw \u05D2\u05D3\n');
   });
+
+  it.each([
+    // The matrix that reads left to right once shown, and where the first line starts and which way the next one lies.
+    ['a quarter turn', 90, '0 1 -1 0', [100, 50], [15, 0], [0, 80]],
+    ['half a turn', 180, '-1 0 0 -1', [550, 100], [0, 15], [-80, 0]],
+    ['three quarters of a turn', 270, '0 -1 1 0', [500, 350], [-15, 0], [0, -80]],
+  ] as const)(
+    'reads the lines of a page shown after %s as they stand on it',
+    async (_name, rotate, shown, start, below, across) => {
+      // Two lines of two pieces each, as the viewer shows them: Merhaba dunya / nasilsin bugun.
+      const piece = (line: number, column: number, text: string) =>
+        upright(
+          shown,
+          start[0] + line * below[0] + column * across[0],
+          start[1] + line * below[1] + column * across[1],
+          text,
+        );
+      const content = [
+        piece(0, 0, 'Merhaba'),
+        piece(0, 1, 'dunya'),
+        piece(1, 0, 'nasilsin'),
+        piece(1, 1, 'bugun'),
+      ].join('\n');
+      const result = await exportText(
+        await turnedPage(rotate, content),
+        { pages: [0], format: 'text', baseName: 'x' },
+        run,
+      );
+      expect(decode(result.file.bytes).slice(1)).toBe('Merhaba dunya\nnasilsin bugun\n');
+    },
+  );
 
   it('reports progress per page', async () => {
     const events: string[] = [];

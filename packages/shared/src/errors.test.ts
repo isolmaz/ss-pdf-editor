@@ -163,6 +163,18 @@ describe('ToolError contract', () => {
     }
   });
 
+  it('puts the code points a replacement-invalid refusal names into its message, in both languages', () => {
+    const error = new ToolError('replacement-invalid', {
+      engine: 'model',
+      params: { chars: 'U+000A U+200D' },
+    });
+    for (const locale of ['tr', 'en'] as const) {
+      const message = createTranslator(locale)(error.messageKey, error.details.params);
+      expect(message, locale).toContain('U+000A U+200D');
+      expect(message, locale).not.toContain('{chars}');
+    }
+  });
+
   it('carries an explicit cause through the constructor', () => {
     const cause = new Error('root');
     expect(new ToolError('write-failed', { engine: 'fs' }, { cause }).cause).toBe(cause);

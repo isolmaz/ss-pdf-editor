@@ -50,6 +50,7 @@ export const TOOL_ERROR_CODES = [
   'asset-stale',
   'font-missing',
   'glyph-missing',
+  'replacement-invalid',
   'ocr-language-missing',
   'voice-unavailable',
   'permission-denied',
