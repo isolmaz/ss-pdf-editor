@@ -31,11 +31,15 @@ vi.mock('pdf-core/ops/impose', () => ({
   buildPrintDocument: async (
     bytes: Uint8Array,
     options: Record<string, unknown>,
-    context: { onProgress: (progress: { done?: number; total?: number }) => void },
+    context: { signal: AbortSignal; onProgress: (progress: { done?: number; total?: number }) => void },
   ) => {
     impose.calls.push({ bytes, options });
     for (const step of impose.progress) context.onProgress(step);
     await impose.gate;
+    if (context.signal.aborted) {
+      // What pdf-core's `throwIfAborted` raises when the signal fires while the operation works.
+      throw Object.assign(new Error('operation aborted'), { name: 'AbortError' });
+    }
     if (impose.failure !== null) throw impose.failure;
     return { bytes: new Uint8Array([1, 2, 3]) };
   },
@@ -248,6 +252,22 @@ describe('PrintDialog printing', () => {
     await user.type(field, '2{Enter}');
     await waitFor(() => expect(printCalls).toBe(2));
     expect(printed()).toEqual([0, 2, 1]);
+  });
+
+  it('does not start a second job when Enter is pressed in the range field while pages render', async () => {
+    const gate = Promise.withResolvers<void>();
+    blobGate = gate.promise;
+    const read = vi.fn(async () => SAVED);
+    show({ read });
+    await user.click(screen.getByRole('radio', { name: 'Range' }));
+    await user.type(screen.getByRole('textbox', { name: 'Page range' }), '2{Enter}');
+    await screen.findByRole('status');
+    await user.keyboard('{Enter}');
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      gate.resolve();
+    });
+    await waitFor(() => expect(printCalls).toBe(1));
   });
 
   it('does nothing when Enter is pressed in the range field without an engine document', async () => {
@@ -497,6 +517,24 @@ describe('PrintDialog producing', () => {
     expect(impose.calls).toEqual([]);
     expect(onProduced).not.toHaveBeenCalled();
     expect(onNotice).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet when Cancel stops the imposition, whose operation reports the abort', async () => {
+    const gate = Promise.withResolvers<void>();
+    impose.gate = gate.promise;
+    const onProduced = vi.fn();
+    const onNotice = vi.fn();
+    const { given } = show({ onProduced, onNotice });
+    await user.click(button('Generate printable PDF'));
+    await waitFor(() => expect(impose.calls).toHaveLength(1));
+    await user.click(button('Cancel'));
+    expect(given.onClose).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      gate.resolve();
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(onNotice).not.toHaveBeenCalled();
+    expect(onProduced).not.toHaveBeenCalled();
   });
 
   it('states what a refused imposition got wrong, with its hint, in the dialog and the shell notice', async () => {
