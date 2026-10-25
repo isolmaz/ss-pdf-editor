@@ -501,6 +501,9 @@ function sameToken(left: string, right: string | undefined): boolean {
 
 const WORD_CHARACTER = /[\p{L}\p{N}\p{M}_]/u;
 
+/** A combining mark: it belongs to the letter before it. */
+const MARK = /^\p{M}/u;
+
 function isWordToken(token: string | undefined): boolean {
   if (token === undefined) return false;
   return WORD_CHARACTER.test(token === EITHER_I ? 'I' : token);
@@ -559,20 +562,46 @@ function unitsOf(block: TextBlock, matchCase: boolean): readonly Unit[] {
     }
     for (const [wordIndex, word] of line.words.entries()) {
       if (wordIndex > 0) units.push({ text: ' ', tokens: [' '], glyph: null });
+      // The glyph a following combining mark may compose into, and its text so far.
+      let base = -1;
+      let baseText = '';
       for (const [index, glyph] of word.glyphs.entries()) {
         // A soft hyphen is a break opportunity, not text: it neither matches nor
         // survives a re-laid paragraph.
         const soft = glyph.ch === '\u00ad';
+        const mark = MARK.test(glyph.ch);
+        // An accent that is a glyph of its own (`e` + U+0301) compares as the letter it
+        // makes (`\u00e9`), so the word reads the same as when it is spelled with one code point.
+        let absorbed = false;
+        if (mark && base >= 0) {
+          const composed = `${baseText}${glyph.ch}`.normalize('NFC');
+          if ([...composed].length === [...baseText].length) {
+            absorbed = true;
+            units[base] = { ...inBounds(units, base), tokens: tokensOf(composed, matchCase) };
+            baseText = composed;
+          }
+        }
         units.push({
           text: soft ? '' : glyph.ch,
-          tokens: soft ? [] : tokensOf(glyph.ch, matchCase),
+          tokens: soft || absorbed ? [] : tokensOf(glyph.ch, matchCase),
           glyph: { line: lineIndex, textLine: line, word: wordIndex, index, glyph },
         });
+        if (!mark) {
+          base = soft ? -1 : units.length - 1;
+          baseText = glyph.ch.normalize('NFC');
+        }
       }
     }
     before = line;
   }
   return units;
+}
+
+/** The last unit of a match taken through the combining marks that follow it: a mark cannot stay behind alone. */
+function throughMarks(units: readonly Unit[], last: number): number {
+  let end = last;
+  while (MARK.test(units[end + 1]?.glyph?.glyph.ch ?? '')) end += 1;
+  return end;
 }
 
 /**
@@ -611,7 +640,7 @@ function findHits(
       at += 1;
       continue;
     }
-    hits.push({ first: inBounds(owner, at), last: inBounds(owner, end - 1) });
+    hits.push({ first: inBounds(owner, at), last: throughMarks(units, inBounds(owner, end - 1)) });
     at = end;
   }
   return { hits, unaligned };
