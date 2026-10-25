@@ -742,8 +742,8 @@ These describe how the build works; they are not promises.
 - **The service worker caches static assets only.** It never stores document bytes.
 - **Drafts stay local.** Unsaved work is kept in the origin-private file system (OPFS).
   - A **sensitive session** keeps no draft, no copy of the document and no file handle (its
-    recent-list entry holds only the name, size and page count); any document opened with a
-    password starts one.
+    recent-list entry holds only the name, size, page count, when it was opened and its star);
+    any document opened with a password starts one.
   - A window with unsaved changes that no draft protects (a sensitive session, or a draft that
     is still being written or could not be written) asks before it is closed or reloaded, and
     an update of the app never reloads it by itself: the update banner asks you to save and

@@ -1288,8 +1288,9 @@ mechanics are arranged around one number, `/ByteRange`:
    the empty field of that name and otherwise creates one, and a reused field also gets
    its `/AP`. The appearance draws the stamp's lines in Helvetica when they are printable
    ASCII (nothing embedded); a line with any other letter makes it draw in the embedded
-   Noto Sans, subset to the glyphs shown, and a character that face lacks, or any control or
-   separator character other than the ASCII space (a tab, a non-breaking space), is drawn as `?`.
+   Noto Sans, subset to the glyphs shown, and a character that face lacks, or any control,
+   format, private-use, unassigned or separator character other than the ASCII space (a tab, a
+   soft hyphen, a zero-width space, a non-breaking space), is drawn as `?`.
 3. The `/Contents` placeholder is located in the produced bytes (uniqueness enforced); the
    real ByteRange is computed from those offsets and written over the same digits, with a
    length-equality assertion.

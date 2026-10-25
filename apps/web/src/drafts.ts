@@ -6,7 +6,8 @@
  *
  *   /pdf-editor/drafts/<id>.json   — model data: name, size, dirty flag, journal
  *   /pdf-editor/sources/<key>.pdf  — the master copy of a source that is not sensitive,
- *                                    written once per source, never per change
+ *                                    written once per source, never per change, and the
+ *                                    produced versions its draft keeps (`snapshot-<id>`)
  *
  * A document opened through a File System Access handle has its master copy here too; the
  * handle itself is kept apart (`recent-handles.ts`), so a restored tab can save over its file.

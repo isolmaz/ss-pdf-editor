@@ -27,8 +27,8 @@ export function getStoredLocale(): Locale {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (stored !== null && isLocale(stored)) return stored;
   } catch {
-    // Storage access may be restricted, or there is no `window` (a server render): nothing was
-    // chosen that can be read, so the browser's languages decide.
+    // Storage access may be restricted: nothing was chosen that can be read, so the browser's
+    // languages decide.
   }
   const languages = navigator.languages.length > 0 ? navigator.languages : [navigator.language];
   return matchLocale(languages) ?? DEFAULT_LOCALE;
