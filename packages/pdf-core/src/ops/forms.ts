@@ -411,9 +411,8 @@ function optionsOf(field: FieldNode): readonly string[] | null {
 
 /**
  * Where the pages are: each page object, its number → index, and — read on the first widget
- * that needs it, once — which page's `/Annots` holds each annotation. Placing the widgets
- * that carry no usable `/P` is one walk over the pages' `/Annots` per operation, not one per
- * widget.
+ * that needs it, once — which page's `/Annots` holds each annotation. Placing the widgets is
+ * one walk over the pages' `/Annots` per operation, not one per widget.
  */
 class PageIndex {
   private readonly pages: PDFObject[];
@@ -432,15 +431,14 @@ class PageIndex {
     return this.pages[index] as PDFObject;
   }
 
-  /** The page a widget sits on: its `/P`, else the first page whose `/Annots` holds it. */
+  /** The page a widget sits on: the first page whose `/Annots` holds it, else its `/P`. */
   of(widget: { readonly dict: PDFObject; readonly entry: PDFObject }): number | null {
-    const holder = widget.dict.get('P');
-    if (holder.isIndirect()) {
-      const index = this.byObject.get(holder.asIndirect());
-      if (index !== undefined) return index;
+    if (widget.entry.isIndirect()) {
+      const listed = this.annotated().get(widget.entry.asIndirect());
+      if (listed !== undefined) return listed;
     }
-    if (!widget.entry.isIndirect()) return null;
-    return this.annotated().get(widget.entry.asIndirect()) ?? null;
+    const holder = widget.dict.get('P');
+    return holder.isIndirect() ? (this.byObject.get(holder.asIndirect()) ?? null) : null;
   }
 
   private annotated(): Map<number, number> {
