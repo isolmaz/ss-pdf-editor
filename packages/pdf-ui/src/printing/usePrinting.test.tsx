@@ -22,6 +22,8 @@ const impose = vi.hoisted(() => ({
   calls: [] as Array<{ bytes: Uint8Array; options: Record<string, unknown>; signal: AbortSignal }>,
   gate: null as Promise<void> | null,
   failure: null as Error | null,
+  /** The operation returns its result although the signal fired after its last check. */
+  finishesDespiteAbort: false,
   progress: [] as Array<{ done?: number; total?: number }>,
 }));
 
@@ -40,7 +42,7 @@ vi.mock('pdf-core/ops/impose', () => ({
     impose.calls.push({ bytes, options, signal: context.signal });
     for (const step of impose.progress) context.onProgress(step);
     await impose.gate;
-    if (context.signal.aborted) {
+    if (context.signal.aborted && !impose.finishesDespiteAbort) {
       // What pdf-core's `throwIfAborted` raises when the signal fires while the operation works.
       throw Object.assign(new Error('operation aborted'), { name: 'AbortError' });
     }
@@ -114,6 +116,7 @@ beforeEach(() => {
   impose.calls.length = 0;
   impose.gate = null;
   impose.failure = null;
+  impose.finishesDespiteAbort = false;
   impose.progress = [];
   vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (
     this: HTMLCanvasElement,
@@ -624,9 +627,10 @@ describe('usePrinting produce', () => {
     expect(result.current.phase).toBe('idle');
   });
 
-  it('returns nothing when cancelled while the sheets are imposed', async () => {
+  it('returns nothing when cancelled as the operation finishes the sheets', async () => {
     const gate = Promise.withResolvers<void>();
     impose.gate = gate.promise;
+    impose.finishesDespiteAbort = true;
     const { result } = mount();
     let produced: Promise<Uint8Array | null> = Promise.resolve(null);
     act(() => {
