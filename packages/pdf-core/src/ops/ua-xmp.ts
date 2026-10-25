@@ -56,14 +56,12 @@ function decodeEntities(value: string): string {
   });
 }
 
+/** What XML 1.0 cannot carry, a lone surrogate included: a written value drops it. */
+const NOT_XML_CHARACTER = /[^\t\n\r\u{20}-\u{D7FF}\u{E000}-\u{FFFD}\u{10000}-\u{10FFFF}]/gu;
+
 function escapeXml(value: string): string {
-  let clean = '';
-  for (const char of value) {
-    const code = char.codePointAt(0) as number;
-    if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) continue;
-    clean += char;
-  }
-  return clean
+  return value
+    .replace(NOT_XML_CHARACTER, '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')

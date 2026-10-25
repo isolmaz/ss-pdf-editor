@@ -160,6 +160,15 @@ describe('ua-xmp', () => {
     expect(readXmpTitle(text)).toBe('ab\tc\nd\ref');
   });
 
+  it('drops the characters XML 1.0 cannot carry from a written title and keeps astral ones', () => {
+    const title = 'a\u{FFFE}b\u{FFFF}c\u{D800}d\u{DC00}e\u{1F600}f';
+    const built = buildUaPacket({ title });
+    expect(readXmpTitle(built)).toBe('abcde\u{1F600}f');
+    expect(reread(built).wellFormed).toBe(true);
+    const edited = editUaPacket(packet('<rdf:Description rdf:about=""/>'), { title }) as string;
+    expect(readXmpTitle(edited)).toBe('abcde\u{1F600}f');
+  });
+
   it('writes only the part when no title is given, in a fresh packet and in an edited one', () => {
     const fresh = buildUaPacket({ uaPart: 1 });
     expect(readUaPart(fresh)).toBe(1);
