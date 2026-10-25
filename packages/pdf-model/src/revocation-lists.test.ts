@@ -32,7 +32,7 @@ function der(seed: number, length = 120): Uint8Array {
   return Uint8Array.from({ length }, (_, index) => (index * 7 + seed) & 0xff);
 }
 
-/** Two lists that the id this module used to derive (a 32-bit polynomial hash of the base64) could not tell apart. */
+/** Two lists that a 32-bit polynomial hash of the base64 cannot tell apart, though their SHA-256 can. */
 const COLLIDING = [Uint8Array.of(121, 185, 0, 79, 100, 21), Uint8Array.of(2, 65, 8, 14, 163, 233)] as const;
 
 describe('imported CRL store', () => {
