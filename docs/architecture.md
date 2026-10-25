@@ -1079,6 +1079,8 @@ writer does, and the steps it reports:
   outline and form carry over and every page keeps its own label;
 - splitting (`ops/split.ts`): one `composeDocument` per part on the document that owns the
   annotation storage, in five modes (ranges, every N pages, size, booklet, bookmarks). The
+  ranges mode makes one part per typed segment, in the order written (`1-3, 4-6` is two parts;
+  the dialog passes the validated text on as typed, not as a merged page set). The
   bookmarks mode cuts at the entries of the outline down to a chosen level
   (`readSplitBookmarks` reads pdf.js's resolved outline, `flattenOutline` takes the level): a
   part runs from a bookmark's page to the page before the next bookmark's, bookmarks on one

@@ -161,8 +161,8 @@ test('split: page ranges become separate files with the right pages in the right
   expect(files.map((file) => file.name)).toEqual(['big-1.pdf', 'big-2.pdf']);
   const parts = await Promise.all(files.map((file) => readProducedPageTexts(file.bytes)));
   expect(parts.map((texts) => texts.map((text) => text.trim()))).toEqual([
-    ['Sheet 1'],
     ['Sheet 3', 'Sheet 4'],
+    ['Sheet 1'],
   ]);
 });
 

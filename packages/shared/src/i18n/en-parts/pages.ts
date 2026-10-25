@@ -65,7 +65,7 @@ export const pagesPart = {
     '1 cuts at the top-level bookmarks; a higher number also cuts at the ones inside them.',
   'split.bookmarks.lead': 'Beginning',
   'split.ranges': 'Page ranges',
-  'split.rangesHint': 'Each range becomes a separate file, numbered in ascending order.',
+  'split.rangesHint': 'Each range becomes a separate file, numbered in the order you type them.',
   'split.everyN': 'Page count',
   'split.everyNHint': 'Number of pages per part; in booklet mode, page count per signature.',
   'split.maxSize': 'Max part size (MB)',

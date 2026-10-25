@@ -260,10 +260,10 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
 
 - **Page operations.** Insert, delete, duplicate, reorder, rotate, extract, split, replace
   and merge.
-  - Split cuts by page ranges, every N pages, file size, booklet signatures or the
-    bookmarks of the outline (down to a level you choose): each part is named after its
-    bookmark, the pages before the first bookmark are a part of their own, and a document
-    without bookmarks is told to use another method.
+  - Split cuts by page ranges (one file per range, in the order you type them), every N
+    pages, file size, booklet signatures or the bookmarks of the outline (down to a level you
+    choose): each part is named after its bookmark, the pages before the first bookmark are a
+    part of their own, and a document without bookmarks is told to use another method.
   - The Page menu works on the pages you selected, or on the page on screen when none is
     selected.
   - A new document starts as blank pages of A3, A4, A5, Letter or Legal, in either

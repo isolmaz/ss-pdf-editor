@@ -1,7 +1,7 @@
 import { createTranslator, ToolError } from 'pdf-shared';
 import { describe, expect, it } from 'vitest';
 import type { OpRunContext } from '../dialogs/types';
-import { resolveScope, scopeRangeText } from './scope';
+import { resolveScope, typedRangeText } from './scope';
 
 function context(overrides: Partial<OpRunContext> = {}): OpRunContext {
   return {
@@ -82,10 +82,19 @@ describe('resolveScope', () => {
   });
 });
 
-describe('scopeRangeText', () => {
-  it('formats the resolved pages as canonical range text', () => {
-    expect(scopeRangeText('range:1,2,3,5', context())).toBe('1-3, 5');
-    expect(scopeRangeText('all', context())).toBe('1-6');
-    expect(scopeRangeText('current', context())).toBe('3');
+describe('typedRangeText', () => {
+  it('hands the segments over as written, so touching ranges stay two', () => {
+    expect(typedRangeText('  1-3, 4-6 ', context())).toBe('1-3, 4-6');
+    expect(typedRangeText('5, 1-2', context())).toBe('5, 1-2');
+  });
+
+  it('refuses text the page-range parser refuses', () => {
+    for (const text of ['', '1-3, 3', '7', 'all']) {
+      expect(failure(() => typedRangeText(text, context())).code).toBe('range-invalid');
+    }
+  });
+
+  it('refuses a document without pages', () => {
+    expect(failure(() => typedRangeText('1', context({ pageCount: 0 }))).code).toBe('selection-empty');
   });
 });

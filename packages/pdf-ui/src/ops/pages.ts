@@ -31,7 +31,7 @@ import {
 } from 'pdf-core';
 import { ToolError } from 'pdf-shared';
 import type { OperationDialogSpec } from '../dialogs/types';
-import { resolveScope, scopeRangeText } from './scope';
+import { resolveScope, typedRangeText } from './scope';
 
 /**
  * Ceiling on the parts one split may produce. Every part is a full composition
@@ -180,7 +180,7 @@ export const splitDialog: OperationDialogSpec = {
       // Only `size` mode reads this, and it cannot plan without it: an estimated
       // page count from a guessed byte size would be a preview of nothing.
       totalBytes: context.bytes.length,
-      ...(mode === 'ranges' ? { ranges: scopeRangeText(params.ranges, context) } : {}),
+      ...(mode === 'ranges' ? { ranges: typedRangeText(String(params.ranges), context) } : {}),
       ...(mode === 'size' ? { maxBytes: Math.round(Number(params.maxSizeMb) * 1024 * 1024) } : {}),
       ...(mode === 'everyN' || mode === 'booklet' ? { chunkSize: Number(params.chunkSize) } : {}),
     };
