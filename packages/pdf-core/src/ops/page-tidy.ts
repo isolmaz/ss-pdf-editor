@@ -150,6 +150,9 @@ export async function findBlankPages(
         done: index + 1,
         total: pages.length,
       });
+      // Rendering a page is synchronous work on the main thread: let the progress bar and a
+      // cancel through between pages.
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
