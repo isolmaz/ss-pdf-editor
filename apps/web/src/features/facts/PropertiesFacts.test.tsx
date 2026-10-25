@@ -74,11 +74,11 @@ vi.mock('pdf-ui/panels', () => ({
 }));
 
 const t = createTranslator('en');
-const rootA = trustRootFrom(new Uint8Array([1, 2, 3]), 'Root A', 1);
-const rootB = trustRootFrom(new Uint8Array([4, 5, 6]), 'Root B', 2);
+const rootA = await trustRootFrom(new Uint8Array([1, 2, 3]), 'Root A', 1);
+const rootB = await trustRootFrom(new Uint8Array([4, 5, 6]), 'Root B', 2);
 const summary = { thisUpdate: null, nextUpdate: null, revokedCount: 0, delta: false };
-const listA = revocationListFrom(new Uint8Array([7, 8]), 'CRL A', summary, 1);
-const listB = revocationListFrom(new Uint8Array([9, 10]), 'CRL B', summary, 2);
+const listA = await revocationListFrom(new Uint8Array([7, 8]), 'CRL A', summary, 1);
+const listB = await revocationListFrom(new Uint8Array([9, 10]), 'CRL B', summary, 2);
 const empty = trustStore.get();
 const tab = new SessionStore().openDocument({
   name: 'a.pdf',
@@ -167,6 +167,24 @@ describe('PropertiesFacts', () => {
     expect(handlers.onAddAttachments).toHaveBeenCalledWith([expect.objectContaining({ name: 'x.txt' })]);
     expect(handlers.onRemoveAttachment).toHaveBeenCalledWith('x.txt');
     expect(handlers.onReadAttachment).toHaveBeenCalledWith('x.txt');
+  });
+
+  it('keeps the panel and says what could not be read, with a retry button, when only the fonts or attachments failed', async () => {
+    const user = userEvent.setup();
+    const handlers = view();
+    await screen.findByText('loading enabled');
+
+    act(() => factsRead({ ...facts, fonts: [], attachments: [], unread: ['fonts', 'attachments'] }));
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(t('inspection.fonts.failed'));
+    expect(alert.textContent).toContain(t('inspection.attachments.failed'));
+    expect(screen.getByText('loaded enabled')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: t('inspection.retry') }));
+    expect(handlers.onRetry).toHaveBeenCalledTimes(1);
+
+    act(() => factsRead(facts));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('puts an alert with a retry button in place of the panel when the facts could not be read', async () => {

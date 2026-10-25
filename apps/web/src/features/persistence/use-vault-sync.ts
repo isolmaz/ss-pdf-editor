@@ -32,7 +32,17 @@ export function useDraftAutosave({ session, store, persist, translator }: Autosa
     if (session.tabs.length === 0) return undefined;
     const timer = setTimeout(() => {
       void queueVaultWrite(async () => {
-        for (const tab of store.getSnapshot().tabs) await persist(tab.id);
+        // A tab whose draft cannot be written (its storage is refused, say) must not keep the
+        // tabs after it from being saved: every tab is tried, and the first failure is the one said.
+        const failures: unknown[] = [];
+        for (const tab of store.getSnapshot().tabs) {
+          try {
+            await persist(tab.id);
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (failures.length > 0) throw failures[0];
       }).catch((error) => {
         const translate = translator.current;
         if (error instanceof ToolError) {

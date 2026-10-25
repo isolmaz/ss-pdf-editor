@@ -207,7 +207,7 @@ CI `verify` job, after `pnpm build`.
 | Module | Responsibility |
 |---|---|
 | `errors.ts` | The single error contract. `ToolError` carries a stable code (40 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
-| `format.ts` | `formatBytes(bytes, locale)`, `formatPercent(fraction, locale)` and `formatDegrees(degrees, locale)`: sizes, percentages and angles the way the interface language writes them (`1,5 KB`, `%140` and `1,8°` in Turkish, `1.5 KB`, `140%` and `1.8°` in English), through `Intl.NumberFormat`. Report notes never format a size or an angle: they carry the numbers and the sentence asks for them with a `{name:bytes}`, `{name:percent}` or `{name:degrees}` placeholder, which `createTranslator` writes in its own locale. |
+| `format.ts` | `formatBytes(bytes, locale)`, `formatPercent(fraction, locale)` and `formatDegrees(degrees, locale)`: sizes, percentages and angles the way the interface language writes them (`1,5 KB`, `%140` and `1,8°` in Turkish, `1.5 KB`, `140%` and `1.8°` in English), through `Intl.NumberFormat`; a size that is not a finite, non-negative number is written as `—`, and a size that rounds up to 1,024 KB is written in MB. Report notes never format a size or an angle: they carry the numbers and the sentence asks for them with a `{name:bytes}`, `{name:percent}` or `{name:degrees}` placeholder, which `createTranslator` writes in its own locale. |
 | `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`; the gauge and the limit-profile badge are drawn only while the limit verdict is not `ok` or the gauge is at 75 % or more (from 768 px up). |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
 
@@ -397,8 +397,9 @@ because shipping one would vouch for certificates the user never chose. base64 i
 implemented once, in `base64.ts` (shared with revocation lists and the draft bitmaps), rather than
 via `btoa`, so the code runs identically in Node and the browser. The decoder ignores every character outside the base64 alphabet (line breaks, PEM
 indentation), so it has no failure of its own; a stored root that decodes to fewer than 64 bytes is
-dropped rather than trusted, and `trustRootFrom` derives the id from the DER, so importing
-the same certificate twice is one entry.
+dropped rather than trusted, and `trustRootFrom` (asynchronous, as is `revocationListFrom`) derives the
+id from the SHA-256 of the DER, so two certificates never share an id; adding a root replaces an entry
+with the same DER whatever id it was stored under, so importing the same certificate twice is one entry.
 
 The roots and the revocation lists live in the app's own OPFS directory, and
 `features/facts/trust-store.ts` keeps the store equal to the file: a change is written first and
@@ -2871,10 +2872,19 @@ that reopens the file is something saved. A recent entry then reopens the file i
 browser asks for read permission again on that click (`requestPermission` needs the gesture),
 a refusal is reported and taken as the answer, and a file that has moved or gone is reported
 before the picker is offered. A tab restored from a draft gets its handle back, so it can still
-Save over its file rather than only Export. A handle read back this way holds no write access
+Save over its file rather than only Export. A Save as (or the first Save of a document with no
+file) records the file it wrote as the entry's handle (`putRecentHandle`, never for a sensitive
+session) and the written size and page count as the entry's, so a draft restored later is measured
+against the file it last wrote, and `addRecentDocument` replaces an earlier entry by id or by the
+same name, size and page count, never by name alone. The prune after the start-up restore keeps the
+handle of every open tab and of every draft the vault holds, as clearing the list does. A handle read back this way holds no write access
 (a reopened entry asked for `read` only), so `saveActive` asks for `readwrite`
 (`ensureWriteAccess`) as the first await of the click that saves, before the preparation uses
-up the gesture; a refusal is `permission-denied`, and nothing is written. Handles whose entry
+up the gesture; a refusal is `permission-denied`, and nothing is written. A write the browser
+refuses later is worded by what it means (`failureLine` in `save-actions.ts`): a
+`NotAllowedError` is `permission-denied`, a file that is gone, locked or out of room
+(`NotFoundError`, `NoModificationAllowedError`, `QuotaExceededError`) is `write-failed`, whose hint
+offers Export, and any other failure goes through `toToolError`. Handles whose entry
 has left the list are pruned after the startup restore, which is the one reader that needs
 them. A reopened file keeps its star: `addRecentDocument` carries it over from the entry it
 replaces.
@@ -2951,9 +2961,12 @@ Ordering rules encoded here, each of which prevents a specific defect:
   as a PDF, as Save names its own. With no file handle and no `showSaveFilePicker` the
   download *is* the save, so the version is recorded like Save's download (`recordOutput`) and
   the tab is no longer dirty; with a handle, or in a browser that can write files, an export is
-  a copy and the tab stays as dirty as it was.
+  a copy and the tab stays as dirty as it was — unless the tab is a produced document nothing
+  has written yet (`savedState` is `null`, §8.5), whose first export is its save.
 - **Save and Export are offered only for an inspected version.** Both are enabled from the
-  same verdict: the document-facts read (fonts, signatures, attachments, protection) *and*
+  same verdict: the document-facts read (signatures and protection; the fonts and the
+  attachments are read beside them and only shown, so a read of those that fails leaves them
+  empty, says so in the properties tab with a retry, and does not close Save) *and*
   the form inventory must describe the bytes the tab shows. The facts are keyed to the produced
   version's own id (`workingBytesKey`; `'source'` for the master), the form inventory to that id
   plus the values typed into the engine that are not in the bytes yet (`formInventoryKey`: Save
@@ -3049,7 +3062,9 @@ unavailable does `canReachPeers()` return false — and then the sweep does not 
 because without peer knowledge "delete everything unreferenced" would delete another
 window's only copy. The sweep runs by itself, once per start-up, after the drafts are
 restored (`use-draft-recovery.ts`); it has no button and no command, and it says nothing,
-whether it deleted blobs, found none or refused.
+whether it deleted blobs, found none or refused. It first removes the manifests of documents left
+open with nothing to restore (no unsaved change, no history) that no window has open, so the
+copies only those held go in the same run.
 
 References are only ever **added**. A window that answers once and dies leaves its keys
 pinned, which costs space; forgetting a live window's keys would cost a document.
@@ -3079,7 +3094,8 @@ lists a snapshot blob between its write and its manifest.
 ### 8.5 Sensitive sessions, drafts and cleanup
 
 Persistence is one callback, `persistDraft`, which the autosave and the flush on the crash screen
-both go through; there is no manual "save the draft now" command, and Settings only deletes the
+both go through (the autosave tries every tab each cycle: a tab whose write fails does not keep the
+later ones from being saved, and the first failure is the one worded); there is no manual "save the draft now" command, and Settings only deletes the
 stored copies of the open document. A restore does not rerun just
 because the UI language changed, one draft whose source cannot be read is reported and skipped (each draft has its own
 guard, and a vault that cannot be read at all is said on the notice line) while the others
@@ -3133,7 +3149,12 @@ the same holds for a window with an operation or a save running. Such a window k
 code and its update banner says to save and reload (`update.saveFirst`); the banner's
 "Close" closes the update in the module, not only in that banner, and the next worker to
 finish installing offers it again (`serviceWorkerUpdate.ts`). A window whose changes a draft
-holds never asks and reloads as before. The password a tab was opened with lives in
+holds never asks and reloads as before. A document a tool produced (`openProducedTab`: a merge, a
+split, an unlock, a conversion) opens with `unwritten` set: `dirty`, with a `null` saved state that
+no undo can match, so closing it asks, a draft restores it and a window holding it unprotected
+guards the reload, until a Save or an Export records an output (an Export counts when the document
+has no file of its own and either the browser cannot write files or nothing was written yet).
+The password a tab was opened with lives in
 `lockedTabs` only as long as the tab: `discardDocument` removes it.
 
 ### 8.6 Interface modes
@@ -3514,9 +3535,14 @@ Versioning is the interesting half:
   directories they are given. Fonts keep their paths and are revalidated, not immutable;
   hashed `/editor/assets/*` are immutable (`! Cache-Control` detaches the `/editor/*` rule).
   A `?retry=N` module import (MuPDF's loader) is looked up and stored without the parameter.
-- The name therefore changes when a pinned asset or the code changes. A release never reads the
-  previous release's cache, and activation deletes only caches in **its own** namespace —
-  the origin's storage is shared with other applications.
+- The name therefore changes when a pinned asset or the code changes. A lookup asks this release's
+  cache first and a previous release's only for what this one lacks, and a previous release's
+  cache is deleted — only caches in **its own** namespace; the origin's storage is shared with
+  other applications — once no window inside the scope is left that could still run that
+  release (`pruneStaleCaches`, at activation and at each navigation, the window a navigation
+  replaces not counting). A page held back by unsaved work (§8.5) keeps its old code, and the lazy
+  chunks that code has not loaded yet are no longer on the origin: its cache stays until it
+  reloads or closes.
 - Install fills the new cache without touching the old one, so an interrupted preparation
   leaves the working version exactly as it was. It caches the core shell, the scripts and
   styles `index.html` names, and the interface catalogues: each language is a run-time

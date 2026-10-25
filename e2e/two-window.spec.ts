@@ -196,13 +196,13 @@ test.describe('two windows on one vault', () => {
     await liveWindows(sweeper, 1);
     const third = await context.newPage();
     await openFixture(third, 'third.pdf');
-    await settle(third, 2);
+    await settle(third, 1);
     await expect
       .poll(async () => (await readVault(third)).sources.some((key) => keeperKeys.includes(key)), {
         timeout: 30_000,
       })
       .toBe(false);
-    // The two windows still open keep the blob they share.
+    // The document the third window opened keeps its blob.
     expect((await readVault(third)).sources.filter((key) => key.startsWith('src-')).length).toBe(1);
 
     await sweeper.close();

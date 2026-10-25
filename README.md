@@ -129,7 +129,9 @@ lists every tool in either mode. The choice is kept on the device.
   subtag) or, when the file declares none, for the interface language; without such a
   voice it is unavailable and says so.
 - **Navigation aids.** Thumbnails, the outline and document tabs. The recent-files list
-  reopens a document by its identity, never by its file name. In Chromium-based browsers it
+  reopens a document by its identity, never by its file name: two files with the same name
+  are two entries, and opening a file again replaces its earlier entry only when its name, size
+  and page count match. In Chromium-based browsers it
   reopens the file itself (the browser asks for permission again, and once more for write
   access the first time you save over it); elsewhere it asks you to choose the file.
 - **Rename.** **Edit → Rename** edits the open document's name, shown in the header and on
@@ -231,11 +233,13 @@ lists every tool in either mode. The choice is kept on the device.
   its dialog shows the size of the document as it is now, not as it was opened. Firefox and
   Safari offer Export only, and there the download is the only way to keep your work, so it
   also counts as saving: the document is no longer marked as having unsaved changes. In
-  Chromium an export is a copy and leaves the document as unsaved as it was. Saving to a file
-  you pick with *Save as* reads that file once, before the document is prepared; it is read
-  again only if its size or modified time changed while the document was being prepared. If the
-  file Save would write changed on disk — since it was opened or last saved here, or, for a
-  *Save as* target, while the document was being prepared — Save writes nothing and asks:
+  Chromium an export is a copy and leaves the document as unsaved as it was, except for a
+  document a tool produced that nothing has saved yet: its first export counts as its save.
+  Saving to a file you pick with *Save as* reads that file once, before the document is
+  prepared; it is read again only if its size or modified time changed while the document was
+  being prepared. If the file Save would write changed on disk — since it was opened or last
+  saved here, or, for a *Save as* target, while the document was being prepared — Save writes
+  nothing and asks:
   **Overwrite** replaces that file with your version, **Save as** writes a new file and leaves
   the changed one alone, **Cancel** keeps both. A changed file is never written over without
   that question; only choosing **Overwrite** lets the write go to it unchecked.
@@ -689,14 +693,18 @@ These describe how the build works; they are not promises.
   - A window with unsaved changes that no draft protects (a sensitive session, or a draft that
     is still being written or could not be written) asks before it is closed or reloaded, and
     an update of the app never reloads it by itself: the update banner asks you to save and
-    reload instead. A window whose changes a draft holds asks nothing.
+    reload instead. A window whose changes a draft holds asks nothing. A document that a tool
+    produced (a merge, a split, a conversion) opens as unsaved changes, because no file holds
+    it, until it is saved or exported; closing its tab asks first, and a draft brings it back.
   - The recent list keeps the file name, size, page count, when it was last opened and
     whether it is starred in `localStorage`. In Chromium it also keeps a *handle* to the
     file in IndexedDB — a reference the browser asks permission for again, never the file's
     bytes. A sensitive session keeps no handle: marking a document sensitive, or purging it,
     forgets its handle, and so do removing an entry and clearing the list — except that
     clearing keeps the handle of a document that is open in a tab or has a stored draft, so
-    a restored tab can still save over its file.
+    a restored tab can still save over its file; so does the clean-up after the start-up
+    restore. *Save as* makes the new file the one its entry reopens and a restored tab saves
+    over.
   - A signature picture is kept only when you tick **Remember on this device**: in
     `localStorage`, at most six, each deletable from the signature dialog. A sensitive
     session does not offer it.
@@ -720,13 +728,15 @@ These describe how the build works; they are not promises.
     windows never overwrite one draft or delete each other's saved versions. Where the
     browser has no Web Locks, ownership is not enforced.
   - A draft that cannot be read back is reported and skipped; the others are still restored.
+  - A document that was open with no unsaved change and no undo history when its window went
+    away leaves no stored copy: the next start removes it.
   - A tab restored from a draft remembers the file it last saved over, so its first Save is
     checked against that file and not against the original.
   - If the browser's storage refuses the recovery copy of a document you open (storage
     full, for example), the document still opens and the notice says that its recovery copy
     could not be stored and why; until a draft save succeeds, its unsaved changes would not
     survive a closed tab or a crash. A later draft save that fails the same way shows the
-    same sentence.
+    same sentence, and the drafts of the other open documents are still saved.
 - **Deleting a draft is not secure erasure.** It does not overwrite the bytes on disk, and
   the UI never claims that it does.
 
@@ -1087,8 +1097,10 @@ pnpm worker:deploy:dry      # same, with --dry-run
   fetches; OCR, cached on first use, is not counted against it. The editor's own scripts
   count (capability `app`): engines without a tool's code are not "ready". A half-downloaded
   pack is reported as `missing`, with the missing paths named.
-- **Release isolation.** The cache name carries a release identity, so a new release never
-  reads an older cache.
+- **Release isolation.** The cache name carries a release identity, so a new release answers
+  from its own cache first. An older cache is kept only while a window may still run that
+  release (a window left on its old code by unsaved work), is read only for a file the new one
+  lacks, and is deleted once that window reloads or closes.
 - **Engine versions.** Every engine is served from a versioned URL, so a rebuilt engine is
   never answered with old cached bytes under the new editor. Readiness compares those URLs, so
   a cached engine of another version counts as `missing`.

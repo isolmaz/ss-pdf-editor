@@ -35,7 +35,7 @@ export async function importTrustRoots(
       continue;
     }
     try {
-      roots.push(trustRootFrom(der, describeCertificate(der).commonName ?? file.name));
+      roots.push(await trustRootFrom(der, describeCertificate(der).commonName ?? file.name));
     } catch {
       refused += 1;
     }

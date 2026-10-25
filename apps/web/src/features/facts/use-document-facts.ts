@@ -52,30 +52,39 @@ export function useDocumentFacts({ store, t, tab, handle, revision }: DocumentFa
           undefined,
           EMPTY_OVERLAYS,
         );
-        const [fonts, signatures, attachments, protection] = await Promise.all([
+        const [fonts, signatures, attachments, protection] = await Promise.allSettled([
           listPdfFonts(bytes, controller.signal),
           verifySignatures(bytes, controller.signal, { roots: rootBytes, crls: listBytes }),
           measuredAttachments(handle, controller.signal),
           inspectProtection(bytes),
         ]);
         if (controller.signal.aborted) return;
+        // A write is judged by the signatures and the protection, so the read fails without
+        // them. The fonts and the attachments are only shown: a document whose font table
+        // cannot be read can still be saved, and the panel says what is missing.
+        if (signatures.status === 'rejected') throw signatures.reason;
+        if (protection.status === 'rejected') throw protection.reason;
         factsRead({
           tabId: current.id,
           bytesKey: key,
-          fonts,
-          signatures,
-          attachments,
+          fonts: fonts.status === 'fulfilled' ? fonts.value : [],
+          signatures: signatures.value,
+          attachments: attachments.status === 'fulfilled' ? attachments.value : [],
           // The protection state comes from the engine's own reader, not from a guess: an
           // unencrypted document reports `encrypted: false` and no permissions, which is a
           // fact and not an empty table.
           security: {
-            encrypted: protection.encrypted,
+            encrypted: protection.value.encrypted,
             // Only the permissions the document actually **grants** are listed: a table of
             // every bit with a yes/no column would bury the one line the user is looking for.
-            permissions: Object.entries(protection.permissions)
+            permissions: Object.entries(protection.value.permissions)
               .filter(([, granted]) => granted)
               .map(([name]) => name),
           },
+          unread: [
+            ...(fonts.status === 'rejected' ? (['fonts'] as const) : []),
+            ...(attachments.status === 'rejected' ? (['attachments'] as const) : []),
+          ],
         });
       } catch (error) {
         if (!controller.signal.aborted)

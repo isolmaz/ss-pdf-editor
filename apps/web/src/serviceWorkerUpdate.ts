@@ -59,7 +59,10 @@ export function initServiceWorkerUpdates(): void {
         publish({ available: true, held: false });
       }
 
-      // 2. Listen for newly installing workers
+      // 2. Follow a worker that is already installing, and listen for newly installing ones
+      if (registration.installing) {
+        trackInstalling(registration.installing);
+      }
       registration.addEventListener('updatefound', () => {
         if (registration.installing) {
           trackInstalling(registration.installing);

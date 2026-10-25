@@ -48,12 +48,16 @@ export function addRecentDocument(
 ): RecentDocumentItem[] {
   const current = loadRecentDocuments();
   /**
-   * The entry this opening replaces — the same tab, or an earlier opening of a file with this
-   * name. Its star belongs to the document the user starred, so it carries over: a reopened
+   * The entries this opening replaces — the same tab, or an earlier opening of the same file:
+   * the one with this name, size and page count. Another file with the same name is another
+   * entry. A star belongs to the document the user starred, so it carries over: a reopened
    * file comes back starred.
    */
-  const replaced = current.filter((item) => item.id === doc.id || item.name === doc.name);
-  const filtered = current.filter((item) => item.id !== doc.id && item.name !== doc.name);
+  const isReplaced = (item: RecentDocumentItem): boolean =>
+    item.id === doc.id ||
+    (item.name === doc.name && item.sizeBytes === doc.sizeBytes && item.pageCount === doc.pageCount);
+  const replaced = current.filter(isReplaced);
+  const filtered = current.filter((item) => !isReplaced(item));
   const updated: RecentDocumentItem[] = [
     {
       id: doc.id,

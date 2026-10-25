@@ -85,8 +85,17 @@ export function useDraftRecovery({ store, translator, openAndFingerprint }: Reco
             : translator.current('draft.restoredNoHistory', { count: restored, withoutHistory }),
         );
       }
-      // Handles whose recent entry is gone are forgotten — after the restore, which reads them.
-      if (!disposed) await pruneRecentHandles(new Set(loadRecentDocuments().map((item) => item.id)));
+      // Handles nothing needs any more are forgotten — after the restore, which reads them. A
+      // document open now and a draft the vault holds keep theirs whatever the recent list says:
+      // a restored tab without its handle could only Export.
+      if (!disposed) {
+        const needed = new Set([
+          ...loadRecentDocuments().map((item) => item.id),
+          ...store.getSnapshot().tabs.map((tab) => tab.id),
+          ...drafts.map((draft) => draft.id),
+        ]);
+        await pruneRecentHandles(needed);
+      }
       // Blobs nothing references any more (a document closed in another session, a draft deleted
       // by hand) are swept once the drafts that do reference blobs are back.
       if (!disposed) await sweepVault(store);

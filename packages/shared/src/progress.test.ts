@@ -23,6 +23,27 @@ describe('progressCounts', () => {
     expect(progressCounts({ done: -3, total: 10 })).toEqual({ done: 0, total: 10, percent: 0, page: 1 });
   });
 
+  it('counts a figure that is not a finite number as zero, so no percentage is ever NaN', () => {
+    expect(progressCounts({ done: Number.NaN, total: 10 })).toEqual({
+      done: 0,
+      total: 10,
+      percent: 0,
+      page: 1,
+    });
+    expect(progressCounts({ done: 3, total: Number.NaN })).toEqual({
+      done: 0,
+      total: 0,
+      percent: 0,
+      page: 1,
+    });
+    expect(progressCounts({ done: 3, total: Number.POSITIVE_INFINITY })).toEqual({
+      done: 0,
+      total: 0,
+      percent: 0,
+      page: 1,
+    });
+  });
+
   it('counts a report without a total as nothing to count against', () => {
     expect(progressCounts({})).toEqual({ done: 0, total: 0, percent: 0, page: 1 });
     expect(progressCounts({ done: 5 })).toEqual({ done: 0, total: 0, percent: 0, page: 1 });

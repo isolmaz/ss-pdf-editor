@@ -43,7 +43,7 @@ export interface SessionTab {
   readonly outputs: readonly OutputVersion[];
   readonly journal: OperationJournal;
   readonly dirty: boolean;
-  /** Journal state last successfully written; null means an unknown legacy baseline. */
+  /** Journal state last successfully written; null means nothing was written yet, or an unknown legacy baseline. */
   readonly savedState: string | null;
   /**
    * The SHA-256 of the file this editor last wrote for the tab (`addOutput`), or the one a
@@ -67,6 +67,11 @@ export interface OpenDocumentInput {
   readonly sha256: string;
   readonly pageCount: number;
   readonly handle?: FileSystemFileHandle;
+  /**
+   * The bytes were produced here and no file holds them: the tab opens as unsaved work, and no
+   * undo makes it clean again, until an output records a write.
+   */
+  readonly unwritten?: boolean;
 }
 
 export interface ApplyOperationInput {
@@ -116,8 +121,8 @@ export class SessionStore {
       working: createWorkingVersion(source),
       outputs: [],
       journal: new OperationJournal(),
-      dirty: false,
-      savedState: 'source',
+      dirty: input.unwritten === true,
+      savedState: input.unwritten === true ? null : 'source',
       sensitive: false,
     };
     this.#tabs = [...this.#tabs, tab];
