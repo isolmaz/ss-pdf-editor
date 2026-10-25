@@ -1474,8 +1474,9 @@ sequenceDiagram
 Details that matter:
 
 - Marks travel in **app space** (unrotated user space, top-left origin, Y down from the
-  unrotated CropBox top) and are converted through the verified four-rotation table. A
-  rectangle stored in PDF user space is accepted silently by MuPDF and removes *nothing*, so
+  unrotated CropBox top) and are converted through the verified four-rotation table and
+  scaled by the page's `/UserUnit`, because MuPDF's page space is user space times that unit.
+  A rectangle stored in PDF user space is accepted silently by MuPDF and removes *nothing*, so
   the space of every mark is stated once and converted in one place (§9).
 - `black_boxes: false` is deliberate: a black bar would advertise the redaction and could
   be lifted. The erase is a content-stream operation.
@@ -3352,7 +3353,7 @@ PDF editor, so each one is stated once:
 |---|---|---|
 | **App / page space** | unrotated page, **top-left**, Y down, points; `x` is the user-space x, `y` the distance below the page box's top edge (a CropBox that does not start at `y = 0` adds nothing) | every overlay, `RedactRect` (`space: 'app-v1'`), `PageRect`, the text engine's rects |
 | **PDF user space** | bottom-left, Y up, points | what the writers write; `topLeftToUserPoint()` in the MuPDF adapter is the one flip |
-| **MuPDF page space** | top-left, Y down, rotation included | what `page.search()` and `toStructuredText()` report; `rectToPageSpace()` converts through the verified four-rotation table |
+| **MuPDF page space** | top-left, Y down, rotation included, user space times the page's `/UserUnit` | what `page.search()` and `toStructuredText()` report; `rectToPageSpace()` converts through the verified four-rotation table and the unit |
 | **Client pixels** | viewport | overlays; `pointToPage()` and each layer's projection handle zoom, rotation and offset |
 
 Three facts are worth holding on to, all measured and recorded in the code:

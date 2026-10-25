@@ -399,6 +399,31 @@ describe('redactDocument: page boxes written with their corners the other way ro
   });
 });
 
+describe('redactDocument: a page whose /UserUnit is not 1', () => {
+  it('erases the marked text, the mark being given in user units, on a page of any turn', async () => {
+    for (const unit of [2, 0.5]) {
+      for (const rotate of [0, 90, 180, 270] as const) {
+        const source = await build([{ ...TWO_LINES, rotate }], (doc) => {
+          doc.findPage(0).put('UserUnit', unit);
+        });
+        const outcome = await redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run);
+        expect(await pageTexts(outcome.bytes), `unit ${unit}, rotation ${rotate}`).toEqual(['Public line']);
+        expect(outcome.report.notes.some((entry) => entry.key === 'op.note.redact.emptyMarks')).toBe(false);
+      }
+    }
+  });
+
+  it('removes the field and the comment under the mark of a /UserUnit page, and keeps those outside it', async () => {
+    const source = await build([TWO_LINES], (doc) => {
+      formAndNotes(doc);
+      doc.findPage(0).put('UserUnit', 2);
+    });
+    const outcome = await redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run);
+    expect(await pageTexts(outcome.bytes)).toEqual(['Public line']);
+    expect(await annotationsOf(outcome.bytes)).toEqual(OUTSIDE_ANNOTATIONS);
+  });
+});
+
 describe('redactDocument: text drawn through a tiling pattern or a soft mask', () => {
   it('refuses a page whose tiling pattern shows text instead of reporting the mark as verified', async () => {
     const source = await build([TWO_LINES], (doc) => {

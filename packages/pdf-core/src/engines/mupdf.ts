@@ -32,11 +32,26 @@ export interface UserBox {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+  /** The page's `/UserUnit`: MuPDF's page space is this many times larger than user space. */
+  readonly userUnit: number;
+}
+
+/**
+ * A `/UserUnit` as a usable factor: the default 1 for an absent, zero, negative or
+ * non-finite value — the standard requires a positive number, and a file that holds
+ * anything else is read as if the key were not there rather than scaling every
+ * measurement by nonsense.
+ */
+export function normaliseUserUnit(value: number | undefined): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 /** The unrotated page box: `/CropBox`, falling back to `/MediaBox` (both inheritable). */
 export function readPageBox(page: PDFPage): UserBox {
   const object = page.getObject();
+  // `/UserUnit` is a page-level key, not an inheritable one (ISO 32000-1 Table 30).
+  const unit = object.get('UserUnit');
+  const userUnit = normaliseUserUnit(unit.isNumber() ? unit.asNumber() : undefined);
   const media = readBoxArray(object.getInheritable('MediaBox'));
   const crop = readBoxArray(object.getInheritable('CropBox'));
   if (media !== null) {
@@ -50,7 +65,7 @@ export function readPageBox(page: PDFPage): UserBox {
             Math.min(media[3], crop[3]),
           ];
     const [x0, y0, x1, y1] = visible[2] > visible[0] && visible[3] > visible[1] ? visible : media;
-    if (x1 > x0 && y1 > y0) return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+    if (x1 > x0 && y1 > y0) return { x: x0, y: y0, width: x1 - x0, height: y1 - y0, userUnit };
   }
   throw new ToolError('corrupt-document', {
     engine: 'mupdf',
@@ -177,7 +192,7 @@ function userToPageSpace(
 /**
  * A request rectangle → the page-space rectangle the redaction needs. Two opposite
  * corners are mapped and the result is normalised, so the quarter turn is reasoned
- * about exactly once.
+ * about exactly once. Page space is user space times the page's `/UserUnit`.
  */
 export function rectToPageSpace(
   box: UserBox,
@@ -189,10 +204,10 @@ export function rectToPageSpace(
   const start = userToPageSpace(rotation, box, first.x, first.y);
   const end = userToPageSpace(rotation, box, second.x, second.y);
   return [
-    Math.min(start.u, end.u),
-    Math.min(start.v, end.v),
-    Math.max(start.u, end.u),
-    Math.max(start.v, end.v),
+    Math.min(start.u, end.u) * box.userUnit,
+    Math.min(start.v, end.v) * box.userUnit,
+    Math.max(start.u, end.u) * box.userUnit,
+    Math.max(start.v, end.v) * box.userUnit,
   ];
 }
 
