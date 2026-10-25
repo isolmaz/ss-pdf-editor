@@ -40,17 +40,16 @@ function markDocument(locale: Locale): void {
 
 export function applyLocale(locale: Locale): void {
   try {
-    // Without a `window` (a server render) the first line throws and nothing is applied.
     window.localStorage.setItem(STORAGE_KEY, locale);
-    markDocument(locale);
-    window.dispatchEvent(
-      new CustomEvent('pdf-locale-change', {
-        detail: { locale },
-      }),
-    );
   } catch {
-    // Storage access may be restricted
+    // Storage access may be restricted: the language still changes, for this visit only.
   }
+  markDocument(locale);
+  window.dispatchEvent(
+    new CustomEvent('pdf-locale-change', {
+      detail: { locale },
+    }),
+  );
 }
 
 export function useLocale(): {
