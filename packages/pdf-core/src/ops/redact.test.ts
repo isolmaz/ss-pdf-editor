@@ -269,6 +269,61 @@ describe('redactDocument', () => {
     expect(outcome.report.notes).toContainEqual({ kind: 'lost', key: 'op.note.redact.metadataCleared' });
   });
 
+  it('clears the XMP packets and private data that pages and objects carry, and only when asked to', async () => {
+    const SECRETS = [
+      'PAGEXMPSECRET',
+      'FORMXMPSECRET',
+      'IMAGEXMPSECRET',
+      'PAGEPIECESECRET',
+      'CATALOGPIECESECRET',
+    ];
+    const packet = (doc: PDFDocument, secret: string): PDFObject =>
+      doc.addStream(`<x:xmpmeta>${secret}</x:xmpmeta>`, { Type: 'Metadata', Subtype: 'XML' });
+    const source = await build([TWO_LINES], (doc) => {
+      const page = doc.findPage(0);
+      page.put('Metadata', packet(doc, 'PAGEXMPSECRET'));
+      page.put('PieceInfo', {
+        App: { Data: doc.newString('PAGEPIECESECRET'), LastModified: 'D:20200101000000Z' },
+      });
+      doc
+        .getTrailer()
+        .get('Root')
+        .put('PieceInfo', { App: { Data: doc.newString('CATALOGPIECESECRET') } });
+      const form = doc.addStream('q Q', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, 10, 10],
+        Metadata: packet(doc, 'FORMXMPSECRET'),
+      });
+      const image = doc.addStream('A', {
+        Type: 'XObject',
+        Subtype: 'Image',
+        Width: 1,
+        Height: 1,
+        ColorSpace: 'DeviceGray',
+        BitsPerComponent: 8,
+        Metadata: packet(doc, 'IMAGEXMPSECRET'),
+      });
+      drawOnPage(doc, 'q /Fm1 Do /Im1 Do Q', { XObject: { Fm1: form, Im1: image } });
+    });
+    for (const secret of SECRETS) expect(await decompressed(source), secret).toContain(secret);
+
+    const kept = await redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run);
+    for (const secret of SECRETS) expect(await decompressed(kept.bytes), secret).toContain(secret);
+
+    const cleared = await redactDocument(source, { ...BASE, cleanMetadata: true, marks: [SECRET_MARK] }, run);
+    for (const secret of SECRETS) expect(await decompressed(cleared.bytes), secret).not.toContain(secret);
+    const left = await inProduced(cleared.bytes, (doc) => {
+      const page = doc.findPage(0);
+      return [page.get('Metadata'), page.get('PieceInfo'), doc.getTrailer().get('Root').get('PieceInfo')].map(
+        (entry) => entry.isNull(),
+      );
+    });
+    expect(left).toEqual([true, true, true]);
+    expect(cleared.report.steps).toContain('clean(Info+XMP)');
+    expect(cleared.report.notes).toContainEqual({ kind: 'lost', key: 'op.note.redact.metadataCleared' });
+  });
+
   it('clears a direct XMP entry, and reports no metadata clean-up for a document without any', async () => {
     const direct = await build([TWO_LINES], (doc) => {
       doc.getTrailer().get('Root').put('Metadata', { Type: 'Metadata' });
@@ -1004,7 +1059,7 @@ describe('verifyRedaction', () => {
         drawOnPage(doc, 'q /Fm1 Do Q', { XObject: { Fm1: groupForm(doc, showText('FORMSECRET')) } });
       },
       'an image': (doc) => {
-        const image = doc.addStream(' ', {
+        const image = doc.addStream('A', {
           Type: 'XObject',
           Subtype: 'Image',
           Width: 1,

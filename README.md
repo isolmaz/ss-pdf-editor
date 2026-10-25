@@ -459,7 +459,9 @@ nothing leaving the browser.
     instead of being reported as redacted.
   - The verification covers the marked areas only. Document properties and bookmark titles
     are not checked; the metadata option clears the title, author, subject, keywords and
-    creator fields and the XMP packet, and the notices say exactly that.
+    creator fields, every XMP packet (the document's, and those of pages and of the forms and
+    images they draw) and the private application data (`/PieceInfo`) of the document, its pages
+    and its objects, and the notices say exactly that.
   - The attachments option removes every attached file of the document, wherever it lives, not
     only the ones the Attachments list shows (a file attached only as an annotation or listed
     only in the associated files of a page, an annotation or a structure element is cleaned

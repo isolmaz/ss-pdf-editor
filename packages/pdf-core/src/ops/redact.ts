@@ -47,6 +47,7 @@ import {
   sweepPage,
 } from './redact-annots';
 import { paintResourcesShowText, purgeAttachments, scrubRedactedPages } from './redact-leaks';
+import { forEachDictionary } from './sanitize-graph';
 import { note, type OperationContext, type OperationOutcome, throwIfAborted } from './types';
 
 /** The XFA writers bring an XML parser with them: they load only for a form that has XFA. */
@@ -98,6 +99,9 @@ const CONTENT_INFO_KEYS = [
   'META_INFO_KEYWORDS',
   'META_INFO_CREATOR',
 ] as const satisfies readonly (keyof Mupdf['Document'])[];
+
+/** The entries that hold an XMP packet or an application's private data, in any dictionary. */
+const EMBEDDED_METADATA_KEYS = ['Metadata', 'PieceInfo'] as const;
 
 /**
  * Line art touched by a mark is removed (`REDACT_LINE_ART_REMOVE_IF_TOUCHED` = 2):
@@ -469,8 +473,10 @@ function applyMarks(
 }
 
 /**
- * Drop the content-bearing Info keys and the XMP packet, then re-stamp the producer
- * line. Returns whether anything was there to clean.
+ * Drop the content-bearing Info keys, the XMP packet of the catalog, every other `/Metadata`
+ * packet (a page's, a form's or an image's) and every `/PieceInfo` (the private data an application
+ * keeps on the catalog, a page or an object), then re-stamp the producer line. Returns whether
+ * anything was there to clean.
  *
  * MuPDF's metadata API is write-only per key (`setMetaData`), so Info fields are set
  * to an empty string rather than removed — the key stays, its content does not, which
@@ -488,6 +494,13 @@ function cleanInfoAndXmp(mupdf: Mupdf, doc: PDFDocument): boolean {
     }
   }
   if (removeXmpPacket(doc)) cleaned = true;
+  forEachDictionary(doc, (dictionary) => {
+    for (const key of EMBEDDED_METADATA_KEYS) {
+      if (dictionary.get(key).isNull()) continue;
+      dictionary.delete(key);
+      cleaned = true;
+    }
+  });
   // Product policy: the producer line is merged back, never stripped.
   doc.setMetaData(Document.META_INFO_PRODUCER, PRODUCER_LINE);
   return cleaned;
