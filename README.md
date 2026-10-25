@@ -688,6 +688,8 @@ These describe how the build works; they are not promises.
     windows never overwrite one draft or delete each other's saved versions. Where the
     browser has no Web Locks, ownership is not enforced.
   - A draft that cannot be read back is reported and skipped; the others are still restored.
+  - A document that was open with no unsaved change and no undo history when its window went
+    away leaves no stored copy: the next start removes it.
   - A tab restored from a draft remembers the file it last saved over, so its first Save is
     checked against that file and not against the original.
   - If the browser's storage refuses the recovery copy of a document you open (storage

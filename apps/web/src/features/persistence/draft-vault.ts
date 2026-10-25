@@ -8,6 +8,7 @@
 
 import {
   type DraftInventory,
+  isRestorable,
   keysForDraft,
   type OpenDocumentKeys,
   planDocumentCleanup,
@@ -21,6 +22,7 @@ import { showNotice } from '../core/core-store';
 import {
   disownDraft,
   draftStorage,
+  ownsDraft,
   persistedKeysFor,
   persistedKeysForgotten,
   persistenceStore,
@@ -133,6 +135,9 @@ export async function purgeActiveDocument(session: SessionStore, t: Translator):
  * start-up, after the drafts are back (`use-draft-recovery.ts`), and says nothing: it is a chore,
  * not something the user asked for.
  *
+ * Before it lists the references it forgets the manifests of documents that were left open with
+ * nothing to restore (`forgetCleanDrafts`), so the copies only those held go in the same run.
+ *
  * It does nothing in the cases where deleting could lose the only copy of something. An
  * incomplete inventory means the reference graph is unknown. An unreachable peer channel
  * means another window's live documents are invisible, and a live window that never answered
@@ -146,6 +151,7 @@ export async function sweepVault(session: SessionStore): Promise<void> {
       if (!(await channel.probe())) return;
       await queueDraftWrite(async () => {
         const storage = draftStorage();
+        await forgetCleanDrafts(session);
         const inventory = await readInventory();
         const storedSources = (await storage.listSources?.()) ?? [];
         const plan = planVaultCleanup({
@@ -160,6 +166,21 @@ export async function sweepVault(session: SessionStore): Promise<void> {
     });
   } catch {
     // Orphans are only disk space; the next start tries again.
+  }
+}
+
+/**
+ * Removes the manifests of documents that were open with no unsaved change and no history when
+ * their window went away: they are not restored, so nothing would ever name them again. A
+ * manifest of a tab open in this window, or of a draft another window owns, stays.
+ */
+async function forgetCleanDrafts(session: SessionStore): Promise<void> {
+  const storage = draftStorage();
+  const open = new Set(session.getSnapshot().tabs.map((tab) => tab.id));
+  for (const draft of (await readInventory()).drafts) {
+    if (isRestorable(draft) || open.has(draft.id) || !(await ownsDraft(draft.id))) continue;
+    await storage.deleteDraft(draft.id);
+    disownDraft(draft.id);
   }
 }
 

@@ -3040,7 +3040,9 @@ unavailable does `canReachPeers()` return false — and then the sweep does not 
 because without peer knowledge "delete everything unreferenced" would delete another
 window's only copy. The sweep runs by itself, once per start-up, after the drafts are
 restored (`use-draft-recovery.ts`); it has no button and no command, and it says nothing,
-whether it deleted blobs, found none or refused.
+whether it deleted blobs, found none or refused. It first removes the manifests of documents left
+open with nothing to restore (no unsaved change, no history) that no window has open, so the
+copies only those held go in the same run.
 
 References are only ever **added**. A window that answers once and dies leaves its keys
 pinned, which costs space; forgetting a live window's keys would cost a document.
