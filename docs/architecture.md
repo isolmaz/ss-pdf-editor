@@ -1399,7 +1399,8 @@ dates shown in the panel), a CRL or OCSP response in the signature's CMS (the Ad
 `SignedData.crls`) or in the document's `/DSS` (`Certs`, `CRLs`, `OCSPs`, read by reference and
 bounded to 256 entries / 16 MiB, the budget checked against a stream's `/DL` and stored length
 before it is decoded). The signer certificate and every certificate above it, up to
-but not including a self-signed root, are checked.
+but not including a self-signed root, are checked; a self-signed certificate inside a trusted path
+(a CA's re-issued root, with the root's name and key) is skipped as the root is.
 
 - **Who may speak for whom.** When the trust walk (§5.3) validated a path to an imported root,
   the certificates checked are that path's, each with the issuer the walk proved

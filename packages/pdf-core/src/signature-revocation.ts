@@ -627,12 +627,15 @@ async function linksToCheck(
 ): Promise<Link[]> {
   const top = path.at(-1);
   if (top === undefined) return buildChain(subtle, leaf, pool);
-  const below = path.slice(0, -1).map(
-    (certificate, index): Link => ({
-      certificate,
-      issuer: path[index + 1] as Certificate,
-      selfSigned: false,
-    }),
+  const below = await Promise.all(
+    path.slice(0, -1).map(
+      async (certificate, index): Promise<Link> => ({
+        certificate,
+        issuer: path[index + 1] as Certificate,
+        // A self-signed certificate inside the path (a CA's re-issued root) is a root of its own.
+        selfSigned: await issuedBy(subtle, certificate, certificate),
+      }),
+    ),
   );
   return [...below, ...(await buildChain(subtle, top, pool))];
 }

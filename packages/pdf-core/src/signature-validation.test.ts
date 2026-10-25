@@ -15,6 +15,7 @@ import {
   CRL_REASON,
   extKeyUsageExtension,
   issueCrl,
+  issueOcspResponse,
   issueTimestampToken,
   KP_TIME_STAMPING,
   signatureValueOf,
@@ -470,5 +471,37 @@ describe('evaluateEvidence along the trusted path', () => {
       ['Intermediate', 'good'],
     ]);
     expect(withoutPath.revocation).toBe('not-revoked');
+  });
+
+  it('checks no certificate above the intermediate when the path runs through a re-issued copy of the root', async () => {
+    const rootKey = await key();
+    const root = await authority('Root', rootKey);
+    // The same name and key with a longer validity: another tbsCertificate, signed by the root's key.
+    const reissued = await authority('Root', rootKey, undefined, new Date(Date.UTC(2031, 0, 1)));
+    const intermediate = await authority('Intermediate', await key(), root);
+    const signer = await holder('Signer', intermediate);
+    const ocsps = [
+      await issueOcspResponse({
+        issuer: intermediate,
+        producedAt: day(5, 1),
+        singles: [{ cert: signer, status: 'good', ...LIST_DATES }],
+      }),
+      await issueOcspResponse({
+        issuer: root,
+        producedAt: day(5, 1),
+        singles: [{ cert: intermediate, status: 'good', ...LIST_DATES }],
+      }),
+    ];
+
+    const outcome = await evidence(signer, [reissued.der, intermediate.der], [root], { dss: { ocsps } });
+    expect(outcome.trust).toMatchObject({
+      verdict: 'trusted',
+      path: ['Signer', 'Intermediate', 'Root', 'Root'],
+    });
+    expect(rows(outcome.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Intermediate', 'good'],
+    ]);
+    expect(outcome.revocation).toBe('not-revoked');
   });
 });
