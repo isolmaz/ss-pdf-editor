@@ -397,8 +397,9 @@ because shipping one would vouch for certificates the user never chose. base64 i
 implemented once, in `base64.ts` (shared with revocation lists and the draft bitmaps), rather than
 via `btoa`, so the code runs identically in Node and the browser. The decoder ignores every character outside the base64 alphabet (line breaks, PEM
 indentation), so it has no failure of its own; a stored root that decodes to fewer than 64 bytes is
-dropped rather than trusted, and `trustRootFrom` derives the id from the DER, so importing
-the same certificate twice is one entry.
+dropped rather than trusted, and `trustRootFrom` (asynchronous, as is `revocationListFrom`) derives the
+id from the SHA-256 of the DER, so two certificates never share an id; adding a root replaces an entry
+with the same DER whatever id it was stored under, so importing the same certificate twice is one entry.
 
 The roots and the revocation lists live in the app's own OPFS directory, and
 `features/facts/trust-store.ts` keeps the store equal to the file: a change is written first and

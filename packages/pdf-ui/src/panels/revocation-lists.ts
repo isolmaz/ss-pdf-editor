@@ -40,7 +40,7 @@ export async function importRevocationLists(
       if (described === null) continue;
       found += 1;
       lists.push(
-        revocationListFrom(der, described.issuer ?? file.name, {
+        await revocationListFrom(der, described.issuer ?? file.name, {
           thisUpdate: described.thisUpdate,
           nextUpdate: described.nextUpdate,
           revokedCount: described.revokedCount,

@@ -74,11 +74,11 @@ vi.mock('pdf-ui/panels', () => ({
 }));
 
 const t = createTranslator('en');
-const rootA = trustRootFrom(new Uint8Array([1, 2, 3]), 'Root A', 1);
-const rootB = trustRootFrom(new Uint8Array([4, 5, 6]), 'Root B', 2);
+const rootA = await trustRootFrom(new Uint8Array([1, 2, 3]), 'Root A', 1);
+const rootB = await trustRootFrom(new Uint8Array([4, 5, 6]), 'Root B', 2);
 const summary = { thisUpdate: null, nextUpdate: null, revokedCount: 0, delta: false };
-const listA = revocationListFrom(new Uint8Array([7, 8]), 'CRL A', summary, 1);
-const listB = revocationListFrom(new Uint8Array([9, 10]), 'CRL B', summary, 2);
+const listA = await revocationListFrom(new Uint8Array([7, 8]), 'CRL A', summary, 1);
+const listB = await revocationListFrom(new Uint8Array([9, 10]), 'CRL B', summary, 2);
 const empty = trustStore.get();
 const tab = new SessionStore().openDocument({
   name: 'a.pdf',

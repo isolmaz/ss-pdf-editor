@@ -26,11 +26,11 @@ vi.mock('../../drafts', () => ({ readAppFile: files.read, writeAppFile: files.wr
 const t = createTranslator('en');
 // Stored entries shorter than a certificate / a CRL are dropped on read, so the fixtures have a real length.
 const der = (length: number, fill: number) => new Uint8Array(length).fill(fill);
-const rootA = trustRootFrom(der(64, 1), 'Root A', 1);
-const rootB = trustRootFrom(der(64, 2), 'Root B', 2);
+const rootA = await trustRootFrom(der(64, 1), 'Root A', 1);
+const rootB = await trustRootFrom(der(64, 2), 'Root B', 2);
 const summary = { thisUpdate: null, nextUpdate: null, revokedCount: 0, delta: false };
-const listA = revocationListFrom(der(32, 7), 'CRL A', summary, 1);
-const listB = revocationListFrom(der(32, 9), 'CRL B', summary, 2);
+const listA = await revocationListFrom(der(32, 7), 'CRL A', summary, 1);
+const listB = await revocationListFrom(der(32, 9), 'CRL B', summary, 2);
 const empty = trustStore.get();
 
 function Loader({ translator = t }: { translator?: Translator }) {
