@@ -24,16 +24,14 @@ let unstoredLocale: Locale | null = null;
 export function getStoredLocale(): Locale {
   if (unstoredLocale !== null) return unstoredLocale;
   try {
-    // Without a `window` (a server render) the reads below throw and the default applies.
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (stored !== null && isLocale(stored)) return stored;
-    const languages = navigator.languages.length > 0 ? navigator.languages : [navigator.language];
-    const matched = matchLocale(languages);
-    if (matched !== null) return matched;
   } catch {
-    // Storage access may be restricted
+    // Storage access may be restricted, or there is no `window` (a server render): nothing was
+    // chosen that can be read, so the browser's languages decide.
   }
-  return DEFAULT_LOCALE;
+  const languages = navigator.languages.length > 0 ? navigator.languages : [navigator.language];
+  return matchLocale(languages) ?? DEFAULT_LOCALE;
 }
 
 /** `<html lang>` and `<html dir>` follow the interface language. */
