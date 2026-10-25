@@ -1838,9 +1838,11 @@ as hyphenation and joins the word. Without match case (`case-fold.ts`, which the
 but not `i` — folding `ı` to `i` would make Turkish `sık` and `sik` one word — and a final sigma
 `ς` is `σ`.
 Whole-word mode refuses a letter, digit or mark on either side. The replacement is one line of words: a
-control character (line break, tab), a line or paragraph separator, or a zero-width, soft-hyphen or
-direction character in it is refused before any page is read (`replacement-invalid`, naming the code
-points), since the first kind would be drawn as a plain gap and the second kind cannot be read back.
+control character (line break, tab), a line or paragraph separator, or an invisible character in it
+(the zero-width characters and U+FEFF, the soft hyphen, the combining grapheme joiner, direction
+marks and isolates, the invisible operators U+2061-U+2064, U+180E) is refused before any page is
+read (`replacement-invalid`, naming the code points), since the first kind would be drawn as a
+plain gap and the second kind cannot be read back.
 
 **Placement**, per line of matches:
 
