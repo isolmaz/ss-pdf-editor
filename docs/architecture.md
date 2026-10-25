@@ -3194,11 +3194,13 @@ the same holds for a window with an operation or a save running. Such a window k
 code and its update banner says to save and reload (`update.saveFirst`); the banner's
 "Close" closes the update in the module, not only in that banner, and the next worker to
 finish installing offers it again (`serviceWorkerUpdate.ts`). A window whose changes a draft
-holds never asks and reloads as before. A document a tool produced (`openProducedTab`: a merge, a
-split, an unlock, a conversion) opens with `unwritten` set: `dirty`, with a `null` saved state that
+holds never asks and reloads as before. A document a tool produced (`openProducedTab`: a merge, an
+extract, an unlock, a conversion) opens with `unwritten` set: `dirty`, with a `null` saved state that
 no undo can match, so closing it asks, a draft restores it and a window holding it unprotected
 guards the reload, until a Save or an Export records an output (an Export counts when the document
 has no file of its own and either the browser cannot write files or nothing was written yet).
+A document produced while a sensitive tab is in front is marked sensitive as well and stores no
+source copy, so an unlocked copy never reaches the draft store.
 The password a tab was opened with lives in
 `lockedTabs` only as long as the tab: `discardDocument` removes it.
 

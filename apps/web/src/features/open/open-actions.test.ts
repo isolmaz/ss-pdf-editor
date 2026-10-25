@@ -374,6 +374,17 @@ describe('openProducedTab', () => {
     expect(holdsUnprotectedWork(session.getSnapshot())).toBe(true);
   });
 
+  it('keeps the bytes produced from a document opened with its password as sensitive as it, storing no copy', async () => {
+    await actions().openFile(pdfFile(), undefined, 'secret');
+    const source = session.active?.id;
+
+    await expect(actions().openProducedTab('unlocked.pdf', bytes)).resolves.toBeNull();
+
+    expect(session.active?.id).not.toBe(source);
+    expect(session.active?.sensitive).toBe(true);
+    expect(storage.sources.size).toBe(0);
+  });
+
   it('resolves with the warning, keeping the tab, when the recovery copy cannot be stored', async () => {
     storage.putSource = async () => {
       throw new Error('full');
