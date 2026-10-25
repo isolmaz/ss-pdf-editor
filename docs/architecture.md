@@ -3207,8 +3207,13 @@ extract, an unlock, a conversion) opens with `unwritten` set: `dirty`, with a `n
 no undo can match, so closing it asks, a draft restores it and a window holding it unprotected
 guards the reload, until a Save or an Export records an output (an Export counts when the document
 has no file of its own and either the browser cannot write files or nothing was written yet).
-A document produced while a sensitive tab is in front is marked sensitive as well and stores no
-source copy, so an unlocked copy never reaches the draft store.
+A document made from a sensitive tab is marked sensitive as well and stores no source copy. The
+caller passes the sensitivity of the tab the bytes came from (the tab a dialog froze, the tab
+being unlocked, the tab the modal print dialog imposed), not of the tab in front when the bytes
+have opened, which a tab switch may have changed; the unlock also passes its signal, so picking
+another tab while the copy opens cancels it. An unlocked copy therefore never reaches the draft
+store, and a document not made from a sensitive tab (a conversion, a scan, a Start dialog's
+result) is stored like any other.
 The password a tab was opened with lives in
 `lockedTabs` only as long as the tab: `discardDocument` removes it.
 

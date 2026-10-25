@@ -77,7 +77,9 @@ let session: SessionStore;
 let tab: SessionTab;
 const setImages = vi.fn();
 const openProducedTab =
-  vi.fn<(name: string, bytes: Uint8Array, signal?: AbortSignal) => Promise<string | null>>();
+  vi.fn<
+    (name: string, bytes: Uint8Array, signal?: AbortSignal, sensitive?: boolean) => Promise<string | null>
+  >();
 
 const spec = (over: Record<string, unknown> = {}): OperationDialogSpec =>
   ({ id: 'compress', titleKey: 'op.compress.title', resultKind: 'replace', ...over }) as never;
@@ -638,10 +640,27 @@ describe('dialogResult', () => {
     openFrozen(spec({ resultKind: 'new-tab' }));
     openProducedTab.mockResolvedValue('copy not stored');
     await runs().dialogResult(result());
-    expect(openProducedTab).toHaveBeenCalledWith('out.pdf', new Uint8Array([7, 8]), expect.any(AbortSignal));
+    expect(openProducedTab).toHaveBeenCalledWith(
+      'out.pdf',
+      new Uint8Array([7, 8]),
+      expect.any(AbortSignal),
+      false,
+    );
     expect(notice()).toBe('op.result.opened {"name":"out.pdf"} copy not stored');
     expect(dialogsStore.get().dialogSpec).toBeNull();
     expect(busy()).toBe(false);
+  });
+
+  it('opens the new-tab result of a document opened with its password as sensitive', async () => {
+    session.setSensitive(tab.id, true);
+    openFrozen(spec({ resultKind: 'new-tab' }));
+    await runs().dialogResult(result());
+    expect(openProducedTab).toHaveBeenCalledWith(
+      'out.pdf',
+      new Uint8Array([7, 8]),
+      expect.any(AbortSignal),
+      true,
+    );
   });
 
   it('says the dialog’s own sentence for a new-tab result', async () => {
@@ -892,7 +911,8 @@ describe('unlockActiveCopy', () => {
     expect(openProducedTab).not.toHaveBeenCalled();
   });
 
-  it('builds an unlocked copy in a new tab and says so', async () => {
+  it('builds an unlocked copy in a new tab, as sensitive as its source, and says so', async () => {
+    session.setSensitive(tab.id, true);
     mocks.unlockDocument.mockImplementation(async (_bytes, _password, options) => {
       options.onProgress({ phase: 'pages', labelKey: 'op.step.pages', total: 2, done: 1 });
       expect(resultsStore.get().progress).toMatchObject({ done: 1 });
@@ -906,7 +926,12 @@ describe('unlockActiveCopy', () => {
       signal: expect.any(AbortSignal),
       onProgress: expect.any(Function),
     });
-    expect(openProducedTab).toHaveBeenCalledWith('a-security.unlock.suffix.pdf', new Uint8Array([5]));
+    expect(openProducedTab).toHaveBeenCalledWith(
+      'a-security.unlock.suffix.pdf',
+      new Uint8Array([5]),
+      expect.any(AbortSignal),
+      true,
+    );
     expect(notice()).toBe('locked.done');
     expect(resultsStore.get().progress).toBeNull();
     expect(busy()).toBe(false);

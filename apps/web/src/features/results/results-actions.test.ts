@@ -28,7 +28,9 @@ const busy = () => coreStore.get().busy;
 let session: SessionStore;
 let tab: SessionTab;
 const openProducedTab =
-  vi.fn<(name: string, bytes: Uint8Array, signal?: AbortSignal) => Promise<string | null>>();
+  vi.fn<
+    (name: string, bytes: Uint8Array, signal?: AbortSignal, sensitive?: boolean) => Promise<string | null>
+  >();
 const openDialog = vi.fn();
 const refuseUnappliedRedactions = vi.fn(() => false);
 
@@ -244,11 +246,22 @@ describe('printProduced', () => {
     openPrintDialog();
     await actions().printProduced(printed);
 
-    expect(openProducedTab).toHaveBeenCalledWith('booklet.pdf', printed.bytes, expect.any(AbortSignal));
+    expect(openProducedTab).toHaveBeenCalledWith(
+      'booklet.pdf',
+      printed.bytes,
+      expect.any(AbortSignal),
+      false,
+    );
     expect(resultsStore.get().printOpen).toBe(false);
     expect(notice()).toBeNull();
     expect(busy()).toBe(false);
     expect(operationRunning()).toBe(false);
+  });
+
+  it('opens the pages imposed from a document opened with its password as sensitive', async () => {
+    session.setSensitive(tab.id, true);
+    await actions().printProduced(printed);
+    expect(openProducedTab).toHaveBeenCalledWith('booklet.pdf', printed.bytes, expect.any(AbortSignal), true);
   });
 
   it('says the stored-copy warning when there is one', async () => {

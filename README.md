@@ -736,15 +736,18 @@ These describe how the build works; they are not promises.
   The e2e suite runs under exactly these headers.
 - **The service worker caches static assets only.** It never stores document bytes.
 - **Drafts stay local.** Unsaved work is kept in the origin-private file system (OPFS).
-  - A **sensitive session** saves nothing; any document opened with a password starts one.
+  - A **sensitive session** keeps no draft, no copy of the document and no file handle (its
+    recent-list entry holds only the name, size and page count); any document opened with a
+    password starts one.
   - A window with unsaved changes that no draft protects (a sensitive session, or a draft that
     is still being written or could not be written) asks before it is closed or reloaded, and
     an update of the app never reloads it by itself: the update banner asks you to save and
     reload instead. A window whose changes a draft holds asks nothing. A document that a tool
     produced (a merge, an extract, a conversion) opens as unsaved changes, because no file holds
     it, until it is saved or exported; closing its tab asks first, and a draft brings it back.
-    One produced while a document opened with its password is in front (its unlocked copy, a
-    tool's result of it) is a sensitive session too: no recovery copy and no draft.
+    One made from a document opened with its password (its unlocked copy, a tool's result of
+    it, its pages imposed for printing) is a sensitive session too: no recovery copy and no
+    draft. Picking another tab while the unlocked copy opens cancels the copy.
   - The recent list keeps the file name, size, page count, when it was last opened and
     whether it is starred in `localStorage`. In Chromium it also keeps a *handle* to the
     file in IndexedDB — a reference the browser asks permission for again, never the file's

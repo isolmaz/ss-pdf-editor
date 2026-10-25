@@ -31,8 +31,16 @@ import { closePrintDialog, closeScanDialog } from './results-store';
 export interface ResultsDeps {
   readonly session: SessionStore;
   readonly t: Translator;
-  /** Open produced bytes as a new tab; resolves with the stored-copy warning, if any. */
-  readonly openProducedTab: (name: string, bytes: Uint8Array, signal?: AbortSignal) => Promise<string | null>;
+  /**
+   * Open produced bytes as a new tab, `sensitive` when they were made from a sensitive tab;
+   * resolves with the stored-copy warning, if any.
+   */
+  readonly openProducedTab: (
+    name: string,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+    sensitive?: boolean,
+  ) => Promise<string | null>;
   /** Open the operation dialog `id` (the scanner's OCR offer). */
   readonly openDialog: (id: string) => void;
   /** Say why a mark still staged blocks this, and report that it does. */
@@ -126,10 +134,12 @@ export function createResultsActions(deps: ResultsDeps): ResultsActions {
       return;
     }
     if (deps.refuseUnappliedRedactions()) return;
+    // The print dialog is modal, so the tab in front is the one its pages were imposed from.
+    const sensitive = deps.session.active?.sensitive === true;
     const controller = beginOperation();
     setBusy(true);
     try {
-      const warning = await deps.openProducedTab(file.name, file.bytes, controller.signal);
+      const warning = await deps.openProducedTab(file.name, file.bytes, controller.signal, sensitive);
       closePrintDialog();
       // The print dialog has no success line of its own: the warning is the only notice.
       if (warning !== null) showNotice(warning);

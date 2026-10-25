@@ -215,8 +215,16 @@ export function createDialogOpeners(deps: DialogOpenerDeps) {
 export interface DialogRunDeps {
   readonly session: SessionStore;
   readonly t: Translator;
-  /** Open produced bytes as a new tab; resolves with the stored-copy warning, if any. */
-  readonly openProducedTab: (name: string, bytes: Uint8Array, signal?: AbortSignal) => Promise<string | null>;
+  /**
+   * Open produced bytes as a new tab, `sensitive` when they were made from a sensitive tab;
+   * resolves with the stored-copy warning, if any.
+   */
+  readonly openProducedTab: (
+    name: string,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+    sensitive?: boolean,
+  ) => Promise<string | null>;
   /** What the dialog's run received: the redaction marks it was frozen with. */
   readonly dialogContext: OperationRunContext | null;
   /** The open password of each protected tab. */
@@ -299,7 +307,7 @@ export function createDialogRuns(deps: DialogRunDeps) {
         return;
       }
       if (kind === 'new-tab') {
-        const warning = await deps.openProducedTab(first.name, first.bytes, controller.signal);
+        const warning = await deps.openProducedTab(first.name, first.bytes, controller.signal, tab.sensitive);
         deliveredNotice(
           appendWarning(
             result.noticeKey === undefined
@@ -412,9 +420,12 @@ export function createDialogRuns(deps: DialogRunDeps) {
         signal: controller.signal,
         onProgress: setProgress,
       });
+      // The signal makes a tab switch while the copy opens cancel it, as it cancels the unlock.
       const warning = await deps.openProducedTab(
         tab.name.replace(/\.pdf$/i, `-${t('security.unlock.suffix')}.pdf`),
         outcome.bytes,
+        controller.signal,
+        tab.sensitive,
       );
       // What unlocking cost the file (a signature that no longer validates) must reach the
       // user: the report's `lost` notes are the only place that is said.
