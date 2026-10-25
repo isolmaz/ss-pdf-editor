@@ -42,7 +42,7 @@ import {
   rawExtension,
   scopeExtension,
 } from './signature-revocation.fixtures';
-import { extendedKeyUsage } from './signature-trust';
+import { checkTrustPath, extendedKeyUsage } from './signature-trust';
 import type { CertificateFixture } from './signature-trust.fixtures';
 import {
   authorityKeyIdentifierExtension,
@@ -100,11 +100,37 @@ async function check(
     leafRole: 'signer',
     pool: pool.map((entry) => entry.der),
     roots: roots.map((entry) => entry.der),
+    trustedPath: [],
     context: {
       sources: parseRevocationSources({ imported: crls }),
       validationTime,
       now: NOW,
     },
+  });
+}
+
+/** What a signature check does: revocation along the path the trust walk validated. */
+async function checkAlongTrust(
+  leaf: CertificateFixture,
+  chain: readonly CertificateFixture[],
+  roots: readonly CertificateFixture[],
+  crls: readonly Uint8Array[],
+): Promise<readonly RevocationCertCheck[]> {
+  const der = (list: readonly CertificateFixture[]) => list.map((entry) => entry.der);
+  const { trust, certificates } = await checkTrustPath({
+    signer: leaf.der,
+    chain: der(chain),
+    roots: der(roots),
+    now: NOW,
+  });
+  expect(trust.verdict).toBe('trusted');
+  return await checkRevocation({
+    leaf: leaf.der,
+    leafRole: 'signer',
+    pool: der([...chain, ...roots]),
+    roots: der(roots),
+    trustedPath: certificates,
+    context: { sources: parseRevocationSources({ imported: crls }), validationTime: SIGNED_AT, now: NOW },
   });
 }
 
@@ -305,7 +331,7 @@ describe('which issuers a list may come from', () => {
     expect((await check(leaf, [ca], [revoking], SIGNED_AT, [ca]))[0]).toMatchObject({ status: 'revoked' });
   });
 
-  it('takes a copy of an imported root that the file carries first, with the same name and key, as that root', async () => {
+  it('clears a certificate along the trusted path when the file carries a copy of the imported root first', async () => {
     const keyPair = await generateKey({ kind: 'EC', curve: 'P-256' });
     const root = {
       subject: 'Root',
@@ -318,8 +344,109 @@ describe('which issuers a list may come from', () => {
     const leaf = await makeLeaf('Signer', imported);
     const crl = await issueCrl({ issuer: imported, ...CRL_DATES });
 
-    const [signer] = await check(leaf, [reissued, imported], [crl], SIGNED_AT, [imported]);
+    const [signer] = await checkAlongTrust(leaf, [reissued], [imported], [crl]);
     expect(signer).toMatchObject({ subject: 'Signer', status: 'good', unknownReason: null });
+    // Without a trusted path the copy is only what the file says: it vouches for nothing.
+    expect((await check(leaf, [reissued, imported], [crl], SIGNED_AT, [imported]))[0]).toMatchObject({
+      status: 'unknown',
+      unknownReason: 'issuer-not-trusted',
+    });
+  });
+
+  it('keeps a revocation the imported CA signed when the file carries a copy of that CA another CA issued', async () => {
+    const ca = await makeCa('CA');
+    const leaf = await makeLeaf('Signer', ca);
+    const forger = await makeCa('Forger');
+    // The CA's name and key under the forger, valid only until before the CA's revoking list.
+    const copy = await issueCertificate(
+      {
+        subject: 'CA',
+        keyPair: ca.keyPair,
+        notBefore: VALID.notBefore,
+        notAfter: day(4, 30),
+        basicConstraints: { cA: true },
+        keyUsage: ['keyCertSign', 'cRLSign'],
+      },
+      forger,
+    );
+    const older = await issueCrl({ issuer: ca, thisUpdate: day(3, 10), nextUpdate: day(4, 10) });
+    const revoking = await issueCrl({ issuer: ca, ...CRL_DATES, revoked: [{ cert: leaf, at: day(2, 1) }] });
+
+    const checks = await checkAlongTrust(leaf, [copy, forger], [ca], [older, revoking]);
+    expect(checks.map((entry) => [entry.subject, entry.status])).toEqual([['Signer', 'revoked']]);
+    expect(summarizeRevocation(checks, false)).toBe('revoked');
+  });
+
+  it('keeps a revocation the issuing key signed when the only certificate of that key at hand may not sign lists', async () => {
+    const root = await makeCa('Root');
+    const intermediate = await makeCa('Intermediate', root);
+    const leaf = await makeLeaf('Signer', intermediate);
+    const forger = await makeCa('Forger');
+    const crossCertificate = await issueCertificate(
+      {
+        subject: 'Intermediate',
+        keyPair: intermediate.keyPair,
+        ...VALID,
+        basicConstraints: { cA: true },
+        keyUsage: ['keyCertSign'],
+      },
+      forger,
+    );
+    const revoking = await issueCrl({
+      issuer: intermediate,
+      ...CRL_DATES,
+      revoked: [{ cert: leaf, at: day(2, 1) }],
+    });
+
+    // No root is imported, and the file puts the copy without cRLSign ahead of the real certificate.
+    const [signer] = await check(
+      leaf,
+      [crossCertificate, intermediate, root, forger],
+      [revoking],
+      SIGNED_AT,
+      [],
+    );
+    expect(signer).toMatchObject({ subject: 'Signer', status: 'revoked', unknownReason: null });
+    // A list that clears is still held to the certificate's own permission.
+    const clean = await issueCrl({ issuer: intermediate, ...CRL_DATES });
+    expect((await check(leaf, [crossCertificate, root], [clean], SIGNED_AT, [root]))[0]).toMatchObject({
+      status: 'unknown',
+      unknownReason: 'invalid-list',
+    });
+  });
+
+  it('checks the intermediate the trusted path holds, not a cross-certificate of it that the file carries first', async () => {
+    const root = await makeCa('Root');
+    const intermediate = await makeCa('Intermediate', root);
+    const leaf = await makeLeaf('Signer', intermediate);
+    const other = await makeCa('Other Root');
+    const crossCertificate = await issueCertificate(
+      {
+        subject: 'Intermediate',
+        keyPair: intermediate.keyPair,
+        ...VALID,
+        basicConstraints: { cA: true },
+        keyUsage: ['keyCertSign', 'cRLSign'],
+      },
+      other,
+    );
+    const lists = [
+      await issueCrl({ issuer: intermediate, ...CRL_DATES }),
+      await issueCrl({ issuer: root, ...CRL_DATES }),
+      // The other root replaced its cross-certificate: that says nothing about the path the user trusts.
+      await issueCrl({
+        issuer: other,
+        ...CRL_DATES,
+        revoked: [{ cert: crossCertificate, at: day(2, 1), reason: CRL_REASON.superseded }],
+      }),
+    ];
+
+    const checks = await checkAlongTrust(leaf, [crossCertificate, other, intermediate], [root], lists);
+    expect(checks.map((entry) => [entry.subject, entry.status, entry.unknownReason])).toEqual([
+      ['Signer', 'good', null],
+      ['Intermediate', 'good', null],
+    ]);
+    expect(summarizeRevocation(checks, false)).toBe('not-revoked');
   });
 
   it('accepts a list from an intermediate that chains to an imported root, and not one that chains to another', async () => {
@@ -518,6 +645,7 @@ async function checkOcsp(
     leafRole: 'signer',
     pool: pool.map((entry) => entry.der),
     roots: roots.map((entry) => entry.der),
+    trustedPath: [],
     context: {
       sources: parseRevocationSources({ embeddedOcsps: ocsps, embeddedCrls: crls }),
       validationTime,
@@ -1319,6 +1447,7 @@ describe('the certificate chain behind a check', () => {
       leafRole: 'signer' as const,
       pool,
       roots: [new Uint8Array([7, 7]), ca.der],
+      trustedPath: [],
       context: { sources: parseRevocationSources({ imported: [crl] }), validationTime: SIGNED_AT, now: NOW },
     });
     expect(await checkRevocation(input(new Uint8Array([1, 2, 3]), [ca.der]))).toEqual([]);

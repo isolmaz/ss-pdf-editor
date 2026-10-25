@@ -44,7 +44,7 @@ import {
 } from './signature-revocation';
 import {
   certificateName,
-  checkTrust,
+  checkTrustPath,
   extendedKeyUsage,
   type TrustReason,
   type TrustVerdict,
@@ -245,7 +245,7 @@ export async function verifyTimestampToken(input: VerifyTimestampInput): Promise
   const tsaDer = new Uint8Array(tsa.toSchema().toBER(false));
   const others = certificates.map((entry) => new Uint8Array(entry.toSchema().toBER(false)));
   const pool = [...others, ...(input.pool ?? [])];
-  const trust = await checkTrust({
+  const { trust, certificates: trustedPath } = await checkTrustPath({
     signer: tsaDer,
     chain: pool,
     roots: input.roots ?? [],
@@ -258,6 +258,7 @@ export async function verifyTimestampToken(input: VerifyTimestampInput): Promise
     leafRole: 'timestamp',
     pool: [...pool, ...(input.roots ?? [])],
     roots: input.roots ?? [],
+    trustedPath,
     context: { sources: input.sources, validationTime: genTime, now: input.now },
   });
   return {

@@ -90,6 +90,7 @@ describe('evaluateEvidence', () => {
     expect(claimed).toMatchObject({ validationTimeSource: 'signing-time', timestamp: null });
     expect(claimed.validationTime.toISOString()).toBe(SIGNED_AT.toISOString());
     expect(claimed.trustAt.toISOString()).toBe(NOW.toISOString()); // a claim never moves the trust date
+    expect(claimed.trust).toMatchObject({ verdict: 'not-checked', reason: 'no-roots' });
 
     // `/M` only (junk CMS), a future date: clamped to now.
     const future = await evaluateEvidence({
@@ -119,6 +120,7 @@ describe('evaluateEvidence', () => {
     expect(trusted.timestamp).toMatchObject({ status: 'valid', trusted: true });
     expect(trusted.validationTimeSource).toBe('timestamp');
     expect(trusted.trustAt.toISOString()).toBe(SIGNED_AT.toISOString());
+    expect(trusted.trust).toMatchObject({ verdict: 'trusted', path: ['Signer', 'CA'] });
     expect(trusted.revocationChecks[0]).toMatchObject({ status: 'revoked', timing: 'after-signing' });
     expect(trusted.revocation).toBe('revoked-after-signing');
 

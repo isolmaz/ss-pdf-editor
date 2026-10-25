@@ -597,9 +597,11 @@ nothing leaving the browser.
     date and reason, and whether that is before or after the signature) or unknown. A list
     clears a certificate only when the certificate that signed it is a root you imported or chains
     to one: a PDF that carries its own CA, a certificate under it and a list that CA signed gets
-    "unknown", and with no root imported no certificate is reported not revoked. A revocation
-    counts whoever vouches for the issuer, since only the key that issued the certificate can
-    sign it. A list
+    "unknown", and with no root imported no certificate is reported not revoked. When the
+    chain reaches a root you imported, the certificates checked are the ones on that chain, so
+    a copy of a CA certificate that the PDF carries (the same name and key under another CA)
+    cannot decide which lists count. A revocation counts whoever vouches for the issuer, since
+    only the key that issued the certificate can sign it. A list
     issued before the signature, or one past its next-update date when no trusted timestamp
     fixes the signing time, cannot rule out a revocation: the summary then says the lists are
     too old instead of "not revoked".

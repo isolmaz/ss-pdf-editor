@@ -6,7 +6,8 @@
  * revisions) and calls this module, lazily, for everything that needs `pkijs`. The order here
  * is the one dependency that matters: the **timestamp comes first**, because a timestamp that
  * verifies replaces the signer's own claimed time as the validation time — and that time is
- * what the certificate path is validated at and what a revocation date is compared with.
+ * what the certificate path is validated at and what a revocation date is compared with. The
+ * path is validated next, and revocation is checked along the path it found.
  *
  * Which time is used, and how far it is believed:
  *  - `timestamp` — a valid token from a TSA the user imported and whose certificates a list on
@@ -30,6 +31,7 @@ import {
   summarizeRevocation,
 } from './signature-revocation';
 import { type TimestampCheck, verifyTimestampToken } from './signature-timestamp';
+import { checkTrustPath, type TrustCheck } from './signature-trust';
 
 export type ValidationTimeSource = 'timestamp' | 'timestamp-untrusted' | 'signing-time' | 'clock';
 
@@ -68,6 +70,8 @@ export interface EvidenceOutcome {
   readonly validationTimeSource: ValidationTimeSource;
   /** The date the signer's certificate path is validated at. */
   readonly trustAt: Date;
+  /** The signer's certificate path, validated at `trustAt` against the CMS's certificates. */
+  readonly trust: TrustCheck;
 }
 
 function claimedTime(attribute: Date | null, pdfDate: string | null, now: Date): Date | null {
@@ -127,6 +131,14 @@ export async function evaluateEvidence(input: EvidenceInput): Promise<EvidenceOu
         ? 'signing-time'
         : 'clock';
 
+  const trustAt = validationTimeSource === 'timestamp' ? validationTime : input.now;
+  // The trust walk comes before revocation: the path it validates is the one checked.
+  const { trust, certificates } = await checkTrustPath({
+    signer: input.signer,
+    chain: input.chain,
+    roots: input.roots,
+    now: trustAt,
+  });
   const revocationChecks =
     input.signer.length === 0
       ? []
@@ -135,6 +147,7 @@ export async function evaluateEvidence(input: EvidenceInput): Promise<EvidenceOu
           leafRole: 'signer',
           pool: [...pool, ...input.roots],
           roots: input.roots,
+          trustedPath: certificates,
           context: { sources, validationTime, now: input.now },
         });
   return {
@@ -143,7 +156,8 @@ export async function evaluateEvidence(input: EvidenceInput): Promise<EvidenceOu
     revocation: summarizeRevocation(revocationChecks, validationTimeSource === 'timestamp'),
     validationTime,
     validationTimeSource,
-    trustAt: validationTimeSource === 'timestamp' ? validationTime : input.now,
+    trustAt,
+    trust,
   };
 }
 

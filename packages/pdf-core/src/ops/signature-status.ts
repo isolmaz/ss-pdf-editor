@@ -1651,14 +1651,15 @@ export async function verifySignatures(
      * put the first paint over its locked ≤ 250 KiB gzip budget.
      */
     const trust =
-      contents === null
+      evidence?.trust ??
+      (contents === null
         ? NO_TRUST
         : await (await import('../signature-trust')).checkTrust({
             signer: certificate?.der ?? new Uint8Array(),
             chain: cms.others,
             roots,
-            now: evidence?.trustAt ?? now,
-          });
+            now,
+          }));
     const facts: SigningFacts = {
       subFilter: field.subFilter ?? '',
       signedAt: isoFromPdfDate(field.signedAt),

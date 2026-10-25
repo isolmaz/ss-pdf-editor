@@ -326,12 +326,16 @@ export function describeCrl(der: Uint8Array): CrlDescription | null {
 
 type ListFailure = 'invalid-list' | 'unsupported-list' | 'list-scope';
 
-/** Whether `crl` is a well-formed statement by `issuer`; the failure says which check broke. */
+/**
+ * Whether `crl` is a well-formed statement by `issuer`; the failure says which check broke.
+ * `'issuer-unfit'` is a list signed by the issuer's key whose certificate does not allow it
+ * (no `cRLSign`, or not valid when the list was issued).
+ */
 async function verifyCrl(
   subtle: SubtleCrypto,
   parsed: ParsedCrl,
   issuer: Certificate,
-): Promise<'ok' | ListFailure> {
+): Promise<'ok' | 'issuer-unfit' | ListFailure> {
   if (parsed.unsupportedCritical || parsed.indirect) return 'unsupported-list';
   const outcome = await verifyDataSignature(
     subtle,
@@ -342,8 +346,8 @@ async function verifyCrl(
   );
   if (outcome === 'unsupported') return 'unsupported-list';
   if (outcome !== 'ok') return 'invalid-list';
-  if (keyUsageBit(issuer, KEY_USAGE_CRL_SIGN) === false) return 'invalid-list';
-  if (validityOf(issuer, parsed.thisUpdate) !== 'valid') return 'invalid-list';
+  if (keyUsageBit(issuer, KEY_USAGE_CRL_SIGN) === false) return 'issuer-unfit';
+  if (validityOf(issuer, parsed.thisUpdate) !== 'valid') return 'issuer-unfit';
   return 'ok';
 }
 
@@ -612,19 +616,37 @@ async function buildChain(
 }
 
 /**
+ * The links to check: the trusted path's, then the walk above its root (a self-signed root closes
+ * it at once). Without a trusted path, the chain built by signatures from the leaf.
+ */
+async function linksToCheck(
+  subtle: SubtleCrypto,
+  leaf: Certificate,
+  path: readonly Certificate[],
+  pool: readonly Certificate[],
+): Promise<Link[]> {
+  const top = path.at(-1);
+  if (top === undefined) return buildChain(subtle, leaf, pool);
+  const below = path.slice(0, -1).map(
+    (certificate, index): Link => ({
+      certificate,
+      issuer: path[index + 1] as Certificate,
+      selfSigned: false,
+    }),
+  );
+  return [...below, ...(await buildChain(subtle, top, pool))];
+}
+
+/**
  * For each link, whether its issuer is a certificate the user imported or sits under one on this
  * chain. The chain was built by signatures, so an anchored issuer is vouched for by an imported
  * root; an issuer that is not is only whatever the file says it is, and so are the lists it signs.
- * An issuer is an imported root when it has the root's name and key: a re-issued or cross-signed
- * copy of a root that a file carries ahead of the imported one is the same issuer.
+ * Only the imported certificate itself is a root: a copy with its name and key that a file
+ * carries may be signed by anyone, and its dates and key usage are whatever that signer wrote.
  */
 function anchoredIssuers(links: readonly Link[], roots: readonly Certificate[]): boolean[] {
-  const keyOf = (certificate: Certificate): Uint8Array =>
-    new Uint8Array(certificate.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView);
   const isRoot = (certificate: Certificate): boolean =>
-    roots.some(
-      (root) => root.subject.isEqual(certificate.subject) && sameBytes(keyOf(root), keyOf(certificate)),
-    );
+    roots.some((root) => sameBytes(new Uint8Array(root.tbsView), new Uint8Array(certificate.tbsView)));
   const anchored: boolean[] = [];
   for (let index = links.length - 1; index >= 0; index -= 1) {
     const { issuer } = links[index] as Link; // `index < links.length`
@@ -677,8 +699,13 @@ async function evidenceFor(
     if (!parsed.crl.issuer.isEqual(certificate.issuer)) continue;
     seenList = true;
     const verdict = await verifyCrl(subtle, parsed, issuer);
-    if (verdict !== 'ok') {
-      note(verdict);
+    const entry = parsed.entries.get(serial);
+    const revokes = entry !== undefined && !entry.lifted;
+    // A revocation needs only the key that issued the certificate. The issuer certificate's own
+    // dates and key usage can come from a copy a file made of it (its name and key under another
+    // CA), and they cannot set aside what that key said.
+    if (verdict !== 'ok' && !(verdict === 'issuer-unfit' && revokes)) {
+      note(verdict === 'issuer-unfit' ? 'invalid-list' : verdict);
       continue;
     }
     // Scope (RFC 5280 §5.2.5): a list that covers only some certificates cannot clear others.
@@ -691,8 +718,7 @@ async function evidenceFor(
         continue;
       }
     }
-    const entry = parsed.entries.get(serial);
-    if (entry !== undefined && !entry.lifted) {
+    if (revokes) {
       evidence.push({
         status: 'revoked',
         source: 'crl',
@@ -843,19 +869,27 @@ function decidedCheck(
  * certificate at the top is not checked (nothing above it publishes a list for it) unless it
  * is the leaf itself, where an absent list is an honest `unknown`.
  *
+ * When the trust walk validated a path to an imported root (`trustedPath`, `checkTrustPath`),
+ * the certificates checked are that path's, each with the issuer the walk proved, so no other
+ * certificate with the same name and key — one the file carries ahead of the real one, valid
+ * for other dates or allowed other uses — decides which lists count.
+ *
  * A list or response clears a certificate only when the issuer that signed it is one of the
  * `roots` the user imported or chains to one: a file can carry its own CA, a certificate under
  * it and a list that CA signed, and that proves nothing about the certificate. Otherwise the
  * certificate is `unknown` (`'issuer-not-trusted'`). A revocation is taken whoever vouches for
- * the issuer: the list is verified with the key that issued the certificate, and it can only
- * make the verdict stricter. A certificate that no list or response names at all is
- * `'no-list'` whoever its issuer is.
+ * the issuer, and a CRL's revocation even when the issuer certificate at hand does not allow
+ * signing lists: it is verified with the key that issued the certificate, so only that key's
+ * holder can have made it. A certificate for which no list from its issuer was seen, and that no
+ * response names, is `'no-list'` whoever its issuer is.
  */
 export async function checkRevocation(input: {
   readonly leaf: Uint8Array;
   readonly leafRole: 'signer' | 'timestamp';
   readonly pool: readonly Uint8Array[];
   readonly roots: readonly Uint8Array[];
+  /** The path the trust walk validated, leaf first; empty when it found none. */
+  readonly trustedPath: readonly Uint8Array[];
   readonly context: RevocationContext;
 }): Promise<readonly RevocationCertCheck[]> {
   const subtle = globalThis.crypto?.subtle;
@@ -863,8 +897,12 @@ export async function checkRevocation(input: {
   const leaf = parseCertificate(input.leaf);
   if (leaf === null) return [];
   const pool = input.pool.map(parseCertificate).filter((entry): entry is Certificate => entry !== null);
+  // The walk parsed every one of these, so none is dropped here.
+  const path = input.trustedPath
+    .map(parseCertificate)
+    .filter((entry): entry is Certificate => entry !== null);
 
-  const links = await buildChain(subtle, leaf, pool);
+  const links = await linksToCheck(subtle, leaf, path, pool);
   const anchored = anchoredIssuers(
     links,
     input.roots.map(parseCertificate).filter((entry): entry is Certificate => entry !== null),
