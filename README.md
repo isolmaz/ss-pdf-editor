@@ -914,7 +914,7 @@ The limits are defined once, in
 | `pnpm verify:assets` | Re-hashes every pinned file |
 | `pnpm check:licenses` | Dependency licence audit |
 | `pnpm check:docs` | Checks that the file paths, `pnpm` scripts and commands the documentation names exist |
-| `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of the DOM-free modules |
+| `pnpm audit:regressions` / `audit:model-types` | Regression harness / strict typecheck of `packages/pdf-model`, `packages/shared`, `packages/pdf-text-engine` and `apps/web/src/drafts.ts` (the DOM lib is on, so it does not prove they are DOM-free) |
 | `pnpm ci:behavior` | The behaviour checks in `tools/behavior/` against the assembled `dist/`: the editor flow (`editor-flow-check.mjs`), the text-edit round trip (`text-edit-check.mjs`), then the signing check (`sign-check.mts`, needs `openssl`) |
 | `pnpm ci:verify` / `ci:full` | The full local gate / the same plus `ci:behavior` |
 | `pnpm worker:deploy[:dry]` | `assemble:dist`, then `wrangler deploy` |
