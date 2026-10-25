@@ -772,5 +772,21 @@
     "tests": ["packages/pdf-core/src/ops/text-export.test.ts"],
     "run": ["packages/pdf-core/src/ops/text-export.test.ts"],
     "filter": "groups the words and lines of a page with a /UserUnit as on a page without one"
+  },
+  {
+    "commit": "c4d44831cd98469069d6e01b1f88d3ab6745f627",
+    "title": "Keep a document produced from a sensitive session, such as its unlocked copy, sensitive, with no stored copy",
+    "kind": "unit",
+    "tests": ["apps/web/src/features/open/open-actions.test.ts"],
+    "run": ["apps/web/src/features/open/open-actions.test.ts"],
+    "filter": "keeps the bytes produced from a document opened with its password as sensitive as it, storing no copy"
+  },
+  {
+    "commit": "3cbf6a54144d0ae19dba282c431835bd16a071cc",
+    "title": "Hold a signer that is itself an imported root to the rule that its certificate allows signing",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/signature-trust.test.ts"],
+    "run": ["packages/pdf-core/src/signature-trust.test.ts"],
+    "filter": "refuses a signer certificate whose key usage or purposes leave out signing documents"
   }
 ]
