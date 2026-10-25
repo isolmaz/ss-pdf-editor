@@ -33,6 +33,12 @@ export interface FieldCondition {
   readonly equals: readonly FieldValue[];
 }
 
+/** A button beside a text box that inserts `token` at the caret. */
+export interface FieldToken {
+  readonly token: string;
+  readonly labelKey: MessageKey;
+}
+
 interface FieldBase {
   readonly id: string;
   readonly labelKey: MessageKey;
@@ -73,7 +79,7 @@ export type FieldSpec =
       readonly defaultValue: string;
       readonly placeholderKey?: MessageKey;
       readonly maxLength?: number;
-      readonly tokens?: readonly { readonly token: string; readonly labelKey: MessageKey }[];
+      readonly tokens?: readonly FieldToken[];
     } & FieldBase)
   | ({
       /**
@@ -98,6 +104,7 @@ export type FieldSpec =
       readonly rows?: number;
       readonly maxLength?: number;
       readonly placeholderKey?: MessageKey;
+      readonly tokens?: readonly FieldToken[];
     } & FieldBase)
   | ({ readonly kind: 'password'; readonly placeholderKey?: MessageKey } & FieldBase)
   | ({ readonly kind: 'checkbox'; readonly defaultValue: boolean } & FieldBase)
