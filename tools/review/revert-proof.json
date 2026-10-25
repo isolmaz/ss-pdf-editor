@@ -96,5 +96,13 @@
     "tests": ["packages/pdf-core/src/signature-validation.test.ts"],
     "run": ["packages/pdf-core/src/signature-validation.test.ts"],
     "filter": "lets no certificate a file adds for a CA key under its own CA decide a revocation"
+  },
+  {
+    "commit": "0b113c21194eb97c6e454a9afefe265e06c75678",
+    "title": "Count the revocation of a CA the user imported or an imported root vouches for, above the trusted path's root too",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/signature-validation.test.ts"],
+    "run": ["packages/pdf-core/src/signature-validation.test.ts"],
+    "filter": "counts the revocation of a CA that an imported root vouches for"
   }
 ]
