@@ -69,6 +69,8 @@ export const contentWritersPart = {
   'op.note.image.replaced': '"{name}" görseli {page}. sayfada değiştirildi.',
   'op.note.image.shared':
     '"{name}" görseli {count} sayfada birden kullanılıyor: değişiklik o sayfaların hepsinde görünür.',
+  'op.note.image.reframed':
+    '"{name}" görselinin çerçevesi yeni biçimine {count} yerde uyarlandı; içerik akışının geri kalanı değişmedi.',
   'op.note.image.maskDropped':
     '{count} saydamlık maskesi kaldırıldı: eski maskeler eski pikselleri tanımlar, yeni görsele uygulanamaz.',
   'op.note.image.maskKept': '"{name}" görselinin saydamlık maskesi korundu (istenmişti).',
@@ -154,7 +156,7 @@ export const contentWritersPart = {
 
   'image.title': 'Görseli değiştir',
   'image.intro':
-    'Belgedeki bir görsel nesnesini seçin ve yerine yeni bir PNG/JPEG koyun. Yerleşim, kırpma ve sayfadaki konum değişmez: yalnızca nesnenin kendi verisi değişir.',
+    'Belgedeki bir görseli seçin; değiştirin, sıkıştırın, döndürün, kırpın ya da soluklaştırın. Döndürme ve kırpma görselin çerçevesini yeni biçimine uyarlar.',
   'image.field.target': 'Görsel',
   'image.field.targetHint': 'Sayfa, nesne adı, piksel boyutu ve dosyadaki biçimi.',
   'image.field.action': 'İşlem',

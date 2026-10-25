@@ -460,7 +460,11 @@ writer does, and the steps it reports:
   MuPDF tags device RGB with an sRGB profile, so an image it had written could otherwise not
   be cropped or rotated again. A replacement picture with alpha keeps it as the `/SMask` MuPDF
   produced for it; only the old picture's mask is dropped, and the report says so
-  (`op.note.image.maskDropped`);
+  (`op.note.image.maskDropped`). A quarter turn or a crop also hands the writer an `ImagePlacement`:
+  every drawing of the object in a page's own content gets `q … cm` in front of its `Do` (the matrix
+  in force is followed through `q`, `Q` and `cm`), so a turned picture stands in a turned frame around
+  the same centre and a cropped one stays where its remaining part was drawn
+  (`op.note.image.reframed`); a picture the page draws only from inside a form is refused;
 - a blank document (`ops/create.ts`, steps `create.blank` / `save`): empty pages of an ISO or
   US size in either orientation, with an empty content stream and no resources;
 - a placed picture — a drawn, typed or photographed signature, initials, or an image

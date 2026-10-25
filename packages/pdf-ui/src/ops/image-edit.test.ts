@@ -70,6 +70,37 @@ async function fixture(): Promise<Uint8Array> {
   return bytes;
 }
 
+/**
+ * A 400 x 300 page with one 20 x 10 picture, red on its left half and blue on its right, drawn
+ * 200 x 100 at (50, 100): a placement that is not square, so a frame that keeps its shape
+ * while the pixels change shows up as a squeezed picture.
+ */
+async function wideFixture(): Promise<Uint8Array> {
+  const mupdf = await mupdfForTests();
+  const doc = new mupdf.PDFDocument();
+  const samples = new Uint8Array(20 * 10 * 3);
+  for (let pixel = 0; pixel < 200; pixel += 1)
+    samples.set(pixel % 20 < 10 ? [255, 0, 0] : [0, 0, 255], pixel * 3);
+  const wide = doc.addStream(samples, {
+    Type: 'XObject',
+    Subtype: 'Image',
+    BitsPerComponent: 8,
+    ColorSpace: 'DeviceRGB',
+    Width: 20,
+    Height: 10,
+  });
+  const page = doc.addPage(
+    [0, 0, 400, 300],
+    0,
+    { XObject: { Wide: wide } },
+    'q 200 0 0 100 50 100 cm /Wide Do Q',
+  );
+  doc.insertPage(0, page);
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
 async function contextFor(
   bytes: Uint8Array,
   overrides: Partial<OpRunContext> = {},
@@ -282,6 +313,71 @@ describe('imageEditDialog transforms', () => {
     expect(blue).toBeGreaterThan(200);
     expect(red).toBeLessThan(40);
     expect(green).toBeLessThan(40);
+  });
+
+  it('turns the picture inside its frame: a wide picture stands tall around the same centre, undistorted', async () => {
+    const { context } = await contextFor(await wideFixture());
+    const result = await imageEditDialog.run({ target: '0:Wide', action: 'rotate', degrees: '90' }, context);
+    const bytes = bytesOf(result);
+    // The frame was 200 x 100 at (50, 100); it is now 100 x 200 around the same centre (150, 150).
+    expect(await rgbAt(bytes, 60, 150)).toEqual([255, 255, 255]);
+    expect(await rgbAt(bytes, 150, 80)).toEqual([255, 0, 0]);
+    expect(await rgbAt(bytes, 150, 220)).toEqual([0, 0, 255]);
+    expect(await rgbAt(bytes, 190, 60)).toEqual([255, 0, 0]);
+  });
+
+  it('turns a wide picture three quarters the other way into the same upright frame', async () => {
+    const { context } = await contextFor(await wideFixture());
+    const result = await imageEditDialog.run({ target: '0:Wide', action: 'rotate', degrees: '270' }, context);
+    const bytes = bytesOf(result);
+    expect(await rgbAt(bytes, 60, 150)).toEqual([255, 255, 255]);
+    expect(await rgbAt(bytes, 150, 80)).toEqual([0, 0, 255]);
+    expect(await rgbAt(bytes, 150, 220)).toEqual([255, 0, 0]);
+  });
+
+  it('turns a wide picture a half turn inside the frame it already has, and leaves the page content alone', async () => {
+    const { context } = await contextFor(await wideFixture());
+    const result = await imageEditDialog.run({ target: '0:Wide', action: 'rotate', degrees: '180' }, context);
+    const bytes = bytesOf(result);
+    expect(await rgbAt(bytes, 80, 150)).toEqual([0, 0, 255]);
+    expect(await rgbAt(bytes, 220, 150)).toEqual([255, 0, 0]);
+    expect(await rgbAt(bytes, 150, 60)).toEqual([255, 255, 255]);
+    expect(result.report.notes.map((entry) => entry.key)).not.toContain('op.note.image.reframed');
+  });
+
+  it('keeps the window a crop on every side leaves where it was drawn, and says the frame was adapted', async () => {
+    const { context } = await contextFor(await wideFixture());
+    const result = await imageEditDialog.run(
+      { target: '0:Wide', action: 'crop', cropLeft: 25, cropRight: 25, cropTop: 20, cropBottom: 40 },
+      context,
+    );
+    const bytes = bytesOf(result);
+    // 20 x 10 pixels: 5 off each side, 2 off the top, 4 off the bottom: x 100…200, page y 140…180.
+    expect(await rgbAt(bytes, 125, 140)).toEqual([255, 0, 0]);
+    expect(await rgbAt(bytes, 175, 140)).toEqual([0, 0, 255]);
+    for (const [x, y] of [
+      [90, 140],
+      [210, 140],
+      [125, 110],
+      [125, 170],
+    ] as const) {
+      expect(await rgbAt(bytes, x, y)).toEqual([255, 255, 255]);
+    }
+    expect(result.report.notes.find((entry) => entry.key === 'op.note.image.reframed')).toMatchObject({
+      params: { name: 'Wide', count: 1 },
+    });
+  });
+
+  it('keeps the part that is left where it was drawn instead of stretching it over the old frame', async () => {
+    const { context } = await contextFor(await wideFixture());
+    const result = await imageEditDialog.run(
+      { target: '0:Wide', action: 'crop', cropLeft: 50, cropTop: 0, cropRight: 0, cropBottom: 0 },
+      context,
+    );
+    const bytes = bytesOf(result);
+    // The blue right half stays at x 150..250; the red half is gone and leaves the page white.
+    expect(await rgbAt(bytes, 200, 150)).toEqual([0, 0, 255]);
+    expect(await rgbAt(bytes, 100, 150)).toEqual([255, 255, 255]);
   });
 
   it('cuts the chosen percentages off every side', async () => {
