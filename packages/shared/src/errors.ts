@@ -1,8 +1,8 @@
 /**
  * The one error contract of the app.
  *
- * Engines speak their own error vocabularies (pdf.js, qpdf, MuPDF, tesseract,
- * fetch). Components never see those: every failure that can reach the
+ * Engines speak their own error vocabularies (pdf.js, MuPDF, tesseract,
+ * Ghostscript, fetch). Components never see those: every failure that can reach the
  * user is normalised here into a {@link ToolError} with a stable code, an i18n
  * key for the user-facing text and a "what to do next" hint key.
  *
@@ -78,7 +78,7 @@ export const TOOL_ERROR_HINT_KEYS = TOOL_ERROR_CODES.reduce<Record<ToolErrorCode
 );
 
 export interface ToolErrorDetails {
-  /** Which engine/subsystem produced the failure (`pdfjs`, `mupdf`, `qpdf`, `model`, `ui`, `fs`). */
+  /** Which engine/subsystem produced the failure (`pdfjs`, `mupdf`, `tesseract`, `ghostscript`, `fonts`, `model`, `ui`, `fs`). */
   readonly engine: string;
   readonly pageIndex?: number;
   readonly path?: string;
