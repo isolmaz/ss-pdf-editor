@@ -1112,6 +1112,6 @@ License 1.1 (the licence texts are copied to `dist/licenses/`):
 
 - **Document text.** Noto Sans is embedded by watermarks, Bates numbers, headers and the OCR text layer. A scan exported
   to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
-  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic.
+  Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten families, Noto Sans included, are static TrueType in regular, italic, bold and bold italic.
   Each covers the Turkish letters. Lato is not offered: its faces lack Ğ/ğ, İ and Ş/ş.
 - **Interface and signatures:** Space Grotesk, DM Sans, Dancing Script and Great Vibes.
