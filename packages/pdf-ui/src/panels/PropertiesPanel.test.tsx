@@ -874,9 +874,11 @@ describe('PropertiesPanel revocation lists', () => {
 
 describe('PropertiesPanel announcements', () => {
   it('says nothing until a list changes size', () => {
-    const { container, rerender } = show({ attachments: [{ name: 'a', description: '', size: 1 }] });
+    const { container, rerender } = show({ attachments: [{ id: 'a', name: 'a', description: '', size: 1 }] });
     expect(liveRegion(container)?.textContent).toBe('');
-    rerender(<PropertiesPanel {...baseProps} attachments={[{ name: 'a', description: '', size: 1 }]} />);
+    rerender(
+      <PropertiesPanel {...baseProps} attachments={[{ id: 'a', name: 'a', description: '', size: 1 }]} />,
+    );
     expect(liveRegion(container)?.textContent).toBe('');
   });
 
@@ -886,7 +888,7 @@ describe('PropertiesPanel announcements', () => {
       <PropertiesPanel
         {...baseProps}
         signatures={[signature()]}
-        attachments={[{ name: 'a', description: '', size: 1 }]}
+        attachments={[{ id: 'a', name: 'a', description: '', size: 1 }]}
         fonts={[font()]}
       />,
     );
@@ -898,7 +900,7 @@ describe('PropertiesPanel announcements', () => {
     rerender(
       <PropertiesPanel
         {...baseProps}
-        attachments={[{ name: 'a', description: '', size: 1 }]}
+        attachments={[{ id: 'a', name: 'a', description: '', size: 1 }]}
         fonts={[font()]}
       />,
     );
