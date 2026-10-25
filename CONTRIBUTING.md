@@ -86,7 +86,9 @@ and on manual dispatch:
 - **`coverage`** (after both) downloads what they uploaded and runs `pnpm coverage
   --merge=coverage-parts --min=100`: the unit suite and the Playwright suite against the
   unminified build, added together, must cover every line, statement, branch and function; the
-  report is the `coverage-report` artifact.
+  report is the `coverage-report` artifact. It runs even when a part failed, and its first step
+  fails it unless every part succeeded: a skipped job would count as passing for the branch
+  protection.
 - **`deploy`** runs only on a push to `main`, after every job above has passed. It builds nothing: it
   downloads the `dist` artifact of `verify` and runs `pnpm dlx wrangler@4.135.0 deploy` with the
   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets (`wrangler` is not a dependency of the

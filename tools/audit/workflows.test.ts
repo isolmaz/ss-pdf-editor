@@ -62,6 +62,16 @@ describe('ci.yml', () => {
     expect(job('deploy')).toMatch(/needs: \[verify, e2e, e2e-service-worker, behavior, coverage\]/);
   });
 
+  it('runs the coverage gate after a failed part and fails it unless every part succeeded', () => {
+    const gate = job('coverage');
+    // a skipped required check counts as passing in branch protection
+    expect(gate).toMatch(/^ {4}if: \$\{\{ !cancelled\(\) \}\}$/m);
+    const first = /^ {4}steps:\n {6}- name: (.+)\n([\s\S]*?)(?=\n {6}- )/m.exec(gate);
+    expect(first?.[1]).toBe('Require every coverage part');
+    expect(first?.[2]).toContain(`RESULTS: \${{ join(needs.*.result, ' ') }}`);
+    expect(first?.[2]).toMatch(/if \[ "\$result" != success \]; then[\s\S]*?exit 1/);
+  });
+
   it("turns a failed lookup of main's head into a failed job", () => {
     const head = /- name: Check this commit is still main's head\n[\s\S]*?(?=\n {6}- |\n {6}#|$)/;
     const step = head.exec(job('deploy'))?.[0];

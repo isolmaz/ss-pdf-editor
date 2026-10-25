@@ -351,12 +351,28 @@ jobs:
   # The gate: the unit coverage and every shard's records, merged and mapped to the sources by
   # `pnpm coverage --merge`, which builds the unminified editor again for its source maps (the build
   # is deterministic). It exits 1 under the floor, after the report is written.
+  #
+  # A job whose `needs` did not succeed is skipped, and branch protection counts a skipped required
+  # check as passing. `!cancelled()` makes this job run after a failed part, and its first step
+  # fails it unless every part succeeded.
   coverage:
     name: coverage
     needs: [coverage-unit, coverage-e2e]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
+      - name: Require every coverage part
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [ "$result" != success ]; then
+              echo "::error::a coverage part ended as: $result"
+              exit 1
+            fi
+          done
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
