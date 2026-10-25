@@ -835,6 +835,19 @@ describe('BatchDialog rulesets from a file', () => {
     expect(run.disabled).toBe(false);
   });
 
+  it('keeps Run off while a whole-number setting holds a fraction', async () => {
+    show();
+    await stepsOnly(STEPS.stamp);
+    await user.click(screen.getByRole('radio', { name: 'Bates numbering' }));
+    await user.upload(pdfInput(), await pdfFile('a.pdf'));
+    const run = screen.getByRole('button', { name: 'Run batch' }) as HTMLButtonElement;
+    expect(run.disabled).toBe(false);
+    replace(number('Number of digits'), '2.5');
+    expect(run.disabled).toBe(true);
+    replace(number('Number of digits'), '8');
+    expect(run.disabled).toBe(false);
+  });
+
   it('shows the refusal under the step whose range does not read, and Save ruleset refuses it too', async () => {
     const { onDownload } = show();
     await stepsOnly(STEPS.pages, STEPS.textExport);

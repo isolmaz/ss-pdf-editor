@@ -438,9 +438,9 @@ function pageSelection(value: FieldValue | undefined): BatchPageSelection {
   return parsePageRanges(raw, RANGE_CEILING).pages;
 }
 
-/** Whether a step's page range reads; when it does not, its field shows why (`fieldErrors`). */
-function rangeRead(kind: BatchStepKind, values: DialogParams, t: Translator): boolean {
-  return fieldErrors(t, STEP_FIELDS[kind], values, RANGE_CEILING, 0)[PAGE_FIELD.id] === undefined;
+/** Whether every field of a step reads; a field that does not shows why (`fieldErrors`). */
+function stepReads(kind: BatchStepKind, values: DialogParams, t: Translator): boolean {
+  return Object.keys(fieldErrors(t, STEP_FIELDS[kind], values, RANGE_CEILING, 0)).length === 0;
 }
 
 /** A text, select or radio field's value: the field table seeds each with a string and only a string is ever written. */
@@ -720,9 +720,9 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
 
   const running = status === 'running';
   const chosen = OFFERED_STEPS.filter((kind) => enabled[kind] === true);
-  // A loaded rule set runs as it is; the form's own page ranges only matter when the form is the source.
-  const rangesRead = loaded !== null || chosen.every((kind) => rangeRead(kind, values[kind], t));
-  const usable = chosen.length > 0 && rangesRead && (loaded !== null || files.length > 0);
+  // A loaded rule set runs as it is; the form's own fields only matter when the form is the source.
+  const fieldsRead = loaded !== null || chosen.every((kind) => stepReads(kind, values[kind], t));
+  const usable = chosen.length > 0 && fieldsRead && (loaded !== null || files.length > 0);
 
   const change = (kind: BatchStepKind) => (id: string, value: FieldValue) => {
     setValues((previous) => ({ ...previous, [kind]: { ...previous[kind], [id]: value } }));
