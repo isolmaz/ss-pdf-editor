@@ -488,6 +488,24 @@ describe('saveDocument', () => {
     expect(coreStore.get().busy).toBe(false);
   });
 
+  it.each([
+    ['NotAllowedError', 'error.permission-denied.message'],
+    ['NotFoundError', 'error.write-failed.message'],
+    ['NoModificationAllowedError', 'error.write-failed.message'],
+    ['QuotaExceededError', 'error.write-failed.message'],
+    ['AbortError', 'error.aborted.message'],
+  ])('reports a %s of the file by what it means, not as an unexpected failure', async (name, message) => {
+    const target = fakeFile();
+    const tab = await open('a.pdf', target.file);
+    prepareOutput.mockResolvedValue(prepared(tab));
+    target.writable.write.mockRejectedValue(new DOMException('refused', name));
+
+    expect(await saveDocument(host, tab.id)).toBe(false);
+
+    expect(coreStore.get().notice).toContain(message);
+    expect(coreStore.get().notice).not.toContain('error.internal');
+  });
+
   it('keeps the controller of a newer operation when it finishes', async () => {
     const tab = await open();
     vi.stubGlobal('window', {});
@@ -635,6 +653,13 @@ describe('exportDocument', () => {
     await exportDocument(host, tab.id);
     expect(coreStore.get().notice).toContain('error.internal.message');
     expect(coreStore.get().busy).toBe(false);
+  });
+
+  it('words a refused file access by what it means', async () => {
+    const tab = await open();
+    prepareOutput.mockRejectedValue(new DOMException('refused', 'NotAllowedError'));
+    await exportDocument(host, tab.id);
+    expect(coreStore.get().notice).toContain('error.permission-denied.message');
   });
 
   it('keeps the controller of a newer operation when it finishes', async () => {

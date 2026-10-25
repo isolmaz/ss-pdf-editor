@@ -9,7 +9,7 @@
  */
 
 import { type SessionStore, type SessionTab, sha256Hex } from 'pdf-model';
-import { ToolError, type Translator } from 'pdf-shared';
+import { ToolError, type Translator, toToolError } from 'pdf-shared';
 import { noticeLine, verificationNotices } from '../../notices';
 import { downloadFiles } from '../../operations';
 import { ensureWriteAccess } from '../../recent-handles';
@@ -60,10 +60,28 @@ const pdfName = (name: string): string => (name.toLowerCase().endsWith('.pdf') ?
 /** Whether the browser can ask the user where to write a file (File System Access). */
 const hasSavePicker = (): boolean => typeof window !== 'undefined' && 'showSaveFilePicker' in window;
 
-/** The notice a failed write leaves: the failure's message and what to do about it. */
+/**
+ * The notice a failed write leaves: the failure's message and what to do about it. The browser's
+ * file errors are told apart by what the user can do: a refused permission is asked for again,
+ * a file that is gone, locked or has no room is written elsewhere (Save as, or Export).
+ */
 function failureLine(error: unknown, t: Translator): string {
-  const toolError = error instanceof ToolError ? error : new ToolError('internal', { engine: 'model' });
+  const toolError = error instanceof DOMException ? fileFailure(error) : toToolError(error);
   return `${t(toolError.messageKey)} ${t(toolError.hintKey)}`;
+}
+
+function fileFailure(error: DOMException): ToolError {
+  const details = { engine: 'fs', engineMessage: error.message };
+  switch (error.name) {
+    case 'NotAllowedError':
+      return new ToolError('permission-denied', details, { cause: error });
+    case 'NotFoundError':
+    case 'NoModificationAllowedError':
+    case 'QuotaExceededError':
+      return new ToolError('write-failed', details, { cause: error });
+    default:
+      return toToolError(error);
+  }
 }
 
 /** The sha-256 of what a file holds. */

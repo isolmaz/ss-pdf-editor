@@ -2865,7 +2865,11 @@ before the picker is offered. A tab restored from a draft gets its handle back, 
 Save over its file rather than only Export. A handle read back this way holds no write access
 (a reopened entry asked for `read` only), so `saveActive` asks for `readwrite`
 (`ensureWriteAccess`) as the first await of the click that saves, before the preparation uses
-up the gesture; a refusal is `permission-denied`, and nothing is written. Handles whose entry
+up the gesture; a refusal is `permission-denied`, and nothing is written. A write the browser
+refuses later is worded by what it means (`failureLine` in `save-actions.ts`): a
+`NotAllowedError` is `permission-denied`, a file that is gone, locked or out of room
+(`NotFoundError`, `NoModificationAllowedError`, `QuotaExceededError`) is `write-failed`, whose hint
+offers Export, and any other failure goes through `toToolError`. Handles whose entry
 has left the list are pruned after the startup restore, which is the one reader that needs
 them. A reopened file keeps its star: `addRecentDocument` carries it over from the entry it
 replaces.
