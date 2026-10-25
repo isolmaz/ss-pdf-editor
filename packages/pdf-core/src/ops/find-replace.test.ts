@@ -395,6 +395,7 @@ describe('findReplace', () => {
     ['an Arabic letter mark and a zero-width no-break space', 'a\u{61c}b\u{feff}c', 'U+061C U+FEFF'],
     ['a combining grapheme joiner and a Mongolian vowel separator', 'a\u{34f}b\u{180e}c', 'U+034F U+180E'],
     ['invisible operators', 'a\u{2061}b\u{2064}c', 'U+2061 U+2064'],
+    ['deprecated format characters', 'a\u{206a}b\u{206f}c', 'U+206A U+206F'],
     ['the same character twice, named once', 'a\tb\tc\n', 'U+0009 U+000A'],
   ])(
     'refuses a replacement with %s instead of drawing it as a space or failing to read it back',

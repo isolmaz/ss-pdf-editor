@@ -214,13 +214,13 @@ export const STANDARD_FACE_NAMES: Readonly<Record<string, string>> = {
 /**
  * What a replacement cannot hold: a replacement is one line of words, so a line break or a tab
  * would be drawn as a plain gap, and an invisible character (zero-width, a direction mark, an
- * invisible operator) cannot be read back as text (the verification would then refuse the edit
+ * invisible operator, a deprecated format character) cannot be read back as text (the verification would then refuse the edit
  * without saying why).
  */
 // The combining grapheme joiner stands outside the class: inside one it would read as a mark on
 // the character before it.
 const UNPLACEABLE =
-  /[\p{Cc}\u{ad}\u{61c}\u{180e}\u{200b}-\u{200f}\u{2028}\u{2029}\u{202a}-\u{202e}\u{2060}-\u{2064}\u{2066}-\u{2069}\u{feff}]|\u{34f}/gu;
+  /[\p{Cc}\u{ad}\u{61c}\u{180e}\u{200b}-\u{200f}\u{2028}\u{2029}\u{202a}-\u{202e}\u{2060}-\u{206f}\u{feff}]|\u{34f}/gu;
 
 function refuseUnplaceable(replacement: string): void {
   const found = new Set(Array.from(replacement.matchAll(UNPLACEABLE), (match) => match[0]));
