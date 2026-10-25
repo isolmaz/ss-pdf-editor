@@ -1648,7 +1648,9 @@ the types the user chose; every drawing of an image is a figure.
   MCID may remain marked. Steps: `load`, `tags`, `tags.artifact`, `producer`, `save`,
   `verify`.
 - `ops/ua-xmp.ts` — textual edits of the XMP packet (`dc:title`, `pdfuaid:part`) that
-  leave every other byte of the packet alone.
+  leave every other byte of the packet alone. In a packet that claims PDF/A, the part comes
+  with the `pdfaExtension` description of the `pdfuaid` schema, which PDF/A requires for a
+  namespace it does not predefine.
 - `ops/pdfua.ts` — `checkPdfUa` and `fixPdfUa`. The 34 rules (`UA_RULES`) each carry a
   Matterhorn checkpoint group and an ISO 14289-1 clause, and end `pass | fail | manual | na
   | unchecked`: `unchecked` means the file could not be examined for that rule (no tree,

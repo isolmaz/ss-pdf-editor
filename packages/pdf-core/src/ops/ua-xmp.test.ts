@@ -90,6 +90,38 @@ describe('ua-xmp', () => {
     expect((replaced as string).match(/Old/g)).toBeNull();
   });
 
+  describe('in a packet that claims PDF/A', () => {
+    const PDFAID = 'http://www.aiim.org/pdfa/ns/id/';
+    const claim = `xmlns:pdfaid="${PDFAID}" pdfaid:part="2" pdfaid:conformance="B"`;
+
+    it('describes the pdfuaid schema when it adds the part, so the file still meets the PDF/A schema rule', () => {
+      const edited = editUaPacket(packet(`<rdf:Description rdf:about="" ${claim}/>`), { uaPart: 1 });
+      const parsed = reread(edited as string);
+      expect(parsed.wellFormed).toBe(true);
+      expect(parsed.undescribedNamespaces).toEqual([]);
+      expect(xmpText(parsed, NS_PDFUAID, 'part')).toBe('1');
+      expect(parsed.claim).toEqual({ part: '2', conformance: 'B' });
+    });
+
+    it('adds its description to the extension schemas the packet already lists and keeps theirs', () => {
+      const listed = packet(
+        `<rdf:Description rdf:about="" ${claim} xmlns:xyz="http://example.com/xyz/" xmlns:pdfaExtension="http://www.aiim.org/pdfa/ns/extension/" xmlns:pdfaSchema="http://www.aiim.org/pdfa/ns/schema#"><pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType="Resource"><pdfaSchema:schema>Xyz</pdfaSchema:schema><pdfaSchema:namespaceURI>http://example.com/xyz/</pdfaSchema:namespaceURI><pdfaSchema:prefix>xyz</pdfaSchema:prefix></rdf:li></rdf:Bag></pdfaExtension:schemas><xyz:a>v</xyz:a></rdf:Description>`,
+      );
+      const edited = editUaPacket(listed, { uaPart: 1 }) as string;
+      const parsed = reread(edited);
+      expect(parsed.wellFormed).toBe(true);
+      expect(parsed.undescribedNamespaces).toEqual([]);
+      expect(edited.match(/<pdfaExtension:schemas/g)).toHaveLength(1);
+      expect(edited).toContain('<pdfaSchema:namespaceURI>http://example.com/xyz/</pdfaSchema:namespaceURI>');
+      expect(readUaPart(edited)).toBe(1);
+    });
+
+    it('adds no schema description to a packet that does not claim PDF/A', () => {
+      const edited = editUaPacket(packet('<rdf:Description rdf:about=""/>'), { uaPart: 1 }) as string;
+      expect(edited).not.toContain('pdfaExtension');
+    });
+  });
+
   it('refuses to edit a packet with no description', () => {
     expect(editUaPacket(packet(''), { title: 'T' })).toBeNull();
   });
