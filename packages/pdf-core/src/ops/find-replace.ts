@@ -63,6 +63,7 @@ import {
   type TextPage,
   type TextStyle,
 } from 'pdf-text-engine';
+import { EITHER_I, foldToken, sameToken } from '../case-fold';
 import {
   DOCUMENT_FONT_PREFIX,
   type DocumentFont,
@@ -474,29 +475,6 @@ interface Unit {
 interface Hit {
   readonly first: number;
   readonly last: number;
-}
-
-/**
- * `I` folds to this marker when case does not count: it matches both `i` (English) and
- * `ı` (Turkish), while `İ` folds to `i` and `ı` stays `ı`. Folding `ı` to `i` instead
- * would make `sık` and `sik` the same word, and they are not.
- */
-const EITHER_I = '\u0000I';
-
-function foldToken(value: string, matchCase: boolean): string {
-  if (matchCase) return value;
-  if (value === 'I') return EITHER_I;
-  if (value === 'İ') return 'i';
-  // A final sigma is the same letter as σ (`Σ` lower-cases to σ only, not by position).
-  if (value === 'ς') return 'σ';
-  return value.toLowerCase();
-}
-
-function sameToken(left: string, right: string | undefined): boolean {
-  if (left === right) return true;
-  if (left === EITHER_I) return right === 'i' || right === 'ı';
-  if (right === EITHER_I) return left === 'i' || left === 'ı';
-  return false;
 }
 
 const WORD_CHARACTER = /[\p{L}\p{N}\p{M}_]/u;

@@ -1779,11 +1779,14 @@ through a `FaceSource`), and hands one `TextEditRequest` to the text editor's wr
 own. Steps: `text.find` (declared read-only in `OPERATION_TABLE`) and the writer's.
 
 **Matching.** A block is a list of units — glyphs, word gaps and line breaks — and the search
-compares NFKC-normalised code points, so `ﬁ` matches `fi`; a match that would begin or end
+compares NFKC-normalised code points, so `ﬁ` matches `fi` and `m2` matches `m²`; a letter and a
+combining accent that are glyphs of their own compare as the letter they make (`e` + U+0301 is
+`é`), and a match takes the marks after its last letter with it. A match that would begin or end
 inside one glyph is skipped and counted. A line-end hyphen before a lower-case letter is read
-as hyphenation and joins the word. Without match case, `I` matches both `i` and `ı`, `İ`
-matches `i`, and `ı` matches only `ı` — folding `ı` to `i` would make Turkish `sık` and `sik`
-one word. Whole-word mode refuses a letter, digit or mark on either side.
+as hyphenation and joins the word. Without match case (`case-fold.ts`, which the document search
+`search.ts` uses too), `I` matches both `i` and `ı`, `İ` matches `i`, `ı` matches only `ı` —
+folding `ı` to `i` would make Turkish `sık` and `sik` one word — and a final sigma `ς` is `σ`.
+Whole-word mode refuses a letter, digit or mark on either side.
 
 **Placement**, per line of matches:
 

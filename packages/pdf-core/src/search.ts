@@ -12,6 +12,7 @@
  */
 
 import { ToolError, toToolError } from 'pdf-shared';
+import { foldToken, sameToken } from './case-fold';
 import type { PdfDocumentHandle } from './engines/pdfjs-handle';
 
 export interface PdfSearchMatch {
@@ -60,22 +61,20 @@ async function cachedPageText(document: PdfDocumentHandle, pageIndex: number): P
 }
 
 /**
- * Case fold that never changes a string's length, so match offsets stay valid in the
- * original text: a character whose lowercase form is longer (`İ` → `i̇`) keeps its own
- * form, which also keeps the comparison diacritic-sensitive like the viewer's find
- * (`matchDiacritics`). Deliberately locale-independent — a Turkish `I → ı` fold would
- * stop an English document from matching. A final sigma folds to σ and a long s to s,
- * as lower-casing alone leaves them.
+ * The text as folded characters (code points, compared with `sameToken`), and where each one
+ * starts in the original text, so a match is reported at an offset of the page's own text.
  */
-function fold(value: string): string {
-  let folded = '';
-  for (const char of value) {
-    const lower = char.toLowerCase();
-    if (lower === 'ς') folded += 'σ';
-    else if (lower === 'ſ') folded += 's';
-    else folded += lower.length === char.length ? lower : char;
+function tokenize(text: string): { readonly tokens: readonly string[]; readonly starts: readonly number[] } {
+  const tokens: string[] = [];
+  const starts: number[] = [];
+  let at = 0;
+  for (const character of text) {
+    tokens.push(foldToken(character, false));
+    starts.push(at);
+    at += character.length;
   }
-  return folded;
+  starts.push(at);
+  return { tokens, starts };
 }
 
 function aborted(): ToolError {
@@ -105,7 +104,7 @@ export async function searchPdfText(
   query: string,
   options: PdfSearchOptions = {},
 ): Promise<readonly PdfSearchMatch[]> {
-  const needle = fold(query);
+  const needle = tokenize(query).tokens;
   if (needle.length === 0) return [];
 
   const { signal, onProgress } = options;
@@ -122,11 +121,16 @@ export async function searchPdfText(
       throw toToolError(error, 'pdfjs');
     }
 
-    const haystack = fold(text);
-    let at = haystack.indexOf(needle);
-    while (at !== -1) {
-      matches.push(snippetOf(pageIndex, text, at, needle.length));
-      at = haystack.indexOf(needle, at + needle.length);
+    const { tokens, starts } = tokenize(text);
+    let at = 0;
+    while (at + needle.length <= tokens.length) {
+      if (needle.every((token, offset) => sameToken(token, tokens[at + offset]))) {
+        const end = at + needle.length;
+        matches.push(
+          snippetOf(pageIndex, text, starts[at] as number, (starts[end] as number) - (starts[at] as number)),
+        );
+        at = end;
+      } else at += 1;
     }
     onProgress?.(pageIndex + 1, pageCount);
 

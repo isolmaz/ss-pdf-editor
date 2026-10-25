@@ -352,9 +352,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     new text needs (in a merged file, the copy of the font the page itself uses). Otherwise
     it uses a close standard font (Helvetica, Times, Courier) or Noto Sans, sized to match,
     and the report names the font.
-  - Searching without match case treats `I`/`ı` and `İ`/`i` as Turkish and English
-    readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches `sik`. A final sigma
-    `ς` and `σ` are the same letter, so `Μαρκος` finds `ΜΑΡΚΟΣ`.
+  - Searching without match case, here and in the search panel, treats `I`/`ı` and `İ`/`i` as
+    Turkish and English readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches
+    `sik`. A final sigma `ς` and `σ` are the same letter, so `Μαρκος` finds `ΜΑΡΚΟΣ`.
   - A letter and an accent drawn as two glyphs (`e` and U+0301) are compared as the letter
     they make, so `café` finds either spelling, and a match takes the combining marks that
     follow its last letter with it.
