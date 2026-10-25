@@ -1398,9 +1398,15 @@ but not including a self-signed root, are checked.
   signed with `id-kp-OCSPSigning`, and its `CertID` (issuer name and key hash, serial) must match.
   This is what stops a PDF from embedding a CA with the real CA's name and a CRL saying nothing
   is revoked (measured: such a CRL is rejected as `invalid-list` and cannot hide a real revocation).
+  The signature alone does not make an issuer genuine, though: a file can carry its own CA, a
+  certificate under it and a list that CA signed. A list therefore speaks for a certificate only when
+  its issuer is one of the roots the user imported or chains to one (`anchoredIssuers`, from the
+  signature-built chain, compared with the imported roots by `tbsCertificate`). Otherwise the
+  certificate is `unknown` with reason `issuer-not-trusted` and neither a `good` nor a `revoked`
+  answer is taken from lists that issuer signed; with no root imported every certificate is `unknown`.
 - **Answers.** `good` (a verified complete list does not name the certificate), `revoked`
   (date and reason from the list; `removeFromCRL` entries are not revocations) or `unknown` with a
-  reason: `no-list`, `no-issuer`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
+  reason: `no-list`, `no-issuer`, `issuer-not-trusted`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
   critical extension), `list-scope` (delta, `onlySomeReasons`, a partition the certificate does not
   name). A `good` carries `coversValidationTime` (was the list issued at or after the signature?)
   and `stale` (past its `nextUpdate` today). A lasting revocation outranks everything; otherwise

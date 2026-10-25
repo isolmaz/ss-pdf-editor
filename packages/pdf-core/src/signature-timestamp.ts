@@ -257,6 +257,7 @@ export async function verifyTimestampToken(input: VerifyTimestampInput): Promise
     leaf: tsaDer,
     leafRole: 'timestamp',
     pool: [...pool, ...(input.roots ?? [])],
+    roots: input.roots ?? [],
     context: { sources: input.sources, validationTime: genTime, now: input.now },
   });
   return {

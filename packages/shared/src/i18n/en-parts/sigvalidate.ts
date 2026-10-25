@@ -34,6 +34,8 @@ export const sigValidatePart = {
     'The revocation is dated after the time the signer claims, but that time is not proven: treat it as revoked.',
   'props.sig.rev.why.noList': 'no CRL or OCSP response for this issuer',
   'props.sig.rev.why.noIssuer': 'the issuer certificate is not available',
+  'props.sig.rev.why.issuerNotTrusted':
+    'the issuer does not chain to a trust root you imported, so its lists are not relied on',
   'props.sig.rev.why.invalidList':
     'a list for this issuer failed verification (signature, key usage or validity)',
   'props.sig.rev.why.unsupportedList':

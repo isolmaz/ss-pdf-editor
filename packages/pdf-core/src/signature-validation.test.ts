@@ -122,8 +122,38 @@ describe('evaluateEvidence', () => {
     expect(trusted.revocationChecks[0]).toMatchObject({ status: 'revoked', timing: 'after-signing' });
     expect(trusted.revocation).toBe('revoked-after-signing');
 
-    // The same token, but nobody imported its root: the time is shown and used, and excuses nothing.
-    const untrusted = await evaluateEvidence(input(cms, signer, ca, { importedCrls: [crl] }));
+    // The same kind of token from a TSA whose root nobody imported (the signer's is): the time is
+    // shown and used, and excuses nothing.
+    const strangerCa = await issueCertificate({
+      subject: 'Stranger CA',
+      keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+      ...VALID,
+      basicConstraints: { cA: true },
+      keyUsage: ['keyCertSign', 'cRLSign'],
+    });
+    const strangerTsa = await issueCertificate(
+      {
+        subject: 'Stranger TSA',
+        keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+        ...VALID,
+        basicConstraints: { cA: false },
+        keyUsage: ['digitalSignature'],
+        extraExtensions: [extKeyUsageExtension([KP_TIME_STAMPING])],
+      },
+      strangerCa,
+    );
+    const strangerToken = await issueTimestampToken({
+      tsa: strangerTsa,
+      covered: signatureValueOf(base),
+      genTime: SIGNED_AT,
+      extraCertificates: [strangerCa],
+    });
+    const untrusted = await evaluateEvidence(
+      input(withUnsigned(base, { timestampToken: strangerToken }), signer, ca, {
+        roots: [ca.der],
+        importedCrls: [crl],
+      }),
+    );
     expect(untrusted.timestamp).toMatchObject({ status: 'valid', trusted: false });
     expect(untrusted.validationTimeSource).toBe('timestamp-untrusted');
     expect(untrusted.validationTime.toISOString()).toBe(SIGNED_AT.toISOString());
@@ -135,17 +165,25 @@ describe('evaluateEvidence', () => {
     const { ca, signer, crl } = await pki();
     const cms = await signedCms(signer, [ca], SIGNED_AT);
 
-    const imported = await evaluateEvidence(input(cms, signer, ca, { importedCrls: [crl] }));
+    const imported = await evaluateEvidence(input(cms, signer, ca, { roots: [ca.der], importedCrls: [crl] }));
     expect(imported.revocationChecks[0]).toMatchObject({ status: 'revoked', timing: 'after-signing' });
     expect(imported.revocation).toBe('revoked');
 
+    // The CA that signed the list is only whatever the file carries until a root vouches for it.
+    const unanchored = await evaluateEvidence(input(cms, signer, ca, { importedCrls: [crl] }));
+    expect(unanchored.revocationChecks[0]).toMatchObject({
+      status: 'unknown',
+      unknownReason: 'issuer-not-trusted',
+    });
+    expect(unanchored.revocation).toBe('indeterminate');
+
     const viaDss = await evaluateEvidence({
-      ...input(cms, signer, ca),
+      ...input(cms, signer, ca, { roots: [ca.der] }),
       dss: { certs: [], crls: [crl], ocsps: [] },
     });
     expect(viaDss.revocationChecks[0]).toMatchObject({ status: 'revoked', origin: 'embedded' });
 
-    const noLists = await evaluateEvidence(input(cms, signer, ca));
+    const noLists = await evaluateEvidence(input(cms, signer, ca, { roots: [ca.der] }));
     expect(noLists.revocation).toBe('indeterminate');
     expect(noLists.revocationChecks[0]).toMatchObject({ status: 'unknown', unknownReason: 'no-list' });
 

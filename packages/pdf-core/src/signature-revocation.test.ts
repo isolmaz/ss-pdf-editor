@@ -85,16 +85,21 @@ async function makeLeaf(subject: string, ca: CertificateFixture): Promise<Certif
   );
 }
 
+/** The roots the user imported, unless the test names them: the self-signed certificates of the pool. */
+const importedRoots = (pool: readonly CertificateFixture[]) => pool.filter((entry) => entry.selfSigned);
+
 async function check(
   leaf: CertificateFixture,
   pool: readonly CertificateFixture[],
   crls: readonly Uint8Array[],
   validationTime = SIGNED_AT,
+  roots: readonly CertificateFixture[] = importedRoots(pool),
 ): Promise<readonly RevocationCertCheck[]> {
   return await checkRevocation({
     leaf: leaf.der,
     leafRole: 'signer',
     pool: pool.map((entry) => entry.der),
+    roots: roots.map((entry) => entry.der),
     context: {
       sources: parseRevocationSources({ imported: crls }),
       validationTime,
@@ -252,6 +257,85 @@ describe('which list may speak for which certificate', () => {
   });
 });
 
+describe('which issuers a list may come from', () => {
+  it('does not clear a certificate by a list its own embedded CA signed while no root is imported', async () => {
+    const ca = await makeCa('Embedded CA');
+    const leaf = await makeLeaf('Signer', ca);
+    const crl = await issueCrl({ issuer: ca, ...CRL_DATES });
+
+    // The file carries the CA, the signer and a list the CA signed: all of it from the same hand.
+    const unanchored = await check(leaf, [ca], [crl], SIGNED_AT, []);
+    expect(unanchored).toHaveLength(1);
+    expect(unanchored[0]).toMatchObject({
+      role: 'signer',
+      status: 'unknown',
+      source: null,
+      thisUpdate: null,
+      unknownReason: 'issuer-not-trusted',
+    });
+    expect(summarizeRevocation(unanchored, false)).toBe('indeterminate');
+
+    const anchored = await check(leaf, [ca], [crl], SIGNED_AT, [ca]);
+    expect(anchored[0]).toMatchObject({ status: 'good', unknownReason: null });
+    expect(summarizeRevocation(anchored, false)).toBe('not-revoked');
+  });
+
+  it('does not rely on an OCSP response, or on a revocation, from an issuer no imported root stands behind', async () => {
+    const ca = await makeCa('Embedded CA');
+    const leaf = await makeLeaf('Signer', ca);
+    const response = await issueOcspResponse({
+      issuer: ca,
+      producedAt: PRODUCED,
+      singles: [{ cert: leaf, status: 'good', ...OCSP_DATES }],
+    });
+    expect((await checkOcsp(leaf, [ca], [response], [], SIGNED_AT, []))[0]).toMatchObject({
+      status: 'unknown',
+      unknownReason: 'issuer-not-trusted',
+    });
+    expect((await checkOcsp(leaf, [ca], [response], [], SIGNED_AT, [ca]))[0]).toMatchObject({
+      status: 'good',
+    });
+
+    const revoking = await issueCrl({ issuer: ca, ...CRL_DATES, revoked: [{ cert: leaf, at: day(2, 1) }] });
+    expect((await check(leaf, [ca], [revoking], SIGNED_AT, []))[0]).toMatchObject({
+      status: 'unknown',
+      unknownReason: 'issuer-not-trusted',
+    });
+    expect((await check(leaf, [ca], [revoking], SIGNED_AT, [ca]))[0]).toMatchObject({ status: 'revoked' });
+  });
+
+  it('accepts a list from an intermediate that chains to an imported root, and not one that chains to another', async () => {
+    const root = await makeCa('Root');
+    const intermediate = await makeCa('Intermediate', root);
+    const leaf = await makeLeaf('Signer', intermediate);
+    const other = await makeCa('Other Root');
+    const crl = await issueCrl({ issuer: intermediate, ...CRL_DATES });
+    const rootCrl = await issueCrl({ issuer: root, ...CRL_DATES });
+
+    const under = await check(leaf, [intermediate, root], [crl, rootCrl], SIGNED_AT, [root]);
+    expect(under.map((entry) => [entry.subject, entry.status])).toEqual([
+      ['Signer', 'good'],
+      ['Intermediate', 'good'],
+    ]);
+
+    const elsewhere = await check(leaf, [intermediate, root], [crl, rootCrl], SIGNED_AT, [other]);
+    expect(elsewhere.map((entry) => [entry.subject, entry.status, entry.unknownReason])).toEqual([
+      ['Signer', 'unknown', 'issuer-not-trusted'],
+      ['Intermediate', 'unknown', 'issuer-not-trusted'],
+    ]);
+  });
+
+  it('trusts the list of a self-signed signer only when that certificate is the imported root', async () => {
+    const own = await makeCa('Self-signed signer');
+    const crl = await issueCrl({ issuer: own, ...CRL_DATES });
+    expect((await check(own, [own], [crl], SIGNED_AT, []))[0]).toMatchObject({
+      status: 'unknown',
+      unknownReason: 'issuer-not-trusted',
+    });
+    expect((await check(own, [own], [crl], SIGNED_AT, [own]))[0]).toMatchObject({ status: 'good' });
+  });
+});
+
 describe('CRL forms this build does not process', () => {
   it('answers unknown, never good, for indirect, delta, partitioned and reason-scoped lists', async () => {
     const ca = await makeCa('CA');
@@ -391,11 +475,13 @@ async function checkOcsp(
   ocsps: readonly Uint8Array[],
   crls: readonly Uint8Array[] = [],
   validationTime = SIGNED_AT,
+  roots: readonly CertificateFixture[] = importedRoots(pool),
 ): Promise<readonly RevocationCertCheck[]> {
   return await checkRevocation({
     leaf: leaf.der,
     leafRole: 'signer',
     pool: pool.map((entry) => entry.der),
+    roots: roots.map((entry) => entry.der),
     context: {
       sources: parseRevocationSources({ embeddedOcsps: ocsps, embeddedCrls: crls }),
       validationTime,
@@ -1196,6 +1282,7 @@ describe('the certificate chain behind a check', () => {
       leaf: leafDer,
       leafRole: 'signer' as const,
       pool,
+      roots: [new Uint8Array([7, 7]), ca.der],
       context: { sources: parseRevocationSources({ imported: [crl] }), validationTime: SIGNED_AT, now: NOW },
     });
     expect(await checkRevocation(input(new Uint8Array([1, 2, 3]), [ca.der]))).toEqual([]);

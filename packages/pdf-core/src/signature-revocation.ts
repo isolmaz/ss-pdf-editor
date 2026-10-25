@@ -485,7 +485,7 @@ export type RevocationRole = 'signer' | 'intermediate' | 'timestamp';
 export type RevocationStatus = 'good' | 'revoked' | 'unknown';
 
 /** Why nothing verified speaks for a certificate (status `unknown`). */
-export type RevocationUnknownReason = 'no-list' | 'no-issuer' | ListFailure;
+export type RevocationUnknownReason = 'no-list' | 'no-issuer' | 'issuer-not-trusted' | ListFailure;
 
 /** One certificate's revocation answer, with the evidence it rests on. */
 export interface RevocationCertCheck {
@@ -609,6 +609,22 @@ async function buildChain(
     current = found;
   }
   return links;
+}
+
+/**
+ * For each link, whether its issuer is a certificate the user imported or sits under one on this
+ * chain. The chain was built by signatures, so an anchored issuer is vouched for by an imported
+ * root; an issuer that is not is only whatever the file says it is, and so are the lists it signs.
+ */
+function anchoredIssuers(links: readonly Link[], roots: readonly Certificate[]): boolean[] {
+  const isRoot = (certificate: Certificate): boolean =>
+    roots.some((root) => sameBytes(new Uint8Array(root.tbsView), new Uint8Array(certificate.tbsView)));
+  const anchored: boolean[] = [];
+  for (let index = links.length - 1; index >= 0; index -= 1) {
+    const { issuer } = links[index] as Link; // `index < links.length`
+    anchored[index] = issuer !== null && (isRoot(issuer) || anchored[index + 1] === true);
+  }
+  return anchored;
 }
 
 /** A statement from one verified list or response about one certificate. */
@@ -820,11 +836,17 @@ function decidedCheck(
  * and the chain ends where it would loop back on itself. A self-signed
  * certificate at the top is not checked (nothing above it publishes a list for it) unless it
  * is the leaf itself, where an absent list is an honest `unknown`.
+ *
+ * A list or response speaks for a certificate only when the issuer that signed it is one of the
+ * `roots` the user imported or chains to one: a file can carry its own CA, a certificate under
+ * it and a list that CA signed, and that proves nothing about the certificate. Otherwise the
+ * certificate is `unknown` (`'issuer-not-trusted'`).
  */
 export async function checkRevocation(input: {
   readonly leaf: Uint8Array;
   readonly leafRole: 'signer' | 'timestamp';
   readonly pool: readonly Uint8Array[];
+  readonly roots: readonly Uint8Array[];
   readonly context: RevocationContext;
 }): Promise<readonly RevocationCertCheck[]> {
   const subtle = globalThis.crypto?.subtle;
@@ -834,12 +856,20 @@ export async function checkRevocation(input: {
   const pool = input.pool.map(parseCertificate).filter((entry): entry is Certificate => entry !== null);
 
   const links = await buildChain(subtle, leaf, pool);
+  const anchored = anchoredIssuers(
+    links,
+    input.roots.map(parseCertificate).filter((entry): entry is Certificate => entry !== null),
+  );
   const checks: RevocationCertCheck[] = [];
   for (const [index, link] of links.entries()) {
     if (link.selfSigned && index > 0) continue;
     const role: RevocationRole = index === 0 ? input.leafRole : 'intermediate';
     if (link.issuer === null) {
       checks.push(unknownCheck(link, role, 'no-issuer'));
+      continue;
+    }
+    if (anchored[index] !== true) {
+      checks.push(unknownCheck(link, role, 'issuer-not-trusted'));
       continue;
     }
     const { evidence, failure, seenList } = await evidenceFor(

@@ -134,6 +134,7 @@ export async function evaluateEvidence(input: EvidenceInput): Promise<EvidenceOu
           leaf: input.signer,
           leafRole: 'signer',
           pool: [...pool, ...input.roots],
+          roots: input.roots,
           context: { sources, validationTime, now: input.now },
         });
   return {

@@ -647,6 +647,15 @@ describe('PropertiesPanel signatures', () => {
                 thisUpdate: null,
                 unknownReason: null,
               }),
+              check({
+                role: 'intermediate',
+                subject: 'Embedded CA',
+                status: 'unknown',
+                source: null,
+                origin: null,
+                thisUpdate: null,
+                unknownReason: 'issuer-not-trusted',
+              }),
             ],
           }),
         ],
@@ -658,6 +667,7 @@ describe('PropertiesPanel signatures', () => {
       ).toEqual([
         'Signer certificate “Alice”: unknown — the issuer certificate is not available.',
         'Intermediate certificate “Issuing CA”: unknown — no CRL or OCSP response for this issuer.',
+        'Intermediate certificate “Embedded CA”: unknown — the issuer does not chain to a trust root you imported, so its lists are not relied on.',
       ]);
     });
   });

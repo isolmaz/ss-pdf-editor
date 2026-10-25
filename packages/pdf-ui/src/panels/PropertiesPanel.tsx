@@ -211,6 +211,7 @@ const REVOCATION_REASON_LABEL: Record<NonNullable<RevocationCertCheck['reason']>
 const REVOCATION_WHY_LABEL: Record<NonNullable<RevocationCertCheck['unknownReason']>, MessageKey> = {
   'no-list': 'props.sig.rev.why.noList',
   'no-issuer': 'props.sig.rev.why.noIssuer',
+  'issuer-not-trusted': 'props.sig.rev.why.issuerNotTrusted',
   'invalid-list': 'props.sig.rev.why.invalidList',
   'unsupported-list': 'props.sig.rev.why.unsupportedList',
   'list-scope': 'props.sig.rev.why.listScope',
