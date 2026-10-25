@@ -7,9 +7,10 @@
  *   dist/en/404.html      <- the English not-found page (`public/en/404.html`)
  *   dist/engines/**       <- pinned engine builds (fetched, never committed)
  *
- * One Cloudflare Worker (static assets) serves this tree; deploying stays manual and is
- * never a CI step. The landing and legal pages of the same host (`/`, `/en/`, `/gizlilik`, …)
- * are another Worker, built from the ss-pdf-editor-site repository.
+ * One Cloudflare Worker (static assets) serves this tree. The `deploy` job of ci.yml publishes
+ * it on every push to `main`; `pnpm worker:deploy` is the same publish by hand. The landing
+ * and legal pages of the same host (`/`, `/en/`, `/gizlilik`, …) are another Worker, built from
+ * the ss-pdf-editor-site repository.
  */
 import {
   copyFileSync,
