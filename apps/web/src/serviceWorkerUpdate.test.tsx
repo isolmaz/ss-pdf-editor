@@ -172,6 +172,21 @@ describe('initServiceWorkerUpdates', () => {
     expect(incoming.messages).toEqual([{ type: 'SKIP_WAITING' }]);
   });
 
+  it('offers the update when a worker is already installing at registration and finishes installing behind a controller', async () => {
+    container.controller = new FakeWorker();
+    const incoming = new FakeWorker();
+    container.registration.installing = incoming;
+    const { initServiceWorkerUpdates, reloadToUpdate, useServiceWorkerUpdate } = await freshModule();
+    initServiceWorkerUpdates();
+    await settle();
+    expect(bannerState(useServiceWorkerUpdate)).toBe(false);
+    incoming.state = 'installed';
+    incoming.dispatchEvent(new Event('statechange'));
+    expect(bannerState(useServiceWorkerUpdate)).toBe(true);
+    reloadToUpdate();
+    expect(incoming.messages).toEqual([{ type: 'SKIP_WAITING' }]);
+  });
+
   it('does not offer an installed worker when it is the first one on the page', async () => {
     const { initServiceWorkerUpdates, reloadToUpdate } = await freshModule();
     initServiceWorkerUpdates();
