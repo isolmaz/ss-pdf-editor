@@ -21,9 +21,11 @@
  *  - **A new release never reads the previous release's cache.** The name changes, so the
  *    entries are absent and every request goes to the network. A cache lookup tries this
  *    release's cache first, and a previous release's only for what this one lacks. The old
- *    cache is deleted once no window is left that could still run that release
- *    (`pruneStaleCaches`): a page the new worker took over keeps its old code until it reloads,
- *    and the lazy chunks that code has not loaded yet are no longer on the origin.
+ *    cache is deleted only when no editor window is open besides the one a navigation creates
+ *    (`pruneStaleCaches`), since any window may still run that release: a page the new worker
+ *    took over keeps its old code until it reloads, and the lazy chunks that code has not loaded
+ *    yet are no longer on the origin. A reload does not delete it: the window it replaces still
+ *    counts while the new page loads.
  *  - **An engine can never be served under a shell that expects another build of it.**
  *    `/engines/**` is cached by the browser as immutable for a year, so an engine's URL names
  *    its pinned version (`/engines/<engine>/v<digest>/<file>`, `pdf-core`'s `assets.ts`): the

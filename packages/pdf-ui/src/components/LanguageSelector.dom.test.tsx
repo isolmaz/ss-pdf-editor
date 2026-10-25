@@ -123,13 +123,13 @@ describe('which language the interface starts in', () => {
     expect(document.documentElement.lang).toBe('tr');
   });
 
-  it('is Turkish when the store is blocked', () => {
+  it('is the first of the browser’s languages the app has when the store is blocked', () => {
     browserLanguages(['en'], 'en');
     blockStore('getItem');
 
-    expect(getStoredLocale()).toBe('tr');
+    expect(getStoredLocale()).toBe('en');
     render(<LanguageSelector t={t} />);
-    expect(pressed()).toEqual(['Türkçe']);
+    expect(pressed()).toEqual(['English']);
   });
 });
 

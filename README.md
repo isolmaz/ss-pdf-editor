@@ -580,7 +580,8 @@ nothing leaving the browser.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
   - Trust is checked only against certificates you imported (a PEM file may hold several, such
-    as a CA bundle; each is added and the ones that cannot be read are counted). A certificate
+    as a CA bundle; each is added and the ones that cannot be read are counted, and a check reads
+    the first 32 you imported). A certificate
     that is not yet valid is reported with the date it becomes valid; any other shows its
     expiry date.
   - The signer's own certificate has to allow signing documents: a key usage without digital
@@ -597,9 +598,17 @@ nothing leaving the browser.
     date and reason, and whether that is before or after the signature) or unknown. A list
     clears a certificate only when the certificate that signed it is a root you imported or chains
     to one: a PDF that carries its own CA, a certificate under it and a list that CA signed gets
-    "unknown", and with no root imported no certificate is reported not revoked. A revocation
-    counts whoever vouches for the issuer, since only the key that issued the certificate can
-    sign it. A list
+    "unknown", and with no root imported no certificate is reported not revoked. When the
+    chain reaches a root you imported, the certificates checked are the ones on that chain, so
+    a copy of a CA certificate that the PDF carries (the same name and key under another CA)
+    cannot decide which lists count, and a copy of a root you imported that the PDF carries stands
+    for that root; the roots you imported are tried before the PDF's certificates as issuers. When
+    the PDF's certificates give more than one chain to roots you imported, the first one found in
+    the PDF's order is the one checked. A revocation of the signer's certificate, or of a
+    certificate you imported, counts whoever vouches for the issuer, since only the key that issued
+    the certificate can sign it. Any other CA certificate's revocation counts only from a root you
+    imported or a CA under one: anyone can issue a certificate for a CA's key under a CA of their
+    own and revoke it. A list
     issued before the signature, or one past its next-update date when no trusted timestamp
     fixes the signing time, cannot rule out a revocation: the summary then says the lists are
     too old instead of "not revoked".
@@ -697,10 +706,13 @@ nothing leaving the browser.
   report of what finished. The steps are extract pages, compress, OCR, page labels, header/footer and page
   numbering, document properties, text export and security (password and permissions).
   - A step's page range is checked as it is typed, with the same rules as every other range
-    field (pages 1–2000, no page twice, no backwards range); *Run* waits until it reads.
+    field (pages 1–2000, no page twice, no backwards range), and so is every number (a whole
+    number where one is counted, such as a Bates start); *Run* and *Save ruleset* wait until
+    every field reads.
   - A set of steps can be saved as a JSON ruleset and loaded again. A loaded ruleset runs as
     it is, with the dialog's own steps disabled, until you choose *Discard loaded ruleset*;
-    choosing files afterwards does not discard it.
+    choosing files afterwards does not discard it. Its values are checked by each step as it
+    runs: a fractional Bates or page-number start fails that file, it is never stamped.
   - Where the browser offers a directory picker (Chromium), *Watch Folder* queues the PDFs
     of a folder and queues them again when the folder changes.
 
@@ -734,15 +746,18 @@ These describe how the build works; they are not promises.
   The e2e suite runs under exactly these headers.
 - **The service worker caches static assets only.** It never stores document bytes.
 - **Drafts stay local.** Unsaved work is kept in the origin-private file system (OPFS).
-  - A **sensitive session** saves nothing; any document opened with a password starts one.
+  - A **sensitive session** keeps no draft, no copy of the document and no file handle (its
+    recent-list entry holds only the name, size, page count, when it was opened and its star);
+    any document opened with a password starts one.
   - A window with unsaved changes that no draft protects (a sensitive session, or a draft that
     is still being written or could not be written) asks before it is closed or reloaded, and
     an update of the app never reloads it by itself: the update banner asks you to save and
     reload instead. A window whose changes a draft holds asks nothing. A document that a tool
     produced (a merge, an extract, a conversion) opens as unsaved changes, because no file holds
     it, until it is saved or exported; closing its tab asks first, and a draft brings it back.
-    One produced while a document opened with its password is in front (its unlocked copy, a
-    tool's result of it) is a sensitive session too: no recovery copy and no draft.
+    One made from a document opened with its password (its unlocked copy, a tool's result of
+    it, its pages imposed for printing) is a sensitive session too: no recovery copy and no
+    draft. Picking another tab while the unlocked copy opens cancels the copy.
   - The recent list keeps the file name, size, page count, when it was last opened and
     whether it is starred in `localStorage`. In Chromium it also keeps a *handle* to the
     file in IndexedDB — a reference the browser asks permission for again, never the file's
@@ -1145,10 +1160,11 @@ pnpm worker:deploy:dry      # same, with --dry-run
   count (capability `app`): engines without a tool's code are not "ready". A half-downloaded
   pack is reported as `missing`, with the missing paths named.
 - **Release isolation.** The cache name carries a release identity, so a new release answers
-  from its own cache first. An older cache is kept only while a window may still run that
-  release (a window left on its old code by unsaved work), is read only for a file the new one
-  lacks, and is deleted at the first navigation or worker start with no other editor window
-  open.
+  from its own cache first. An older cache is read only for a file the new one lacks, and is
+  kept while any editor window is open, since that window may still run the older release (one
+  left on its old code by unsaved work). Reloading the only editor window keeps it too: while
+  the new page loads, the browser still counts the old one. It is deleted when the editor is
+  opened, or a new worker starts, with no editor window open.
 - **Engine versions.** Every engine is served from a versioned URL, so a rebuilt engine is
   never answered with old cached bytes under the new editor. Readiness compares those URLs, so
   a cached engine of another version counts as `missing`.

@@ -219,7 +219,7 @@ describe('BatchDialog step settings', () => {
     ]);
   });
 
-  it('writes the page-image method with its resolution, quality and greyscale, and a cleared number falls back', async () => {
+  it('writes the page-image method with its resolution, quality and greyscale, and writes nothing for a cleared number', async () => {
     const { onDownload } = show();
     await stepsOnly(STEPS.compress);
     await user.click(screen.getByRole('radio', { name: 'Convert pages to image (lossy)' }));
@@ -231,9 +231,11 @@ describe('BatchDialog step settings', () => {
     ]);
 
     replace(number('Resolution (DPI)'), '');
-    replace(number('Image quality'), '');
-    const params = (await savedRuleSet(onDownload)).steps[0]?.params as { dpi: number; quality: number };
-    expect([params.dpi, params.quality]).toEqual([150, 0.7]);
+    const save = screen.getByRole('button', { name: 'Save ruleset (JSON)' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    onDownload.mockClear();
+    await user.click(save);
+    expect(onDownload).not.toHaveBeenCalled();
   });
 
   it('writes the recognition settings, with the other quality and the re-read choice', async () => {
@@ -835,20 +837,25 @@ describe('BatchDialog rulesets from a file', () => {
     expect(run.disabled).toBe(false);
   });
 
-  it('keeps Run off while a whole-number setting holds a fraction', async () => {
-    show();
+  it('keeps Run and Save ruleset off while a whole-number setting holds a fraction', async () => {
+    const { onDownload } = show();
     await stepsOnly(STEPS.stamp);
     await user.click(screen.getByRole('radio', { name: 'Bates numbering' }));
     await user.upload(pdfInput(), await pdfFile('a.pdf'));
     const run = screen.getByRole('button', { name: 'Run batch' }) as HTMLButtonElement;
+    const save = screen.getByRole('button', { name: 'Save ruleset (JSON)' }) as HTMLButtonElement;
     expect(run.disabled).toBe(false);
     replace(number('Number of digits'), '2.5');
     expect(run.disabled).toBe(true);
+    expect(save.disabled).toBe(true);
+    await user.click(save);
+    expect(onDownload).not.toHaveBeenCalled();
     replace(number('Number of digits'), '8');
     expect(run.disabled).toBe(false);
+    expect(save.disabled).toBe(false);
   });
 
-  it('shows the refusal under the step whose range does not read, and Save ruleset refuses it too', async () => {
+  it('shows the refusal under the step whose range does not read, and keeps Save ruleset off too', async () => {
     const { onDownload } = show();
     await stepsOnly(STEPS.pages, STEPS.textExport);
     await user.upload(pdfInput(), await pdfFile('a.pdf'));
@@ -861,14 +868,10 @@ describe('BatchDialog rulesets from a file', () => {
     expect(described(0)).toBeNull();
     expect(described(1)).toBe('Page range could not be parsed. Enter a range like 1-3, 5 or 8-10.');
     expect((screen.getByRole('button', { name: 'Run batch' }) as HTMLButtonElement).disabled).toBe(true);
-
-    await user.click(screen.getByRole('button', { name: 'Save ruleset (JSON)' }));
+    const save = screen.getByRole('button', { name: 'Save ruleset (JSON)' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    await user.click(save);
     expect(onDownload).not.toHaveBeenCalled();
-    const alert = await screen.findByRole('alert');
-    expect(Array.from(alert.querySelectorAll('p')).map((line) => line.textContent)).toEqual([
-      'Page range could not be parsed.',
-      'Enter a range like 1-3, 5 or 8-10.',
-    ]);
   });
 
   it('runs a loaded ruleset as it is while the form holds a page range it cannot read', async () => {

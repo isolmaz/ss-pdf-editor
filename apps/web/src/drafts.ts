@@ -5,11 +5,12 @@
  * Layout inside the origin's private file system:
  *
  *   /pdf-editor/drafts/<id>.json   — model data: name, size, dirty flag, journal
- *   /pdf-editor/sources/<key>.pdf  — the master copy of a handle-less source,
- *                                    written once per source, never per change
+ *   /pdf-editor/sources/<key>.pdf  — the master copy of a source that is not sensitive,
+ *                                    written once per source, never per change, and the
+ *                                    produced versions its draft keeps (`snapshot-<id>`)
  *
- * Drafts of documents the user opened through a File System Access handle keep that
- * handle in the session and only need the model data here, so the vault stays small.
+ * A document opened through a File System Access handle has its master copy here too; the
+ * handle itself is kept apart (`recent-handles.ts`), so a restored tab can save over its file.
  */
 
 import type { Draft, DraftInventory, DraftStorage } from 'pdf-model';

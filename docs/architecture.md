@@ -1288,8 +1288,9 @@ mechanics are arranged around one number, `/ByteRange`:
    the empty field of that name and otherwise creates one, and a reused field also gets
    its `/AP`. The appearance draws the stamp's lines in Helvetica when they are printable
    ASCII (nothing embedded); a line with any other letter makes it draw in the embedded
-   Noto Sans, subset to the glyphs shown, and a character that face lacks (or a control or
-   separator character outside ASCII) is drawn as `?`.
+   Noto Sans, subset to the glyphs shown, and a character that face lacks, or any control,
+   format, private-use, unassigned or separator character other than the ASCII space (a tab, a
+   soft hyphen, a zero-width space, a non-breaking space), is drawn as `?`.
 3. The `/Contents` placeholder is located in the produced bytes (uniqueness enforced); the
    real ByteRange is computed from those offsets and written over the same digits, with a
    length-equality assertion.
@@ -1366,7 +1367,8 @@ entries are document timestamps and get their own check (§5.3.2). Four more fac
 certificate), and `validationTime` with its `validationTimeSource`.
 
 **Trust (`signature-trust.ts`).** Path building follows the RFC 5280 §6.1 shape: candidate
-issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates, each link's
+issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates (the first 32 of the
+file's certificates and the first 32 imported roots are parsed), each link's
 signature verified over the child's `tbsCertificate`, validity windows checked against the
 supplied clock, and `basicConstraints` cA (on every issuer but the trust anchor — the user's
 import is the statement that it may issue, and a v1 self-signed root has no extensions) /
@@ -1399,30 +1401,49 @@ dates shown in the panel), a CRL or OCSP response in the signature's CMS (the Ad
 `SignedData.crls`) or in the document's `/DSS` (`Certs`, `CRLs`, `OCSPs`, read by reference and
 bounded to 256 entries / 16 MiB, the budget checked against a stream's `/DL` and stored length
 before it is decoded). The signer certificate and every certificate above it, up to
-but not including a self-signed root, are checked.
+but not including a self-signed root, are checked; a self-signed certificate inside a trusted path (its
+issuer its own name and its signature its own key's: a CA's re-issued root) is skipped as the root is.
 
-- **Who may speak for whom.** The chain is rebuilt from *signatures* (each certificate's issuer
-  is the pool member whose key verifies it; each step tries at most eight same-named
-  candidates, the key-identifier match first and each distinct certificate once, and the chain
-  ends where it would loop back on itself, so a pool of hundreds of same-named certificates costs
-  a bounded number of verifications and an issuer it crowds out is `no-issuer`, never clean), and
-  a list is accepted for a certificate only when
-  it is signed by that verified issuer: the CRL's issuer name must match, its signature must
-  verify, the issuer's `keyUsage` must allow `cRLSign` when present and the issuer must be valid
-  at `thisUpdate`. An OCSP response must be signed by the issuer or by a delegate the issuer
-  signed with `id-kp-OCSPSigning`, and its `CertID` (issuer name and key hash, serial) must match.
-  This is what stops a PDF from embedding a CA with the real CA's name and a CRL saying nothing
-  is revoked (measured: such a CRL is rejected as `invalid-list` and cannot hide a real revocation).
-  The signature alone does not make an issuer genuine, though: a file can carry its own CA, a
-  certificate under it and a list that CA signed. A list therefore clears a certificate only when
-  its issuer is one of the roots the user imported or chains to one (`anchoredIssuers`, from the
-  signature-built chain, compared with the imported roots by name and key, so a re-issued or
-  cross-signed copy of a root is the same issuer). Otherwise a `good` answer becomes `unknown` with
-  reason `issuer-not-trusted`; with no root imported no certificate is cleared. A `revoked` answer is
-  taken whoever vouches for the issuer: the list is verified with the key that issued the
-  certificate, and a revocation can only make the verdict stricter.
-  A certificate for which the file holds no list or response from its issuer is `no-list`
-  whoever its issuer is: there is no list to set aside.
+- **Who may speak for whom.** When the trust walk (§5.3) validated a path to an imported root,
+  the certificates checked are that path's, each with the issuer the walk proved
+  (`checkTrustPath` hands it over; `evaluateEvidence` and the timestamp check pass it on), then
+  whatever stands above the root. A certificate with the same name and key that the file carries
+  ahead of the real one (a copy another CA issued, with other dates or uses) is not on that path
+  and decides nothing. The path ends at the imported root itself: a certificate with an imported
+  root's `tbsCertificate` that the file carries (signed again by anyone) stands for that root, on
+  the path and in the pool alike, so no issuer is looked for above such a copy. When the file's
+  certificates give more than one valid path to the imported roots (two imported roots that both
+  certify the intermediate's key, or two certificates of that key under one root), the walk takes
+  the first it finds in the file's order, and that path's lists decide. Without a trusted path the chain is rebuilt from *signatures* (each
+  certificate's issuer is the pool member whose key verifies it; a self-signed certificate answers
+  by its own key first, the imported roots are tried before the file's certificates of the same
+  key-identifier rank, each step
+  tries at most eight same-named candidates, the key-identifier match first and each distinct
+  certificate once, and
+  the chain ends where it would loop back on itself, so a pool of hundreds of same-named
+  certificates costs a bounded number of verifications and an issuer it crowds out is
+  `no-issuer`, never clean). A list is accepted for a certificate only when it is signed by that
+  issuer: the CRL's issuer name must match, its signature must verify, the issuer's `keyUsage`
+  must allow `cRLSign` when present and the issuer must be valid at `thisUpdate`. An OCSP response
+  must be signed by the issuer or by a delegate the issuer signed with `id-kp-OCSPSigning`, and
+  its `CertID` (issuer name and key hash, serial) must match. This is what stops a PDF from
+  embedding a CA with the real CA's name and a CRL saying nothing is revoked (measured: such a
+  CRL is rejected as `invalid-list`). The signature alone does not make an issuer genuine,
+  though: a file can carry its own CA, a certificate under it and a list that CA signed. A list
+  therefore clears a certificate only when its issuer is one of the roots the user imported or
+  chains to one (`anchoredIssuers`; a root is the imported certificate itself, not a copy with
+  its name and key). Otherwise a `good` answer becomes `unknown` with reason
+  `issuer-not-trusted`; with no root imported no certificate is cleared. A `revoked` answer for
+  the signer's certificate, or for a certificate the user imported, is taken whoever vouches for
+  the issuer. Any other CA certificate is only what the file says it is (anyone can issue one for
+  a CA's key under a CA of their own and revoke it), so its revocation needs an anchored issuer
+  too, and is `issuer-not-trusted` otherwise. A CRL's
+  revocation counts even when the issuer certificate at
+  hand lacks `cRLSign` or was not valid when the list was issued: the list is verified with the key
+  that issued the certificate, so only its holder can have made it, and the dates and key usage of
+  a certificate a file supplies cannot set it aside.
+  A certificate for which no list from its issuer was seen (embedded or imported) and that no OCSP
+  response names is `no-list` whoever its issuer is: there is no list to set aside.
 - **Answers.** `good` (a verified complete list does not name the certificate), `revoked`
   (date and reason from the list; `removeFromCRL` entries are not revocations) or `unknown` with a
   reason: `no-list`, `no-issuer`, `issuer-not-trusted`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
@@ -1536,7 +1557,7 @@ Details that matter:
   tree alone would leave `/Root /AF`, the `/AF` of pages, annotations and structure elements and
   every `/FileAttachment` annotation, and an empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
   reads from the Attachments panel — that list is empty for a file that is attached only as an
-  annotation or in `/AF` — and the step removes every attached file: each file specification of the
+  annotation or in `/AF` — and the step removes the attached files in these places: each file specification of the
   name tree (walked through `/Kids` as well; the tree and a `/Names` that holds nothing else leave
   the catalog), every `/AF` entry (catalog, pages, annotations and structure elements), and every file-attachment annotation
   (through `sweepWhere` of `redact-annots.ts`: popup and replies included), with the file
@@ -1832,9 +1853,12 @@ as hyphenation and joins the word. Without match case (`case-fold.ts`, which the
 but not `i` — folding `ı` to `i` would make Turkish `sık` and `sik` one word — and a final sigma
 `ς` is `σ`.
 Whole-word mode refuses a letter, digit or mark on either side. The replacement is one line of words: a
-control character (line break, tab), a line or paragraph separator, or a zero-width, soft-hyphen or
-direction character in it is refused before any page is read (`replacement-invalid`, naming the code
-points), since the first kind would be drawn as a plain gap and the second kind cannot be read back.
+control character (line break, tab), a line or paragraph separator, or an invisible character in it
+(the zero-width characters and U+FEFF, the soft hyphen, the combining grapheme joiner, direction
+marks, embeddings, overrides and isolates, the invisible operators U+2061-U+2064, the deprecated
+format characters U+206A-U+206F, U+180E) is refused before any page is
+read (`replacement-invalid`, naming the code points), since the first kind would be drawn as a
+plain gap and the second kind cannot be read back.
 
 **Placement**, per line of matches:
 
@@ -3201,8 +3225,13 @@ extract, an unlock, a conversion) opens with `unwritten` set: `dirty`, with a `n
 no undo can match, so closing it asks, a draft restores it and a window holding it unprotected
 guards the reload, until a Save or an Export records an output (an Export counts when the document
 has no file of its own and either the browser cannot write files or nothing was written yet).
-A document produced while a sensitive tab is in front is marked sensitive as well and stores no
-source copy, so an unlocked copy never reaches the draft store.
+A document made from a sensitive tab is marked sensitive as well and stores no source copy. The
+caller passes the sensitivity of the tab the bytes came from (the tab a dialog froze, the tab
+being unlocked, the tab the print dialog last read its pages from), not of the tab in front when the bytes
+have opened, which a tab switch may have changed; the unlock also passes its signal, so picking
+another tab while the copy opens cancels it. An unlocked copy therefore never reaches the draft
+store, and a document not made from a sensitive tab (a conversion, a scan, a Start dialog's
+result) is stored like any other.
 The password a tab was opened with lives in
 `lockedTabs` only as long as the tab: `discardDocument` removes it.
 

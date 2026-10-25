@@ -375,14 +375,22 @@ describe('openProducedTab', () => {
   });
 
   it('keeps the bytes produced from a document opened with its password as sensitive as it, storing no copy', async () => {
-    await actions().openFile(pdfFile(), undefined, 'secret');
-    const source = session.active?.id;
+    await expect(actions().openProducedTab('unlocked.pdf', bytes, undefined, true)).resolves.toBeNull();
 
-    await expect(actions().openProducedTab('unlocked.pdf', bytes)).resolves.toBeNull();
-
-    expect(session.active?.id).not.toBe(source);
+    expect(session.active?.name).toBe('unlocked.pdf');
     expect(session.active?.sensitive).toBe(true);
     expect(storage.sources.size).toBe(0);
+  });
+
+  it('stores bytes not made from the sensitive tab in front as any other produced document', async () => {
+    await actions().openFile(pdfFile(), undefined, 'secret');
+    storage.sources.clear();
+
+    await actions().openProducedTab('scan.pdf', bytes);
+
+    expect(session.active?.name).toBe('scan.pdf');
+    expect(session.active?.sensitive).toBe(false);
+    expect(storage.sources.size).toBe(1);
   });
 
   it('resolves with the warning, keeping the tab, when the recovery copy cannot be stored', async () => {

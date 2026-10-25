@@ -45,7 +45,7 @@ export interface ShellBodyProps {
   readonly dock: DocumentDockProps['actions'];
   readonly viewer: ViewerAreaProps['actions'];
   readonly right: RightDockProps['actions'];
-  readonly results: Pick<ResultsActions, 'printProduced' | 'scanDocument'>;
+  readonly results: Pick<ResultsActions, 'readForPrint' | 'printProduced' | 'scanDocument'>;
   readonly startResult: (result: OpRunResult) => Promise<void>;
 }
 
@@ -85,7 +85,7 @@ export function ShellBody(props: ShellBodyProps) {
                       : 'merge-files',
               );
           }}
-          // The grid is the discovery surface named 'all tools': it lists every tool in either
+          // The grid is the discovery surface named 'all tools': it shows the same tools in either
           // mode (the simple mode filters the menus and the palette, it never disables).
           commands={commands}
           standaloneCommands={STANDALONE_COMMAND_IDS}

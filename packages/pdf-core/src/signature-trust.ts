@@ -1012,6 +1012,13 @@ async function walk(
   return null;
 }
 
+/** A trust verdict with the certificates of the path it validated. */
+export interface TrustPath {
+  readonly trust: TrustCheck;
+  /** DER, from the signer up to the imported root that ends the path; empty unless `trusted`. */
+  readonly certificates: readonly Uint8Array[];
+}
+
 /**
  * The chain the signer's certificate sits on, and where it ends.
  *
@@ -1021,34 +1028,43 @@ async function walk(
  * different statement from `untrusted`.
  */
 export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
-  if (input.signer.length === 0) return NO_TRUST;
+  return (await checkTrustPath(input)).trust;
+}
+
+/** {@link checkTrust}, with the path it validated: the one revocation is checked along. */
+export async function checkTrustPath(input: TrustInput): Promise<TrustPath> {
+  const unanchored = (trust: TrustCheck): TrustPath => ({ trust, certificates: [] });
+  if (input.signer.length === 0) return unanchored(NO_TRUST);
   const subtle = globalThis.crypto?.subtle;
-  if (subtle === undefined) return NO_TRUST;
+  if (subtle === undefined) return unanchored(NO_TRUST);
   const now = input.now ?? new Date();
 
   let signer: Certificate;
   try {
     signer = Certificate.fromBER(input.signer.slice());
   } catch {
-    return {
+    return unanchored({
       verdict: 'indeterminate',
       path: [],
       validity: 'unknown',
       notBefore: null,
       notAfter: null,
       reason: 'malformed',
-    };
+    });
   }
   const validity = validityOf(signer, now);
   const notBefore = signer.notBefore.value.toISOString();
   const notAfter = signer.notAfter.value.toISOString();
   const name = displayName(signer);
 
-  const parse = (ders: readonly Uint8Array[]): Certificate[] => {
+  const ders = new Map<Certificate, Uint8Array>([[signer, input.signer]]);
+  const parse = (list: readonly Uint8Array[]): Certificate[] => {
     const out: Certificate[] = [];
-    for (const der of ders.slice(0, MAX_CANDIDATES)) {
+    for (const der of list.slice(0, MAX_CANDIDATES)) {
       try {
-        out.push(Certificate.fromBER(der.slice()));
+        const certificate = Certificate.fromBER(der.slice());
+        ders.set(certificate, der);
+        out.push(certificate);
       } catch {
         // A certificate this reader cannot parse is skipped: it can neither extend nor
         // break a chain.
@@ -1064,12 +1080,29 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
     if (sameBytes(root.tbsView, signer.tbsView)) {
       const allowed = allowsSigning(signer, (input.leafCriticalExtensions ?? []).includes(OID_EXT_KEY_USAGE));
       return allowed
-        ? { verdict: 'trusted', path: [name], validity, notBefore, notAfter, reason: null }
-        : { verdict: 'untrusted', path: [name], validity, notBefore, notAfter, reason: 'signer-usage' };
+        ? {
+            trust: { verdict: 'trusted', path: [name], validity, notBefore, notAfter, reason: null },
+            certificates: [ders.get(root) as Uint8Array],
+          }
+        : unanchored({
+            verdict: 'untrusted',
+            path: [name],
+            validity,
+            notBefore,
+            notAfter,
+            reason: 'signer-usage',
+          });
     }
   }
   if (roots.length === 0) {
-    return { verdict: 'not-checked', path: [name], validity, notBefore, notAfter, reason: 'no-roots' };
+    return unanchored({
+      verdict: 'not-checked',
+      path: [name],
+      validity,
+      notBefore,
+      notAfter,
+      reason: 'no-roots',
+    });
   }
 
   // The issuer graph is built once: candidate lookup (a name comparison and two key-id
@@ -1093,41 +1126,65 @@ export async function checkTrust(input: TrustInput): Promise<TrustCheck> {
   const found = await walk(subtle, signer, now, [signer], state);
   if (found !== null) {
     return {
-      verdict: 'trusted',
-      path: found.map(displayName),
-      validity,
-      notBefore,
-      notAfter,
-      reason: null,
+      trust: {
+        verdict: 'trusted',
+        path: found.map(displayName),
+        validity,
+        notBefore,
+        notAfter,
+        reason: null,
+      },
+      // The path ends at a certificate with an imported root's tbsCertificate, often a copy the file
+      // carries: the imported bytes are handed back, since the copy's outer signature is anyone's.
+      certificates: found.map(
+        (certificate) =>
+          ders.get(
+            roots.find((root) => sameBytes(root.tbsView, certificate.tbsView)) ?? certificate,
+          ) as Uint8Array, // every node was parsed from one
+      ),
     };
   }
 
   // Checked before the self-signed and no-issuer answers: those say the search *ended*, and
   // a search that spent its budget did not.
   if (state.exhausted) {
-    return {
+    return unanchored({
       verdict: 'indeterminate',
       path: [name],
       validity,
       notBefore,
       notAfter,
       reason: 'search-limit',
-    };
+    });
   }
   if (signer.issuer.isEqual(signer.subject)) {
-    return { verdict: 'self-signed', path: [name], validity, notBefore, notAfter, reason: 'no-issuer' };
+    return unanchored({
+      verdict: 'self-signed',
+      path: [name],
+      validity,
+      notBefore,
+      notAfter,
+      reason: 'no-issuer',
+    });
   }
   if (state.reachableFailure !== null) {
     const { reason, indeterminate } = state.reachableFailure;
-    return {
+    return unanchored({
       verdict: indeterminate ? 'indeterminate' : 'untrusted',
       path: [name],
       validity,
       notBefore,
       notAfter,
       reason,
-    };
+    });
   }
   // A candidate existed but none of its paths reached an anchor: the chain stops short.
-  return { verdict: 'untrusted', path: [name], validity, notBefore, notAfter, reason: 'no-issuer' };
+  return unanchored({
+    verdict: 'untrusted',
+    path: [name],
+    validity,
+    notBefore,
+    notAfter,
+    reason: 'no-issuer',
+  });
 }

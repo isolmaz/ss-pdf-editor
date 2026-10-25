@@ -98,8 +98,9 @@ export const redactDialog: OperationDialogSpec = {
         imageMethod: IMAGE_METHOD[String(params.imageMethod)] ?? 0,
         textMethod: TEXT_METHOD,
         cleanMetadata: clean.includes('info'),
-        // "Attachments (all)": every attached file of the document, wherever it lives — the
-        // engine finds them in the file itself, not through a list this dialog would read first.
+        // "Attachments (all)": the attached files of the name tree, the `/AF` lists of the
+        // catalog, pages, annotations and structure elements, and the file-attachment annotations —
+        // the engine finds them in the file itself, not through a list this dialog would read first.
         cleanAttachments: clean.includes('attachments'),
       },
       { signal: context.signal, onProgress: context.onProgress },

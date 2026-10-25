@@ -255,8 +255,16 @@ export function App({ store }: AppProps) {
    */
   const currentBytes = useMemo(() => createCurrentBytes({ session: store, t }), [store, t]);
   const resultsActions = useMemo(
-    () => createResultsActions({ session: store, t, openProducedTab, openDialog, refuseUnappliedRedactions }),
-    [store, t, openProducedTab, openDialog, refuseUnappliedRedactions],
+    () =>
+      createResultsActions({
+        session: store,
+        t,
+        openProducedTab,
+        currentBytes,
+        openDialog,
+        refuseUnappliedRedactions,
+      }),
+    [store, t, openProducedTab, currentBytes, openDialog, refuseUnappliedRedactions],
   );
   const { dialogResult, startResult, unlockActiveCopy } = useMemo(
     () => createDialogRuns({ session: store, t, openProducedTab, dialogContext, lockedTabs }),

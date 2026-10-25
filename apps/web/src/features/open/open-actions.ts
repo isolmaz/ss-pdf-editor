@@ -88,8 +88,16 @@ export async function openAndFingerprint(
 export interface OpenActions {
   /** Open `file` (with its handle for in-place save, and its password when it is protected). */
   readonly openFile: (file: File, fileHandle?: FileSystemFileHandle, password?: string) => Promise<void>;
-  /** Open produced bytes as a new tab; resolves with the stored-copy warning, if any. */
-  readonly openProducedTab: (name: string, bytes: Uint8Array, signal?: AbortSignal) => Promise<string | null>;
+  /**
+   * Open produced bytes as a new tab, `sensitive` when they were made from a sensitive tab;
+   * resolves with the stored-copy warning, if any.
+   */
+  readonly openProducedTab: (
+    name: string,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+    sensitive?: boolean,
+  ) => Promise<string | null>;
   /** Convert a Word, Excel, HTML, text or image file and open the PDF. */
   readonly convertAndOpen: (file: File) => Promise<void>;
   /** The fire-and-forget way in: every failure becomes a notice. */
@@ -231,13 +239,15 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
    * replaced by that line.
    *
    * The tab opens as unsaved work: no file holds these bytes until a Save or an Export writes
-   * them. Bytes produced while a sensitive session is in front (an unlocked copy, a tool's result
-   * of that document) are as sensitive as it: the tab keeps no recovery copy and no draft.
+   * them. `sensitive` says the bytes were made from a sensitive session (its unlocked copy, a
+   * tool's result of it): the caller reads it from that tab, since the tab in front may change
+   * while the bytes open. Such a tab keeps no recovery copy and no draft.
    */
   async function openProducedTab(
     name: string,
     bytes: Uint8Array,
     signal?: AbortSignal,
+    sensitive = false,
   ): Promise<string | null> {
     const earlyVerdict = checkDocumentLimits(tier, 0, bytes.byteLength);
     if (earlyVerdict.kind === 'blocked') {
@@ -258,7 +268,6 @@ export function createOpenActions(deps: OpenDeps): OpenActions {
       await handle.destroy();
       throw new ToolError('page-limit', { engine: 'model', path: name });
     }
-    const sensitive = session.active?.sensitive === true;
     const tab = session.openDocument({ name, bytes, sha256, pageCount: handle.pageCount, unwritten: true });
     if (sensitive) session.setSensitive(tab.id, true);
     adoptHandle(tab.id, handle);
