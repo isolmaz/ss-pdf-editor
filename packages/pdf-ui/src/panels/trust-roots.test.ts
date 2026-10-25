@@ -48,6 +48,36 @@ describe('importTrustRoots', () => {
     ]);
   });
 
+  it('imports every certificate of a PEM bundle, in the order of the file', async () => {
+    const roots = [
+      await pkcs12Fixture({ subject: 'Root CA' }),
+      await pkcs12Fixture({ subject: 'Intermediate CA' }),
+      await pkcs12Fixture({ subject: 'Issuing CA' }),
+    ];
+    const bundle = roots.map((root) => pem(root.certificate)).join('\n');
+    const { imported, messages } = await run([new File([bundle], 'bundle.pem')]);
+    expect(messages).toEqual([null]);
+    expect((imported[0] ?? []).map((root) => root.label)).toEqual([
+      'Root CA',
+      'Intermediate CA',
+      'Issuing CA',
+    ]);
+    expect((imported[0] ?? []).map((root) => root.derBase64)).toEqual(
+      roots.map((root) => Buffer.from(root.certificate).toString('base64')),
+    );
+  });
+
+  it('imports the readable certificates of a bundle and counts each block it cannot read', async () => {
+    const good = await pkcs12Fixture({ subject: 'Good Root' });
+    const unreadable = '-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n';
+    const empty = '-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n';
+    const { imported, messages } = await run([
+      new File([`${unreadable}${pem(good.certificate)}${empty}`], 'mixed.pem'),
+    ]);
+    expect(imported[0]?.map((root) => root.label)).toEqual(['Good Root']);
+    expect(messages).toEqual(['props.sig.roots.addedRefused {"count":1,"refused":2}']);
+  });
+
   it('labels a certificate that has no common name by its file name', async () => {
     const { certificate } = await pkcs12Fixture({ subject: null });
     const { imported, messages } = await run([new File([certificate as BlobPart], 'org-only.cer')]);

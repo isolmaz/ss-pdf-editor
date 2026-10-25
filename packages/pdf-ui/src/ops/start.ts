@@ -55,6 +55,7 @@ export const newDocumentDialog: OperationDialogSpec = {
     {
       id: 'pages',
       kind: 'number',
+      integer: true,
       labelKey: 'start.blank.pages',
       defaultValue: 1,
       min: 1,

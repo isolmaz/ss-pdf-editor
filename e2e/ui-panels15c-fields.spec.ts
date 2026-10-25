@@ -35,7 +35,7 @@ test('bookmarks typed into the outline editor’s box become the outline of the 
   expect(produced.outlineTitles).toEqual(['Start', 'Middle', 'End']);
 });
 
-test('a number outside its range, or none, blocks the run with the range; a valid one lifts it', async ({
+test('a number outside its range, a fraction in a page number, or none, blocks the run with the range; a valid one lifts it', async ({
   page,
 }) => {
   await openPdf(page, 'plain.pdf', labelledPdf('Doc', 3));
@@ -45,13 +45,18 @@ test('a number outside its range, or none, blocks the run with the range; a vali
   const pageNumber = form.getByRole('spinbutton', { name: 'Destination page' });
   const run = form.locator('button').last();
 
+  const refusal = form.getByText('This value must be a whole number between 1 and 100000.');
+
   await expect(pageNumber).toHaveValue('1');
   await pageNumber.fill('0');
-  await expect(form.getByText('This value must be between 1 and 100000.')).toBeVisible();
+  await expect(refusal).toBeVisible();
   await expect(run).toBeDisabled();
   await pageNumber.fill('');
-  await expect(form.getByText('This value must be between 1 and 100000.')).toBeVisible();
+  await expect(refusal).toBeVisible();
+  await pageNumber.fill('2.5');
+  await expect(refusal).toBeVisible();
+  await expect(run).toBeDisabled();
   await pageNumber.fill('3');
-  await expect(form.getByText('This value must be between 1 and 100000.')).toHaveCount(0);
+  await expect(refusal).toHaveCount(0);
   await expect(pageNumber).toHaveValue('3');
 });

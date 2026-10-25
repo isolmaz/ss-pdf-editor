@@ -461,7 +461,11 @@ writer does, and the steps it reports:
   MuPDF tags device RGB with an sRGB profile, so an image it had written could otherwise not
   be cropped or rotated again. A replacement picture with alpha keeps it as the `/SMask` MuPDF
   produced for it; only the old picture's mask is dropped, and the report says so
-  (`op.note.image.maskDropped`);
+  (`op.note.image.maskDropped`). A quarter turn or a crop also hands the writer an `ImagePlacement`:
+  every drawing of the object in a page's own content gets `q … cm` in front of its `Do` (the matrix
+  in force is followed through `q`, `Q` and `cm`), so a turned picture stands in a turned frame around
+  the same centre and a cropped one stays where its remaining part was drawn
+  (`op.note.image.reframed`); a picture the page draws only from inside a form is refused;
 - a blank document (`ops/create.ts`, steps `create.blank` / `save`): empty pages of an ISO or
   US size in either orientation, with an empty content stream and no resources;
 - a placed picture — a drawn, typed or photographed signature, initials, or an image
@@ -1082,6 +1086,8 @@ writer does, and the steps it reports:
   outline and form carry over and every page keeps its own label;
 - splitting (`ops/split.ts`): one `composeDocument` per part on the document that owns the
   annotation storage, in five modes (ranges, every N pages, size, booklet, bookmarks). The
+  ranges mode makes one part per typed segment, in the order written (`1-3, 4-6` is two parts;
+  the dialog passes the validated text on as typed, not as a merged page set). The
   bookmarks mode cuts at the entries of the outline down to a chosen level
   (`readSplitBookmarks` reads pdf.js's resolved outline, `flattenOutline` takes the level): a
   part runs from a bookmark's page to the page before the next bookmark's, bookmarks on one
@@ -2606,7 +2612,9 @@ Every capability the menus can run is described by exactly one `OperationDialogS
 noticeKey }, resultKind, destructive, changesPageGeometry }`. Fields are a 15-variant
 union (`pageScope`, `radio`, `select`, `number`, `text`, `choice`, `multiline`, `password`,
 `checkbox`, `checkboxList`, `color`, `image`, `files`, `scan`, `readOnlyText`), and validation is
-`fieldErrors()` from `dialogs/fields.tsx`. A `choice` (a select of document data) with
+`fieldErrors()` from `dialogs/fields.tsx`: a page scope or a `pageRanges` text that does not parse
+against the page count, and a `number` outside its `min`/`max` (or, when marked `integer`, with a
+fraction: page numbers and counts). A `choice` (a select of document data) with
 nothing picked keeps the run waiting, but only shows "no items to select in this document"
 when the document's list really is empty. A run's `noticeKey` is the sentence the shell
 shows whatever the result kind (replace, new tab, download); without one it says what

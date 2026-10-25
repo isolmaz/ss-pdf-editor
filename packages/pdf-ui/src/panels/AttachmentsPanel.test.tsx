@@ -2,7 +2,7 @@
 /**
  * The attachments panel: the embedded files of the document with their descriptions and sizes
  * (a dash until the payload is measured or when it cannot be read), writing one out as a
- * download that is released again, and handing picked files and names to remove to the shell.
+ * download that is released again, and handing picked files and the keys to remove to the shell.
  * The attachment reader has its own suite, so it answers here with what its contract describes.
  */
 
@@ -214,12 +214,12 @@ describe('AttachmentsPanel: adding and removing', () => {
     expect(onAdd).not.toHaveBeenCalled();
   });
 
-  it('removes an attachment by its own filename', async () => {
+  it('removes an attachment by its name-tree key, which need not be its filename', async () => {
     listPdfAttachments.mockResolvedValue([attachment('a', { filename: 'report.csv' }), attachment('b')]);
     readPdfAttachment.mockResolvedValue(new Uint8Array(1));
     const { onRemove, user } = show();
     await user.click(await screen.findByRole('button', { name: 'Remove attachment: report.csv' }));
-    expect(onRemove).toHaveBeenCalledExactlyOnceWith(['report.csv']);
+    expect(onRemove).toHaveBeenCalledExactlyOnceWith(['a']);
   });
 
   it('disables adding and removing while the host takes no writes', async () => {

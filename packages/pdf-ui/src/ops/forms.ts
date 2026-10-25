@@ -168,7 +168,7 @@ export const formFieldsDialog: OperationDialogSpec = {
   fields: [
     {
       id: 'fills',
-      kind: 'text',
+      kind: 'multiline',
       labelKey: 'form.dialog.fills',
       hintKey: 'form.dialog.fillsHint',
       defaultValue: '',
@@ -177,7 +177,7 @@ export const formFieldsDialog: OperationDialogSpec = {
     },
     {
       id: 'calculations',
-      kind: 'text',
+      kind: 'multiline',
       labelKey: 'form.dialog.calculations',
       hintKey: 'form.dialog.calculationsHint',
       defaultValue: '',

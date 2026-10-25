@@ -57,7 +57,8 @@ export function SearchResultsPanel({
   /** The query the results below belong to: the debounced, trimmed input. */
   const [submitted, setSubmitted] = useState('');
   const [state, setState] = useState<SearchState>(IDLE);
-  const memo = useRef(new Map<string, readonly PdfSearchMatch[]>());
+  /** The kept answers belong to one document: a query means other matches in the next one. */
+  const memo = useRef({ document, answers: new Map<string, readonly PdfSearchMatch[]>() });
   const handlers = useRef({ onNotice, t });
   useEffect(() => {
     handlers.current = { onNotice, t };
@@ -74,11 +75,15 @@ export function SearchResultsPanel({
   }, [query]);
 
   useEffect(() => {
+    if (memo.current.document !== document) {
+      memo.current = { document, answers: new Map() };
+      setState(IDLE);
+    }
     if (submitted.length === 0) {
       setState(IDLE);
       return undefined;
     }
-    const cached = memo.current.get(submitted);
+    const cached = memo.current.answers.get(submitted);
     if (cached !== undefined) {
       setState({ running: false, matches: cached, failure: null });
       return undefined;
@@ -91,10 +96,11 @@ export function SearchResultsPanel({
       try {
         const matches = await searchPdfText(document, submitted, { signal: controller.signal });
         if (controller.signal.aborted) return;
-        memo.current.set(submitted, matches);
-        if (memo.current.size > MEMO_LIMIT) {
+        const { answers } = memo.current;
+        answers.set(submitted, matches);
+        if (answers.size > MEMO_LIMIT) {
           // Over the limit the map is not empty, and its keys are the non-empty queries.
-          memo.current.delete(memo.current.keys().next().value as string);
+          answers.delete(answers.keys().next().value as string);
         }
         setState({ running: false, matches, failure: null });
       } catch (error) {

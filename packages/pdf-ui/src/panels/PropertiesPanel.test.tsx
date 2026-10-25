@@ -154,9 +154,9 @@ describe('PropertiesPanel attachments', () => {
   it('lists each attachment with its size and description, and says when the size cannot be read', () => {
     show({
       attachments: [
-        { name: 'report.txt', description: '', size: 1024 },
-        { name: 'notes.txt', description: 'Meeting notes', size: 12 },
-        { name: 'broken.bin', description: '', size: null },
+        { id: 'report.txt', name: 'report.txt', description: '', size: 1024 },
+        { id: 'notes.txt', name: 'notes.txt', description: 'Meeting notes', size: 12 },
+        { id: 'broken.bin', name: 'broken.bin', description: '', size: null },
       ],
     });
     const [report, notes, broken] = within(screen.getByRole('list', { name: 'Attachments' })).getAllByRole(
@@ -167,13 +167,13 @@ describe('PropertiesPanel attachments', () => {
     expect(broken?.textContent).toBe('broken.binSize unreadableOpenRemove');
   });
 
-  it('opens or removes the attachment the row names', async () => {
+  it('opens the attachment by its file name and removes it by its name-tree key', async () => {
     const onReadAttachment = vi.fn();
     const onRemoveAttachment = vi.fn();
     show({
       attachments: [
-        { name: 'a.txt', description: '', size: 1 },
-        { name: 'b.txt', description: '', size: 2 },
+        { id: 'key-a', name: 'a.txt', description: '', size: 1 },
+        { id: 'key-b', name: 'b.txt', description: '', size: 2 },
       ],
       onReadAttachment,
       onRemoveAttachment,
@@ -182,12 +182,12 @@ describe('PropertiesPanel attachments', () => {
     await user.click(screen.getByRole('button', { name: 'Open attachment b.txt' }));
     await user.click(screen.getByRole('button', { name: 'Remove attachment a.txt' }));
     expect(onReadAttachment).toHaveBeenCalledExactlyOnceWith('b.txt');
-    expect(onRemoveAttachment).toHaveBeenCalledExactlyOnceWith('a.txt');
+    expect(onRemoveAttachment).toHaveBeenCalledExactlyOnceWith('key-a');
   });
 
   it('disables every attachment control when the host is busy or gave no handler', () => {
     const { rerender } = show({
-      attachments: [{ name: 'a.txt', description: '', size: 1 }],
+      attachments: [{ id: 'a.txt', name: 'a.txt', description: '', size: 1 }],
       disabled: true,
       onAddAttachments: () => {},
       onReadAttachment: () => {},
@@ -200,13 +200,18 @@ describe('PropertiesPanel attachments', () => {
     ];
     expect(controls().map((button) => button.hasAttribute('disabled'))).toEqual([true, true, true]);
 
-    rerender(<PropertiesPanel {...baseProps} attachments={[{ name: 'a.txt', description: '', size: 1 }]} />);
+    rerender(
+      <PropertiesPanel
+        {...baseProps}
+        attachments={[{ id: 'a.txt', name: 'a.txt', description: '', size: 1 }]}
+      />,
+    );
     expect(controls().map((button) => button.hasAttribute('disabled'))).toEqual([true, true, true]);
 
     rerender(
       <PropertiesPanel
         {...baseProps}
-        attachments={[{ name: 'a.txt', description: '', size: 1 }]}
+        attachments={[{ id: 'a.txt', name: 'a.txt', description: '', size: 1 }]}
         onAddAttachments={() => {}}
         onReadAttachment={() => {}}
         onRemoveAttachment={() => {}}
@@ -879,9 +884,11 @@ describe('PropertiesPanel revocation lists', () => {
 
 describe('PropertiesPanel announcements', () => {
   it('says nothing until a list changes size', () => {
-    const { container, rerender } = show({ attachments: [{ name: 'a', description: '', size: 1 }] });
+    const { container, rerender } = show({ attachments: [{ id: 'a', name: 'a', description: '', size: 1 }] });
     expect(liveRegion(container)?.textContent).toBe('');
-    rerender(<PropertiesPanel {...baseProps} attachments={[{ name: 'a', description: '', size: 1 }]} />);
+    rerender(
+      <PropertiesPanel {...baseProps} attachments={[{ id: 'a', name: 'a', description: '', size: 1 }]} />,
+    );
     expect(liveRegion(container)?.textContent).toBe('');
   });
 
@@ -891,7 +898,7 @@ describe('PropertiesPanel announcements', () => {
       <PropertiesPanel
         {...baseProps}
         signatures={[signature()]}
-        attachments={[{ name: 'a', description: '', size: 1 }]}
+        attachments={[{ id: 'a', name: 'a', description: '', size: 1 }]}
         fonts={[font()]}
       />,
     );
@@ -903,7 +910,7 @@ describe('PropertiesPanel announcements', () => {
     rerender(
       <PropertiesPanel
         {...baseProps}
-        attachments={[{ name: 'a', description: '', size: 1 }]}
+        attachments={[{ id: 'a', name: 'a', description: '', size: 1 }]}
         fonts={[font()]}
       />,
     );

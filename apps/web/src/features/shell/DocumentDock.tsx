@@ -54,7 +54,7 @@ export function DocumentDock({ session, tier, t, actions }: DocumentDockProps) {
         onEditOutline={() => actions.openDialog('outline-edit')}
         onWriteLayers={(request) => void actions.writeLayers(request)}
         onAddAttachments={(files) => void actions.attachments.write({ add: files })}
-        onRemoveAttachments={(names) => void actions.attachments.write({ remove: names })}
+        onRemoveAttachments={(ids) => void actions.attachments.write({ remove: ids })}
         visibleTabs={mode === 'simple' ? SIMPLE_MODE_DOCK_TABS : undefined}
         tab={leftTab}
         onTabChange={selectLeftTab}

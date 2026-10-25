@@ -6,8 +6,10 @@
  * without saying so, and a file that is not the claimed format accepted.
  */
 
+import type { PDFDocument, PDFObject } from 'mupdf';
 import { describe, expect, it } from 'vitest';
-import { applyImageEdit, listPdfImages, readImageData } from './image-edit';
+import { applyImageEdit, type ImagePlacement, listPdfImages, readImageData } from './image-edit';
+import type { OperationOutcome } from './types';
 
 const run = { signal: new AbortController().signal };
 
@@ -267,5 +269,292 @@ describe('image editing', () => {
     );
     expect(untouched.bytes).toBe(input);
     expect(untouched.report.notes.map((entry) => entry.key)).toContain('op.note.image.noneFound');
+  });
+});
+
+/**
+ * A 400 x 300 page drawing the 20 x 10 picture `Wide` (red left half, blue right half) the way
+ * `content` says. `more` adds resources and objects to the page (a form, a second page).
+ */
+async function wideDocument(
+  content: string,
+  more: (doc: PDFDocument, image: PDFObject) => Record<string, PDFObject> = () => ({}),
+): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const doc = new mupdf.PDFDocument();
+  const samples = new Uint8Array(20 * 10 * 3);
+  for (let pixel = 0; pixel < 200; pixel += 1) {
+    samples.set(pixel % 20 < 10 ? [255, 0, 0] : [0, 0, 255], pixel * 3);
+  }
+  const wide = doc.addStream(samples, {
+    Type: 'XObject',
+    Subtype: 'Image',
+    BitsPerComponent: 8,
+    ColorSpace: 'DeviceRGB',
+    Width: 20,
+    Height: 10,
+  });
+  const page = doc.addPage([0, 0, 400, 300], 0, { XObject: { Wide: wide, ...more(doc, wide) } }, content);
+  doc.insertPage(0, page);
+  const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+const WIDE_FRAME = 'q 200 0 0 100 50 100 cm /Wide Do Q';
+
+/** A solid green PNG of the given size: the pixels a caller would hand over after an edit. */
+async function greenPng(width: number, height: number): Promise<Uint8Array> {
+  return new Uint8Array((await pixmapOf([0, 255, 0], width, height)).asPNG());
+}
+
+/** A PNG whose top half is red and whose bottom half is blue. */
+async function redOverBluePng(width: number, height: number): Promise<Uint8Array> {
+  const mupdf = await import('mupdf');
+  const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, width, height], false);
+  const pixels = pixmap.getPixels();
+  for (let row = 0; row < height; row += 1) {
+    for (let column = 0; column < width; column += 1) {
+      pixels.set(row < height / 2 ? [255, 0, 0] : [0, 0, 255], (row * width + column) * 3);
+    }
+  }
+  return new Uint8Array(pixmap.asPNG());
+}
+
+/** The decoded content stream of one page, without the newline the reader joins its parts with. */
+async function contentOf(bytes: Uint8Array, pageIndex = 0): Promise<string> {
+  const mupdf = await import('mupdf');
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF() as PDFDocument;
+  try {
+    return doc.findPage(pageIndex).get('Contents').readStream().asString().trim();
+  } finally {
+    doc.destroy();
+  }
+}
+
+const WHITE = [255, 255, 255];
+const GREEN = [0, 255, 0];
+
+/** Edit `Wide` on page 1 with the given pixels and placement. */
+function editWide(
+  bytes: Uint8Array,
+  data: Uint8Array,
+  placement: ImagePlacement | undefined,
+): Promise<OperationOutcome> {
+  return applyImageEdit(
+    bytes,
+    { replacements: [{ pageIndex: 0, name: 'Wide', data, format: 'png', placement }] },
+    run,
+  );
+}
+
+const NO_CROP = { left: 0, top: 0, right: 0, bottom: 0 };
+
+describe('a replacement that changes the shape of the picture', () => {
+  it('frames quarter-turned pixels around the centre of the old frame, at the picture’s own aspect', async () => {
+    const out = await editWide(await wideDocument(WIDE_FRAME), await greenPng(10, 20), {
+      turned: true,
+      crop: NO_CROP,
+    });
+    // 200 x 100 at (50, 100) becomes 100 x 200 around (150, 150): x 100…200, page y 50…250.
+    expect(await contentOf(out.bytes)).toBe('q 200 0 0 100 50 100 cm q 0.5 0 0 2 0.25 -0.5 cm /Wide Do Q Q');
+    for (const [x, y] of [
+      [105, 55],
+      [195, 55],
+      [105, 245],
+      [195, 245],
+    ] as const) {
+      expect(await rgbAt(out.bytes, 0, x, y)).toEqual(GREEN);
+    }
+    for (const [x, y] of [
+      [95, 150],
+      [205, 150],
+      [150, 45],
+      [150, 255],
+      [60, 150],
+    ] as const) {
+      expect(await rgbAt(out.bytes, 0, x, y)).toEqual(WHITE);
+    }
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.image.reframed')).toMatchObject({
+      kind: 'changed',
+      params: { name: 'Wide', count: 1 },
+    });
+  });
+
+  it('keeps the cropped window where it was drawn, not stretched over the whole frame', async () => {
+    const out = await editWide(await wideDocument(WIDE_FRAME), await greenPng(10, 4), {
+      turned: false,
+      crop: { left: 0.25, top: 0.2, right: 0.25, bottom: 0.4 },
+    });
+    // The window is x 100…200 and, from the bottom of the frame, 40 %…80 % of 100: page y 140…180.
+    expect(await contentOf(out.bytes)).toBe('q 200 0 0 100 50 100 cm q 0.5 0 0 0.4 0.25 0.4 cm /Wide Do Q Q');
+    expect(await rgbAt(out.bytes, 0, 105, 125)).toEqual(GREEN);
+    expect(await rgbAt(out.bytes, 0, 195, 155)).toEqual(GREEN);
+    for (const [x, y] of [
+      [95, 140],
+      [205, 140],
+      [150, 115],
+      [150, 165],
+    ] as const) {
+      expect(await rgbAt(out.bytes, 0, x, y)).toEqual(WHITE);
+    }
+  });
+
+  it('turns the cropped window, not the whole frame, about its own centre', async () => {
+    const out = await editWide(await wideDocument(WIDE_FRAME), await greenPng(5, 20), {
+      turned: true,
+      crop: { left: 0, top: 0.5, right: 0, bottom: 0 },
+    });
+    // The window is the lower half, 200 x 50 at (50, 100) with its centre at (150, 125): turned, it is
+    // 50 x 200 over x 125…175 and page y 25…225, which is rows 75…275 of the render.
+    expect(await rgbAt(out.bytes, 0, 150, 80)).toEqual(GREEN);
+    expect(await rgbAt(out.bytes, 0, 150, 270)).toEqual(GREEN);
+    for (const [x, y] of [
+      [120, 150],
+      [180, 150],
+      [150, 70],
+      [150, 280],
+    ] as const) {
+      expect(await rgbAt(out.bytes, 0, x, y)).toEqual(WHITE);
+    }
+  });
+
+  it('follows a picture the page draws turned: red stays on the side the turned picture puts it', async () => {
+    // The picture is drawn a quarter turn counter-clockwise: its right edge up, its top edge left.
+    const out = await editWide(
+      await wideDocument('q 0 100 -200 0 250 100 cm /Wide Do Q'),
+      await redOverBluePng(10, 20),
+      { turned: true, crop: NO_CROP },
+    );
+    // Turned a quarter clockwise on the page: the box is 100 x 200 around (150, 150), red on the
+    // left and blue on the right.
+    for (const y of [60, 140, 240]) {
+      expect(await rgbAt(out.bytes, 0, 120, y)).toEqual([255, 0, 0]);
+      expect(await rgbAt(out.bytes, 0, 180, y)).toEqual([0, 0, 255]);
+    }
+    expect(await rgbAt(out.bytes, 0, 90, 150)).toEqual(WHITE);
+    expect(await rgbAt(out.bytes, 0, 210, 150)).toEqual(WHITE);
+  });
+
+  it('finds the drawing through nested state, a stray restore, a short cm and other pictures', async () => {
+    const content =
+      'Q q 2 0 0 2 0 0 cm 0.5 g q 5 0 0 5 0 0 cm Q 1 0 0 1 0 cm Do /Other Do 100 0 0 50 25 50 cm /Wide Do Q';
+    const out = await editWide(await wideDocument(content), await greenPng(10, 20), {
+      turned: true,
+      crop: NO_CROP,
+    });
+    expect(await rgbAt(out.bytes, 0, 105, 55)).toEqual(GREEN);
+    expect(await rgbAt(out.bytes, 0, 95, 150)).toEqual(WHITE);
+    // Everything but the one drawing is kept byte for byte.
+    expect(await contentOf(out.bytes)).toBe(
+      'Q q 2 0 0 2 0 0 cm 0.5 g q 5 0 0 5 0 0 cm Q 1 0 0 1 0 cm Do /Other Do 100 0 0 50 25 50 cm q 0.5 0 0 2 0.25 -0.5 cm /Wide Do Q Q',
+    );
+  });
+
+  it('frames every drawing of the picture and skips one that has no area', async () => {
+    const content =
+      'q 0 0 0 0 50 100 cm /Wide Do Q q 200 0 0 100 50 100 cm /Wide Do Q q 80 0 0 40 0 0 cm /Wide Do Q';
+    const out = await editWide(await wideDocument(content), await greenPng(10, 20), {
+      turned: true,
+      crop: NO_CROP,
+    });
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.image.reframed')?.params).toEqual({
+      name: 'Wide',
+      count: 2,
+    });
+    expect(await contentOf(out.bytes)).toBe(
+      'q 0 0 0 0 50 100 cm /Wide Do Q q 200 0 0 100 50 100 cm q 0.5 0 0 2 0.25 -0.5 cm /Wide Do Q Q q 80 0 0 40 0 0 cm q 0.5 0 0 2 0.25 -0.5 cm /Wide Do Q Q',
+    );
+  });
+
+  it('changes no page content when the pixels fill the old frame', async () => {
+    const input = await wideDocument(WIDE_FRAME);
+    const same = await editWide(input, await greenPng(20, 10), { turned: false, crop: NO_CROP });
+    expect(await contentOf(same.bytes)).toBe(WIDE_FRAME);
+    expect(same.report.notes.map((entry) => entry.key)).not.toContain('op.note.image.reframed');
+    const withoutPlacement = await editWide(input, await greenPng(20, 10), undefined);
+    expect(await contentOf(withoutPlacement.bytes)).toBe(WIDE_FRAME);
+  });
+
+  it('frames the other pages that draw the same object and leaves a page that only names it alone', async () => {
+    const mupdf = await import('mupdf');
+    const base = await wideDocument(WIDE_FRAME);
+    const doc = mupdf.PDFDocument.openDocument(base.slice(), 'application/pdf').asPDF() as PDFDocument;
+    const wide = doc.findPage(0).get('Resources').get('XObject').get('Wide');
+    const drawn = doc.addPage(
+      [0, 0, 400, 300],
+      0,
+      { XObject: { Wide: wide } },
+      'q 100 0 0 50 0 0 cm /Wide Do Q',
+    );
+    const named = doc.addPage([0, 0, 400, 300], 0, { XObject: { Wide: wide } }, '');
+    const other = doc.addPage([0, 0, 400, 300], 0, {}, '');
+    doc.insertPage(1, drawn);
+    doc.insertPage(2, named);
+    doc.insertPage(3, other);
+    const input = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+
+    const out = await editWide(input, await greenPng(10, 20), { turned: true, crop: NO_CROP });
+    expect(out.report.notes.find((entry) => entry.key === 'op.note.image.reframed')?.params).toEqual({
+      name: 'Wide',
+      count: 2,
+    });
+    expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.image.shared');
+    // 100 x 50 at (0, 0) becomes 50 x 100 around (50, 25): x 25…75, page y -25…75.
+    expect(await contentOf(out.bytes, 1)).toBe('q 100 0 0 50 0 0 cm q 0.5 0 0 2 0.25 -0.5 cm /Wide Do Q Q');
+    expect(await rgbAt(out.bytes, 1, 50, 300 - 60)).toEqual(GREEN);
+  });
+
+  it('refuses a picture the page draws only from inside a form', async () => {
+    const input = await wideDocument('/Fm Do', (doc, image) => {
+      const form = doc.addStream('q 200 0 0 100 50 100 cm /Wide Do Q', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, 400, 300],
+        Resources: { XObject: { Wide: image } },
+      });
+      return { Fm: form };
+    });
+    await expect(
+      editWide(input, await greenPng(10, 20), { turned: true, crop: NO_CROP }),
+    ).rejects.toMatchObject({
+      code: 'unsupported',
+      details: { engineMessage: expect.stringContaining('does not draw "Wide" in its own content') },
+    });
+  });
+
+  it('refuses when the only drawing has no area to follow', async () => {
+    const input = await wideDocument('q 0 0 0 0 50 100 cm /Wide Do Q');
+    await expect(
+      editWide(input, await greenPng(10, 20), { turned: true, crop: NO_CROP }),
+    ).rejects.toMatchObject({ code: 'unsupported' });
+  });
+
+  it('refuses a page whose content cannot be read, undecodable or not a content stream', async () => {
+    const mupdf = await import('mupdf');
+    const withContents = async (build: (doc: PDFDocument) => PDFObject) => {
+      const base = await wideDocument(WIDE_FRAME);
+      const doc = mupdf.PDFDocument.openDocument(base.slice(), 'application/pdf').asPDF() as PDFDocument;
+      doc.findPage(0).put('Contents', build(doc));
+      const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+      doc.destroy();
+      return bytes;
+    };
+    const undecodable = await withContents((doc) =>
+      doc.addRawStream(new Uint8Array([1, 2, 3]), {
+        Filter: 'FlateDecode',
+        DecodeParms: { Predictor: 15, Columns: -5, Colors: 1000, BitsPerComponent: 99 },
+      } as never),
+    );
+    const malformed = await withContents((doc) => doc.addStream('1 2 3', {}));
+    for (const input of [undecodable, malformed]) {
+      await expect(
+        editWide(input, await greenPng(10, 20), { turned: true, crop: NO_CROP }),
+      ).rejects.toMatchObject({
+        code: 'unsupported',
+        details: { engineMessage: expect.stringContaining('content stream cannot be read') },
+      });
+    }
   });
 });

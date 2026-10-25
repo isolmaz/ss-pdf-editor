@@ -3,7 +3,7 @@ type PDFObject = ReturnType<
 >;
 
 import { verifySignatures } from 'pdf-core/ops/signature-status';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OperationProgress } from '../../../pdf-core/src/ops/types';
 import { pkcs12Fixture } from '../../../pdf-core/src/signature-pkcs12.fixtures';
 import {
@@ -61,6 +61,20 @@ async function signaturesOf(bytes: Uint8Array): Promise<Signed[]> {
       }
     }
     return found;
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** The text lines of the first signature widget's appearance, in drawing order. */
+async function stampLines(bytes: Uint8Array): Promise<string[]> {
+  const mupdf = await mupdfForTests();
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+  if (doc === null) throw new Error('not a PDF');
+  try {
+    const widget = doc.findPage(0).get('Annots').get(0).resolve();
+    const content = widget.get('AP').get('N').readStream().asString();
+    return [...content.matchAll(/\((.*)\) Tj/g)].map((match) => match[1] ?? '');
   } finally {
     doc.destroy();
   }
@@ -132,6 +146,28 @@ describe('signDialog', () => {
     );
     const [signed] = await signaturesOf(bytesOf(result));
     expect(signed?.rect).toEqual(rect);
+  });
+
+  it('writes the calendar date of the signer’s own time zone into the stamp, not the one in Greenwich', async () => {
+    const zone = process.env.TZ;
+    // 12:00 UTC is already the next day at UTC+14, so the two dates differ.
+    process.env.TZ = 'Pacific/Kiritimati';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(Date.UTC(2026, 2, 4, 12)));
+    try {
+      const result = await runDialog(
+        signDialog,
+        { file: [await p12File()], password: PASSWORD, visible: true, reason: 'Onay' },
+        await base(),
+      );
+      expect(await stampLines(bytesOf(result))).toEqual(['?mza Deneme', '2026-03-05', 'Onay']);
+      const [signed] = await signaturesOf(bytesOf(result));
+      expect(signed?.signedAt).toBe('D:20260304120000Z');
+    } finally {
+      vi.useRealTimers();
+      if (zone === undefined) Reflect.deleteProperty(process.env, 'TZ');
+      else process.env.TZ = zone;
+    }
   });
 
   it('reads the page box from the page: a media box that starts below zero moves the stamp with it', async () => {

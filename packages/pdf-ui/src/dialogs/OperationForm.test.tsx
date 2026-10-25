@@ -81,11 +81,11 @@ function show(spec: OperationDialogSpec, overrides: Partial<OperationRunContext>
     onResult: vi.fn<(result: OpRunResult) => void | Promise<void>>(),
     onRunningChange: vi.fn(),
   };
-  const form = (onResult: typeof handlers.onResult) => (
+  const form = (onResult: typeof handlers.onResult, changes: Partial<OperationRunContext> = overrides) => (
     <OperationForm
       t={t}
       spec={spec}
-      context={{ ...context, ...overrides }}
+      context={{ ...context, ...changes }}
       renderTitle={(text) => <h2>{text}</h2>}
       renderIntro={(text) => <p data-testid="intro">{text}</p>}
       {...handlers}
@@ -93,7 +93,12 @@ function show(spec: OperationDialogSpec, overrides: Partial<OperationRunContext>
     />
   );
   const { rerender } = render(form(handlers.onResult));
-  return { ...handlers, hostChanged: (onResult: typeof handlers.onResult) => rerender(form(onResult)) };
+  return {
+    ...handlers,
+    hostChanged: (onResult: typeof handlers.onResult) => rerender(form(onResult)),
+    contextChanged: (changes: Partial<OperationRunContext>) =>
+      rerender(form(handlers.onResult, { ...overrides, ...changes })),
+  };
 }
 
 const click = (name: string) => userEvent.click(screen.getByRole('button', { name }));
@@ -132,6 +137,51 @@ describe('OperationForm settings step', () => {
     cleanup();
     show(probe.spec, { currentPage: 1, selectedPages: [0, 2] });
     expect(screen.getByRole('combobox', { name: 'Page range' }).textContent).toBe('Selected pages (2)');
+  });
+
+  it('moves a field the user has not touched along with the context it was seeded from', () => {
+    const { spec } = job({
+      initialValues: (runContext) => ({ label: `page ${runContext.currentPage + 1}` }),
+    });
+    const { contextChanged } = show(spec, { currentPage: 4 });
+    expect((field() as HTMLInputElement).value).toBe('page 5');
+    contextChanged({ currentPage: 8 });
+    expect((field() as HTMLInputElement).value).toBe('page 9');
+  });
+
+  it('keeps what the user typed when the context it was seeded from changes', async () => {
+    const probe = job({
+      initialValues: (runContext) => ({ label: `page ${runContext.currentPage + 1}` }),
+    });
+    const { contextChanged } = show(probe.spec, { currentPage: 4 });
+    await userEvent.clear(field());
+    await userEvent.type(field(), 'mine');
+    contextChanged({ currentPage: 8 });
+    expect((field() as HTMLInputElement).value).toBe('mine');
+    await click('Apply');
+    expect(probe.runs[0]?.params.label).toBe('mine');
+    expect(probe.runs[0]?.context.currentPage).toBe(8);
+  });
+
+  it('takes a new preset into a field the user has not touched', () => {
+    const { spec } = job();
+    const { contextChanged } = show(spec, { presets: { label: 'first' } });
+    expect((field() as HTMLInputElement).value).toBe('first');
+    contextChanged({ presets: { label: 'second' } });
+    expect((field() as HTMLInputElement).value).toBe('second');
+  });
+
+  it('moves an untouched selection scope between the current page and a new selection', () => {
+    const { spec } = job({
+      fields: [{ kind: 'pageScope', id: 'scope', labelKey: 'op.scope', default: 'selection' }],
+    });
+    const { contextChanged } = show(spec, { currentPage: 1, selectedPages: [] });
+    const scope = () => screen.getByRole('combobox', { name: 'Page range' }).textContent;
+    expect(scope()).toBe('Current page (2)');
+    contextChanged({ currentPage: 1, selectedPages: [0, 2] });
+    expect(scope()).toBe('Selected pages (2)');
+    contextChanged({ currentPage: 1, selectedPages: [] });
+    expect(scope()).toBe('Current page (2)');
   });
 
   it('runs with the values the user typed and the frozen context', async () => {

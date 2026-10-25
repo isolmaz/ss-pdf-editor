@@ -34,6 +34,8 @@ export const contentWritersPart = {
   'op.note.image.notFound': 'Requested {count} image(s) not found in document; others written.',
   'op.note.image.replaced': 'Image "{name}" replaced on page {page}.',
   'op.note.image.shared': 'Image "{name}" is used on {count} pages: replacement appears on all of them.',
+  'op.note.image.reframed':
+    'The frame of image "{name}" was adapted to its new shape at {count} location(s); rest of stream unchanged.',
   'op.note.image.maskDropped':
     '{count} transparency mask(s) dropped: old masks describe former pixels, cannot be applied to replacement image.',
   'op.note.image.maskKept': 'Transparency mask preserved for image "{name}" (as requested).',
@@ -105,7 +107,7 @@ export const contentWritersPart = {
   'dialog.field.choiceEmpty': 'No items to select in this document.',
   'image.title': 'Replace image',
   'image.intro':
-    'Select an image object in the document and replace it with a new PNG/JPEG file. Placement, crop and scale remain unchanged: only pixel stream is updated.',
+    'Pick an image in the document to replace, recompress, turn, crop or fade. Turning and cropping reshape its frame on the page; the rest of the page stays.',
   'image.field.target': 'Image',
   'image.field.targetHint': 'Page, object name, pixel dimensions and file format.',
   'image.field.action': 'Action',

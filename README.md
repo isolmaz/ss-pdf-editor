@@ -282,10 +282,10 @@ lists every tool in either mode. The choice is kept on the device.
 
 - **Page operations.** Insert, delete, duplicate, reorder, rotate, extract, split, replace
   and merge.
-  - Split cuts by page ranges, every N pages, file size, booklet signatures or the
-    bookmarks of the outline (down to a level you choose): each part is named after its
-    bookmark, the pages before the first bookmark are a part of their own, and a document
-    without bookmarks is told to use another method.
+  - Split cuts by page ranges (one file per range, in the order you type them), every N
+    pages, file size, booklet signatures or the bookmarks of the outline (down to a level you
+    choose): each part is named after its bookmark, the pages before the first bookmark are a
+    part of their own, and a document without bookmarks is told to use another method.
   - The Page menu works on the pages you selected, or on the page on screen when none is
     selected.
   - A new document starts as blank pages of A3, A4, A5, Letter or Legal, in either
@@ -572,10 +572,14 @@ nothing leaving the browser.
     (such as `ş`, `ğ` or `İ`) is drawn in an embedded subset of Noto Sans, and a character
     that face lacks (for example Chinese) shows as `?`.
   - The signer is the certificate that matches the private key in the PKCS#12 file, not the first one it lists.
+  - The visible stamp shows the signer's name, the date in your own time zone and the reason;
+    the signature itself records the same moment in UTC.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
-  - Trust is checked only against certificates you imported. A certificate that is not yet
-    valid is reported with the date it becomes valid; any other shows its expiry date.
+  - Trust is checked only against certificates you imported (a PEM file may hold several, such
+    as a CA bundle; each is added and the ones that cannot be read are counted). A certificate
+    that is not yet valid is reported with the date it becomes valid; any other shows its
+    expiry date.
   - The signer's own certificate has to allow signing documents: a key usage without digital
     signature or non-repudiation, or an extended key usage without a signing purpose (e-mail
     protection, Adobe or Microsoft document signing, document signing, any purpose), is reported
@@ -687,6 +691,8 @@ nothing leaving the browser.
   than 1 GiB in total (1024 MB in the notice) is refused before the run starts. *Cancel* stops the run and leaves the dialog open on the
   report of what finished. The steps are extract pages, compress, OCR, page labels, header/footer and page
   numbering, document properties, text export and security (password and permissions).
+  - A step's page range is checked as it is typed, with the same rules as every other range
+    field (pages 1–2000, no page twice, no backwards range); *Run* waits until it reads.
   - A set of steps can be saved as a JSON ruleset and loaded again. A loaded ruleset runs as
     it is, with the dialog's own steps disabled, until you choose *Discard loaded ruleset*;
     choosing files afterwards does not discard it.

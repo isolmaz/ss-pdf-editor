@@ -6,7 +6,7 @@
  * file's reply and state records fold into the comment they answer instead of being rows.
  */
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AnnotationMark, ExistingAnnotation } from 'pdf-core/ops/annotations';
 import { createTranslator } from 'pdf-shared';
@@ -330,6 +330,53 @@ describe('CommentsPanel editing', () => {
     await user.click(screen.getByRole('button', { name: 'Edit comment' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('textbox', { name: 'Comment text' })).toBeNull();
+  });
+
+  it('drops the edit when Cancel is clicked instead of saving it', async () => {
+    const onEdit = vi.fn();
+    show({ marks: [mark()], onEdit });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Edit comment' }));
+    const box = screen.getByRole('textbox', { name: 'Comment text' });
+    await user.clear(box);
+    await user.type(box, 'Rewritten');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', { name: 'Comment text' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit comment' })).toBeTruthy();
+  });
+
+  it('drops the edit on Escape, and starts the next one from the comment text', async () => {
+    const onEdit = vi.fn();
+    show({ marks: [mark()], onEdit });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Edit comment' }));
+    await user.type(screen.getByRole('textbox', { name: 'Comment text' }), ' more{Escape}');
+    expect(screen.queryByRole('textbox', { name: 'Comment text' })).toBeNull();
+    expect(onEdit).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Edit comment' }));
+    expect((screen.getByRole('textbox', { name: 'Comment text' }) as HTMLTextAreaElement).value).toBe(
+      'Check this',
+    );
+  });
+
+  it('keeps other keys in the box and ignores a blur that arrives while the edit is closing', async () => {
+    const onEdit = vi.fn();
+    show({ marks: [mark()], onEdit });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Edit comment' }));
+    const box = screen.getByRole('textbox', { name: 'Comment text' });
+    await user.type(box, '{Enter}');
+    expect(screen.getByRole('textbox', { name: 'Comment text' })).toBe(box);
+
+    // A browser can blur the box while the Cancel click is still closing it.
+    act(() => {
+      fireEvent.keyDown(box, { key: 'Escape' });
+      fireEvent.blur(box);
+    });
+    expect(onEdit).not.toHaveBeenCalled();
   });
 
   it('disables the row controls while the host is busy', () => {

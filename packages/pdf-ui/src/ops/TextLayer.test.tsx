@@ -67,6 +67,22 @@ async function textPage(label = 'Plain'): Promise<Uint8Array> {
   return bytes;
 }
 
+/** Two pages, each with one paragraph: "First" and "Second". */
+async function twoPages(): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const helvetica = doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin');
+  for (const word of ['First', 'Second']) {
+    doc.insertPage(
+      -1,
+      doc.addPage([0, 0, 200, 200], 0, { Font: { H: helvetica } }, `BT /H 12 Tf 20 100 Td (${word}) Tj ET`),
+    );
+  }
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
 /** The page drawn at 200 %, 100 px right of and 50 px below the container's origin. */
 const viewerFor = (rotation: 0 | 90 | 180 | 270, onScreen = true): ViewerApi =>
   ({
@@ -267,18 +283,7 @@ describe('TextLayer', () => {
   });
 
   it('reads the page it is given: the next page, not the first', async () => {
-    const mupdf = await loadMupdf();
-    const doc = new mupdf.PDFDocument();
-    const helvetica = doc.addSimpleFont(new mupdf.Font('Helvetica'), 'Latin');
-    for (const word of ['First', 'Second']) {
-      doc.insertPage(
-        -1,
-        doc.addPage([0, 0, 200, 200], 0, { Font: { H: helvetica } }, `BT /H 12 Tf 20 100 Td (${word}) Tj ET`),
-      );
-    }
-    const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
-    doc.destroy();
-    const { view, props } = show(bytes, { pageIndex: 0 });
+    const { view, props } = show(await twoPages(), { pageIndex: 0 });
     await waitFor(() =>
       expect(blocks().map((block) => block.getAttribute('data-block-text'))).toEqual(['First']),
     );
@@ -286,6 +291,49 @@ describe('TextLayer', () => {
     await waitFor(() =>
       expect(blocks().map((block) => block.getAttribute('data-block-text'))).toEqual(['Second']),
     );
+  });
+
+  it('shows nothing of the previous page while the next one is read', async () => {
+    const { view, props } = show(await twoPages(), { pageIndex: 0 });
+    await waitFor(() =>
+      expect(blocks().map((block) => block.getAttribute('data-block-text'))).toEqual(['First']),
+    );
+
+    // Hold the next page's read in flight, the way a large page is.
+    const { readPageText: read } =
+      await vi.importActual<typeof import('pdf-core/text-source')>('pdf-core/text-source');
+    const held = Promise.withResolvers<void>();
+    vi.mocked(readPageText).mockImplementationOnce(async (...args) => {
+      await held.promise;
+      return await read(...args);
+    });
+    view.rerender(<TextLayer {...props} pageIndex={1} />);
+    expect(layer().getAttribute('aria-busy')).toBe('true');
+    expect(blocks()).toHaveLength(0);
+
+    held.resolve();
+    await waitFor(() =>
+      expect(blocks().map((block) => block.getAttribute('data-block-text'))).toEqual(['Second']),
+    );
+  });
+
+  it('drops the failure of the previous page while the next one is read', async () => {
+    const { view, props } = show(new TextEncoder().encode('not a pdf'));
+    await waitFor(() => expect(failure()).not.toBeNull());
+
+    const { readPageText: read } =
+      await vi.importActual<typeof import('pdf-core/text-source')>('pdf-core/text-source');
+    const held = Promise.withResolvers<void>();
+    vi.mocked(readPageText).mockImplementationOnce(async (...args) => {
+      await held.promise;
+      return await read(...args);
+    });
+    view.rerender(<TextLayer {...props} bytes={await textPage()} />);
+    expect(layer().getAttribute('aria-busy')).toBe('true');
+    expect(failure()).toBeNull();
+
+    held.resolve();
+    await waitFor(() => expect(blocks()).toHaveLength(3));
   });
 
   it('says so, in the dictionary’s words, when the page cannot be read, and keeps the engine’s words as a diagnostic', async () => {

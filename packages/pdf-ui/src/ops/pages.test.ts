@@ -47,6 +47,28 @@ describe('splitDialog', () => {
     expect(result.files.every((file) => file.name.startsWith('part'))).toBe(true);
   });
 
+  it('keeps one part per typed range when the ranges touch', async () => {
+    const result = await runDialog(splitDialog, { mode: 'ranges', ranges: '1-2, 3-5' }, await five());
+    const texts = await Promise.all(result.files.map((file) => pageTextsOf(file.bytes)));
+    expect(texts.map((part) => part.map((text) => text.trim()))).toEqual([
+      ['one', 'two'],
+      ['three', 'four', 'five'],
+    ]);
+  });
+
+  it('cuts the parts in the order the ranges were typed', async () => {
+    const result = await runDialog(splitDialog, { mode: 'ranges', ranges: '4-5, 1' }, await five());
+    const texts = await Promise.all(result.files.map((file) => pageTextsOf(file.bytes)));
+    expect(texts.map((part) => part.map((text) => text.trim()))).toEqual([['four', 'five'], ['one']]);
+  });
+
+  it('refuses typed ranges that overlap or leave the document', async () => {
+    for (const ranges of ['1-3, 3-4', '4-6', '']) {
+      const run = runDialog(splitDialog, { mode: 'ranges', ranges }, await five());
+      await expect(run).rejects.toMatchObject({ code: 'range-invalid' });
+    }
+  });
+
   it('cuts by size: a limit beyond the file keeps one part', async () => {
     const result = await runDialog(splitDialog, { mode: 'size', maxSizeMb: 10 }, await five());
     expect(result.files).toHaveLength(1);

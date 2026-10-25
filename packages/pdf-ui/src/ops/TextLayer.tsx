@@ -147,6 +147,11 @@ export function TextLayer({ t, viewer, layout, bytes, pageIndex, onSelect, onClo
     const controller = new AbortController();
     const { signal } = controller;
     const context: OperationContext = { signal };
+    // What the layer holds belongs to the page it read: the next read starts from nothing, so no box
+    // of the previous page is placed on this one and its failure is not shown for it.
+    setPainted([]);
+    setModelSize(null);
+    setFailure(null);
     setLoading(true);
     void (async () => {
       try {
@@ -180,11 +185,9 @@ export function TextLayer({ t, viewer, layout, bytes, pageIndex, onSelect, onClo
         });
         setPainted(rows);
         setModelSize({ width: model.width, height: model.height });
-        setFailure(null);
         setLoading(false);
       } catch (error) {
         if (signal.aborted) return;
-        setPainted([]);
         setLoading(false);
         // The reader failing is a real failure: say so on the page rather than
         // leaving an empty overlay that looks like "there is no text here". The

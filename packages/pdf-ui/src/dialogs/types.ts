@@ -33,6 +33,12 @@ export interface FieldCondition {
   readonly equals: readonly FieldValue[];
 }
 
+/** A button beside a text box that inserts `token` at the caret. */
+export interface FieldToken {
+  readonly token: string;
+  readonly labelKey: MessageKey;
+}
+
 interface FieldBase {
   readonly id: string;
   readonly labelKey: MessageKey;
@@ -65,6 +71,8 @@ export type FieldSpec =
       readonly min: number;
       readonly max: number;
       readonly step?: number;
+      /** Only whole numbers are accepted: a page number, a count. */
+      readonly integer?: boolean;
       /** The unit, shown after the label (`Width (pt)`), so it is part of the field's accessible name. */
       readonly unitKey?: MessageKey;
     } & FieldBase)
@@ -73,7 +81,12 @@ export type FieldSpec =
       readonly defaultValue: string;
       readonly placeholderKey?: MessageKey;
       readonly maxLength?: number;
-      readonly tokens?: readonly { readonly token: string; readonly labelKey: MessageKey }[];
+      readonly tokens?: readonly FieldToken[];
+      /**
+       * The text is a page range (`1-3, 5`) checked against the dialog's page count; empty and `all`
+       * stand for every page. A range that does not read is an error under the field.
+       */
+      readonly pageRanges?: boolean;
     } & FieldBase)
   | ({
       /**
@@ -98,6 +111,7 @@ export type FieldSpec =
       readonly rows?: number;
       readonly maxLength?: number;
       readonly placeholderKey?: MessageKey;
+      readonly tokens?: readonly FieldToken[];
     } & FieldBase)
   | ({ readonly kind: 'password'; readonly placeholderKey?: MessageKey } & FieldBase)
   | ({ readonly kind: 'checkbox'; readonly defaultValue: boolean } & FieldBase)

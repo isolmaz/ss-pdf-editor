@@ -40,7 +40,7 @@ import { parsePageRanges } from 'pdf-core/ops/page-ranges';
 import { type Translator, toToolError } from 'pdf-shared';
 import { lazy, type ReactNode, Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Button } from '../components/Button';
-import type { DialogParams, FieldSpec, FieldValue } from './types';
+import type { DialogParams, FieldSpec, FieldToken, FieldValue } from './types';
 
 /**
  * The camera scanner is its own chunk: the detector, the warp and the dialog are needed only
@@ -184,11 +184,26 @@ function isKeywordScope(value: string): value is KeywordScope {
 }
 
 /**
+ * What is wrong with a typed page range, as the shared error vocabulary words it — what happened and
+ * what to type instead; undefined when it reads. The parser owns the wording, so a new parser rule
+ * cannot leave this message behind.
+ */
+function rangeProblem(t: Translator, typed: string, pageCount: number): string | undefined {
+  try {
+    parsePageRanges(typed, pageCount);
+    return undefined;
+  } catch (cause) {
+    const failure = toToolError(cause, 'ui');
+    return `${t(failure.messageKey)} ${t(failure.hintKey)}`;
+  }
+}
+
+/**
  * Validate the visible fields, keyed by field id; an empty record means the
- * dialog may run. Only two kinds can be wrong before an engine is involved — a
- * page scope and a number outside its declared range — because every other
- * field's legality belongs to the capability, which reports it from `run` as a
- * `ToolError`.
+ * dialog may run. Only three kinds can be wrong before an engine is involved — a
+ * page scope, a page-range text and a number outside its declared range (or with a
+ * fraction where only whole numbers are accepted) — because every other field's
+ * legality belongs to the capability, which reports it from `run` as a `ToolError`.
  */
 export function fieldErrors(
   t: Translator,
@@ -208,15 +223,16 @@ export function fieldErrors(
         continue;
       }
       if (!value.startsWith(RANGE_PREFIX)) continue;
-      try {
-        parsePageRanges(scopeText(value), pageCount);
-      } catch (cause) {
-        // Both halves of the shared error vocabulary — what happened and what to
-        // type instead. The parser owns the wording, so a new parser rule cannot
-        // leave this message behind.
-        const failure = toToolError(cause, 'ui');
-        errors[field.id] = `${t(failure.messageKey)} ${t(failure.hintKey)}`;
-      }
+      const problem = rangeProblem(t, scopeText(value), pageCount);
+      if (problem !== undefined) errors[field.id] = problem;
+      continue;
+    }
+
+    if (field.kind === 'text' && field.pageRanges === true) {
+      const typed = String(values[field.id]).trim();
+      if (typed === '' || typed === 'all') continue;
+      const problem = rangeProblem(t, typed, pageCount);
+      if (problem !== undefined) errors[field.id] = problem;
       continue;
     }
 
@@ -230,8 +246,11 @@ export function fieldErrors(
 
     if (field.kind === 'number') {
       const value = values[field.id];
-      if (typeof value !== 'number' || Number.isNaN(value) || value < field.min || value > field.max) {
-        errors[field.id] = t('dialog.field.numberRange', { min: field.min, max: field.max });
+      const outside =
+        typeof value !== 'number' || Number.isNaN(value) || value < field.min || value > field.max;
+      if (outside || (field.integer === true && !Number.isInteger(value))) {
+        const key = field.integer === true ? 'dialog.field.integerRange' : 'dialog.field.numberRange';
+        errors[field.id] = t(key, { min: field.min, max: field.max });
       }
     }
   }
@@ -319,8 +338,8 @@ export function FieldList({
     readonly from: number;
     readonly over: number;
   } | null>(null);
-  /** Text inputs that can take a token, by field id — a caret needs the element. */
-  const textInputs = useRef(new Map<string, HTMLInputElement>());
+  /** Text boxes that can take a token, by field id — a caret needs the element. */
+  const textInputs = useRef(new Map<string, HTMLInputElement | HTMLTextAreaElement>());
   /** Where the caret belongs once a token insertion has rendered. */
   const pendingCaret = useRef<{ readonly fieldId: string; readonly at: number } | null>(null);
 
@@ -336,15 +355,36 @@ export function FieldList({
   const set = (id: string, value: FieldValue) => onChange(id, value);
 
   const insertToken = (fieldId: string, token: string) => {
-    // A token button renders beside its text input, and the input's ref is set at commit,
-    // before any click can reach the button: the input is always registered here.
-    const input = textInputs.current.get(fieldId) as HTMLInputElement;
+    // A token button renders beside its text box, and the box's ref is set at commit,
+    // before any click can reach the button: the box is always registered here.
+    const input = textInputs.current.get(fieldId) as HTMLInputElement | HTMLTextAreaElement;
     const current = String(values[fieldId] ?? '');
     const start = input.selectionStart ?? current.length;
     const end = input.selectionEnd ?? current.length;
     set(fieldId, `${current.slice(0, start)}${token}${current.slice(end)}`);
     pendingCaret.current = { fieldId, at: start + token.length };
   };
+
+  const registerTextBox = (fieldId: string) => (element: HTMLInputElement | HTMLTextAreaElement | null) => {
+    if (element === null) textInputs.current.delete(fieldId);
+    else textInputs.current.set(fieldId, element);
+  };
+
+  const tokenButtons = (field: { readonly id: string; readonly tokens?: readonly FieldToken[] }) =>
+    field.tokens === undefined ? null : (
+      <div className="flex flex-wrap gap-1">
+        {field.tokens.map((token) => (
+          <button
+            key={token.token}
+            type="button"
+            onClick={() => insertToken(field.id, token.token)}
+            className="rounded-sm border border-kumo-line px-1.5 py-0.5 text-[11px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
+          >
+            {t(token.labelKey)}
+          </button>
+        ))}
+      </div>
+    );
 
   /** One field's control. A plain function, not a nested component: it owns no state. */
   const renderField = (field: FieldSpec): ReactNode => {
@@ -533,26 +573,10 @@ export function FieldList({
               maxLength={field.maxLength}
               placeholder={field.placeholderKey === undefined ? undefined : t(field.placeholderKey)}
               value={String(values[field.id] ?? field.defaultValue)}
-              ref={(element) => {
-                if (element === null) textInputs.current.delete(field.id);
-                else textInputs.current.set(field.id, element);
-              }}
+              ref={registerTextBox(field.id)}
               onChange={(event) => set(field.id, event.target.value)}
             />
-            {field.tokens === undefined ? null : (
-              <div className="flex flex-wrap gap-1">
-                {field.tokens.map((token) => (
-                  <button
-                    key={token.token}
-                    type="button"
-                    onClick={() => insertToken(field.id, token.token)}
-                    className="rounded-sm border border-kumo-line px-1.5 py-0.5 text-[11px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
-                  >
-                    {t(token.labelKey)}
-                  </button>
-                ))}
-              </div>
-            )}
+            {tokenButtons(field)}
           </div>
         );
 
@@ -568,9 +592,11 @@ export function FieldList({
               maxLength={field.maxLength}
               placeholder={field.placeholderKey === undefined ? undefined : t(field.placeholderKey)}
               value={String(values[field.id] ?? field.defaultValue)}
+              ref={registerTextBox(field.id)}
               onChange={(event) => set(field.id, event.target.value)}
               className="w-full rounded-sm border border-kumo-line bg-kumo-base p-1.5 text-xs text-kumo-default outline-none focus:ring-1 focus:ring-kumo-focus"
             />
+            {tokenButtons(field)}
             {hint === undefined ? null : <p className="text-[11px] text-kumo-subtle">{hint}</p>}
           </div>
         );

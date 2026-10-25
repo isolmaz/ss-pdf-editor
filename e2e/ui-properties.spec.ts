@@ -350,14 +350,18 @@ test('certificate files that hold no certificate are refused, by name and by cou
     { name: 'broken.der', buffer: Buffer.from([0x30, 0x03, 0x01, 0x02, 0x03]) },
     { name: 'root.pem', buffer: Buffer.from(pem('CERTIFICATE', root.der)) },
   ]);
-  await expect(refusal('1 trust root(s) added; 2 file(s) could not be read as certificate.')).toBeVisible();
+  await expect(
+    refusal('1 trust root(s) added; 2 certificate(s) or file(s) could not be read.'),
+  ).toBeVisible();
   await expect(page.getByText('Panel Root CA', { exact: true })).toBeVisible();
 
   // A cancelled picker changes nothing; a clean import clears the line.
   await roots.setInputFiles([]);
-  await expect(refusal('1 trust root(s) added; 2 file(s) could not be read as certificate.')).toBeVisible();
+  await expect(
+    refusal('1 trust root(s) added; 2 certificate(s) or file(s) could not be read.'),
+  ).toBeVisible();
   await importRootFiles(page, [{ name: 'root.cer', buffer: Buffer.from(root.der) }]);
-  await expect(page.getByText(/could not be read as certificate/)).toHaveCount(0);
+  await expect(page.getByText(/could not be read\./)).toHaveCount(0);
 });
 
 const revocationLines = (row: Locator): Locator =>

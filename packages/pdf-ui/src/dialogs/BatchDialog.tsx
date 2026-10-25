@@ -18,9 +18,10 @@
  *  - the operation's own label keys (`optimize.*`, `ocr.*`, `stamp.*`, …) for the
  *    step names and the running progress sentence — a batch step *is* that
  *    operation, so calling it anything else would be a second vocabulary;
- *  - `parsePageRange` (`printing/pageRange.ts`) for the page fields, and
- *    `useOperationRun`'s discipline (one `AbortController` owned by the surface,
- *    aborted on unmount) without its single-document state machine.
+ *  - `parsePageRanges` (`pdf-core` `ops/page-ranges`) for the page fields, checked in the form
+ *    like every other range field, and `useOperationRun`'s discipline (one
+ *    `AbortController` owned by the surface, aborted on unmount) without its
+ *    single-document state machine.
  *
  * A rule set can also be saved and loaded as the JSON template `ops/batch.ts`
  * defines. A loaded template runs **verbatim** — the form is disabled while one is
@@ -48,12 +49,12 @@ import {
   runBatch,
   serializeRuleSet,
 } from 'pdf-core/ops/batch';
+import { parsePageRanges } from 'pdf-core/ops/page-ranges';
 import type { OperationProgress, OutputFile } from 'pdf-core/ops/types';
-import { type MessageKey, progressLabel, ToolError, type Translator, toToolError } from 'pdf-shared';
+import { type MessageKey, progressLabel, type Translator, toToolError } from 'pdf-shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/Button';
-import { parsePageRange } from '../printing/pageRange';
-import { FieldList, initialParams } from './fields';
+import { FieldList, fieldErrors, initialParams } from './fields';
 import { OperationReportPanel } from './ReportPanel';
 import type { DialogParams, FieldSpec, FieldValue } from './types';
 
@@ -96,6 +97,7 @@ const PAGE_FIELD: FieldSpec = {
   labelKey: 'op.scope',
   placeholderKey: 'print.rangePlaceholder',
   defaultValue: '',
+  pageRanges: true,
 };
 
 const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
@@ -198,6 +200,7 @@ const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
     {
       id: 'startAt',
       kind: 'number',
+      integer: true,
       labelKey: 'labels.dialog.range',
       hintKey: 'labels.dialog.rangeHint',
       defaultValue: 1,
@@ -228,6 +231,7 @@ const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
     {
       id: 'start',
       kind: 'number',
+      integer: true,
       labelKey: 'labels.dialog.start',
       hintKey: 'labels.dialog.startHint',
       defaultValue: 1,
@@ -290,6 +294,7 @@ const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
     {
       id: 'startAt',
       kind: 'number',
+      integer: true,
       labelKey: 'stamp.startAt',
       defaultValue: 1,
       min: 1,
@@ -314,6 +319,7 @@ const STEP_FIELDS: Readonly<Record<BatchStepKind, readonly FieldSpec[]>> = {
     {
       id: 'digits',
       kind: 'number',
+      integer: true,
       labelKey: 'stamp.bates.digits',
       defaultValue: 6,
       min: 1,
@@ -423,17 +429,18 @@ const RANGE_CEILING = 2000;
 
 /**
  * A page field value (`''`, `all`, or typed range text) as a batch page selection. A range that does
- * not parse is a `range-invalid` `ToolError` that names the step in `path` and carries the typed text
- * in `engineMessage`, so the dialog words it from its own keys instead of showing an `Error` message.
+ * not parse is the shared parser's `range-invalid` `ToolError`; the form shows it under the field
+ * and keeps Run off, so a run never starts from one.
  */
-function pageSelection(value: FieldValue | undefined, step: BatchStepKind): BatchPageSelection {
+function pageSelection(value: FieldValue | undefined): BatchPageSelection {
   const raw = text(value).trim();
   if (raw === '' || raw === 'all') return 'all';
-  const parsed = parsePageRange(raw, RANGE_CEILING);
-  if (!parsed.ok) {
-    throw new ToolError('range-invalid', { engine: 'ui', path: step, engineMessage: raw });
-  }
-  return parsed.pages.map((page) => page - 1);
+  return parsePageRanges(raw, RANGE_CEILING).pages;
+}
+
+/** Whether a step's page range reads; when it does not, its field shows why (`fieldErrors`). */
+function rangeRead(kind: BatchStepKind, values: DialogParams, t: Translator): boolean {
+  return fieldErrors(t, STEP_FIELDS[kind], values, RANGE_CEILING, 0)[PAGE_FIELD.id] === undefined;
 }
 
 /** A text, select or radio field's value: the field table seeds each with a string and only a string is ever written. */
@@ -461,12 +468,12 @@ type OfferedStepKind = Exclude<BatchStepKind, 'image'>;
 function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['params'] {
   switch (kind) {
     case 'pages':
-      return { pages: pageSelection(values.pages, 'pages') };
+      return { pages: pageSelection(values.pages) };
     case 'compress':
       return values.mode === 'raster'
         ? {
             mode: 'raster',
-            pages: pageSelection(values.pages, 'compress'),
+            pages: pageSelection(values.pages),
             dpi: number(values.dpi, 150),
             quality: number(values.quality, 0.7),
             greyscale: flag(values.greyscale),
@@ -474,7 +481,7 @@ function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['par
         : { mode: 'structure', stripMetadata: flag(values.stripMetadata), keepProducer: true };
     case 'ocr':
       return {
-        pages: pageSelection(values.pages, 'ocr'),
+        pages: pageSelection(values.pages),
         // A checkbox list always holds an array (the table seeds it with one).
         languages: values.languages as readonly 'tur'[],
         quality: values.quality === 'best' ? 'best' : 'fast',
@@ -493,7 +500,7 @@ function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['par
         ],
       };
     case 'stamp': {
-      const pages = pageSelection(values.pages, 'stamp');
+      const pages = pageSelection(values.pages);
       const anchor = text(values.anchor) as 'bottom-center';
       const fontSize = number(values.fontSize, 10);
       const marginMm = number(values.marginMm, 12);
@@ -533,7 +540,7 @@ function stepParams(kind: OfferedStepKind, values: DialogParams): BatchStep['par
       };
     case 'text-export':
       return {
-        pages: pageSelection(values.pages, 'text-export'),
+        pages: pageSelection(values.pages),
         format: values.format === 'markdown' ? 'markdown' : 'text',
         // The rule set's own name becomes the file's stem; `runBatch` prefixes the
         // item's name, so two files never collide in the download.
@@ -713,7 +720,9 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
 
   const running = status === 'running';
   const chosen = OFFERED_STEPS.filter((kind) => enabled[kind] === true);
-  const usable = chosen.length > 0 && (loaded !== null || files.length > 0);
+  // A loaded rule set runs as it is; the form's own page ranges only matter when the form is the source.
+  const rangesRead = loaded !== null || chosen.every((kind) => rangeRead(kind, values[kind], t));
+  const usable = chosen.length > 0 && rangesRead && (loaded !== null || files.length > 0);
 
   const change = (kind: BatchStepKind) => (id: string, value: FieldValue) => {
     setValues((previous) => ({ ...previous, [kind]: { ...previous[kind], [id]: value } }));
@@ -738,23 +747,7 @@ export function BatchDialog({ open, onClose, t, onDownload, onNotice }: BatchDia
     if (controller.current !== null) return;
     setFailure(null);
     setReport(null);
-    let built: BatchRuleSet;
-    try {
-      built = ruleSet();
-    } catch (error) {
-      // A page field that does not parse is the one thing the field table cannot
-      // refuse on its own (it is text, and the bound is the item's own count): the
-      // mapped hint says what a range looks like, and the step and typed text say where.
-      const mapped = toToolError(error, 'ui');
-      // `stepParams` throws only `pageSelection`'s refusal, which always names both.
-      const where = t('batch.error.range', {
-        step: t(STEP_LABEL_KEYS[mapped.details.path as BatchStepKind]),
-        value: mapped.details.engineMessage as string,
-      });
-      setFailure({ message: t('batch.error.queue'), hint: `${t(mapped.hintKey)} ${where}` });
-      setStatus('error');
-      return;
-    }
+    const built = ruleSet();
     // Sized by `File.size` and read by the engine one file at a time, as the run reaches it: a queue
     // is never held in memory before its sizes have been checked against the bounds.
     const queue: BatchItem[] = files.slice(0, MAX_BATCH_ITEMS).map((file) => ({

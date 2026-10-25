@@ -13,10 +13,17 @@
  * Why replacing the object **in place** rather than adding a new XObject: the drawn
  * geometry of an image lives in the page's content stream (`cm` before `Do`), not in the
  * image. Assigning new content to the existing object reference therefore keeps every
- * placement, clip and blend mode exactly as the document has it — no content-stream
- * rewrite, no coordinate maths, no chance of moving the picture. The cost, stated in the
+ * placement, clip and blend mode exactly as the document has it. The cost, stated in the
  * report: an image object can be shared, and then one edit changes it everywhere it is
  * drawn.
+ *
+ * A replacement that changes the *shape* of the picture (a quarter turn, a crop) would be
+ * squeezed into the old frame, so it also says how its pixels sit in the old picture
+ * (`ImagePlacement`) and every drawing of the object gets one more `cm` in front of its
+ * `Do` (`q … cm /Name Do Q`): the turned picture stands in a turned frame around the same
+ * centre, the cropped one stays where its remaining part was drawn. The rest of the content
+ * stream is kept byte for byte. A picture whose drawing cannot be found in the page's own
+ * content (it is drawn from inside a form) is refused rather than left squeezed.
  *
  * What this module deliberately does not do: vector art, inline images (`BI … ID … EI`)
  * and image masks are not listed as editable, because "replace its pixels" has no
@@ -24,17 +31,29 @@
  * its own transparency, and that is reported as a loss.
  */
 
-import type { PDFObject } from 'mupdf';
+import type { PDFDocument, PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
 import {
   openForWrite,
   pageObjects,
+  pdfNumber,
   producerKeptNote,
   readName,
   resolved,
   saveRewrite,
 } from '../engines/mupdf-write';
+import {
+  concatBytes,
+  concatMatrix,
+  IDENTITY,
+  type Instruction,
+  type Matrix,
+  numbersOf,
+  pageContent,
+  readInstructions,
+  transformPoint,
+} from './accessibility';
 import {
   note,
   type OperationContext,
@@ -91,12 +110,34 @@ export interface ImageListing {
   readonly pageCount: number;
 }
 
+/**
+ * How the new pixels sit in the picture they replace, for an edit that changes the picture's
+ * shape: the pixels are the old picture with `crop` cut off its edges and, when `turned`, a
+ * quarter turn (either way) given, which swaps their width and height.
+ */
+export interface ImagePlacement {
+  readonly turned: boolean;
+  /** The part cut off each edge, as a fraction of the old width (left, right) or height (top, bottom). */
+  readonly crop: {
+    readonly left: number;
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+  };
+}
+
 export interface ImageReplacement {
   readonly pageIndex: number;
   readonly name: string;
   /** The new pixels, already encoded. */
   readonly data: Uint8Array;
   readonly format: 'jpeg' | 'png';
+  /**
+   * Set when the pixels have another shape than the picture they replace; the drawings of
+   * the object then follow (see the module comment). Absent for a replacement that fills the
+   * old frame.
+   */
+  readonly placement?: ImagePlacement;
 }
 
 export interface ImageEditRequest {
@@ -382,6 +423,168 @@ function looksLike(data: Uint8Array, format: 'jpeg' | 'png'): boolean {
   return data.length > 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
 }
 
+/** The unit square of the quarter-turned pixels in the unit square of the picture they were turned from. */
+const UNIT_TURN: Matrix = [0, 1, -1, 0, 1, 0];
+
+/** A clockwise quarter turn about the origin of the page. */
+const PAGE_TURN: Matrix = [0, -1, 1, 0, 0, 0];
+
+function invert(matrix: Matrix): Matrix | null {
+  const [a, b, c, d, e, f] = matrix;
+  const determinant = a * d - b * c;
+  if (determinant === 0) return null;
+  return [
+    d / determinant,
+    -b / determinant,
+    -c / determinant,
+    a / determinant,
+    (c * f - d * e) / determinant,
+    (b * e - a * f) / determinant,
+  ];
+}
+
+/** Whether the pixels need a frame of another shape than the picture they replace. */
+function changesFrame(placement: ImagePlacement): boolean {
+  const { left, top, right, bottom } = placement.crop;
+  return placement.turned || left + top + right + bottom > 0;
+}
+
+/**
+ * The matrix to put in front of a drawing whose matrix is `ctm`, so that the new pixels
+ * appear where the same part of the old picture was: cut to the cropped window and, for
+ * turned pixels, turned a quarter about the window's centre on the page (the picture's own
+ * aspect, whatever the page does to it). A turn either way frames the picture alike, because
+ * the frame is a parallelogram and the direction lives in the pixels. `null` for a turned
+ * drawing that has no area.
+ */
+function reframing(ctm: Matrix, placement: ImagePlacement): Matrix | null {
+  const { crop, turned } = placement;
+  const window: Matrix = [
+    1 - crop.left - crop.right,
+    0,
+    0,
+    1 - crop.top - crop.bottom,
+    crop.left,
+    crop.bottom,
+  ];
+  if (!turned) return window;
+  const inverse = invert(ctm);
+  if (inverse === null) return null;
+  const framed = concatMatrix(window, ctm);
+  const centre = transformPoint(framed, 0.5, 0.5);
+  const turn = concatMatrix(concatMatrix([1, 0, 0, 1, -centre.x, -centre.y], PAGE_TURN), [
+    1,
+    0,
+    0,
+    1,
+    centre.x,
+    centre.y,
+  ]);
+  return concatMatrix(concatMatrix(concatMatrix(UNIT_TURN, framed), turn), inverse);
+}
+
+/** Every `/<name> Do` of the stream, with the matrix in force where it draws. */
+function drawingsOf(
+  instructions: readonly Instruction[],
+  names: ReadonlySet<string>,
+): { readonly instruction: Instruction; readonly ctm: Matrix }[] {
+  const drawings: { readonly instruction: Instruction; readonly ctm: Matrix }[] = [];
+  const saved: Matrix[] = [];
+  let ctm: Matrix = IDENTITY;
+  for (const instruction of instructions) {
+    if (instruction.operator === 'q') {
+      saved.push(ctm);
+    } else if (instruction.operator === 'Q') {
+      const restored = saved.pop();
+      if (restored !== undefined) ctm = restored;
+    } else if (instruction.operator === 'cm') {
+      const values = numbersOf(instruction, 6);
+      if (values !== null) ctm = concatMatrix(values as unknown as Matrix, ctm);
+    } else if (instruction.operator === 'Do') {
+      const operand = instruction.operands[0];
+      if (operand?.kind === 'name' && names.has(operand.name)) drawings.push({ instruction, ctm });
+    }
+  }
+  return drawings;
+}
+
+/**
+ * Put `q <frame> cm` … `Q` around every drawing of `names` on one page. The rest of the
+ * stream is kept byte for byte; the page's `/Contents` becomes one stream. Returns how many
+ * drawings were framed.
+ */
+function reframePage(
+  doc: PDFDocument,
+  page: PDFObject,
+  pageIndex: number,
+  names: ReadonlySet<string>,
+  placement: ImagePlacement,
+): number {
+  const content = pageContent(page);
+  const instructions = content === null ? null : readInstructions(content.bytes);
+  if (content === null || instructions === null) {
+    throw new ToolError('unsupported', {
+      engine: 'mupdf',
+      path: 'request.replacements',
+      engineMessage: `page ${pageIndex + 1}'s content stream cannot be read, so the picture's frame cannot follow its new shape`,
+    });
+  }
+  const parts: Uint8Array[] = [];
+  const encoder = new TextEncoder();
+  let cursor = 0;
+  let framed = 0;
+  for (const { instruction, ctm } of drawingsOf(instructions, names)) {
+    const frame = reframing(ctm, placement);
+    if (frame === null) continue;
+    parts.push(
+      content.bytes.subarray(cursor, instruction.start),
+      encoder.encode(`q ${frame.map(pdfNumber).join(' ')} cm `),
+      content.bytes.subarray(instruction.start, instruction.end),
+      encoder.encode(' Q'),
+    );
+    cursor = instruction.end;
+    framed += 1;
+  }
+  if (framed > 0) {
+    parts.push(content.bytes.subarray(cursor));
+    page.put('Contents', doc.addStream(concatBytes(parts), {}));
+  }
+  return framed;
+}
+
+/**
+ * Let every drawing of the image object `number`, on every page that names it, follow the
+ * new shape of its pixels. The page the user picked must draw it in its own content stream:
+ * an object drawn only from inside a form has no frame this writer can reach.
+ */
+function reframeDrawings(
+  doc: PDFDocument,
+  pages: readonly PDFObject[],
+  number: number,
+  target: { readonly pageIndex: number; readonly name: string },
+  placement: ImagePlacement,
+): number {
+  let total = 0;
+  for (const [pageIndex, page] of pages.entries()) {
+    const names = new Set(
+      imageEntries(page)
+        .filter((entry) => entry.ref.asIndirect() === number)
+        .map((entry) => entry.name),
+    );
+    if (names.size === 0) continue;
+    const framed = reframePage(doc, page, pageIndex, names, placement);
+    if (pageIndex === target.pageIndex && framed === 0) {
+      throw new ToolError('unsupported', {
+        engine: 'mupdf',
+        path: 'request.replacements',
+        engineMessage: `page ${pageIndex + 1} does not draw "${target.name}" in its own content, so its frame cannot follow the new shape`,
+      });
+    }
+    total += framed;
+  }
+  return total;
+}
+
 /**
  * Swap the encoded bytes of the images the request names.
  *
@@ -432,6 +635,7 @@ export async function applyImageEdit(
     readonly name: string;
     readonly number: number;
     readonly sharedWith: number;
+    readonly framed: number;
   }[] = [];
   try {
     const pages = pageObjects(doc);
@@ -527,11 +731,16 @@ export async function applyImageEdit(
       } else if (oldMask !== undefined && carryMask) {
         notes.push(note('warning', 'op.note.image.maskKept', { name: replacement.name }));
       }
+      const placement = replacement.placement;
       replaced.push({
         pageIndex: replacement.pageIndex,
         name: replacement.name,
         number: target.ref.asIndirect(),
         sharedWith,
+        framed:
+          placement !== undefined && changesFrame(placement)
+            ? reframeDrawings(doc, pages, target.ref.asIndirect(), replacement, placement)
+            : 0,
       });
     }
 
@@ -558,6 +767,9 @@ export async function applyImageEdit(
 
     for (const entry of replaced) {
       notes.push(note('changed', 'op.note.image.replaced', { name: entry.name, page: entry.pageIndex + 1 }));
+      if (entry.framed > 0) {
+        notes.push(note('changed', 'op.note.image.reframed', { name: entry.name, count: entry.framed }));
+      }
       if (entry.sharedWith > 1) {
         notes.push(note('warning', 'op.note.image.shared', { name: entry.name, count: entry.sharedWith }));
       }
