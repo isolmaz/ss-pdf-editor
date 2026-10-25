@@ -172,6 +172,27 @@ describe('SearchResultsPanel', () => {
     expect(searchPdfText).toHaveBeenCalledTimes(7);
   });
 
+  it('searches the same query again in another document and shows none of the old matches meanwhile', async () => {
+    const other = { name: 'other' } as unknown as PdfDocumentHandle;
+    const pending = deferred<PdfSearchMatch[]>();
+    searchPdfText
+      .mockResolvedValueOnce([match(0, { snippet: 'first document hit', snippetOffset: 0, length: 5 })])
+      .mockReturnValueOnce(pending.promise);
+    const { user, rerender, onGoToPage } = show();
+    await user.type(box(), 'hit{Enter}');
+    await screen.findByRole('button', { name: /first document hit/ });
+
+    rerender(<SearchResultsPanel document={other} t={t} currentPage={0} onGoToPage={onGoToPage} />);
+    await waitFor(() =>
+      expect(searchPdfText).toHaveBeenLastCalledWith(other, 'hit', { signal: expect.any(AbortSignal) }),
+    );
+    expect(screen.queryByRole('button', { name: /first document hit/ })).toBeNull();
+
+    pending.resolve([match(1, { snippet: 'second document hit', snippetOffset: 0, length: 6 })]);
+    expect(await screen.findByRole('button', { name: /second document hit/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /first document hit/ })).toBeNull();
+  });
+
   it('says what failed and tells the shell when the scan fails', async () => {
     searchPdfText.mockImplementation(async () => {
       throw new ToolError('internal', { engine: 'pdfjs' });
