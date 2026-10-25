@@ -32,6 +32,7 @@
 import type { Icon } from '@phosphor-icons/react';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from '@phosphor-icons/react';
 import type { MessageKey, Translator } from 'pdf-shared';
+import { useState } from 'react';
 import { Tooltip } from '../components/Tooltip';
 
 /** The canvas tools the shell can arm (`ToolChrome`'s buttons plus the menus). */
@@ -215,6 +216,59 @@ const TOOL_STYLES: Record<CanvasToolId, ToolStyleSpec> = {
   stamp: NO_STYLE,
 };
 
+/**
+ * The font size box. What is typed stays in a draft until the box is left or Enter is pressed, so
+ * the first digit of "14" (below the 6 pt minimum) is not clamped into the box before the second
+ * arrives; a size already within range is reported as it is typed.
+ */
+function FontSizeField({
+  label,
+  unit,
+  value,
+  onChange,
+}: {
+  readonly label: string;
+  readonly unit: string;
+  readonly value: number;
+  readonly onChange: ((size: number) => void) | undefined;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    // A number field's value is empty or a finite number; empty is half-typed and keeps the size.
+    if (draft === '') return;
+    const size = Math.min(Math.max(Math.round(Number(draft)), FONT_SIZE_MIN), FONT_SIZE_MAX);
+    if (size !== value) onChange?.(size);
+  };
+
+  return (
+    <label className="flex items-center gap-1">
+      {label}
+      <input
+        type="number"
+        min={FONT_SIZE_MIN}
+        max={FONT_SIZE_MAX}
+        step={1}
+        value={draft ?? value}
+        aria-label={label}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          const size = Math.round(Number(event.target.value));
+          if (event.target.value !== '' && size >= FONT_SIZE_MIN && size <= FONT_SIZE_MAX) onChange?.(size);
+        }}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit();
+        }}
+        className={`${FIELD_CLASS} w-12`}
+      />
+      <span>{unit}</span>
+    </label>
+  );
+}
+
 export function ToolProperties({
   t,
   tool,
@@ -286,25 +340,12 @@ export function ToolProperties({
               className="size-6 rounded-sm border border-kumo-line bg-kumo-base"
             />
           </label>
-          <label className="flex items-center gap-1">
-            {t('ann.tool.fontSize')}
-            <input
-              type="number"
-              min={FONT_SIZE_MIN}
-              max={FONT_SIZE_MAX}
-              step={1}
-              value={fontSize}
-              aria-label={t('ann.tool.fontSize')}
-              onChange={(event) => {
-                // A number field's value is empty or a finite number; empty is half-typed.
-                if (event.target.value === '') return;
-                const next = Number(event.target.value);
-                onFontSize?.(Math.min(Math.max(Math.round(next), FONT_SIZE_MIN), FONT_SIZE_MAX));
-              }}
-              className={`${FIELD_CLASS} w-12`}
-            />
-            <span>{t('unit.pt')}</span>
-          </label>
+          <FontSizeField
+            label={t('ann.tool.fontSize')}
+            unit={t('unit.pt')}
+            value={fontSize}
+            onChange={onFontSize}
+          />
         </>
       ) : null}
 

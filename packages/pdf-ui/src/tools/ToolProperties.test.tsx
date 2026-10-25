@@ -8,6 +8,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createTranslator } from 'pdf-shared';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type CanvasToolId, ToolProperties, type ToolPropertiesProps } from './ToolProperties';
 
@@ -137,20 +138,94 @@ describe('typed text', () => {
   it.each([
     ['20', 20],
     ['12.6', 13],
-    ['3', 6],
-    ['500', 72],
-  ])("reports a size of %s as %d pt, within the writer's 6–72 pt range", (typed, size) => {
+  ])('reports a size of %s as %d pt as it is typed', (typed, size) => {
     const onFontSize = vi.fn();
     show('freetext', { onFontSize });
     fireEvent.change(control('Size'), { target: { value: typed } });
     expect(onFontSize).toHaveBeenCalledExactlyOnceWith(size);
   });
 
-  it('keeps the last size while the field is emptied to type a new one', () => {
+  it.each([
+    ['3', 6],
+    ['500', 72],
+  ])(
+    "holds a typed %s back and clamps it to %d pt, the writer's 6–72 pt range, when the field is left",
+    (typed, size) => {
+      const onFontSize = vi.fn();
+      show('freetext', { onFontSize });
+      fireEvent.change(control('Size'), { target: { value: typed } });
+      expect(onFontSize).not.toHaveBeenCalled();
+      expect(control('Size').value).toBe(typed);
+      fireEvent.blur(control('Size'));
+      expect(onFontSize).toHaveBeenCalledExactlyOnceWith(size);
+      expect(control('Size').value).toBe('12');
+    },
+  );
+
+  it('clamps a typed size on Enter and leaves other keys alone', () => {
+    const onFontSize = vi.fn();
+    show('freetext', { onFontSize });
+    fireEvent.change(control('Size'), { target: { value: '90' } });
+    fireEvent.keyDown(control('Size'), { key: '9' });
+    expect(onFontSize).not.toHaveBeenCalled();
+    fireEvent.keyDown(control('Size'), { key: 'Enter' });
+    expect(onFontSize).toHaveBeenCalledExactlyOnceWith(72);
+  });
+
+  it('keeps the last size while the field is emptied to type a new one, and shows it again when left empty', () => {
     const onFontSize = vi.fn();
     show('freetext', { onFontSize, fontSize: 30 });
     fireEvent.change(control('Size'), { target: { value: '' } });
     expect(onFontSize).not.toHaveBeenCalled();
+    expect(control('Size').value).toBe('');
+    fireEvent.blur(control('Size'));
+    expect(onFontSize).not.toHaveBeenCalled();
+    expect(control('Size').value).toBe('30');
+  });
+
+  it('reports nothing when the box is left or Enter is pressed without a typed size', () => {
+    const onFontSize = vi.fn();
+    show('freetext', { onFontSize, fontSize: 30 });
+    fireEvent.keyDown(control('Size'), { key: 'Enter' });
+    fireEvent.blur(control('Size'));
+    expect(onFontSize).not.toHaveBeenCalled();
+    expect(control('Size').value).toBe('30');
+  });
+
+  it('lets any size from 10 to 36 be typed over the current one', async () => {
+    const sizes: number[] = [];
+    function Host() {
+      const [size, setSize] = useState(12);
+      return (
+        <ToolProperties
+          t={t}
+          tool="freetext"
+          color="#ff0000"
+          opacity={0.8}
+          thickness={3}
+          shape="square"
+          selectedCount={0}
+          onColor={vi.fn()}
+          onOpacity={vi.fn()}
+          onThickness={vi.fn()}
+          onShape={vi.fn()}
+          fontSize={size}
+          onFontSize={(next) => {
+            sizes.push(next);
+            setSize(next);
+          }}
+        />
+      );
+    }
+    render(<Host />);
+    await userEvent.tripleClick(control('Size'));
+    await userEvent.keyboard('14');
+    expect(control('Size').value).toBe('14');
+    expect(sizes).toEqual([14]);
+    await userEvent.tripleClick(control('Size'));
+    await userEvent.keyboard('36{Enter}');
+    expect(control('Size').value).toBe('36');
+    expect(sizes).toEqual([14, 36]);
   });
 });
 
