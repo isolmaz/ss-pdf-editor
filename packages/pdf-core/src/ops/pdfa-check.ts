@@ -272,13 +272,25 @@ interface Graphics {
   mode: number;
 }
 
+/** The colour spaces a content stream starts with. */
+type Colours = Pick<Graphics, 'fill' | 'stroke'>;
+
+/** Where nothing is known of the colour: a pattern cell, a soft-mask group. */
+const UNKNOWN_COLOURS: Colours = { fill: 'unknown', stroke: 'unknown' };
+
+/** The graphics state a page or an annotation appearance starts in. */
+const DEFAULT_COLOURS: Colours = { fill: 'DeviceGray', stroke: 'DeviceGray' };
+
 interface Context {
   readonly part: PdfAPart;
   readonly findings: Findings;
   readonly signal: AbortSignal | undefined;
   readonly outputIntent: { readonly present: boolean; readonly space: 'RGB' | 'CMYK' | 'GRAY' | null };
-  /** Indirect form XObjects, patterns and soft-mask groups already read, by object number. */
-  readonly visited: Set<number>;
+  /**
+   * Indirect form XObjects, patterns and soft-mask groups already read: a form by object number and
+   * the colours it started with, a pattern or a soft-mask group by object number.
+   */
+  readonly visited: Set<string>;
   /** Fonts a content stream selected and painted with, by key, and whether any paint was visible. */
   readonly fonts: Map<string, { readonly font: PDFObject; readonly pageIndex: number; visible: boolean }>;
   /** Graphics states (`gs`) already judged, by object number. */
@@ -754,12 +766,14 @@ function checkImageDictionary(image: PDFObject, context: Context, scope: Scope):
   }
 }
 
-function scanForm(form: PDFObject, context: Context, parent: Scope): void {
+/** Read a form XObject, which paints with the colours in effect where it is drawn (`initial`). */
+function scanForm(form: PDFObject, context: Context, parent: Scope, initial: Colours): void {
   if (parent.depth >= MAX_FORM_DEPTH) return;
   const number = key(form);
   if (number >= 0) {
-    if (context.visited.has(number)) return;
-    context.visited.add(number);
+    const read = `${number}:${initial.fill}:${initial.stroke}`;
+    if (context.visited.has(read)) return;
+    context.visited.add(read);
   }
   const subtype = nameAt(form, 'Subtype');
   if (subtype === 'PS' || !form.get('PS').isNull()) {
@@ -795,11 +809,11 @@ function scanForm(form: PDFObject, context: Context, parent: Scope): void {
     pageIndex: parent.pageIndex,
     depth: parent.depth + 1,
   };
-  scanStream(form, context, scope, 'unknown');
+  scanStream(form, context, scope, initial);
 }
 
 /** Read a content stream: colour use, font use, and the objects it paints. */
-function scanStream(stream: PDFObject, context: Context, scope: Scope, initial: Cs): void {
+function scanStream(stream: PDFObject, context: Context, scope: Scope, initial: Colours): void {
   if (context.signal !== undefined) throwIfAborted(context.signal);
   const bytes = streamBytes(stream);
   if (bytes === null) {
@@ -809,13 +823,13 @@ function scanStream(stream: PDFObject, context: Context, scope: Scope, initial: 
   scanBytes(bytes, context, scope, initial);
 }
 
-function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: Cs): void {
+function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: Colours): void {
   if (context.budget < bytes.length) {
     context.budgetExhausted = true;
     return;
   }
   context.budget -= bytes.length;
-  let state: Graphics = { fill: initial, stroke: initial, font: null, mode: 0 };
+  let state: Graphics = { fill: initial.fill, stroke: initial.stroke, font: null, mode: 0 };
   const stack: Graphics[] = [];
 
   const paintFill = (): void => useSpace(context, scope, state.fill);
@@ -923,7 +937,8 @@ function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: C
             checkExtGState(entry, context, scope);
             const mask = dictionaryAt(entry, 'SMask');
             const group = mask === null ? null : mask.get('G');
-            if (group !== null && !group.isNull() && group.isStream()) scanForm(group, context, scope);
+            if (group !== null && !group.isNull() && group.isStream())
+              scanForm(group, context, scope, UNKNOWN_COLOURS);
           }
         }
         break;
@@ -948,7 +963,7 @@ function scanBytes(bytes: Uint8Array, context: Context, scope: Scope, initial: C
           if (mask?.isBoolean() === true && mask.asBoolean()) paintFill();
           else useSpace(context, scope, classifySpace(entry.get('ColorSpace'), scope));
         } else if (subtype === 'Form' || subtype === 'PS') {
-          scanForm(entry, context, scope);
+          scanForm(entry, context, scope, state);
         }
         break;
       }
@@ -1007,14 +1022,14 @@ function scanPattern(name: string, context: Context, scope: Scope): void {
   if (!entry.isStream()) return;
   // A stream is always an indirect object, so it has a number.
   const number = key(entry);
-  if (context.visited.has(number)) return;
-  context.visited.add(number);
+  if (context.visited.has(String(number))) return;
+  context.visited.add(String(number));
   const own = dictionaryAt(entry, 'Resources');
   scanStream(
     entry,
     context,
     { resources: own ?? scope.resources, pageIndex: scope.pageIndex, depth: scope.depth + 1 },
-    'unknown',
+    UNKNOWN_COLOURS,
   );
 }
 
@@ -1157,7 +1172,7 @@ function checkAnnotation(annotation: PDFObject, pageIndex: number, context: Cont
         });
       }
     }
-    for (const stream of streams) scanForm(stream, context, scope);
+    for (const stream of streams) scanForm(stream, context, scope, DEFAULT_COLOURS);
   }
   if (subtype === 'Widget') {
     if (!annotation.get('A').isNull() || !annotation.get('AA').isNull()) {
@@ -1430,7 +1445,7 @@ async function run(
         joined[at + chunk.length] = 0x0a;
         at += chunk.length + 1;
       }
-      scanBytes(joined, context, scope, 'DeviceGray');
+      scanBytes(joined, context, scope, DEFAULT_COLOURS);
     }
 
     for (const annotation of arrayItems(page.get('Annots'))) {

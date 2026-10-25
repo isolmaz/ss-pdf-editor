@@ -1193,11 +1193,32 @@ describe('form XObjects', () => {
       part === undefined ? {} : { part },
     );
 
-  it('reads the content of a form XObject, which starts without a known colour', async () => {
+  it('reads the content of a form XObject, which starts in the colour of the page that draws it', async () => {
     const painted = await useForm((doc) => form(doc, '0 0 0 1 k 0 0 5 5 re f'));
     expect(details(painted, 'device-colour')).toEqual(['DeviceCMYK']);
     const unset = await useForm((doc) => form(doc, '0 0 5 5 re f'));
-    expect(details(unset, 'device-colour')).toEqual([]);
+    expect(details(unset, 'device-colour')).toEqual(['DeviceGray']);
+  });
+
+  it('paints a form with the colour the page selected before it, as the page itself is judged', async () => {
+    const colourOf = async (formContent: string, content: string) =>
+      details(await useForm((doc) => form(doc, formContent), { content }, 2), 'device-colour');
+    expect(
+      details(
+        await checkPdfA(build({ claim: null, content: '1 0 0 rg 0 0 50 50 re f' }), { part: 2 }),
+        'device-colour',
+      ),
+    ).toEqual(['DeviceRGB']);
+    expect(await colourOf('0 0 50 50 re f', '1 0 0 rg /Fm Do')).toEqual(['DeviceRGB']);
+    expect(await colourOf('0 0 5 5 re S', '0 0 0 1 K /Fm Do')).toEqual(['DeviceCMYK']);
+    // A form used under two colours is read under each.
+    expect(await colourOf('0 0 5 5 re f', '1 0 0 rg /Fm Do 0 0 0 1 k /Fm Do')).toEqual([
+      'DeviceRGB',
+      'DeviceCMYK',
+    ]);
+    // The form's own colour replaces the inherited one, and a colour set inside q … Q is gone after it.
+    expect(await colourOf('0 0 0 1 k 0 0 5 5 re f', '1 0 0 rg /Fm Do')).toEqual(['DeviceCMYK']);
+    expect(await colourOf('0 0 5 5 re f', 'q 1 0 0 rg Q /Fm Do')).toEqual(['DeviceGray']);
   });
 
   it('resolves a form’s names through its own resources, or through the page’s when it has none', async () => {
@@ -1886,6 +1907,28 @@ describe('annotations', () => {
     expect(await colourOfAppearance(cmyk)).toEqual(['DeviceCMYK']);
     expect(await colourOfAppearance((doc) => ({ On: cmyk(doc), Off: 'NotAStream' }))).toEqual(['DeviceCMYK']);
     expect(await colourOfAppearance(() => 5)).toEqual([]);
+  });
+
+  it('starts an appearance stream in DeviceGray, the colour a stream paints with before it selects one', async () => {
+    const report = await checkPdfA(
+      build({
+        claim: null,
+        content: '0 0 5 5 re n',
+        page: (doc, page) =>
+          page.put('Annots', [
+            doc.addObject({
+              Type: 'Annot',
+              Subtype: 'Stamp',
+              Rect: [0, 0, 10, 10],
+              F: 4,
+              AP: {
+                N: doc.addStream('0 0 5 5 re f', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 10, 10] }),
+              },
+            } as never),
+          ]),
+      }),
+    );
+    expect(details(report, 'device-colour')).toEqual(['DeviceGray']);
   });
 
   it('names a widget that has an action or an additional action', async () => {
