@@ -41,7 +41,7 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | | |
 | --- | --- |
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
-| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · stamps · typed text · links · images · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
+| ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · typed text · links · pictures and signatures · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · detect fields on a flat form · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
 | 📄 **Pages** | New blank document · insert · delete · duplicate · reorder (page grid) · rotate · extract · split · replace · merge (several files, in any order, or the front and back sides of a double-sided scan alternating) · reverse order · remove blank pages · split two-up scans · page boxes and auto-crop · straighten tilted scans · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
@@ -158,8 +158,9 @@ lists every tool in either mode. The choice is kept on the device.
 
 ### Annotating, forms, measuring
 
-- **Markup.** Highlight (selected text or freehand), ink, notes, stamps, underline,
-  strike-out, squiggly and geometric shapes are all available.
+- **Markup.** Highlight (selected text or freehand), ink, notes, underline, strike-out,
+  squiggly and geometric shapes are all available. Pictures and signatures are placed as
+  stamp annotations (see *Simple signatures and images* below); there are no preset stamps.
 - **Add text.** Click and type. The text is written as a `/FreeText` annotation with
   embedded Noto Sans, so Turkish letters survive in every reader. It stays upright on
   rotated pages.
@@ -1109,7 +1110,7 @@ The fonts the app ships are fetched by `pnpm fetch:engines` from pinned npm pack
 the same origin and pinned by size and SHA-256 in `tools/asset-pins.json`. All are SIL Open Font
 License 1.1 (the licence texts are copied to `dist/licenses/`):
 
-- **Document text.** Noto Sans is embedded by stamps, headers and the OCR text layer. A scan exported
+- **Document text.** Noto Sans is embedded by watermarks, Bates numbers, headers and the OCR text layer. A scan exported
   to Word can also be set in Roboto, Open Sans, Montserrat, Inter, Source Sans 3, Poppins (sans),
   Merriweather, Noto Serif (serif) or Roboto Mono (mono). All ten are static TrueType in regular, italic, bold and bold italic.
   Each covers the Turkish letters. Lato is not offered: its faces lack Ğ/ğ, İ and Ş/ş.
