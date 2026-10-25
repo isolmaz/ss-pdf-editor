@@ -80,5 +80,21 @@
     "tests": ["apps/web/src/features/results/results-actions.test.ts"],
     "run": ["apps/web/src/features/results/results-actions.test.ts"],
     "filter": "takes the sensitivity of the tab the pages were read from, not of the tab in front when they arrive"
+  },
+  {
+    "commit": "43344e9d36722aff0de5408aeefcc95c68b8c0ca",
+    "title": "Skip only a self-issued certificate inside the trusted path, so a CA renamed under the root key is still checked",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/signature-validation.test.ts"],
+    "run": ["packages/pdf-core/src/signature-validation.test.ts"],
+    "filter": "checks a CA certificate inside the path that holds the root key under another name"
+  },
+  {
+    "commit": "d17c9dc0462166ae7d96df76d366d226fe021de7",
+    "title": "Let no certificate a file adds for a CA's key under its own CA decide a revocation",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/signature-validation.test.ts"],
+    "run": ["packages/pdf-core/src/signature-validation.test.ts"],
+    "filter": "lets no certificate a file adds for a CA key under its own CA decide a revocation"
   }
 ]
