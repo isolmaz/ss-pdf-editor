@@ -718,5 +718,13 @@
       "packages/pdf-ui/src/ops/index.test.ts"
     ],
     "filter": "shows a fraction in a whole-number setting as an error under the field, and a whole number clears it|refuses a fraction only in a number field that takes whole numbers, with the message that says so"
+  },
+  {
+    "commit": "5eeb8d1e99d6583231a8442dacd55a8a56634d0f",
+    "title": "Report a certificate no list names as having no list, not as having an untrusted issuer",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/signature-revocation.test.ts"],
+    "run": ["packages/pdf-core/src/signature-revocation.test.ts"],
+    "filter": "says no list was found, not that the issuer is untrusted, when nothing speaks for the certificate"
   }
 ]
