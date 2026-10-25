@@ -4,7 +4,7 @@ import { statusRotate } from './app-helpers';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { labelledPdf, readProducedEntry, readProducedPageTexts } from './tool-fixture';
-import { applyForm, chooseScope } from './ui-helpers';
+import { applyForm, chooseScope, runHighlightedCommand } from './ui-helpers';
 
 /**
  * Page and file flows end to end: insert, merge, extract, split, the two exports, print,
@@ -53,7 +53,7 @@ const notice = (page: Page, text: string) => page.locator('[role="status"]').fil
 async function openForm(page: Page, command: string, region: string) {
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill(command);
-  await page.keyboard.press('Enter');
+  await runHighlightedCommand(page);
   const form = page.getByRole('region', { name: region });
   await expect(form).toBeVisible({ timeout: 30_000 });
   return form;

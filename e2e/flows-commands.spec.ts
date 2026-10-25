@@ -216,7 +216,7 @@ test('replace pages: the selected page takes its content from another PDF and fr
 async function runCommand(page: Page, command: string): Promise<void> {
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill(command);
-  await page.keyboard.press('Enter');
+  await runHighlightedCommand(page);
 }
 
 test('compare, accessibility and redaction audit: each panel reports on the open document', async ({

@@ -59,7 +59,7 @@ export async function runHighlightedCommand(page: Page): Promise<void> {
 export async function runCommand(page: Page, command: string): Promise<void> {
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill(command);
-  await page.keyboard.press('Enter');
+  await runHighlightedCommand(page);
 }
 
 /** The heading of the review step: only a result that lost, warned about or approximated something shows it. */

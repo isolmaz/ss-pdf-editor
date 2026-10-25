@@ -14,6 +14,7 @@ import type { Locator, Page } from 'playwright/test';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { toolFixturePdf } from './tool-fixture';
+import { runHighlightedCommand } from './ui-helpers';
 
 export const CANVAS = '.pdfViewer[data-active-viewer] .page canvas';
 
@@ -96,7 +97,7 @@ export async function openApp(
 export async function palette(page: Page, command: string): Promise<void> {
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill(command);
-  await page.keyboard.press('Enter');
+  await runHighlightedCommand(page);
 }
 
 /** Open a menu-bar menu and click one of its items. */
