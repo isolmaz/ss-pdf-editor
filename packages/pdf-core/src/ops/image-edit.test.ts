@@ -324,7 +324,7 @@ async function redOverBluePng(width: number, height: number): Promise<Uint8Array
 /** The decoded content stream of one page, without the newline the reader joins its parts with. */
 async function contentOf(bytes: Uint8Array, pageIndex = 0): Promise<string> {
   const mupdf = await import('mupdf');
-  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf');
+  const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF() as PDFDocument;
   try {
     return doc.findPage(pageIndex).get('Contents').readStream().asString().trim();
   } finally {
