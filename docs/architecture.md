@@ -1102,7 +1102,9 @@ writer does, and the steps it reports:
   columns or rows) as `range-invalid`;
 - compression (`ops/compress.ts`): the structure mode is a MuPDF rewrite with deduplication,
   lossless font/image compression and object streams, and does not regenerate form-field
-  appearances; the raster mode replaces the selected pages **in place** (`assembleRaster`)
+  appearances. The deduplication merges annotations whose dictionaries are alike (the same
+  stamp on two pages), so a second save gives every page after the first its own copy back;
+  the raster mode replaces the selected pages **in place** (`assembleRaster`)
   instead of rebuilding the file, so the other pages, the outline and the rest of the catalog
   are kept. Its `assemble` step declares what it changes on those pages (`rotation`,
   `cropBox`, `annotations` besides the content);
