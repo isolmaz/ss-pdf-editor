@@ -58,6 +58,8 @@ export const a11yPart = {
   'op.a11y.check.structTree': 'Yapı ağacı (/StructTreeRoot) yok.',
   'op.a11y.check.structTreeOk': 'Yapı ağacı var ({objects} öğe okundu).',
   'op.a11y.check.structTruncated': 'Yapı ağacı {limit} öğede kesildi; sayılanlar alt sınırdır.',
+  'op.a11y.check.figureTreeTruncated':
+    'Yapı ağacı sonuna kadar okunamayacak kadar büyük ya da derin; alt metni bulunamayan görseller bu yüzden değerlendirilmedi.',
   'op.a11y.check.markInfo': '/MarkInfo /Marked true yok.',
   'op.a11y.check.markInfoOk': '/MarkInfo << /Marked true >> var.',
   'op.a11y.check.lang': 'Belge dili (/Lang) yok.',

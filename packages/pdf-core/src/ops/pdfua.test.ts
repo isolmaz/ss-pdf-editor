@@ -8,6 +8,7 @@
 import type { PDFObject } from 'mupdf';
 import { describe, expect, it } from 'vitest';
 import { readXmpPacket } from './accessibility';
+import { parseXmp } from './pdfa-xmp';
 import {
   checkPdfUa,
   type FixState,
@@ -210,6 +211,39 @@ describe('fixPdfUa', () => {
     const again = await fixPdfUa(out.bytes, [{ kind: 'mark-pdfua' }], run);
     expect(again.report.notes.map((entry) => entry.key)).toContain('op.note.ua.uaKept');
     expect((await catalogFacts(again.bytes)).uaPart).toBe(1);
+  });
+
+  it('describes the pdfuaid schema in a file that claims PDF/A, so the declaration does not break its PDF/A metadata', async () => {
+    const tagged = await taggedFixture();
+    const model = (await readStructure(tagged, run)).model;
+    const figures = (model.roots[0]?.kids ?? []).flatMap((kid) =>
+      kid.kind === 'element' && kid.node.role === 'Figure' ? [kid.node.key] : [],
+    );
+    const withAlt = await editStructure(
+      tagged,
+      figures.map((key) => ({ op: 'alt' as const, key, alt: 'A grey square' })),
+      run,
+    );
+    const claim = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" pdfaid:part="2" pdfaid:conformance="B"/></rdf:RDF></x:xmpmeta><?xpacket end="w"?>`;
+    const pdfa = await mutate(withAlt.bytes, (doc) => {
+      doc
+        .getTrailer()
+        .get('Root')
+        .put(
+          'Metadata',
+          doc.addRawStream(new TextEncoder().encode(claim), { Type: 'Metadata', Subtype: 'XML' }),
+        );
+    });
+    const out = await fixPdfUa(
+      pdfa,
+      [{ kind: 'title', title: 'Annual Report' }, { kind: 'display-title' }, { kind: 'mark-pdfua' }],
+      run,
+    );
+    expect(out.report.notes.map((entry) => entry.key)).toContain('op.note.ua.uaMarked');
+    const packet = await mutateRead(out.bytes, (doc) => readXmpPacket(doc.getTrailer().get('Root')));
+    const parsed = parseXmp(new TextEncoder().encode(packet as string));
+    expect(parsed.claim).toEqual({ part: '2', conformance: 'B' });
+    expect(parsed.undescribedNamespaces).toEqual([]);
   });
 });
 
@@ -420,6 +454,14 @@ describe('document rules', () => {
         doc.addRawStream(new TextEncoder().encode(packet), { Type: 'Metadata', Subtype: 'XML' }),
       );
     };
+
+  it('reads a title whose character reference names no character as written, instead of failing', async () => {
+    const hostile =
+      '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" dc:title="Report &#x110000;"/></rdf:RDF></x:xmpmeta>';
+    const found = await checked({ pages: [PAGE], title: 'Report', setup: withXmp(hostile) });
+    expect(found.rule('title').state).toBe('pass');
+    expect(found.report.title).toBe('Report &#x110000;');
+  });
 
   it('tells a title that only the Info dictionary has from one the XMP packet carries, and reads a wrong UA part', async () => {
     const none = await checked({ pages: [PAGE] });
@@ -1237,6 +1279,23 @@ describe('font facts from odd dictionaries', () => {
     // leading bad entry is not seen.
     expect(found.rule('font-unicode').instances.map((entry) => [entry.params?.font, entry.reason])).toEqual([
       ['Bad', 'bad-map'],
+    ]);
+  });
+  it('reads every code pair of a ToUnicode line, not only the first', async () => {
+    const fonts = {
+      LateBad: withMap('LateBad', (doc) =>
+        doc.addStream(cmap('1 beginbfchar\n<01> <0041> <02> <FFFD>\nendbfchar'), {}),
+      ),
+      AllGood: withMap('AllGood', (doc) =>
+        doc.addStream(cmap('1 beginbfchar\n<01> <0041> <02> <0042>\nendbfchar'), {}),
+      ),
+    };
+    const found = await checked({
+      pages: [{ content: use(...Object.keys(fonts)), fonts }],
+      tree: [{ s: 'Document' }],
+    });
+    expect(found.rule('font-unicode').instances.map((entry) => [entry.params?.font, entry.reason])).toEqual([
+      ['LateBad', 'bad-map'],
     ]);
   });
 });

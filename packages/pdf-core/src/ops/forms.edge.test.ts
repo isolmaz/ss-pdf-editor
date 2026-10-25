@@ -228,6 +228,19 @@ describe('the field tree as the file writes it', () => {
     expect(second?.pageIndex).toBe(1);
   });
 
+  it('places a widget on the page whose /Annots lists it, whatever its /P says', async () => {
+    // `widgetBody` writes /P 3 0 R, page 1; the widget is listed by page 2 only.
+    const bytes = formPdf({
+      fields: '[10 0 R]',
+      annots: '[]',
+      secondAnnots: '[10 0 R]',
+      extra: { 10: widgetBody(rect(500), '/FT/Tx/T(moved)') },
+    });
+    const [widgets] = await readFormWidgets(bytes);
+    expect(widgets?.widgets.map((widget) => widget.pageIndex)).toEqual([1]);
+    expect((await readFormFields(bytes))[0]?.pageIndex).toBe(1);
+  });
+
   it('returns nothing from a read whose signal is already aborted', async () => {
     const stopped = AbortSignal.abort();
     expect(await readFormFields(tree(), stopped)).toEqual([]);
@@ -759,6 +772,30 @@ describe('flattenForm refusals and damaged appearances', () => {
           painted.push(String(key));
         });
       expect(painted.filter((key) => key.startsWith('FlatWidget'))).toHaveLength(2);
+    } finally {
+      doc.destroy();
+    }
+  });
+
+  it('paints a flattened widget on the page that lists it and takes it off that page', async () => {
+    // /P names page 1; only page 2 lists the widget.
+    const bytes = one('[10 0 R]', '[]', { 10: text('') }, '[10 0 R]');
+    const out = await flat(bytes, null);
+    const doc = PDFDocument.openDocument(out.bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      const flatWidgets = (page: number) => {
+        const resources = doc.findPage(page).get('Resources');
+        const keys: string[] = [];
+        if (resources.isDictionary()) {
+          resources.get('XObject').forEach((_value, key) => {
+            keys.push(String(key));
+          });
+        }
+        return keys.filter((key) => key.startsWith('FlatWidget')).length;
+      };
+      expect([flatWidgets(0), flatWidgets(1)]).toEqual([0, 1]);
+      expect(doc.findPage(1).get('Annots').resolve().length).toBe(0);
     } finally {
       doc.destroy();
     }

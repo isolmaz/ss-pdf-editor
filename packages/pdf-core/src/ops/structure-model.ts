@@ -35,7 +35,7 @@
 
 import type { PDFDocument, PDFObject } from 'mupdf';
 import { resolved } from '../engines/mupdf-write';
-import { catalogOf, dictOf, intOf, nameOf, pageNumbers, textOf } from './accessibility';
+import { catalogOf, dictOf, intOf, nameOf, pageNumbers, STRUCT_NODE_LIMIT, textOf } from './accessibility';
 import { resolveRole, STANDARD_ROLES } from './struct-roles';
 
 export { EDITOR_ROLES, resolveRole, STANDARD_ROLES } from './struct-roles';
@@ -104,7 +104,6 @@ export interface StructureModel {
   readonly hasParentTree: boolean;
 }
 
-export const STRUCT_NODE_LIMIT = 30_000;
 const STRUCT_DEPTH_LIMIT = 64;
 
 export const EMPTY_MODEL: StructureModel = {
@@ -684,6 +683,8 @@ export function applyStructureEdits(model: StructureModel, edits: readonly Struc
           throw new StructEditError('has-content', 'an element that owns content cannot be unwrapped');
         }
         const position = rawIndexOf(parent, node.key);
+        // The language of an element covers what is inside it: its children keep it where they have none.
+        for (const kid of node.kids) if (kid.kind === 'element') kid.node.lang ??= node.lang;
         parent.kids.splice(position, 1, ...node.kids);
         break;
       }

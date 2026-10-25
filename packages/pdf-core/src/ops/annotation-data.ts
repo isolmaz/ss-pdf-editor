@@ -750,7 +750,8 @@ function annotationsFromRecords(records: readonly FormDataRecord[], format: stri
  * starts with its header, JSON with `{`. A file that is neither is refused with the
  * format contract's own error instead of importing nothing.
  */
-export function parseAnnotationData(bytes: Uint8Array): AnnotationDataResult {
+export function parseAnnotationData(file: Uint8Array): AnnotationDataResult {
+  const bytes = file[0] === 0xef && file[1] === 0xbb && file[2] === 0xbf ? file.subarray(3) : file;
   const head = new TextDecoder('latin1').decode(bytes.slice(0, 16)).trimStart();
   if (head.startsWith('%FDF')) {
     // Acrobat's comment file (and this app's now) holds `/Annots`; the one this app wrote

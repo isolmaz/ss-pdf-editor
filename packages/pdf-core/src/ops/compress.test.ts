@@ -176,6 +176,77 @@ describe('compressDocument (structure)', () => {
   });
 });
 
+describe('compressDocument (structure): annotations', () => {
+  /** Three pages; the same stamp, made of one appearance stream, on the first two (once direct on the second). */
+  async function stamped(): Promise<Uint8Array> {
+    const mupdf = await import('mupdf');
+    const doc = new mupdf.PDFDocument();
+    const appearance = doc.addStream('0 0 10 10 re f', {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, 0, 10, 10],
+    });
+    const stamp = () => ({
+      Type: 'Annot',
+      Subtype: 'Stamp',
+      Rect: [10, 10, 40, 40],
+      F: 4,
+      AP: { N: appearance },
+    });
+    for (let index = 0; index < 3; index += 1) {
+      doc.insertPage(index, doc.addPage([0, 0, 200, 200], 0, {}, 'q Q'));
+    }
+    doc.findPage(0).put('Annots', [doc.addObject(stamp() as never)]);
+    doc.findPage(1).put('Annots', [doc.addObject(stamp() as never), stamp() as never]);
+    const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
+    doc.destroy();
+    return bytes;
+  }
+
+  /** Each page's annotations: the object number of an indirect one (`null` for a direct one) and its subtype. */
+  async function annotationsOf(bytes: Uint8Array) {
+    const mupdf = await import('mupdf');
+    const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
+    if (doc === null) throw new Error('not a PDF');
+    try {
+      return Array.from({ length: doc.countPages() }, (_unused, index) => {
+        const annots = doc.findPage(index).get('Annots');
+        if (annots.isNull()) return [];
+        return Array.from({ length: annots.length }, (_item, at) => {
+          const entry = annots.get(at);
+          return {
+            number: entry.isIndirect() ? entry.asIndirect() : null,
+            subtype: entry.get('Subtype').asName(),
+            appearance: entry.get('AP').get('N').isStream(),
+          };
+        });
+      });
+    } finally {
+      doc.destroy();
+    }
+  }
+
+  it('leaves each annotation on one page, though the saved dictionaries of two stamps are alike', async () => {
+    const out = await compressDocument(
+      await stamped(),
+      { mode: 'structure', stripMetadata: false, keepProducer: true },
+      run,
+    );
+    const pages = await annotationsOf(out.bytes);
+    expect(pages.map((annotations) => annotations.map((annotation) => annotation.subtype))).toEqual([
+      ['Stamp'],
+      ['Stamp', 'Stamp'],
+      [],
+    ]);
+    expect(pages.flat().every((annotation) => annotation.appearance)).toBe(true);
+    const numbers = pages
+      .flat()
+      .flatMap((annotation) => (annotation.number === null ? [] : [annotation.number]));
+    expect(new Set(numbers).size).toBe(numbers.length);
+    expect(numbers).toHaveLength(2);
+  });
+});
+
 describe('assembleRaster', () => {
   it('replaces a page by its picture in place and leaves the rest of the file alone', async () => {
     const mupdf = await import('mupdf');

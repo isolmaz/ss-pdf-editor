@@ -34,6 +34,8 @@ export const a11yPart = {
   'op.a11y.check.structTreeOk': 'Structure tree present ({objects} item(s) read).',
   'op.a11y.check.structTruncated':
     'Structure tree truncated at {limit} items; counted values are lower bounds.',
+  'op.a11y.check.figureTreeTruncated':
+    'The structure tree is too large or too deep to read to the end, so pictures with no alt text found are not judged.',
   'op.a11y.check.markInfo': 'Missing /MarkInfo /Marked true.',
   'op.a11y.check.markInfoOk': '/MarkInfo << /Marked true >> is present.',
   'op.a11y.check.lang': 'No document language (/Lang) declared.',

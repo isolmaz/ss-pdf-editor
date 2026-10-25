@@ -1016,15 +1016,17 @@ writer does, and the steps it reports:
   set to 1, because MuPDF-based readers apply it and would turn the picture a second time;
 - page boxes, resize, scale, shift, content rotation and auto-crop (`ops/page-boxes.ts`), where
   a content transform wraps the page's streams through `wrapPageContent`, auto-crop measures
-  on the document it edits instead of opening a second copy, and a page that needs no change
-  is counted once in the unchanged-pages note;
+  on the document it edits instead of opening a second copy and gives the event loop a turn
+  after each page it measures, and a page that needs no change is counted once in the
+  unchanged-pages note;
 - page tidy-up (`ops/page-tidy.ts`, steps `load` / `split-two-up` / `save`). `findBlankPages`
   judges a page blank only when it has no annotation (a widget is one), no letter or digit of
   structured text (invisible text counts, punctuation alone does not) and at most 0.01 % of
   its pixels count as ink when drawn in grey at 50 dpi (longest side capped at 2000 px): darker
   than grey 200, or more than 25 levels darker than the page's paper (its median grey), so a
   light-grey logo or gridline on white paper is content and a tinted or noisy sheet is not. It judges the render, not the content stream, so an image of an empty sheet or a white
-  rectangle is blank and a scan's noise does not hold the page. `splitTwoUpPages` copies the
+  rectangle is blank and a scan's noise does not hold the page. It gives the event loop a turn
+  after each page, so the progress bar and Cancel are served during a long scan. `splitTwoUpPages` copies the
   page dictionary of each landscape page (every entry shared by reference, so the content
   streams and images exist once; inherited `/Resources` and `/Rotate` are made the page's own
   first; `/Thumb` and `/StructParents` are not copied) and gives the two the halves of the
@@ -1102,7 +1104,9 @@ writer does, and the steps it reports:
   columns or rows) as `range-invalid`;
 - compression (`ops/compress.ts`): the structure mode is a MuPDF rewrite with deduplication,
   lossless font/image compression and object streams, and does not regenerate form-field
-  appearances; the raster mode replaces the selected pages **in place** (`assembleRaster`)
+  appearances. The deduplication merges annotations whose dictionaries are alike (the same
+  stamp on two pages), so a second save gives every page after the first its own copy back;
+  the raster mode replaces the selected pages **in place** (`assembleRaster`)
   instead of rebuilding the file, so the other pages, the outline and the rest of the catalog
   are kept. Its `assemble` step declares what it changes on those pages (`rotation`,
   `cropBox`, `annotations` besides the content);
@@ -1610,7 +1614,10 @@ deliberately not a score:
   file (the check reads it from there too) and on the image XObject when no figure owns it,
   and `/TU` on the form field itself — the parent of a radio group's widgets, not one of
   them; an empty alt text is refused, because decorative content would belong in an
-  `/Artifact`, which the tags editor below writes.
+  `/Artifact`, which the tags editor below writes. The figure walk reads `STRUCT_NODE_LIMIT`
+  elements and 64 levels, the bound of the structure model; in a tree it could not read to the
+  end, a picture with no figure found is reported `unchecked` instead of missing, and its alt
+  text is refused instead of written on the XObject.
 
 `tagDocument()` places each block's shows into marked-content sequences that stay inside
 one text object, one `q` level and the marked-content sequences the page already has
@@ -1648,7 +1655,9 @@ the types the user chose; every drawing of an image is a figure.
   MCID may remain marked. Steps: `load`, `tags`, `tags.artifact`, `producer`, `save`,
   `verify`.
 - `ops/ua-xmp.ts` — textual edits of the XMP packet (`dc:title`, `pdfuaid:part`) that
-  leave every other byte of the packet alone.
+  leave every other byte of the packet alone. In a packet that claims PDF/A, the part comes
+  with the `pdfaExtension` description of the `pdfuaid` schema, which PDF/A requires for a
+  namespace it does not predefine.
 - `ops/pdfua.ts` — `checkPdfUa` and `fixPdfUa`. The 34 rules (`UA_RULES`) each carry a
   Matterhorn checkpoint group and an ISO 14289-1 clause, and end `pass | fail | manual | na
   | unchecked`: `unchecked` means the file could not be examined for that rule (no tree,

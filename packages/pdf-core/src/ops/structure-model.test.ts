@@ -108,6 +108,21 @@ describe('applyStructureEdits', () => {
     expect(reason([{ op: 'unwrap', key: 'h' }])).toBe('has-content');
     expect(reason([{ op: 'unwrap', key: 'd' }])).toBe('root');
   });
+  it('gives the children of an unwrapped element its language where they have none of their own', () => {
+    const tree = modelOf(
+      el('d', 'Document', [
+        el('s', 'Sect', [el('p1', 'P', [mcid(1)]), el('p2', 'P', [mcid(2)], { lang: 'de' })], { lang: 'fr' }),
+        el('q', 'Sect', [el('p3', 'P', [mcid(3)])]),
+      ]),
+    );
+    const langs = (edit: StructEdit) =>
+      applyStructureEdits(tree, [edit]).roots[0]?.kids.flatMap((kid) =>
+        kid.kind === 'element' && kid.node.role === 'P' ? [kid.node.lang] : [],
+      );
+    expect(langs({ op: 'unwrap', key: 's' })).toEqual(['fr', 'de']);
+    // An element with no language of its own passes none on.
+    expect(langs({ op: 'unwrap', key: 'q' })).toEqual([null]);
+  });
 
   it('removes an element for the artifact edit, but not one with interactive or stream content', () => {
     expect(sign([{ op: 'artifact', key: 'f' }])).toBe('Document(H1(#0:0),Sect(P(#0:1),P(#0:2)))');

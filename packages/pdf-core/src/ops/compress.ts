@@ -22,6 +22,7 @@
  *    path needs a worker contract in the adapter first.
  */
 
+import type { PDFObject } from 'mupdf';
 import { ToolError } from 'pdf-shared';
 import { mapMupdfError } from '../engines/mupdf';
 import {
@@ -71,6 +72,50 @@ const RASTER_QUALITY = { min: 0.3, max: 0.95 };
  * is fixed here rather than assembled.
  */
 const STRUCTURE_SAVE_OPTIONS = 'garbage=deduplicate,compress,compress-fonts,compress-images,objstms';
+
+/** The same rewrite without the merging of equal objects, for the save that follows a split. */
+const SPLIT_SAVE_OPTIONS = 'garbage=compact,compress,compress-fonts,compress-images,objstms';
+
+/**
+ * An annotation belongs to one page, but the merging of equal objects makes one of two annotations
+ * whose dictionaries are alike (the same stamp, with the same appearance, on two pages) and both
+ * pages then list it. Each page after the first gets its own copy back. `null` when no annotation
+ * is shared, which is the usual file.
+ */
+async function splitSharedAnnotations(bytes: Uint8Array): Promise<Uint8Array | null> {
+  const { doc } = await openForWrite(bytes);
+  try {
+    const owned = new Set<number>();
+    let split = 0;
+    for (const page of pageObjects(doc)) {
+      const listed = resolved(page.get('Annots'));
+      if (listed?.isArray() !== true) continue;
+      const entries: PDFObject[] = [];
+      let copied = false;
+      for (let at = 0; at < listed.length; at += 1) {
+        const entry = listed.get(at);
+        if (entry.isIndirect() && owned.has(entry.asIndirect())) {
+          const copy = doc.newDictionary();
+          // An indirect entry of the file just written resolves.
+          (resolved(entry) as PDFObject).forEach((value, key) => {
+            copy.put(key, value);
+          });
+          entries.push(doc.addObject(copy));
+          copied = true;
+          split += 1;
+          continue;
+        }
+        if (entry.isIndirect()) owned.add(entry.asIndirect());
+        entries.push(entry);
+      }
+      // A fresh array: the page's own may be an object that other pages list as well.
+      if (copied) page.put('Annots', entries);
+    }
+    return split === 0 ? null : saveRewrite(doc, 'compress', SPLIT_SAVE_OPTIONS);
+  } finally {
+    doc.destroy();
+  }
+}
 
 function requireRange(value: number, min: number, max: number, field: string): number {
   if (!Number.isFinite(value) || value < min || value > max) {
@@ -156,6 +201,8 @@ async function compressStructure(
 
     throwIfAborted(context.signal);
     out = saveRewrite(doc, 'compress', STRUCTURE_SAVE_OPTIONS);
+    throwIfAborted(context.signal);
+    out = (await splitSharedAnnotations(out)) ?? out;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw mapMupdfError(error, 'compress');
