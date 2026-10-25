@@ -582,9 +582,9 @@ export function loadPins(pinsPath = PINS_PATH) {
  * Recompute size + sha256 of every pinned file. Returns rows plus every difference found.
  *
  * The check runs both ways. A pinned file that is missing or different is a problem, and so is a
- * file under `public/engines/**` that no pin names: `assemble-dist` copies that directory whole, so
- * a stray file there would be deployed without anything having vouched for it (a local
- * `worker:deploy` runs no other gate). `versionsPath` is the file that records the engines' URL
+ * file under `public/engines/**` or `public/fonts/**` that no pin names: `assemble-dist` copies
+ * `public/` whole, so a stray file there would be deployed without anything having vouched for it
+ * (a local `worker:deploy` runs no other gate). `versionsPath` is the file that records the engines' URL
  * versions (`engineVersions`); it must say what the pins say. `null` skips that comparison.
  */
 export function verifyAssets({
@@ -639,13 +639,14 @@ export function verifyAssets({
   for (const engine of Object.values(pins.engines)) {
     for (const pin of engine.files ?? []) pinned.add(pin.path);
   }
-  const enginesDir = join(publicDir, 'engines');
-  if (existsSync(enginesDir)) {
-    for (const abs of walkFiles(enginesDir).sort()) {
+  for (const directory of ['engines', 'fonts']) {
+    const pinnedDir = join(publicDir, directory);
+    if (!existsSync(pinnedDir)) continue;
+    for (const abs of walkFiles(pinnedDir).sort()) {
       const path = relative(publicDir, abs).split(sep).join('/');
       if (pinned.has(path)) continue;
       const owner = path.split('/')[1] ?? '?';
-      addProblem(owner, path, 'unpinned', 'file is under public/engines but no pin names it');
+      addProblem(owner, path, 'unpinned', `file is under public/${directory} but no pin names it`);
     }
   }
 
@@ -827,7 +828,7 @@ function verify() {
 
 const USAGE = `usage: node tools/fetch-engines.mjs [--update|--sync]
 
-  (default)   verify public/engines/** against tools/asset-pins.json
+  (default)   verify public/engines/** and public/fonts/** against tools/asset-pins.json
   --update    copy the pinned engine builds and rewrite tools/asset-pins.json and the
               engines' URL versions (packages/pdf-core/src/engine-versions.json)
   --versions  rewrite only the URL versions, from the committed pins — what to run after

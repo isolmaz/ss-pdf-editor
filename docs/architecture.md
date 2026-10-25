@@ -3583,7 +3583,7 @@ enters git; a checkout without `node_modules` skips that step with a note.
 
 Because the pins are the identity offline caching keys on, changing a pinned asset changes
 the cache name, the manifest and the worker stamp together, and `verify-assets` also fails on a
-file under `public/engines/**` that no pin names and on an `engine-versions.json` that no
+file under `public/engines/**` or `public/fonts/**` that no pin names and on an `engine-versions.json` that no
 longer matches the pins (`node tools/fetch-engines.mjs --versions` rewrites it).
 
 ### 13.2 Assembling the distribution

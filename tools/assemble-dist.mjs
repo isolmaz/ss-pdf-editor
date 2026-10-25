@@ -51,13 +51,15 @@ function sizeOf(path) {
   return total;
 }
 
-// What `public/engines/**` holds is what ships, so it is checked first: a missing or altered
+// What `public/engines/**` and `public/fonts/**` hold is what ships, so it is checked first: a missing or altered
 // pinned file, a file no pin names (a local `worker:deploy` runs no other gate), or a
 // version record that no longer matches the pins stops the assembly.
 const verification = verifyAssets();
 if (verification.problems.length > 0) {
   printReport(verification, { action: 'assemble-dist' });
-  console.error('assemble-dist: public/engines/** does not match the pins — refusing to assemble');
+  console.error(
+    'assemble-dist: public/engines/** or public/fonts/** does not match the pins — refusing to assemble',
+  );
   process.exit(1);
 }
 

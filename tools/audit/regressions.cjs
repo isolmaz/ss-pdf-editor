@@ -804,7 +804,7 @@ async function main() {
       assert.notEqual(releaseVersion({ ...base, pins: [{ ...pins[0], sha256: 'cc' }, pins[1]] }), version);
     },
   );
-  await check('verify-assets refuses a file under public/engines that no pin names', async () => {
+  await check('verify-assets refuses a file under public/engines or fonts that no pin names', async () => {
     const { pathToFileURL } = require('node:url');
     const { verifyAssets } = await import(pathToFileURL(path.join(ROOT, 'tools/fetch-engines.mjs')).href);
     const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'pins-'));
@@ -824,6 +824,13 @@ async function main() {
         [{ engine: 'demo', file: 'engines/demo/stray.js', kind: 'unpinned' }],
       );
       fs.rmSync(path.join(dir, 'public/engines/demo/stray.js'));
+      fs.mkdirSync(path.join(dir, 'public/fonts/demo'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'public/fonts/demo/stray.woff2'), 'x');
+      assert.deepEqual(
+        verifyAssets(options).problems.map(({ engine, path: file, kind }) => ({ engine, file, kind })),
+        [{ engine: 'demo', file: 'fonts/demo/stray.woff2', kind: 'unpinned' }],
+      );
+      fs.rmSync(path.join(dir, 'public/fonts/demo/stray.woff2'));
       // The URL versions must be the ones the pins give.
       const versionsPath = path.join(dir, 'versions.json');
       fs.writeFileSync(versionsPath, JSON.stringify({ versions: { demo: 'v000000000000' } }));
