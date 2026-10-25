@@ -45,6 +45,16 @@ export async function exportBytes(page: Page, name: string): Promise<Uint8Array>
   return new Uint8Array(readFileSync(path));
 }
 
+/**
+ * Press Enter in the open command palette once the entry it would run is highlighted and
+ * enabled: the palette drops an Enter on a disabled entry (a shell that is still opening a
+ * document disables most of them) or on a list still filtering, without a word.
+ */
+export async function runHighlightedCommand(page: Page): Promise<void> {
+  await expect(page.locator('[role="option"][data-highlighted]:not([aria-disabled="true"])')).toHaveCount(1);
+  await page.keyboard.press('Enter');
+}
+
 /** Run a command by name from the command palette (Ctrl+K). */
 export async function runCommand(page: Page, command: string): Promise<void> {
   await page.keyboard.press('Control+k');
