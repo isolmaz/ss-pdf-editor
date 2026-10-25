@@ -1281,6 +1281,23 @@ describe('font facts from odd dictionaries', () => {
       ['Bad', 'bad-map'],
     ]);
   });
+  it('reads every code pair of a ToUnicode line, not only the first', async () => {
+    const fonts = {
+      LateBad: withMap('LateBad', (doc) =>
+        doc.addStream(cmap('1 beginbfchar\n<01> <0041> <02> <FFFD>\nendbfchar'), {}),
+      ),
+      AllGood: withMap('AllGood', (doc) =>
+        doc.addStream(cmap('1 beginbfchar\n<01> <0041> <02> <0042>\nendbfchar'), {}),
+      ),
+    };
+    const found = await checked({
+      pages: [{ content: use(...Object.keys(fonts)), fonts }],
+      tree: [{ s: 'Document' }],
+    });
+    expect(found.rule('font-unicode').instances.map((entry) => [entry.params?.font, entry.reason])).toEqual([
+      ['LateBad', 'bad-map'],
+    ]);
+  });
 });
 
 describe('forms and structure that cannot be walked', () => {

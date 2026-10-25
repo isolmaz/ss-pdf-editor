@@ -537,7 +537,9 @@ function toUnicodeIsBad(stream: PDFObject): boolean {
   for (const block of source.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
     for (const line of (block[1] as string).split(/\r?\n/)) {
       const hexes = [...line.matchAll(/<([0-9A-Fa-f\s]*)>/g)].map((entry) => entry[1] as string);
-      if (hexes.length >= 2 && bad(hexes[1] as string, hexes[0] as string)) return true;
+      for (let at = 0; at + 1 < hexes.length; at += 2) {
+        if (bad(hexes[at + 1] as string, hexes[at] as string)) return true;
+      }
     }
   }
   for (const block of source.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
