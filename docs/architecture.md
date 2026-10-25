@@ -2942,7 +2942,8 @@ Ordering rules encoded here, each of which prevents a specific defect:
   as a PDF, as Save names its own. With no file handle and no `showSaveFilePicker` the
   download *is* the save, so the version is recorded like Save's download (`recordOutput`) and
   the tab is no longer dirty; with a handle, or in a browser that can write files, an export is
-  a copy and the tab stays as dirty as it was.
+  a copy and the tab stays as dirty as it was — unless the tab is a produced document nothing
+  has written yet (`savedState` is `null`, §8.5), whose first export is its save.
 - **Save and Export are offered only for an inspected version.** Both are enabled from the
   same verdict: the document-facts read (signatures and protection; the fonts and the
   attachments are read beside them and only shown, so a read of those that fails leaves them
