@@ -840,7 +840,8 @@ function decidedCheck(
  * A list or response speaks for a certificate only when the issuer that signed it is one of the
  * `roots` the user imported or chains to one: a file can carry its own CA, a certificate under
  * it and a list that CA signed, and that proves nothing about the certificate. Otherwise the
- * certificate is `unknown` (`'issuer-not-trusted'`).
+ * certificate is `unknown` (`'issuer-not-trusted'`); one that no list or response names at all
+ * is `'no-list'` whoever its issuer is.
  */
 export async function checkRevocation(input: {
   readonly leaf: Uint8Array;
@@ -868,19 +869,23 @@ export async function checkRevocation(input: {
       checks.push(unknownCheck(link, role, 'no-issuer'));
       continue;
     }
-    if (anchored[index] !== true) {
-      checks.push(unknownCheck(link, role, 'issuer-not-trusted'));
-      continue;
-    }
     const { evidence, failure, seenList } = await evidenceFor(
       subtle,
       { ...link, issuer: link.issuer },
       input.context,
     );
+    if (!seenList) {
+      checks.push(unknownCheck(link, role, 'no-list'));
+      continue;
+    }
+    if (anchored[index] !== true) {
+      checks.push(unknownCheck(link, role, 'issuer-not-trusted'));
+      continue;
+    }
     const decided = decisive(evidence, input.context.validationTime);
     checks.push(
       decided === null
-        ? unknownCheck(link, role, seenList ? (failure ?? 'list-scope') : 'no-list')
+        ? unknownCheck(link, role, failure ?? 'list-scope')
         : decidedCheck(link, role, decided, input.context),
     );
   }

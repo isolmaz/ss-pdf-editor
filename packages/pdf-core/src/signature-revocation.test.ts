@@ -325,6 +325,24 @@ describe('which issuers a list may come from', () => {
     ]);
   });
 
+  it('says no list was found, not that the issuer is untrusted, when nothing speaks for the certificate', async () => {
+    const ca = await makeCa('Embedded CA');
+    const leaf = await makeLeaf('Signer', ca);
+    const other = await makeCa('Other CA');
+    const elsewhere = await issueCrl({ issuer: other, ...CRL_DATES });
+    for (const crls of [[], [elsewhere]]) {
+      expect((await check(leaf, [ca], crls, SIGNED_AT, []))[0]).toMatchObject({
+        status: 'unknown',
+        unknownReason: 'no-list',
+      });
+    }
+    const own = await makeCa('Self-signed signer');
+    expect((await check(own, [own], [], SIGNED_AT, []))[0]).toMatchObject({
+      status: 'unknown',
+      unknownReason: 'no-list',
+    });
+  });
+
   it('trusts the list of a self-signed signer only when that certificate is the imported root', async () => {
     const own = await makeCa('Self-signed signer');
     const crl = await issueCrl({ issuer: own, ...CRL_DATES });

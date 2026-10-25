@@ -1419,6 +1419,8 @@ but not including a self-signed root, are checked.
   signature-built chain, compared with the imported roots by `tbsCertificate`). Otherwise the
   certificate is `unknown` with reason `issuer-not-trusted` and neither a `good` nor a `revoked`
   answer is taken from lists that issuer signed; with no root imported every certificate is `unknown`.
+  A certificate that no list or response names is `no-list` whoever its issuer is: there is no list
+  to set aside.
 - **Answers.** `good` (a verified complete list does not name the certificate), `revoked`
   (date and reason from the list; `removeFromCRL` entries are not revocations) or `unknown` with a
   reason: `no-list`, `no-issuer`, `issuer-not-trusted`, `invalid-list`, `unsupported-list` (indirect CRL, unknown
