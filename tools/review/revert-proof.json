@@ -742,5 +742,35 @@
     "tests": ["packages/pdf-ui/src/dialogs/BatchDialog.test.tsx"],
     "run": ["packages/pdf-ui/src/dialogs/BatchDialog.test.tsx"],
     "filter": "keeps Run off while a whole-number setting holds a fraction"
+  },
+  {
+    "commit": "4e09940370f3faef6626aa44988222f9b0b04100",
+    "title": "Take a verified revocation whoever vouches for its issuer, and know an imported root by its name and key",
+    "kind": "unit",
+    "tests": [
+      "packages/pdf-core/src/signature-revocation.test.ts",
+      "packages/pdf-core/src/signature-validation.test.ts"
+    ],
+    "run": [
+      "packages/pdf-core/src/signature-revocation.test.ts",
+      "packages/pdf-core/src/signature-validation.test.ts"
+    ],
+    "filter": "takes its revocation as stated|copy of an imported root that the file carries first|does not let a back-dated signing time excuse a revocation"
+  },
+  {
+    "commit": "13f11661b3c8790d12894e40a46ef6505e703d2a",
+    "title": "Refuse to verify a redaction while a form that a pattern or a soft-mask group draws still shows text",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/ops/redact.test.ts"],
+    "run": ["packages/pdf-core/src/ops/redact.test.ts"],
+    "filter": "follows forms, patterns and soft-mask groups down to the stream that shows the text"
+  },
+  {
+    "commit": "0a6d40fba95b5ded61ca05fe5e4698117d8343f2",
+    "title": "Group exported text on a page with a /UserUnit in user space, as its widths and sizes are",
+    "kind": "unit",
+    "tests": ["packages/pdf-core/src/ops/text-export.test.ts"],
+    "run": ["packages/pdf-core/src/ops/text-export.test.ts"],
+    "filter": "groups the words and lines of a page with a /UserUnit as on a page without one"
   }
 ]
