@@ -67,6 +67,30 @@ async function hebrewPage(content: string): Promise<Uint8Array> {
   return bytes;
 }
 
+/** One 600×400 page shown turned by `rotate` degrees, Helvetica as `/F`. */
+async function turnedPage(rotate: number, content: string): Promise<Uint8Array> {
+  const mupdf = await loadMupdf();
+  const doc = new mupdf.PDFDocument();
+  const font = doc.addObject({
+    Type: 'Font',
+    Subtype: 'Type1',
+    BaseFont: 'Helvetica',
+    Encoding: 'WinAnsiEncoding',
+  });
+  doc.insertPage(0, doc.addPage([0, 0, 600, 400], rotate, { Font: { F: font } }, content));
+  const bytes = new Uint8Array(doc.saveToBuffer('compress').asUint8Array());
+  doc.destroy();
+  return bytes;
+}
+
+/**
+ * `text` set to read left to right once the page is shown. `shown` is the matrix that turns the text
+ * so (a quarter turn of the page needs the text turned the other way), `x` and `y` the start of the
+ * line in the page's own space.
+ */
+const upright = (shown: string, x: number, y: number, text: string) =>
+  `BT /F 12 Tf ${shown} ${x} ${y} Tm (${text}) Tj ET`;
+
 /** A heading, a two-line paragraph, a gap, and a second paragraph; words and kerning on one line. */
 const ARTICLE = [
   at(50, 360, 'Baslik', 24),
@@ -194,6 +218,37 @@ describe('exportText', () => {
     );
     expect(decode(lone.file.bytes).slice(1)).toBe('xyzuvw \u05D2\u05D3\n');
   });
+
+  it.each([
+    // The matrix that reads left to right once shown, and where the first line starts and which way the next one lies.
+    ['a quarter turn', 90, '0 1 -1 0', [100, 50], [15, 0], [0, 80]],
+    ['half a turn', 180, '-1 0 0 -1', [550, 100], [0, 15], [-80, 0]],
+    ['three quarters of a turn', 270, '0 -1 1 0', [500, 350], [-15, 0], [0, -80]],
+  ] as const)(
+    'reads the lines of a page shown after %s as they stand on it',
+    async (_name, rotate, shown, start, below, across) => {
+      // Two lines of two pieces each, as the viewer shows them: Merhaba dunya / nasilsin bugun.
+      const piece = (line: number, column: number, text: string) =>
+        upright(
+          shown,
+          start[0] + line * below[0] + column * across[0],
+          start[1] + line * below[1] + column * across[1],
+          text,
+        );
+      const content = [
+        piece(0, 0, 'Merhaba'),
+        piece(0, 1, 'dunya'),
+        piece(1, 0, 'nasilsin'),
+        piece(1, 1, 'bugun'),
+      ].join('\n');
+      const result = await exportText(
+        await turnedPage(rotate, content),
+        { pages: [0], format: 'text', baseName: 'x' },
+        run,
+      );
+      expect(decode(result.file.bytes).slice(1)).toBe('Merhaba dunya\nnasilsin bugun\n');
+    },
+  );
 
   it('reports progress per page', async () => {
     const events: string[] = [];

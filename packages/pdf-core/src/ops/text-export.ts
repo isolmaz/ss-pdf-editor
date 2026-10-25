@@ -9,9 +9,10 @@
  * `getPageText()` (the adapter's convenience call) joins items with single spaces
  * and loses both line and paragraph breaks. Items are grouped into lines by
  * baseline and lines into paragraphs by the vertical gap; the numbers are in
- * `pageToParagraphs`. The heuristic assumes upright text — a page of sideways
- * text still exports its characters, but its line grouping is content order, and
- * the report says so.
+ * `pageToParagraphs`. The heuristic assumes text that reads left to right on the
+ * page as it is shown: positions go through the page's viewport, so a page with a
+ * `/Rotate` groups like an upright one. Text set sideways on the shown page still
+ * exports its characters, but not in reading order, and nothing in the result says so.
  *
  * A line with right-to-left text (Hebrew, Arabic) is joined in reading order, not
  * left to right: pdf.js turns each item's text into reading order and says which way
@@ -193,6 +194,7 @@ export async function exportText(
       let text: string;
       try {
         const page = await handle.raw.getPage(pageIndex + 1);
+        const viewport = page.getViewport({ scale: 1 });
         const content = await page.getTextContent();
         // Marked-content markers carry structure, not text; only `TextItem`s have
         // `str` and a text matrix. Written as an explicit loop so the pdf.js item
@@ -200,10 +202,13 @@ export async function exportText(
         const pieces: TextPiece[] = [];
         for (const item of content.items) {
           if (!('str' in item)) continue;
+          // The text matrix is in the page's own space, which `/Rotate` turns before it is shown.
+          // The viewport's y grows downwards; the grouping reads a larger y as higher on the page.
+          const [x, top] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
           pieces.push({
             text: item.str,
-            x: item.transform[4],
-            y: item.transform[5],
+            x,
+            y: -top,
             size: Math.hypot(item.transform[1], item.transform[3]) || item.height || 1,
             width: item.width,
             direction: item.dir === 'rtl' ? 'rtl' : letterCounts(item.str).ltr > 0 ? 'ltr' : null,
