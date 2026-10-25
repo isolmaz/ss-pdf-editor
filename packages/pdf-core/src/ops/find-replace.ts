@@ -25,7 +25,9 @@
  * A block whose lines share a baseline — table cells, as MuPDF reports a table row —
  * is never laid out as a paragraph: a match there that fits neither way is left
  * alone and reported. Matches in text the model marks as not editable (scanned,
- * rotated, skewed or Type3 text) are counted and left alone too.
+ * rotated, skewed or Type3 text) are counted and left alone too. A replacement holding a
+ * line break, a tab or an invisible character is refused before any page is read
+ * (`replacement-invalid`, naming the code points).
  *
  * **Faces.** The best face is the page's own font (`engines/doc-fonts.ts`): drawn with
  * it, the new text looks exactly like the old. It is used when the font has a code for
@@ -209,6 +211,28 @@ export const STANDARD_FACE_NAMES: Readonly<Record<string, string>> = {
   'courier-boldoblique': 'Courier-BoldOblique',
 };
 
+/**
+ * What a replacement cannot hold: a replacement is one line of words, so a line break or a tab
+ * would be drawn as a plain gap, and a zero-width or direction character cannot be read back as
+ * text (the verification would then refuse the edit without saying why).
+ */
+const UNPLACEABLE =
+  /[\p{Cc}\u{ad}\u{200b}-\u{200f}\u{2028}\u{2029}\u{202a}-\u{202e}\u{2060}\u{2066}-\u{2069}]/gu;
+
+function refuseUnplaceable(replacement: string): void {
+  const found = new Set(Array.from(replacement.matchAll(UNPLACEABLE), (match) => match[0]));
+  if (found.size === 0) return;
+  const named = Array.from(
+    found,
+    (character) => `U+${(character.codePointAt(0) as number).toString(16).toUpperCase().padStart(4, '0')}`,
+  ).join(' ');
+  throw new ToolError('replacement-invalid', {
+    engine: 'model',
+    engineMessage: `the replacement holds ${named}`,
+    params: { chars: named },
+  });
+}
+
 export async function findReplace(
   bytes: Uint8Array,
   options: FindReplaceOptions,
@@ -218,6 +242,7 @@ export async function findReplace(
   if (searchTokens(options.find, options.matchCase).length === 0) {
     throw new ToolError('value-out-of-range', { engine: 'model', engineMessage: 'empty search text' });
   }
+  refuseUnplaceable(options.replace);
   const pages = [...new Set(options.pages)].sort((left, right) => left - right);
   const inputs = await readDocumentText(bytes, pages, context, (done, total) =>
     context.onProgress?.({

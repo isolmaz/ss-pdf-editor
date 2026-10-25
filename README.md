@@ -360,6 +360,9 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - A letter and an accent drawn as two glyphs (`e` and U+0301) are compared as the letter
     they make, so `café` finds either spelling, and a match takes the combining marks that
     follow its last letter with it.
+  - The new text is one line of words. A line break, a tab or an invisible character in it (a
+    zero-width joiner, a soft hyphen, a direction mark) is refused before anything is read,
+    and the message names the code points.
 - **Export and import.** Export text as plain text or Markdown. Export pages as PNG, JPEG or
   WebP images, or build a PDF from images.
 - **Other documents to PDF.** DOCX, XLSX, PPTX, HTML, TXT/MD, CSV/TSV, EPUB and FB2 are

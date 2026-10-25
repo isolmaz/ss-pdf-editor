@@ -36,6 +36,10 @@ export const errorsPart = {
   'error.glyph-missing.message': 'Yazıda hiçbir yazı tipinde bulunmayan karakterler var: {chars}',
   'error.glyph-missing.hint':
     'Bu karakterleri metinden çıkarın ya da yazı tipinde bulunan karakterlerle değiştirin. Hiçbir şey yazılmadı; belgeniz değişmedi.',
+  'error.replacement-invalid.message':
+    'Yerine yazılacak metinde yerleştirilemeyen satır sonu, sekme veya görünmez karakterler var: {chars}',
+  'error.replacement-invalid.hint':
+    'Yeni metni tek satıra yazın ve bu karakterleri çıkarın. Hiçbir şey yazılmadı; belgeniz değişmedi.',
   'error.password-policy.message': 'Parola politikası gereği işlem durduruldu.',
   'error.password-policy.hint': 'Açma parolası olmadan şifreleme yapılamaz.',
 } as const;

@@ -206,7 +206,7 @@ CI `verify` job, after `pnpm build`.
 
 | Module | Responsibility |
 |---|---|
-| `errors.ts` | The single error contract. `ToolError` carries a stable code (40 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
+| `errors.ts` | The single error contract. `ToolError` carries a stable code (41 of them, `TOOL_ERROR_CODES`), an i18n message key, an i18n hint key, and `details.engine` / `details.engineMessage` for diagnostics. Raw English engine text never reaches the UI. `toToolError()` is the last line of defence; a lazy chunk the browser could not fetch (each browser's wording) is never a damaged document: it becomes `asset-offline` ("connect and reload") when `navigator.onLine` is not true, and `asset-stale` ("the app was updated, reload") when it is, because a browser with a network that cannot fetch a chunk of this build is holding a page from a release that has replaced it. |
 | `format.ts` | `formatBytes(bytes, locale)`, `formatPercent(fraction, locale)` and `formatDegrees(degrees, locale)`: sizes, percentages and angles the way the interface language writes them (`1,5 KB`, `%140` and `1,8°` in Turkish, `1.5 KB`, `140%` and `1.8°` in English), through `Intl.NumberFormat`. Report notes never format a size or an angle: they carry the numbers and the sentence asks for them with a `{name:bytes}`, `{name:percent}` or `{name:degrees}` placeholder, which `createTranslator` writes in its own locale. |
 | `limits.ts` | Two-tier limits (`LIMITS`; only desktop has a `warnPages`, mobile goes viewing-only first), the build budgets (`BUILD_BUDGETS`), `checkDocumentLimits()` as the single verdict function, and `detectDeviceTier()` (a mobile user agent, or a screen whose only pointer is touch: `(pointer: coarse)` with no `(any-pointer: fine)`, so a touch-screen laptop with a trackpad stays desktop). The status bar's memory gauge takes its budget from `LIMITS[tier].renderCacheBytes`; the gauge and the limit-profile badge are drawn only while the limit verdict is not `ok` or the gauge is at 75 % or more (from 768 px up). |
 | `i18n/` | The message catalogue: `MessageKey = keyof typeof tr`, identical key sets in `tr` and `en`, and the language registry (`locales.ts`: id, native name, text direction, fallback, loader). `createTranslator(locale)` looks a key up in the locale, then its `fallback`, then Turkish. Every catalogue is its own chunk: `loadLocale` fetches the interface language's before the first render (`main.tsx`) and another one when the language is switched, and the shell sets `<html lang>` and `<html dir>` from the registry. |
@@ -1786,7 +1786,10 @@ inside one glyph is skipped and counted. A line-end hyphen before a lower-case l
 as hyphenation and joins the word. Without match case (`case-fold.ts`, which the document search
 `search.ts` uses too), `I` matches both `i` and `ı`, `İ` matches `i`, `ı` matches only `ı` —
 folding `ı` to `i` would make Turkish `sık` and `sik` one word — and a final sigma `ς` is `σ`.
-Whole-word mode refuses a letter, digit or mark on either side.
+Whole-word mode refuses a letter, digit or mark on either side. The replacement is one line of words: a
+control character (line break, tab), a line or paragraph separator, or a zero-width, soft-hyphen or
+direction character in it is refused before any page is read (`replacement-invalid`, naming the code
+points), since the first kind would be drawn as a plain gap and the second kind cannot be read back.
 
 **Placement**, per line of matches:
 
