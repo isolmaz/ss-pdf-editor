@@ -587,7 +587,7 @@ test('home "Merge PDFs" tile: two chosen files become one new document, in the o
     ]);
   // The first press merges and reports; the result step's own press opens the new tab.
   await applyForm(dialog, 'Open in new tab');
-  await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Merged.pdf Unsaved changes', exact: true })).toBeVisible({
     timeout: 30_000,
   });
   const texts = await readProducedPageTexts(await exported(page, 'combined.pdf'));

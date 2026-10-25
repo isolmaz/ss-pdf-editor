@@ -102,14 +102,16 @@ test('extract: the selected page opens as its own document and the source keeps 
   await thumbs(page).nth(1).click();
   const form = await openForm(page, 'Extract pages', 'Extract pages');
   await applyForm(form, 'Open in new tab');
-  // Named for the page it holds, not for a part counter.
-  const header = page.getByRole('button', { name: 'source-p2.pdf', exact: true });
-  await expect(header).toBeVisible({ timeout: 30_000 });
+  // Named for the page it holds, not for a part counter; no file holds it yet.
+  await expect(page.getByRole('button', { name: 'source-p2.pdf Unsaved changes', exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(thumbs(page)).toHaveCount(1);
   const extracted = await readProducedPageTexts(await exported(page, 'extracted.pdf'));
   expect(extracted.map((text) => text.trim())).toEqual(['Page 2']);
 
-  await header.click();
+  // Its first export is the save of a document no file held.
+  await page.getByRole('button', { name: 'source-p2.pdf', exact: true }).click();
   await page.getByRole('button', { name: 'source.pdf', exact: true }).click();
   await expect(thumbs(page)).toHaveCount(3);
   const source = await readProducedPageTexts(await exported(page, 'source-out.pdf'));

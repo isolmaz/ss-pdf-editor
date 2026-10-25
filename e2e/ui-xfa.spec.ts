@@ -92,7 +92,7 @@ test('flatten: the laid-out form becomes a normal PDF whose text is the form tex
   await expect(form).toBeVisible();
   await form.getByRole('radio').first().check();
   expect(await applyForm(form, 'Open in new tab')).toBe('review');
-  await expect(page).toHaveTitle('xfa-flat.pdf', { timeout: 60_000 });
+  await expect(page).toHaveTitle('xfa-flat.pdf — Unsaved changes', { timeout: 60_000 });
   // The notice that says the result opened keeps the report one press away.
   await detailsButton(page).click();
   await expect(page.getByRole('dialog')).toContainText('1 XFA page(s) became normal PDF pages.');

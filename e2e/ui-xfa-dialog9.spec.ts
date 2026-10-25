@@ -112,7 +112,7 @@ test('flatten draws every kind of control, both faces and the second page as wor
   const form = page.getByRole('region', { name: 'Flatten XFA form to a normal PDF' });
   await form.getByRole('radio').first().check();
   await applyForm(form, 'Open in new tab');
-  await expect(page).toHaveTitle('rich-flat.pdf', { timeout: 60_000 });
+  await expect(page).toHaveTitle('rich-flat.pdf — Unsaved changes', { timeout: 60_000 });
   const texts = await readProducedPageTexts(await exportBytes(page, 'rich-flat.pdf'));
   expect(texts.length).toBeGreaterThanOrEqual(2);
   const all = texts.join(' ');

@@ -61,7 +61,7 @@ test('the files of a multiple picker are reordered by dragging or by the arrows 
   await expect(names).toHaveText([/c\.pdf/, /a\.pdf/, /d\.pdf/]);
 
   await applyForm(dialog, 'Open in new tab');
-  await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Merged.pdf Unsaved changes', exact: true })).toBeVisible({
     timeout: 30_000,
   });
   const texts = await readProducedPageTexts(await exportBytes(page, 'merged.pdf'));

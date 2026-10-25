@@ -184,7 +184,7 @@ test.describe('without a camera permission', () => {
     await page.getByRole('option', { name: 'Best quality' }).click();
     await dialog.getByRole('button', { name: 'Create PDF' }).click();
     await expect(dialog).toHaveCount(0, { timeout: 60_000 });
-    await expect(page).toHaveTitle(/^Scan \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.pdf$/);
+    await expect(page).toHaveTitle(/^Scan \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.pdf — Unsaved changes$/);
     const bytes = await exportBytes(page, 'scan.pdf');
     expect((await readProducedPdf(bytes)).pageCount).toBe(1);
     expect(await readProducedEntry(bytes, 0, 'MediaBox')).toMatch(/612 792/);

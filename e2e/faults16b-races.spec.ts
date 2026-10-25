@@ -39,10 +39,10 @@ test('a second press of a Start tool result while its tab is still opening is re
   await release.reached();
   await confirm.click({ force: true });
   await expect(notice(page, BUSY)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Merged.pdf Unsaved changes', exact: true })).toHaveCount(0);
 
   await release();
-  await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toHaveCount(1, {
+  await expect(page.getByRole('button', { name: 'Merged.pdf Unsaved changes', exact: true })).toHaveCount(1, {
     timeout: 30_000,
   });
   await expect(notice(page, 'Opened in new tab: Merged.pdf')).toBeVisible();

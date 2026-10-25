@@ -256,7 +256,9 @@ test('PDF/A: saving as PDF/A-2b opens a new tab whose own check says PDF/A-2b wi
   await form.getByRole('button', { name: 'Open in new tab', exact: true }).click();
 
   // The result opens beside the source, which is left as it was.
-  await expect(page.getByRole('button', { name: 'archive-pdfa-2b.pdf', exact: true })).toBeVisible({
+  await expect(
+    page.getByRole('button', { name: 'archive-pdfa-2b.pdf Unsaved changes', exact: true }),
+  ).toBeVisible({
     timeout: 60_000,
   });
   // The converter's own sentence, not the generic "opened in a new tab".

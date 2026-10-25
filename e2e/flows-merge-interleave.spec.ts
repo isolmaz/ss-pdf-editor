@@ -49,7 +49,7 @@ test('merge, alternating: a flipped stack of backs lands behind the right fronts
   ).toBeVisible();
   await expect(dialog.getByText('The back sides were taken from the last page to the first.')).toBeVisible();
   await dialog.getByRole('button', { name: 'Open in new tab' }).click();
-  await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Merged.pdf Unsaved changes', exact: true })).toBeVisible({
     timeout: 30_000,
   });
   expect(await exportedTexts(page)).toEqual(['Front 1', 'Back 3', 'Front 2', 'Back 2', 'Front 3', 'Back 1']);
@@ -68,7 +68,7 @@ test('merge, alternating: pages without a partner follow at the end and the repo
     ),
   ).toBeVisible();
   await dialog.getByRole('button', { name: 'Open in new tab' }).click();
-  await expect(page.getByRole('button', { name: 'Merged.pdf', exact: true })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Merged.pdf Unsaved changes', exact: true })).toBeVisible({
     timeout: 30_000,
   });
   expect(await exportedTexts(page)).toEqual(['Front 1', 'Back 1', 'Front 2', 'Front 3']);
