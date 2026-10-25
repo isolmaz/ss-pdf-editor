@@ -580,7 +580,8 @@ nothing leaving the browser.
   - The verdict has four separate parts: integrity, trust, revocation and coverage.
   - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
   - Trust is checked only against certificates you imported (a PEM file may hold several, such
-    as a CA bundle; each is added and the ones that cannot be read are counted). A certificate
+    as a CA bundle; each is added and the ones that cannot be read are counted, and a check reads
+    the first 32 you imported). A certificate
     that is not yet valid is reported with the date it becomes valid; any other shows its
     expiry date.
   - The signer's own certificate has to allow signing documents: a key usage without digital

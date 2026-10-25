@@ -1367,7 +1367,8 @@ entries are document timestamps and get their own check (§5.3.2). Four more fac
 certificate), and `validationTime` with its `validationTimeSource`.
 
 **Trust (`signature-trust.ts`).** Path building follows the RFC 5280 §6.1 shape: candidate
-issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates, each link's
+issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates (the first 32 of the
+file's certificates and the first 32 imported roots are parsed), each link's
 signature verified over the child's `tbsCertificate`, validity windows checked against the
 supplied clock, and `basicConstraints` cA (on every issuer but the trust anchor — the user's
 import is the statement that it may issue, and a v1 self-signed root has no extensions) /
