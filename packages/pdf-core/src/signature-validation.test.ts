@@ -602,7 +602,10 @@ describe('evaluateEvidence along the trusted path', () => {
       },
     );
     expect(ownRoot.trust).toMatchObject({ verdict: 'trusted', path: ['Signer'] });
-    expect(rows(ownRoot.revocationChecks)).toEqual([['Signer', 'unknown']]);
+    expect(rows(ownRoot.revocationChecks)).toEqual([
+      ['Signer', 'unknown'],
+      ['Intermediate', 'unknown'],
+    ]);
     expect(ownRoot.revocation).toBe('indeterminate');
 
     // A root whose authority key id is not its own: a certificate carrying that id would rank above
@@ -645,6 +648,59 @@ describe('evaluateEvidence along the trusted path', () => {
       ['Signer', 'good'],
       ['Intermediate', 'good'],
     ]);
+  });
+
+  it('counts the revocation of a CA that an imported root vouches for, above the path and without one', async () => {
+    // A bundle of three CAs imported together: the walk stops at the lowest, and the top one has
+    // revoked the middle one.
+    const top = await authority('Top', await key());
+    const middle = await authority('Middle', await key(), top);
+    const low = await authority('Low', await key(), middle);
+    const bundle = await evidence(await holder('Signer', low), [low.der, middle.der], [top, middle, low], {
+      importedCrls: [
+        await issueCrl({ issuer: low, ...LIST_DATES }),
+        await issueCrl({ issuer: middle, ...LIST_DATES }),
+        await issueCrl({
+          issuer: top,
+          ...LIST_DATES,
+          revoked: [{ cert: middle, at: day(2, 1), reason: CRL_REASON.keyCompromise }],
+        }),
+      ],
+    });
+    expect(bundle.trust).toMatchObject({ verdict: 'trusted', path: ['Signer', 'Low'] });
+    expect(rows(bundle.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Low', 'good'],
+      ['Middle', 'revoked'],
+    ]);
+    expect(bundle.revocation).toBe('revoked');
+
+    // No trusted path (the signer's certificate has expired): a revocation from the imported root
+    // still counts, and so does one of a CA the user imported, whoever issued the CA.
+    const root = await authority('Root', await key());
+    const intermediate = await authority('Intermediate', await key(), root);
+    const expired = await holder('Signer', intermediate, day(4, 1));
+    const revokedByRoot = await issueCrl({
+      issuer: root,
+      ...LIST_DATES,
+      revoked: [{ cert: intermediate, at: day(2, 1), reason: CRL_REASON.keyCompromise }],
+    });
+    const importedCrls = [await issueCrl({ issuer: intermediate, ...LIST_DATES }), revokedByRoot];
+    const underRoot = await evidence(expired, [intermediate.der], [root], { importedCrls });
+    expect(underRoot.trust?.verdict).not.toBe('trusted');
+    expect(rows(underRoot.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Intermediate', 'revoked'],
+    ]);
+    expect(underRoot.revocation).toBe('revoked');
+    const importedCa = await evidence(expired, [intermediate.der, root.der], [intermediate], {
+      importedCrls,
+    });
+    expect(rows(importedCa.revocationChecks)).toEqual([
+      ['Signer', 'good'],
+      ['Intermediate', 'revoked'],
+    ]);
+    expect(importedCa.revocation).toBe('revoked');
   });
 
   it('checks the signer and a document timestamp along the paths their trust walks validated', async () => {

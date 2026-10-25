@@ -1407,9 +1407,7 @@ issuer its own name and its signature its own key's: a CA's re-issued root) is s
 - **Who may speak for whom.** When the trust walk (§5.3) validated a path to an imported root,
   the certificates checked are that path's, each with the issuer the walk proved
   (`checkTrustPath` hands it over; `evaluateEvidence` and the timestamp check pass it on), then
-  the root's own link when the root is not self-signed, and nothing above it: a certificate the
-  file adds above the root (its issuer's name and key under the file's own CA) is no one the user
-  trusts. A certificate with the same name and key that the file carries
+  whatever stands above the root. A certificate with the same name and key that the file carries
   ahead of the real one (a copy another CA issued, with other dates or uses) is not on that path
   and decides nothing. The path ends at the imported root itself: a certificate with an imported
   root's `tbsCertificate` that the file carries (signed again by anyone) stands for that root, on
@@ -1418,7 +1416,8 @@ issuer its own name and its signature its own key's: a CA's re-issued root) is s
   certify the intermediate's key, or two certificates of that key under one root), the walk takes
   the first it finds in the file's order, and that path's lists decide. Without a trusted path the chain is rebuilt from *signatures* (each
   certificate's issuer is the pool member whose key verifies it; a self-signed certificate answers
-  by its own key first, the imported roots are tried before the file's certificates, each step
+  by its own key first, the imported roots are tried before the file's certificates of the same
+  key-identifier rank, each step
   tries at most eight same-named candidates, the key-identifier match first and each distinct
   certificate once, and
   the chain ends where it would loop back on itself, so a pool of hundreds of same-named
@@ -1435,10 +1434,10 @@ issuer its own name and its signature its own key's: a CA's re-issued root) is s
   chains to one (`anchoredIssuers`; a root is the imported certificate itself, not a copy with
   its name and key). Otherwise a `good` answer becomes `unknown` with reason
   `issuer-not-trusted`; with no root imported no certificate is cleared. A `revoked` answer for
-  the signer's certificate, or for one on the trusted path, is taken whoever vouches for the
-  issuer. Without a trusted path a CA certificate above the signer's is only what the file says it
-  is (anyone can issue one for a CA's key under a CA of their own and revoke it), so its
-  revocation needs an anchored issuer too, and is `issuer-not-trusted` otherwise. A CRL's
+  the signer's certificate, or for a certificate the user imported, is taken whoever vouches for
+  the issuer. Any other CA certificate is only what the file says it is (anyone can issue one for
+  a CA's key under a CA of their own and revoke it), so its revocation needs an anchored issuer
+  too, and is `issuer-not-trusted` otherwise. A CRL's
   revocation counts even when the issuer certificate at
   hand lacks `cRLSign` or was not valid when the list was issued: the list is verified with the key
   that issued the certificate, so only its holder can have made it, and the dates and key usage of

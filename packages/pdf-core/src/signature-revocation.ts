@@ -589,20 +589,16 @@ function issuerCandidates(child: Certificate, pool: readonly Certificate[]): Cer
   return out;
 }
 
-/**
- * From the leaf up, at most `maxLinks` links: each certificate's issuer, found by its signature
- * and not its name.
- */
+/** From the leaf up: each certificate's issuer, found by its signature and not its name. */
 async function buildChain(
   subtle: SubtleCrypto,
   leaf: Certificate,
   pool: readonly Certificate[],
-  maxLinks = MAX_CHAIN,
 ): Promise<Link[]> {
   const links: Link[] = [];
   const onPath: Certificate[] = [];
   let current = leaf;
-  for (let depth = 0; depth < maxLinks; depth += 1) {
+  for (let depth = 0; depth < MAX_CHAIN; depth += 1) {
     onPath.push(current);
     // A self-signed certificate answers by its own key first: a file's certificate with its name and
     // key under another CA may rank above it among the candidates.
@@ -630,10 +626,8 @@ async function buildChain(
 }
 
 /**
- * The links to check: the trusted path's, then its root's own link (none when it is self-signed)
- * and nothing above it: a certificate a file adds above the root, one for its issuer's key under
- * the file's own CA, is no one the user trusts. Without a trusted path, the chain built by
- * signatures from the leaf.
+ * The links to check: the trusted path's, then the walk above its root (a self-signed root closes
+ * it at once). Without a trusted path, the chain built by signatures from the leaf.
  */
 async function linksToCheck(
   subtle: SubtleCrypto,
@@ -653,7 +647,11 @@ async function linksToCheck(
       }),
     ),
   );
-  return [...below, ...(await buildChain(subtle, top, pool, 1))];
+  return [...below, ...(await buildChain(subtle, top, pool))];
+}
+
+function isImported(certificate: Certificate, roots: readonly Certificate[]): boolean {
+  return roots.some((root) => sameBytes(new Uint8Array(root.tbsView), new Uint8Array(certificate.tbsView)));
 }
 
 /**
@@ -664,12 +662,10 @@ async function linksToCheck(
  * carries may be signed by anyone, and its dates and key usage are whatever that signer wrote.
  */
 function anchoredIssuers(links: readonly Link[], roots: readonly Certificate[]): boolean[] {
-  const isRoot = (certificate: Certificate): boolean =>
-    roots.some((root) => sameBytes(new Uint8Array(root.tbsView), new Uint8Array(certificate.tbsView)));
   const anchored: boolean[] = [];
   for (let index = links.length - 1; index >= 0; index -= 1) {
     const { issuer } = links[index] as Link; // `index < links.length`
-    anchored[index] = issuer !== null && (isRoot(issuer) || anchored[index + 1] === true);
+    anchored[index] = issuer !== null && (isImported(issuer, roots) || anchored[index + 1] === true);
   }
   return anchored;
 }
@@ -889,8 +885,8 @@ function decidedCheck(
  * is the leaf itself, where an absent list is an honest `unknown`.
  *
  * When the trust walk validated a path to an imported root (`trustedPath`, `checkTrustPath`),
- * the certificates checked are that path's, each with the issuer the walk proved, then the root's
- * own link and nothing above it, so no other
+ * the certificates checked are that path's, each with the issuer the walk proved, then the walk
+ * above its root, so no other
  * certificate with the same name and key — one the file carries ahead of the real one, valid
  * for other dates or allowed other uses — decides which lists count.
  *
@@ -898,8 +894,8 @@ function decidedCheck(
  * `roots` the user imported or chains to one: a file can carry its own CA, a certificate under
  * it and a list that CA signed, and that proves nothing about the certificate. Otherwise the
  * certificate is `unknown` (`'issuer-not-trusted'`). A revocation of the leaf, or of a certificate
- * on the trusted path, is taken whoever vouches for the issuer (without a trusted path, one above
- * the leaf needs an anchored issuer too), and a CRL's revocation even when the issuer certificate at hand does not allow
+ * the user imported, is taken whoever vouches for the issuer (one of any other certificate needs an
+ * anchored issuer too), and a CRL's revocation even when the issuer certificate at hand does not allow
  * signing lists: it is verified with the key that issued the certificate, so only that key's
  * holder can have made it. A certificate for which no list from its issuer was seen, and that no
  * response names, is `'no-list'` whoever its issuer is.
@@ -924,8 +920,8 @@ export async function checkRevocation(input: {
   const parsedLeaf = parseCertificate(input.leaf);
   if (parsedLeaf === null) return [];
   const leaf = asRoot(parsedLeaf);
-  // The imported roots are tried first as issuers, so a certificate a file adds with a root's name
-  // and key under another CA never stands in for the root.
+  // The imported roots are tried before the file's certificates (of the same key-identifier rank),
+  // so a certificate a file adds with a root's name and key under another CA does not stand in for it.
   const pool = [
     ...roots,
     ...input.pool
@@ -959,10 +955,14 @@ export async function checkRevocation(input: {
     }
     const decided = decisive(evidence, input.context.validationTime);
     if (decided === null) checks.push(unknownCheck(link, role, failure ?? 'list-scope'));
-    // Without a trusted path a CA certificate is whatever the file says it is: anyone can issue one
-    // for a CA's key under a CA of their own and revoke it. So above the leaf a revocation, like a
-    // clearance everywhere, counts only from an anchored issuer.
-    else if (anchored[index] !== true && (decided.status === 'good' || (path.length === 0 && index > 0))) {
+    // A CA certificate the user did not import is whatever the file says it is: anyone can issue
+    // one for a CA's key under a CA of their own and revoke it. So its revocation, like a clearance
+    // of any certificate, counts only from an anchored issuer; the leaf's and an imported one's
+    // were signed by the key that issued them.
+    else if (
+      anchored[index] !== true &&
+      (decided.status === 'good' || (index > 0 && !isImported(link.certificate, roots)))
+    ) {
       checks.push(unknownCheck(link, role, 'issuer-not-trusted'));
     } else checks.push(decidedCheck(link, role, decided, input.context));
   }

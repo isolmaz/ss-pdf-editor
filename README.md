@@ -602,13 +602,13 @@ nothing leaving the browser.
     chain reaches a root you imported, the certificates checked are the ones on that chain, so
     a copy of a CA certificate that the PDF carries (the same name and key under another CA)
     cannot decide which lists count, and a copy of a root you imported that the PDF carries stands
-    for that root. Above that root only the root's own issuer is asked about it, and the roots you
-    imported are tried first as issuers. When the PDF's certificates give more than one
-    chain to roots you imported, the first one found in the PDF's order is the one checked. A
-    revocation of the signer's certificate, or of one on the chain to a root you imported, counts
-    whoever vouches for the issuer, since only the key that issued the certificate can sign it.
-    Without such a chain, a CA certificate's revocation counts only from a CA under a root you
-    imported: anyone can issue a certificate for a CA's key under a CA of their own and revoke it. A list
+    for that root; the roots you imported are tried before the PDF's certificates as issuers. When
+    the PDF's certificates give more than one chain to roots you imported, the first one found in
+    the PDF's order is the one checked. A revocation of the signer's certificate, or of a
+    certificate you imported, counts whoever vouches for the issuer, since only the key that issued
+    the certificate can sign it. Any other CA certificate's revocation counts only from a root you
+    imported or a CA under one: anyone can issue a certificate for a CA's key under a CA of their
+    own and revoke it. A list
     issued before the signature, or one past its next-update date when no trusted timestamp
     fixes the signing time, cannot rule out a revocation: the summary then says the lists are
     too old instead of "not revoked".
