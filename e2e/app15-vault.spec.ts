@@ -1,5 +1,5 @@
 import type { Page } from 'playwright/test';
-import { CANVAS, notice, openApp, palette, rotateCurrentPage } from './app-helpers';
+import { CANVAS, notice, openApp, palette, readDraftManifests, rotateCurrentPage } from './app-helpers';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
 
@@ -42,25 +42,8 @@ async function stored(page: Page): Promise<{ drafts: string[]; sources: string[]
   await expect
     .poll(
       async () =>
-        page.evaluate(async () => {
-          const root = await navigator.storage.getDirectory();
-          const app = await root.getDirectoryHandle('pdf-editor');
-          const drafts = await app.getDirectoryHandle('drafts');
-          const sources = await app.getDirectoryHandle('sources');
-          let edited = false;
-          for await (const [name, entry] of (
-            drafts as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }
-          ).entries()) {
-            if (name.endsWith('.json') && entry instanceof FileSystemFileHandle) {
-              edited ||= (await (await entry.getFile()).text()).includes('"dirty":true');
-            }
-          }
-          let blobs = 0;
-          for await (const _ of (sources as unknown as { entries(): AsyncIterable<unknown> }).entries()) {
-            blobs += 1;
-          }
-          return edited && blobs > 0;
-        }),
+        (await readDraftManifests(page)).some((text) => text.includes('"dirty":true')) &&
+        (await readVault(page)).sources.length > 0,
       { timeout: 30_000 },
     )
     .toBe(true);

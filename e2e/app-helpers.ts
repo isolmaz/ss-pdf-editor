@@ -222,6 +222,12 @@ export async function readFile(page: Page, name: string): Promise<Uint8Array> {
   return new Uint8Array(values ?? []);
 }
 
+/** The text of every draft manifest the vault holds now, in directory order. */
+export async function readDraftManifests(page: Page): Promise<string[]> {
+  const files = await page.evaluate(readStored, { path: ['pdf-editor', 'drafts'] });
+  return files.map((values) => new TextDecoder().decode(new Uint8Array(values)));
+}
+
 /** The status bar's turn button: it shares its name with the thumbnails' and the menu's, so it is found by its group. */
 export const statusRotate = (page: Page): Locator =>
   page.getByRole('group', { name: 'Page and view controls' }).getByRole('button', { name: 'Rotate right' });

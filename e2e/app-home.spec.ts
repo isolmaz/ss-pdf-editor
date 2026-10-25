@@ -4,6 +4,7 @@ import {
   installPickers,
   notice,
   openApp,
+  readDraftManifests,
   rotateCurrentPage,
   settled,
   stageFile,
@@ -104,20 +105,7 @@ test('an entry with no stored file handle reopens from the browser copy, or asks
   // The automatic save of the draft runs after a short pause; wait for the manifest that
   // records the rotation (a manifest of the untouched document exists before that).
   await expect
-    .poll(async () =>
-      page.evaluate(async () => {
-        const root = await navigator.storage.getDirectory();
-        const drafts = await (
-          await (await root.getDirectoryHandle('pdf-editor')).getDirectoryHandle('drafts')
-        ).entries();
-        for await (const [, entry] of drafts) {
-          if (entry.kind !== 'file') continue;
-          const text = await (await (entry as FileSystemFileHandle).getFile()).text();
-          if (text.includes('"dirty":true')) return true;
-        }
-        return false;
-      }),
-    )
+    .poll(async () => (await readDraftManifests(page)).some((text) => text.includes('"dirty":true')))
     .toBe(true);
   await page.reload();
   await expect(notice(page, 'draft(s) restored')).toBeVisible({ timeout: 30_000 });
