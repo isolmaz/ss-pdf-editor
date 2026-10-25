@@ -155,6 +155,12 @@ lists every tool in either mode. The choice is kept on the device.
   field, a menu, a list and a dialog, and only on an open document (the tools that write also
   need it to be editable). Each tool's letter is in its rail tooltip and in the shortcut list.
   `F4` toggles the page panel and `Shift+F4` the tools dock; `F5` is the browser's reload.
+- **Other shortcuts.** `Ctrl+O` opens, `Ctrl+S` saves, `Ctrl+Shift+S` exports a copy and
+  `Ctrl+P` prints; these four and `Ctrl+K` also work while a field has the focus. `Ctrl+Z`
+  undoes, `Ctrl+Shift+Z` or `Ctrl+Y` redoes. `Ctrl+0` fits the page to the width and `Ctrl+1`
+  shows it at actual size (100 %). `F9` toggles reading mode, `Ctrl+Shift+D` opens the document
+  properties. In reading mode `→`, `↓` and `PageDown` turn to the next page, `←`, `↑` and
+  `PageUp` to the previous one, and `Esc` leaves it.
 
 ### Annotating, forms, measuring
 
