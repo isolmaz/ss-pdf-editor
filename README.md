@@ -43,13 +43,13 @@ Edit, sign, redact and OCR your PDFs — the file never leaves your device.</p>
 | 📖 **Read** | Continuous scroll · search · thumbnails · outline · tabs · recent files · book and presentation modes · magnifier · snapshot · reading mode with read-aloud |
 | ✏️ **Annotate** | Highlight · underline · strike-out · squiggly · ink · shapes · notes · typed text · links · pictures and signatures · move, rotate, resize and delete any mark · comment threads with replies and review status · XFDF, FDF and JSON import and export |
 | 📝 **Forms** | Fill · create fields · detect fields on a flat form · flags · flatten · calculations · FDF/JSON import and export · XFA forms (static and dynamic): fill, data in and out, flatten to a normal PDF, remove the XFA |
-| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder (page grid) · rotate · extract · split · replace · merge (several files, in any order, or the front and back sides of a double-sided scan alternating) · reverse order · remove blank pages · split two-up scans · page boxes and auto-crop · straighten tilted scans · labels |
+| 📄 **Pages** | New blank document · insert · delete · duplicate · reorder (page grid) · rotate · extract · split · replace · merge (several files, in any order, or the front and back sides of a double-sided scan alternating) · add a document · reverse order · remove blank pages · split two-up scans · page boxes and auto-crop · straighten tilted scans · labels |
 | 🔤 **Text** | Edit in place with reflow · find and replace across the document · export as text or Markdown · pages to images · images to PDF · scan with the camera · Word, Excel, PowerPoint, HTML, text, CSV and EPUB to PDF · PDF to Word, Excel and CSV |
 | 🗂️ **Structure** | Outline · attachments · layers · properties and XMP · header/footer · Bates numbering · watermark |
 | 🔐 **Security** | True redaction with an audit · sanitize (scripts, attachments, metadata, hidden layers, with a verified report) · AES-256 encryption · remove a password · drawn, typed or photographed signatures and initials · PAdES signing · signature verification with imported CRLs, embedded revocation data and RFC 3161 timestamps |
-| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · repair of damaged PDFs · PDF/A conversion and check |
+| 🧰 **Tools** | OCR in 27 languages · accessibility check, PDF/UA check and tags / reading-order editor · alt text · text and pixel comparison · batch processing (up to 256 files per run) · compression · replace, recompress, rotate, crop or fade an embedded image · repair of damaged PDFs · PDF/A conversion and check |
 | 🖨️ **Print** | Page ranges · N-up · booklet · poster · duplex sheets |
-| ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · simple and advanced modes (chosen in Settings) · offline |
+| ⚙️ **Workflow** | Home screen with every tool by task · `Ctrl+K` palette · undo/redo history · local drafts · save over the original or export a copy · rename the document · simple and advanced modes (chosen in Settings) · offline |
 
 ## Quick start
 
@@ -132,6 +132,8 @@ lists every tool in either mode. The choice is kept on the device.
   reopens a document by its identity, never by its file name. In Chromium-based browsers it
   reopens the file itself (the browser asks for permission again, and once more for write
   access the first time you save over it); elsewhere it asks you to choose the file.
+- **Rename.** **Edit → Rename** edits the open document's name, shown in the header and on
+  its tab.
 - **The document never moves under you.** Marks, selections, measurements and staged
   redactions scroll and zoom with their page. Tools, progress and notices never shift
   the page.
@@ -286,6 +288,9 @@ lists every tool in either mode. The choice is kept on the device.
     orientation.
   - Merging several files builds a new document in the order you set; its metadata comes
     from the first file, and the report says so.
+  - **File → Add document** appends another PDF to the open one, or inserts it at the start
+    or after the current page; the result replaces the open document, which keeps its own
+    metadata.
   - Outlines, form fields and page labels travel with the pages.
   - *Reverse page order* flips the whole document, or the selected pages among the places they
     hold when two or more are selected. It is one journaled step, undone like any page action.
@@ -520,6 +525,11 @@ nothing leaving the browser.
     re-encoded.
   - **Remember on this device** is off by default. When ticked, the picture stays in this
     browser's local storage only, and every saved entry can be deleted from the dialog.
+- **Replace image.** **Tools → Replace image** edits an image the document already contains:
+  it swaps in a new PNG or JPEG, recompresses it as JPEG, rotates it by 90, 180 or 270
+  degrees, crops it by percent or changes its opacity. Placement stays as it was, because the
+  image object is edited in place; an image that several pages share changes wherever it is
+  drawn.
 - **Signing.** PAdES B-B from a PKCS#12 identity, with a visible stamp.
   - Signing a file that already carries a signature appends the new one as a revision, so
     the earlier signatures keep validating. Only a file the engine cannot append to (one it
