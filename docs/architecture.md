@@ -1355,7 +1355,12 @@ issuers matched by name and AKI/SKI, DFS bounded by depth 8 and 32 candidates, e
 signature verified over the child's `tbsCertificate`, validity windows checked against the
 supplied clock, and `basicConstraints` cA (on every issuer but the trust anchor — the user's
 import is the statement that it may issue, and a v1 self-signed root has no extensions) /
-`keyUsage.keyCertSign` / `pathLenConstraint` / `nameConstraints` enforced. Depth and candidate
+`keyUsage.keyCertSign` / `pathLenConstraint` / `nameConstraints` enforced. The signer's own
+certificate has to allow signing a document too: a present `keyUsage` must assert `digitalSignature`
+or `nonRepudiation`, and a present `extKeyUsage` must name `anyExtendedKeyUsage`, e-mail protection,
+Adobe or Microsoft document signing or `id-kp-documentSigning`, otherwise the verdict is `untrusted`
+with reason `signer-usage` (a caller that judges the purposes itself, as the time-stamping check does,
+lists `extKeyUsage` among `leafCriticalExtensions` and is not held to that list). Depth and candidate
 counts bound one path, not the number of paths, so the search is also bounded in work: a
 certificate from which no imported root is reachable is never entered, each (certificate,
 issuer) signature is verified once, and after 2048 expansions or 128 distinct signature

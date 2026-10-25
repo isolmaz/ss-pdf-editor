@@ -525,6 +525,10 @@ nothing leaving the browser.
   - In files over 16 MiB the signed byte ranges are checked as stored in the file; a range that cannot be paired with the stored one leaves the signature unchecked.
   - Trust is checked only against certificates you imported. A certificate that is not yet
     valid is reported with the date it becomes valid; any other shows its expiry date.
+  - The signer's own certificate has to allow signing documents: a key usage without digital
+    signature or non-repudiation, or an extended key usage without a signing purpose (e-mail
+    protection, Adobe or Microsoft document signing, document signing, any purpose), is reported
+    as not trusted, however well the chain is built.
   - What you import is stored on this device, and a change is applied only once the write
     succeeded: if the browser's storage refuses it, the root or list is neither added nor
     removed and the notice says why. A stored list the browser cannot read is reported too,

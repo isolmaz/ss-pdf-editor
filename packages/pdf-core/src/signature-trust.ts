@@ -36,6 +36,10 @@
  *   anchor is exempt: the user's import is the statement that it may issue, and a v1
  *   self-signed root has no extensions at all.
  * - `'key-usage'` — an issuer's `keyUsage` is present and does not assert `keyCertSign`.
+ * - `'signer-usage'` — the signer's own `keyUsage` is present and asserts neither
+ *   `digitalSignature` nor `nonRepudiation`, or its `extKeyUsage` is present and names no purpose
+ *   that allows signing a document (`SIGNING_PURPOSES`): a TLS server or key-encipherment
+ *   certificate does not vouch for a document however well its chain is built.
  * - `'path-length'` — an issuer's `pathLenConstraint` is exceeded.
  * - `'name-constraint'` — a subordinate certificate's names fall outside the permitted
  *   subtrees, or inside an excluded one.
@@ -124,6 +128,7 @@ const CURVES: Record<string, { readonly name: string; readonly fieldBytes: numbe
 const OID_COMMON_NAME = '2.5.4.3';
 const OID_SUBJECT_KEY_IDENTIFIER = '2.5.29.14';
 const OID_KEY_USAGE = '2.5.29.15';
+const OID_EXT_KEY_USAGE = '2.5.29.37';
 const OID_SUBJECT_ALT_NAME = '2.5.29.17';
 const OID_BASIC_CONSTRAINTS = '2.5.29.19';
 const OID_NAME_CONSTRAINTS = '2.5.29.30';
@@ -148,7 +153,22 @@ const APPLIED_CRITICAL_EXTENSIONS: Readonly<Record<string, true>> = {
 };
 
 /** Key-usage bit numbers, in the order RFC 5280 §4.2.1.3 assigns them. */
+const KEY_USAGE_DIGITAL_SIGNATURE = 0;
+const KEY_USAGE_NON_REPUDIATION = 1;
 const KEY_USAGE_KEY_CERT_SIGN = 5;
+
+/**
+ * The `extKeyUsage` purposes that let a certificate sign a document: `anyExtendedKeyUsage`,
+ * e-mail protection (what S/MIME and PAdES signers carry), Adobe's and Microsoft's document
+ * signing and `id-kp-documentSigning` (RFC 9336).
+ */
+const SIGNING_PURPOSES: ReadonlySet<string> = new Set([
+  '2.5.29.37.0',
+  '1.3.6.1.5.5.7.3.4',
+  '1.2.840.113583.1.1.5',
+  '1.3.6.1.4.1.311.10.3.12',
+  '1.3.6.1.5.5.7.3.36',
+]);
 
 export type TrustVerdict = 'trusted' | 'untrusted' | 'self-signed' | 'indeterminate' | 'not-checked';
 export type CertificateValidity = 'valid' | 'expired' | 'not-yet-valid' | 'unknown';
@@ -164,6 +184,7 @@ export type TrustReason =
   | 'validity'
   | 'not-a-ca'
   | 'key-usage'
+  | 'signer-usage'
   | 'path-length'
   | 'name-constraint'
   | 'search-limit';
@@ -459,20 +480,45 @@ function pathLengthOf(constraints: BasicConstraints): number | null {
 }
 
 /**
- * `keyUsage`'s `keyCertSign` bit, or `null` when the extension is absent.
+ * One bit of `keyUsage`, or `null` when the extension is absent.
  *
  * `pkijs` hands the extension over as the raw `BIT STRING` rather than a decoded object,
  * so the bit is read the way RFC 5280 §4.2.1.3 defines it: bit 0 is the most significant
- * bit of the first content octet.
+ * bit of the first content octet. An extension that cannot be read asserts nothing.
  */
-function keyCertSignOf(certificate: Certificate): boolean | null {
+export function keyUsageBit(certificate: Certificate, bit: number): boolean | null {
   const raw = extensionValue(certificate, OID_KEY_USAGE);
   if (raw === undefined) return null;
   const parsed = parseAsn1(raw);
   if (parsed === null || !(parsed.result instanceof BitString)) return false;
-  const octet = parsed.result.valueBlock.valueHexView[KEY_USAGE_KEY_CERT_SIGN >> 3];
+  const octet = parsed.result.valueBlock.valueHexView[bit >> 3];
   if (octet === undefined) return false;
-  return (octet & (0x80 >> (KEY_USAGE_KEY_CERT_SIGN & 7))) !== 0;
+  return (octet & (0x80 >> (bit & 7))) !== 0;
+}
+
+/** The `extKeyUsage` purposes of a certificate; `null` when it has no such extension. */
+export function extendedKeyUsage(certificate: Certificate): readonly string[] | null {
+  const raw = extensionValue(certificate, OID_EXT_KEY_USAGE);
+  if (raw === undefined) return null;
+  const parsed = parseAsn1(raw);
+  if (parsed === null || !(parsed.result instanceof Sequence)) return [];
+  return parsed.result.valueBlock.value
+    .filter((member): member is ObjectIdentifier => member instanceof ObjectIdentifier)
+    .map((member) => member.getValue());
+}
+
+/**
+ * Whether the signer certificate's own `keyUsage` and `extKeyUsage` leave room for signing a
+ * document. An extension that is absent limits nothing; one that is present has to name a way.
+ * `purposesChecked` is true when the caller judges the purposes itself.
+ */
+function allowsSigning(certificate: Certificate, purposesChecked: boolean): boolean {
+  const digitalSignature = keyUsageBit(certificate, KEY_USAGE_DIGITAL_SIGNATURE);
+  const nonRepudiation = keyUsageBit(certificate, KEY_USAGE_NON_REPUDIATION);
+  if (digitalSignature === false && nonRepudiation === false) return false;
+  if (purposesChecked) return true;
+  const purposes = extendedKeyUsage(certificate);
+  return purposes === null || purposes.some((purpose) => SIGNING_PURPOSES.has(purpose));
 }
 
 /** The `subjectKeyIdentifier` / `authorityKeyIdentifier` key ids, for path building. */
@@ -716,8 +762,9 @@ async function validatePath(
           entry.critical &&
           APPLIED_CRITICAL_EXTENSIONS[entry.extnID] !== true &&
           // A critical extension the **caller** applies to the end-entity certificate itself
-          // (a timestamp check enforces the critical `extKeyUsage` that RFC 3161 §2.3 requires).
-          !(index === 0 && leafApplied.includes(entry.extnID)),
+          // (a timestamp check enforces the critical `extKeyUsage` that RFC 3161 §2.3 requires),
+          // and the signer's `extKeyUsage`, which `allowsSigning` below applies.
+          !(index === 0 && (leafApplied.includes(entry.extnID) || entry.extnID === OID_EXT_KEY_USAGE)),
       )
     ) {
       return { ok: false, reason: 'unsupported-critical-extension', indeterminate: true };
@@ -742,9 +789,13 @@ async function validatePath(
     if (outcome === 'mismatch') return { ok: false, reason: 'signature-mismatch', indeterminate: false };
   }
 
+  if (!allowsSigning(path[0] as Certificate, leafApplied.includes(OID_EXT_KEY_USAGE))) {
+    return { ok: false, reason: 'signer-usage', indeterminate: false };
+  }
+
   for (let index = 1; index <= last; index += 1) {
     const issuer = path[index] as Certificate; // `index <= last`
-    const usage = keyCertSignOf(issuer);
+    const usage = keyUsageBit(issuer, KEY_USAGE_KEY_CERT_SIGN);
     if (usage === false) return { ok: false, reason: 'key-usage', indeterminate: false };
     const constraints = basicConstraintsOf(issuer);
     if (index !== last) {
@@ -820,7 +871,9 @@ export interface TrustInput {
    * Critical extensions of the **signer** certificate the caller enforces itself, so the walk
    * need not refuse them: a time-stamping authority's certificate carries a critical
    * `extKeyUsage` (RFC 3161 §2.3), and `signature-timestamp` checks it. Applies to the
-   * first certificate of the path only — a CA's critical extension is never excused.
+   * first certificate of the path only — a CA's critical extension is never excused. Naming
+   * `extKeyUsage` here also leaves the signer's purposes to the caller: without it the walk
+   * accepts only the ones that allow signing a document.
    */
   readonly leafCriticalExtensions?: readonly string[];
 }

@@ -37,16 +37,7 @@
  * than the issuer's name and key hashed with a supported digest.
  */
 
-import {
-  type BaseBlock,
-  BitString,
-  type Constructed,
-  type Enumerated,
-  type GeneralizedTime,
-  Integer,
-  ObjectIdentifier,
-  Sequence,
-} from 'asn1js';
+import { type BaseBlock, type Constructed, type Enumerated, type GeneralizedTime, Integer } from 'asn1js';
 import type { Extension, Extensions } from 'pkijs';
 import {
   BasicConstraints,
@@ -59,6 +50,8 @@ import {
 import {
   candidatesFor,
   certificateName,
+  extendedKeyUsage,
+  keyUsageBit,
   parseAsn1,
   parsedValueOf,
   validityOf,
@@ -97,8 +90,6 @@ const OID_REASON_CODE = '2.5.29.21';
 const OID_DELTA_CRL_INDICATOR = '2.5.29.27';
 const OID_ISSUING_DISTRIBUTION_POINT = '2.5.29.28';
 const OID_AUTHORITY_KEY_IDENTIFIER = '2.5.29.35';
-const OID_KEY_USAGE = '2.5.29.15';
-const OID_EXT_KEY_USAGE = '2.5.29.37';
 const OID_CRL_DISTRIBUTION_POINTS = '2.5.29.31';
 const OID_BASIC_CONSTRAINTS = '2.5.29.19';
 const OID_OCSP_SIGNING = '1.3.6.1.5.5.7.3.9';
@@ -177,27 +168,6 @@ function extensionsOf(extensions: Extensions | undefined): Extension[] {
 
 function rawExtension(extension: Extension): Uint8Array {
   return new Uint8Array(extension.extnValue.valueBlock.valueHexView);
-}
-
-/** Whether one bit of the certificate's `keyUsage` is set; `null` when it has no `keyUsage`. */
-function keyUsageBit(certificate: Certificate, bit: number): boolean | null {
-  const extension = certificate.extensions?.find((entry) => entry.extnID === OID_KEY_USAGE);
-  if (extension === undefined) return null;
-  const parsed = parseAsn1(rawExtension(extension));
-  if (parsed === null || !(parsed.result instanceof BitString)) return false;
-  const octet = parsed.result.valueBlock.valueHexView[bit >> 3];
-  return octet === undefined ? false : (octet & (0x80 >> (bit & 7))) !== 0;
-}
-
-/** The `extKeyUsage` purposes of a certificate; `null` when it has no such extension. */
-export function extendedKeyUsage(certificate: Certificate): readonly string[] | null {
-  const extension = certificate.extensions?.find((entry) => entry.extnID === OID_EXT_KEY_USAGE);
-  if (extension === undefined) return null;
-  const parsed = parseAsn1(rawExtension(extension));
-  if (parsed === null || !(parsed.result instanceof Sequence)) return [];
-  return parsed.result.valueBlock.value
-    .filter((member): member is ObjectIdentifier => member instanceof ObjectIdentifier)
-    .map((member) => member.getValue());
 }
 
 /** Whether the certificate may issue certificates (`basicConstraints cA`). */

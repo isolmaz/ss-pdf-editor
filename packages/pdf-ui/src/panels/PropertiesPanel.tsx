@@ -127,6 +127,7 @@ const TRUST_REASON_LABEL: Record<TrustReason, MessageKey> = {
   validity: 'props.sig.trustReason.validity',
   'not-a-ca': 'props.sig.trustReason.notACa',
   'key-usage': 'props.sig.trustReason.keyUsage',
+  'signer-usage': 'props.sig.trustReason.signerUsage',
   'path-length': 'props.sig.trustReason.pathLength',
   'name-constraint': 'props.sig.trustReason.nameConstraint',
   'search-limit': 'props.sig.trustReason.searchLimit',

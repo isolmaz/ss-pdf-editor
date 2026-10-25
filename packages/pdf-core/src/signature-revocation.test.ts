@@ -24,7 +24,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   checkRevocation,
   describeCrl,
-  extendedKeyUsage,
   parseCrl,
   parseOcsp,
   parseRevocationSources,
@@ -43,6 +42,7 @@ import {
   rawExtension,
   scopeExtension,
 } from './signature-revocation.fixtures';
+import { extendedKeyUsage } from './signature-trust';
 import type { CertificateFixture } from './signature-trust.fixtures';
 import {
   authorityKeyIdentifierExtension,

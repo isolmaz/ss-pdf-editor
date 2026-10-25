@@ -38,7 +38,6 @@ import { TSTInfo } from 'pkijs';
 import { certificateFor, certificatesOf, octets, readSignedData, sameBytes } from './signature-evidence';
 import {
   checkRevocation,
-  extendedKeyUsage,
   type RevocationCertCheck,
   type RevocationSources,
   summarizeRevocation,
@@ -46,6 +45,7 @@ import {
 import {
   certificateName,
   checkTrust,
+  extendedKeyUsage,
   type TrustReason,
   type TrustVerdict,
   validityOf,
