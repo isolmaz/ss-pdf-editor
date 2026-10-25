@@ -2944,7 +2944,9 @@ Ordering rules encoded here, each of which prevents a specific defect:
   the tab is no longer dirty; with a handle, or in a browser that can write files, an export is
   a copy and the tab stays as dirty as it was.
 - **Save and Export are offered only for an inspected version.** Both are enabled from the
-  same verdict: the document-facts read (fonts, signatures, attachments, protection) *and*
+  same verdict: the document-facts read (signatures and protection; the fonts and the
+  attachments are read beside them and only shown, so a read of those that fails leaves them
+  empty, says so in the properties tab with a retry, and does not close Save) *and*
   the form inventory must describe the bytes the tab shows. The facts are keyed to the produced
   version's own id (`workingBytesKey`; `'source'` for the master), the form inventory to that id
   plus the values typed into the engine that are not in the bytes yet (`formInventoryKey`: Save

@@ -169,6 +169,24 @@ describe('PropertiesFacts', () => {
     expect(handlers.onReadAttachment).toHaveBeenCalledWith('x.txt');
   });
 
+  it('keeps the panel and says what could not be read, with a retry button, when only the fonts or attachments failed', async () => {
+    const user = userEvent.setup();
+    const handlers = view();
+    await screen.findByText('loading enabled');
+
+    act(() => factsRead({ ...facts, fonts: [], attachments: [], unread: ['fonts', 'attachments'] }));
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(t('inspection.fonts.failed'));
+    expect(alert.textContent).toContain(t('inspection.attachments.failed'));
+    expect(screen.getByText('loaded enabled')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: t('inspection.retry') }));
+    expect(handlers.onRetry).toHaveBeenCalledTimes(1);
+
+    act(() => factsRead(facts));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('puts an alert with a retry button in place of the panel when the facts could not be read', async () => {
     const user = userEvent.setup();
     const failure = new ToolError('internal', { engine: 'model' });

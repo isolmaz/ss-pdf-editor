@@ -310,6 +310,10 @@ export const en: Record<MessageKey, string> = {
   'conflict.overwrite': 'Overwrite',
   'inspection.loading': 'Inspecting document…',
   'inspection.failed': 'Document details could not be read. Saving and exporting are stopped; try again.',
+  'inspection.fonts.failed':
+    'The fonts of this document could not be read. Saving and exporting still work; try again.',
+  'inspection.attachments.failed':
+    'The attachments of this document could not be read. Saving and exporting still work; try again.',
   'inspection.retry': 'Retry inspection',
   'lang.select': 'Language',
 
