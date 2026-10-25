@@ -1,5 +1,13 @@
 import type { Page } from 'playwright/test';
-import { CANVAS, exportBytes, notice, openApp, recordNotices, rotateCurrentPage } from './app-helpers';
+import {
+  CANVAS,
+  exportBytes,
+  notice,
+  openApp,
+  readDraftManifests,
+  recordNotices,
+  rotateCurrentPage,
+} from './app-helpers';
 import { expect, test } from './test';
 import { labelledPdf, readProducedEntry } from './tool-fixture';
 
@@ -21,20 +29,7 @@ async function editAndReload(page: Page, name: string): Promise<void> {
   await openApp(page, name, labelledPdf('Report', 2), { advanced: false });
   await rotateCurrentPage(page);
   await expect
-    .poll(async () =>
-      page.evaluate(async () => {
-        const root = await navigator.storage.getDirectory();
-        const drafts = await (
-          await (await root.getDirectoryHandle('pdf-editor')).getDirectoryHandle('drafts')
-        ).entries();
-        for await (const [, entry] of drafts) {
-          if (entry.kind !== 'file') continue;
-          const text = await (await (entry as FileSystemFileHandle).getFile()).text();
-          if (text.includes('"dirty":true')) return true;
-        }
-        return false;
-      }),
-    )
+    .poll(async () => (await readDraftManifests(page)).some((text) => text.includes('"dirty":true')))
     .toBe(true);
   await page.reload();
 }

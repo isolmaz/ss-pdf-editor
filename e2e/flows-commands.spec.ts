@@ -12,7 +12,7 @@ import {
   readProducedPdf,
   toolFixturePdf,
 } from './tool-fixture';
-import { applyForm } from './ui-helpers';
+import { applyForm, runHighlightedCommand } from './ui-helpers';
 
 /**
  * The menu-bar commands the other specs do not drive: one test per command (or family),
@@ -67,7 +67,7 @@ const notice = (page: Page, text: string) => page.locator('[role="status"]').fil
 async function openForm(page: Page, command: string, region: string) {
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill(command);
-  await page.keyboard.press('Enter');
+  await runHighlightedCommand(page);
   // An operation opens in the tools panel; a command that starts a new document (images to
   // PDF) opens as a dialog of its own.
   const form = page.getByRole('region', { name: region }).or(page.getByRole('dialog', { name: region }));
@@ -216,7 +216,7 @@ test('replace pages: the selected page takes its content from another PDF and fr
 async function runCommand(page: Page, command: string): Promise<void> {
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill(command);
-  await page.keyboard.press('Enter');
+  await runHighlightedCommand(page);
 }
 
 test('compare, accessibility and redaction audit: each panel reports on the open document', async ({
@@ -293,6 +293,8 @@ test('security and remove password: the downloaded copy carries the permissions 
     .first()
     .setInputFiles(pdfFile('owned.pdf', await encryptedToolFixturePdf('own3r', '')));
   await expect(page.getByRole('button', { name: 'owned.pdf', exact: true })).toBeVisible({ timeout: 30_000 });
+  // The palette disables the command while the document is still opening.
+  await expect(page.getByText('Opening the document…')).toHaveCount(0, { timeout: 30_000 });
   form = await openForm(page, 'Remove password', 'Remove password');
   await form.getByLabel('Password', { exact: true }).fill('own3r-owner');
   expect(await applyForm(form, 'Open in new tab')).toBe('closed');

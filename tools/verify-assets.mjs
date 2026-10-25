@@ -4,9 +4,9 @@
  *
  *   node tools/verify-assets.mjs
  *
- * Recomputes the size and SHA-256 of every pinned file under `public/engines/**`, prints one
- * PASS/FAIL line per engine with the totals, and exits 1 when a file is missing or does not match
- * its pin. This is the check CI and the pre-push path run; it never writes anything.
+ * Recomputes the size and SHA-256 of every pinned file under `public/engines/**` and
+ * `public/fonts/**`, prints one PASS/FAIL line per engine with the totals, and exits 1 when a file
+ * is missing, does not match its pin or is named by no pin. This is the check CI and the pre-push path run; it never writes anything.
  *
  * The hashing and the comparison live in `tools/fetch-engines.mjs`, so `--update` and this check
  * cannot drift apart.

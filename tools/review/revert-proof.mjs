@@ -6,9 +6,9 @@
  * The manifest is a JSON array with one entry per fix commit: `commit` (full SHA), `title`,
  * `kind` (`unit` or `e2e`), `tests` (the files to bring in from the fix), `run` (the test files to
  * run, default: the `.test.ts`/`.spec.ts` among `tests`), `filter` (a test-name pattern for -t/-g),
- * and optionally `testCommit` and `failure`. It is empty by default: a pull request that wants
- * the proof lists its fix commits there. With an empty manifest the script exits 0 without
- * touching the work tree.
+ * and optionally `testCommit` and `failure`. The manifest lists the fix commits of the pull
+ * request that wants the proof. With an empty manifest the script exits 0 without touching the
+ * work tree.
  *
  *   node tools/review/revert-proof.mjs [--shard i/n] [--only <sha-prefix>]
  *

@@ -14,6 +14,7 @@ import type { Locator, Page } from 'playwright/test';
 import { useAdvancedMode } from './settings';
 import { expect, test } from './test';
 import { toolFixturePdf } from './tool-fixture';
+import { runHighlightedCommand } from './ui-helpers';
 
 export const CANVAS = '.pdfViewer[data-active-viewer] .page canvas';
 
@@ -96,7 +97,7 @@ export async function openApp(
 export async function palette(page: Page, command: string): Promise<void> {
   await page.keyboard.press('Control+k');
   await page.getByRole('combobox').fill(command);
-  await page.keyboard.press('Enter');
+  await runHighlightedCommand(page);
 }
 
 /** Open a menu-bar menu and click one of its items. */
@@ -183,15 +184,49 @@ export async function rewriteFile(page: Page, name: string, bytes: Uint8Array): 
   );
 }
 
+/**
+ * Page function: the bytes of the origin-private file `name` under `path`, or of every file in
+ * that directory when no name is given. The application replaces a file with createWritable(),
+ * and the browser rejects a read of a snapshot that was swapped out meanwhile with a
+ * NotReadableError, so each attempt asks for the file again.
+ */
+async function readStored({ path, name }: { path: string[]; name?: string }): Promise<number[][]> {
+  let dir = await navigator.storage.getDirectory();
+  for (const part of path) dir = await dir.getDirectoryHandle(part);
+  const handles: FileSystemFileHandle[] = [];
+  if (name === undefined) {
+    for await (const [, entry] of (
+      dir as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }
+    ).entries()) {
+      if (entry.kind === 'file') handles.push(entry as FileSystemFileHandle);
+    }
+  } else handles.push(await dir.getFileHandle(name));
+  const contents: number[][] = [];
+  for (const handle of handles) {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        contents.push([...new Uint8Array(await (await handle.getFile()).arrayBuffer())]);
+        break;
+      } catch (error) {
+        if (!(error instanceof DOMException) || error.name !== 'NotReadableError' || attempt === 40)
+          throw error;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+  }
+  return contents;
+}
+
 /** What a staged file holds now. */
 export async function readFile(page: Page, name: string): Promise<Uint8Array> {
-  const values = await page.evaluate(async (name) => {
-    const root = await navigator.storage.getDirectory();
-    const dir = await root.getDirectoryHandle('e2e-files');
-    const handle = await dir.getFileHandle(name);
-    return [...new Uint8Array(await (await handle.getFile()).arrayBuffer())];
-  }, name);
-  return new Uint8Array(values);
+  const [values] = await page.evaluate(readStored, { path: ['e2e-files'], name });
+  return new Uint8Array(values ?? []);
+}
+
+/** The text of every draft manifest the vault holds now, in directory order. */
+export async function readDraftManifests(page: Page): Promise<string[]> {
+  const files = await page.evaluate(readStored, { path: ['pdf-editor', 'drafts'] });
+  return files.map((values) => new TextDecoder().decode(new Uint8Array(values)));
 }
 
 /** The status bar's turn button: it shares its name with the thumbnails' and the menu's, so it is found by its group. */

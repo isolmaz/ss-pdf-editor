@@ -1,5 +1,5 @@
 import type { Page } from 'playwright/test';
-import { CANVAS, notice, openApp, rotateCurrentPage } from './app-helpers';
+import { CANVAS, notice, openApp, readDraftManifests, rotateCurrentPage } from './app-helpers';
 import { fixturePdf } from './fixture-pdf';
 import { expect, test } from './test';
 import { labelledPdf } from './tool-fixture';
@@ -242,17 +242,7 @@ test.describe('two windows on one vault', () => {
         return vault.drafts.filter((name) => name.endsWith('.json')).length;
       })
       .toBe(1);
-    const manifestText = async (page: Page): Promise<string> =>
-      await page.evaluate(async () => {
-        const root = await navigator.storage.getDirectory();
-        const dir = await (await root.getDirectoryHandle('pdf-editor')).getDirectoryHandle('drafts');
-        for await (const [, entry] of (
-          dir as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }
-        ).entries()) {
-          if (entry.kind === 'file') return await (await (entry as FileSystemFileHandle).getFile()).text();
-        }
-        return '';
-      });
+    const manifestText = async (page: Page): Promise<string> => (await readDraftManifests(page))[0] ?? '';
     await expect.poll(async () => (await manifestText(first)).includes('"dirty":true')).toBe(true);
     const before = await manifestText(first);
 

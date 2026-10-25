@@ -5,6 +5,7 @@
  * pipe in the deploy's head check turned a failed lookup into a green run.
  */
 
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -42,6 +43,10 @@ describe('ci.yml', () => {
     expect(job('e2e')).toMatch(/shard: \[1, 2, 3, 4\]/);
   });
 
+  it('checks the tracked tree against the rules of the git hooks, in verify', () => {
+    expect(commandsOf(job('verify'))).toContain('node tools/hooks/guard.mjs tracked');
+  });
+
   it('builds the production site once, in verify, and uploads what it assembled', () => {
     const builds = (id: string) =>
       commandsOf(job(id)).filter((command) => /^pnpm (build|assemble:dist)$/.test(command));
@@ -55,6 +60,16 @@ describe('ci.yml', () => {
       expect(job(id), id).toMatch(/download-artifact@[^\n]*\n\s+with:\n\s+name: dist\n\s+path: dist\n/);
     }
     expect(job('deploy')).toMatch(/needs: \[verify, e2e, e2e-service-worker, behavior, coverage\]/);
+  });
+
+  it('runs the coverage gate after a failed part and fails it unless every part succeeded', () => {
+    const gate = job('coverage');
+    // a skipped required check counts as passing in branch protection
+    expect(gate).toMatch(/^ {4}if: \$\{\{ !cancelled\(\) \}\}$/m);
+    const first = /^ {4}steps:\n {6}- name: (.+)\n([\s\S]*?)(?=\n {6}- )/m.exec(gate);
+    expect(first?.[1]).toBe('Require every coverage part');
+    expect(first?.[2]).toContain(`RESULTS: \${{ join(needs.*.result, ' ') }}`);
+    expect(first?.[2]).toMatch(/if \[ "\$result" != success \]; then[\s\S]*?exit 1/);
   });
 
   it("turns a failed lookup of main's head into a failed job", () => {
@@ -89,6 +104,16 @@ describe('ci.yml', () => {
     for (const name of ['worker:deploy', 'worker:deploy:dry']) {
       expect(manifest.scripts[name], name).toContain(`pnpm dlx wrangler@${pinned} deploy`);
     }
+  });
+});
+
+describe('git hooks', () => {
+  it('are executable in the index: git on Linux and macOS skips a hook that is not', () => {
+    const listing = execFileSync('git', ['ls-files', '-s', '.githooks'], { cwd: root, encoding: 'utf8' });
+    const modes = Object.fromEntries(
+      [...listing.matchAll(/^(\d+) \w+ \d\t(.+)$/gm)].map((match) => [match[2], match[1]]),
+    );
+    expect(modes).toEqual({ '.githooks/pre-commit': '100755', '.githooks/pre-push': '100755' });
   });
 });
 

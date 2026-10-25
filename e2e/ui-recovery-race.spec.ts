@@ -8,7 +8,7 @@
  * store (`recent-handles-gate.ts`) while the second document opens.
  */
 
-import { notice, openApp, rotateCurrentPage } from './app-helpers';
+import { notice, openApp, readDraftManifests, rotateCurrentPage } from './app-helpers';
 import { holdRecentHandlesOnNextLoad } from './recent-handles-gate';
 import { expect, test } from './test';
 import { labelledPdf, readProducedPdf } from './tool-fixture';
@@ -23,20 +23,7 @@ test('a draft restored while the user opens a document does not take the front f
   await rotateCurrentPage(page);
   // The draft is written after a short pause: wait for the manifest that records the rotation.
   await expect
-    .poll(async () =>
-      page.evaluate(async () => {
-        const root = await navigator.storage.getDirectory();
-        const drafts = await (
-          await (await root.getDirectoryHandle('pdf-editor')).getDirectoryHandle('drafts')
-        ).entries();
-        for await (const [, entry] of drafts) {
-          if (entry.kind !== 'file') continue;
-          const text = await (await (entry as FileSystemFileHandle).getFile()).text();
-          if (text.includes('"dirty":true')) return true;
-        }
-        return false;
-      }),
-    )
+    .poll(async () => (await readDraftManifests(page)).some((text) => text.includes('"dirty":true')))
     .toBe(true);
 
   await gate.arm();

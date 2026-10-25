@@ -6,5 +6,6 @@
 
 - [ ] `pnpm typecheck`, `pnpm check` and `pnpm unit` pass
 - [ ] `pnpm build && pnpm assemble:dist` and `pnpm e2e` pass
+- [ ] `pnpm coverage --min=100` passes (it runs the e2e suite again)
 - [ ] A bug fix comes with a test that fails without the fix
 - [ ] The affected documentation is updated in this pull request
