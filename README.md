@@ -105,7 +105,7 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
     Space, `→` and `PageDown` turn to the next page, `←` and `PageUp` to the previous one,
     `Home` and `End` go to the first and last page. `Esc` ends it, and so does the browser
     leaving full screen. A browser that refuses full screen still shows the presentation
-    layout in the page. Leaving restores the zoom you had.
+    layout in the page. Leaving restores the zoom and the page layout (single or book) you had.
 - **Page box.** The status bar's page box goes to the page typed. A number outside the document,
   or text that is not a number, is marked invalid with a short message beside the box (for
   example “Enter 1–5”) and the page stays where it was.

@@ -915,6 +915,16 @@ describe('the api', () => {
   });
 
   it.each([
+    [0, 'single'],
+    [1, 'book'],
+    [2, 'book-even'],
+  ] as const)('reads pdf.js spread mode %i back as the %s reading layout', async (spreadMode, expected) => {
+    const pane = await mount();
+    lastViewer().spreadMode = spreadMode;
+    expect(apiOf(pane).getSpreadMode()).toBe(expected);
+  });
+
+  it.each([
     [-5, 1],
     [0, 1],
     [1, 2],

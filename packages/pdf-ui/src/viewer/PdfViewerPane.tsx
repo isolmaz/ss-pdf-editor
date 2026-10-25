@@ -43,6 +43,7 @@ export interface ViewerApi {
   goToPage(pageIndex: number): void;
   /** Reading layout: one page, odd spreads (book) or even spreads. */
   setSpreadMode(mode: 'single' | 'book' | 'book-even'): void;
+  getSpreadMode(): 'single' | 'book' | 'book-even';
   /** Opens the find bar and focuses the field (Ctrl+F and the toolbar button). */
   openFind(): void;
   /**
@@ -879,6 +880,8 @@ export function PdfViewerPane({
         setSpreadMode: (mode) => {
           viewer.spreadMode = mode === 'single' ? 0 : mode === 'book' ? 1 : 2;
         },
+        getSpreadMode: () =>
+          viewer.spreadMode === 1 ? 'book' : viewer.spreadMode === 2 ? 'book-even' : 'single',
         goToPage: (pageIndex) => {
           // pdf.js clamps through its own setter; +1 because the viewer is 1-based.
           viewer.currentPageNumber = Math.min(Math.max(pageIndex + 1, 1), viewer.pagesCount);
