@@ -66,15 +66,15 @@ async function signaturesOf(bytes: Uint8Array): Promise<Signed[]> {
   }
 }
 
-/** The text lines of the first signature widget's appearance, in drawing order. */
+/** The lines of text the page shows once its widgets are drawn into it, the stamp's among them. */
 async function stampLines(bytes: Uint8Array): Promise<string[]> {
   const mupdf = await mupdfForTests();
   const doc = mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf').asPDF();
   if (doc === null) throw new Error('not a PDF');
   try {
-    const widget = doc.findPage(0).get('Annots').get(0).resolve();
-    const content = widget.get('AP').get('N').readStream().asString();
-    return [...content.matchAll(/\((.*)\) Tj/g)].map((match) => match[1] ?? '');
+    doc.bake(true, true);
+    const text = doc.loadPage(0).toStructuredText('').asText();
+    return text.split('\n').filter((line) => line.trim() !== '');
   } finally {
     doc.destroy();
   }
@@ -160,7 +160,9 @@ describe('signDialog', () => {
         { file: [await p12File()], password: PASSWORD, visible: true, reason: 'Onay' },
         await base(),
       );
-      expect(await stampLines(bytesOf(result))).toEqual(['?mza Deneme', '2026-03-05', 'Onay']);
+      const lines = await stampLines(bytesOf(result));
+      expect(lines).toEqual(expect.arrayContaining(['İmza Deneme', '2026-03-05', 'Onay']));
+      expect(lines).not.toContain('2026-03-04');
       const [signed] = await signaturesOf(bytesOf(result));
       expect(signed?.signedAt).toBe('D:20260304120000Z');
     } finally {

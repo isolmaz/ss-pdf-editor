@@ -209,6 +209,7 @@ const PLAIN_CHANGES: ReadonlySet<string> = new Set([
   'op.note.findReplace.replaced',
   'op.note.image.opacitySet',
   'op.note.image.opacityWrapped',
+  'op.note.image.reframed',
   'op.note.image.replaced',
   'op.note.images.exif',
   'op.note.merge.backsReversed',
