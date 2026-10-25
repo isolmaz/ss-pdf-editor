@@ -68,7 +68,8 @@ export interface RedactOptions {
   readonly cleanMetadata: boolean;
   /**
    * Remove every attached file of the document: the embedded-file name tree, every `/AF` list
-   * (catalog and pages) and every file-attachment annotation, with the file objects behind them.
+   * (catalog, pages, annotations and structure elements) and every file-attachment annotation,
+   * with the file objects behind them.
    */
   readonly cleanAttachments: boolean;
 }

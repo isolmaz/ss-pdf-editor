@@ -8,7 +8,8 @@
  *  - **Attachments.** `/Root /Names /EmbeddedFiles` was all the "clean attachments" step removed
  *    (through MuPDF's `deleteEmbeddedFile`, which also leaves an empty name tree and never touches
  *    `/AF`). A file attached by this editor is also listed in `/Root /AF`; a file can be listed in
- *    a page's `/AF` too, and a `/FileAttachment` annotation carries its own file specification.
+ *    a page's `/AF` too, as can an annotation's and a structure element's, and a `/FileAttachment`
+ *    annotation carries its own file specification.
  *    `purgeAttachments` takes every attached file out of all of them, with the file
  *    specifications and the embedded-file streams (`fileSpecObjects` of `attachments-write.ts`).
  *  - **Thumbnails.** A page's `/Thumb` is a picture of the page as it was.
@@ -99,10 +100,11 @@ function discardCounted(doc: PDFDocument, spec: PDFObject, counted: Set<number>)
 
 /**
  * The "clean attachments" step: every attached file of the document goes, wherever it lives — the
- * embedded-file name tree (a `/Kids` tree too), every `/AF` entry of the catalog and of the pages,
- * and every file-attachment annotation on every page with its popup and replies — together with
- * the file specifications and embedded-file streams behind them. The name tree leaves the catalog,
- * and with it the `/Names` dictionary when nothing else is in it.
+ * embedded-file name tree (a `/Kids` tree too), every `/AF` entry of the catalog, the pages, their
+ * annotations and the structure elements, and every file-attachment annotation on every page with
+ * its popup and replies — together with the file specifications and embedded-file streams behind
+ * them. The name tree leaves the catalog, and with it the `/Names` dictionary when nothing else is
+ * in it.
  *
  * Returns how many attachments went: a file reachable by more than one way counts once, and a
  * reference to a file that is not there not at all, so a document without attachments answers 0.
@@ -143,11 +145,31 @@ export function purgeAttachments(doc: PDFDocument): number {
   for (const spec of specs) removed += discardCounted(doc, spec, counted);
   finishSweep(doc, swept);
 
-  for (const owner of [root, ...pages]) {
+  const owners = [root, ...pages, ...annotationsOf(pages), ...structureElements(root)];
+  for (const owner of owners) {
     for (const spec of entriesOf(owner.get('AF'))) removed += discardCounted(doc, spec, counted);
     owner.delete('AF');
   }
   return removed;
+}
+
+/** The annotation dictionaries `pages` list; an entry that is no dictionary is not one. */
+function annotationsOf(pages: readonly PDFObject[]): PDFObject[] {
+  const annotations: PDFObject[] = [];
+  for (const page of pages) {
+    for (const entry of entriesOf(page.get('Annots'))) {
+      const annotation = resolved(entry);
+      if (annotation?.isDictionary() === true) annotations.push(annotation);
+    }
+  }
+  return annotations;
+}
+
+/** The dictionaries of the structure tree below `/StructTreeRoot`, none for a document without tags. */
+function structureElements(root: PDFObject): PDFObject[] {
+  const tree = resolved(root.get('StructTreeRoot'));
+  if (tree?.isDictionary() !== true) return [];
+  return reachable(entriesOf(tree.get('K')), (node) => entriesOf(node.get('K'))).map(({ node }) => node);
 }
 
 /** `/MCR` and `/OBJR` dictionaries: references to content, as opposed to child structure elements. */

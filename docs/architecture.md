@@ -1502,12 +1502,12 @@ Details that matter:
   unverified.
 - `applyRedactions` does not touch three more things that kept the erased words or a file the
   user asked to clear, and `ops/redact-leaks.ts` cleans them. *Attachments:* MuPDF's
-  `deleteEmbeddedFile` left `/Root /AF`, a page's `/AF` and every `/FileAttachment` annotation, and an
+  `deleteEmbeddedFile` left `/Root /AF`, the `/AF` of pages, annotations and structure elements and every `/FileAttachment` annotation, and an
   empty `/EmbeddedFiles` dictionary. The option is a flag (`cleanAttachments`), not a list the dialog
   reads from the Attachments panel — that list is empty for a file that is attached only as an
   annotation or in `/AF` — and the step removes every attached file: each file specification of the
   name tree (walked through `/Kids` as well; the tree and a `/Names` that holds nothing else leave
-  the catalog), every `/AF` entry (catalog and pages), and every file-attachment annotation
+  the catalog), every `/AF` entry (catalog, pages, annotations and structure elements), and every file-attachment annotation
   (through `sweepWhere` of `redact-annots.ts`: popup and replies included), with the file
   specification and `/EF` streams behind each (`fileSpecObjects` of `ops/attachments-write.ts`).
   A file reachable two ways counts once, and a reference to nothing not at all. *Thumbnails:* each marked page's

@@ -27,11 +27,13 @@ import {
 import {
   annotationOnlyDocument,
   associatedEdgeCases,
+  associatedElsewhere,
   attachedByKeyBytes,
   attachedDocument,
   attachedInKids,
   bareDocument,
   DIRECT_PAYLOAD,
+  ELSEWHERE_PAYLOAD,
   encode,
   KEPT_TAG_TEXT,
   PAYLOAD,
@@ -163,6 +165,23 @@ describe('redactDocument: attachments', () => {
     expect(after).not.toContain(DIRECT_PAYLOAD);
     expect(after).not.toMatch(AF_KEY);
     expect(outcome.report.notes).toContainEqual(removedFiles(1));
+  });
+
+  it('removes the files an annotation and a structure element list in their /AF', async () => {
+    const source = await associatedElsewhere();
+    const before = await decompressed(source);
+    for (const payload of Object.values(ELSEWHERE_PAYLOAD)) expect(before).toContain(payload);
+    expect(before).toMatch(AF_KEY);
+
+    const outcome = await redactDocument(source, ALL_ATTACHMENTS, run);
+
+    const after = await decompressed(outcome.bytes);
+    for (const payload of Object.values(ELSEWHERE_PAYLOAD)) expect(after).not.toContain(payload);
+    expect(after).not.toMatch(AF_KEY);
+    for (const leftover of ['/Filespec', '/EmbeddedFile']) expect(after, leftover).not.toContain(leftover);
+    // The link carrying the list is not an attachment and stays.
+    expect((await annotationsOf(outcome.bytes)).map((annotation) => annotation.subtype)).toContain('Link');
+    expect(outcome.report.notes).toContainEqual(removedFiles(2));
   });
 
   it('removes a file-attachment annotation from a document whose Attachments panel lists nothing', async () => {

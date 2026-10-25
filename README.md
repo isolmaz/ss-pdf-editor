@@ -461,8 +461,9 @@ nothing leaving the browser.
     are not checked; the metadata option clears the title, author, subject, keywords and
     creator fields and the XMP packet, and the notices say exactly that.
   - The attachments option removes every attached file of the document, wherever it lives, not
-    only the ones the Attachments list shows (a file attached only as an annotation is
-    cleaned too). The report counts each file once and counts only a file that was there.
+    only the ones the Attachments list shows (a file attached only as an annotation or listed
+    only in the associated files of a page, an annotation or a structure element is cleaned
+    too). The report counts each file once and counts only a file that was there.
   - Each page that carried a mark also loses its thumbnail and the alternative text,
     replacement text and expansions its tags carry; the report counts them.
   - A staged mark stays an intent until you apply it. While marks are still staged, saving
