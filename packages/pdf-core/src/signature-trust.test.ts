@@ -26,6 +26,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   certificateName,
   checkTrust,
+  checkTrustPath,
   ecdsaDerToRaw,
   NO_TRUST,
   parseAsn1,
@@ -256,6 +257,50 @@ describe('certificate path validation', () => {
     });
     expect(verdict).toMatchObject({ verdict: 'trusted', reason: null });
     expect(verdict.path).toEqual(['Alternatives Leaf', 'Alternatives Intermediate', 'Alternatives Root']);
+  });
+
+  it('hands back the certificates of the path it validated, and none when it validates none', async () => {
+    const root = await makeCa('Path Root');
+    const intermediate = await issueCertificate(
+      {
+        subject: 'Path Intermediate',
+        keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+        ...VALID,
+        basicConstraints: { cA: true },
+        keyUsage: ['keyCertSign', 'cRLSign'],
+      },
+      root,
+    );
+    const leaf = await makeLeaf('Path Leaf', intermediate);
+    const stranger = await makeCa('Path Stranger');
+
+    const found = await checkTrustPath({
+      signer: leaf.der,
+      chain: [stranger.der, intermediate.der],
+      roots: [root.der],
+      now: NOW,
+    });
+    expect(found.trust.verdict).toBe('trusted');
+    expect(found.certificates).toEqual([leaf.der, intermediate.der, root.der]);
+
+    const own = await issueCertificate({
+      subject: 'Path Own Signer',
+      keyPair: await generateKey({ kind: 'EC', curve: 'P-256' }),
+      ...VALID,
+      keyUsage: ['digitalSignature'],
+    });
+    const itself = await checkTrustPath({ signer: own.der, roots: [own.der], now: NOW });
+    expect(itself.trust.verdict).toBe('trusted');
+    expect(itself.certificates).toEqual([own.der]);
+
+    const elsewhere = await checkTrustPath({
+      signer: leaf.der,
+      chain: [intermediate.der],
+      roots: [stranger.der],
+      now: NOW,
+    });
+    expect(elsewhere.trust.verdict).toBe('untrusted');
+    expect(elsewhere.certificates).toEqual([]);
   });
 
   it('enforces validity periods', async () => {
