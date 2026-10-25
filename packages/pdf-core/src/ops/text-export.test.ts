@@ -68,7 +68,7 @@ async function hebrewPage(content: string): Promise<Uint8Array> {
 }
 
 /** One 600×400 page shown turned by `rotate` degrees, Helvetica as `/F`. */
-async function turnedPage(rotate: number, content: string): Promise<Uint8Array> {
+async function turnedPage(rotate: 0 | 90 | 180 | 270, content: string): Promise<Uint8Array> {
   const mupdf = await loadMupdf();
   const doc = new mupdf.PDFDocument();
   const font = doc.addObject({
