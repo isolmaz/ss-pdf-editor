@@ -406,6 +406,21 @@ describe('planFindReplace: matching without case', () => {
   });
 });
 
+describe('planFindReplace: compatibility forms', () => {
+  it('finds a superscript, a ligature and a full-width letter by their plain forms, and replaces each', () => {
+    for (const [word, find] of [
+      ['m²', 'm2'],
+      ['ﬁeld', 'field'],
+      ['ＡB', 'AB'],
+    ] as const) {
+      const result = plan(pageOf([blockOf('b0', [lineOf({ words: [word], baseline: 100 })])]), find, 'x', {
+        matchCase: false,
+      });
+      expect(result).toMatchObject({ found: 1, replaced: 1 });
+    }
+  });
+});
+
 describe('planFindReplace: accents written as a letter and a mark', () => {
   // A glyph is 5 pt wide from x = 40, so the five glyphs of `cafe` + the combining acute end at 65.
   const decomposed = 'café';

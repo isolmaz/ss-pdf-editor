@@ -355,6 +355,8 @@ UI: the menu bar, the `Ctrl+K` palette, the tool rail, the docks or the home scr
   - Searching without match case, here and in the search panel, treats `I`/`ı` and `İ`/`i` as
     Turkish and English readers expect: `istanbul` finds `İSTANBUL`, and `sık` never matches
     `sik`. A final sigma `ς` and `σ` are the same letter, so `Μαρκος` finds `ΜΑΡΚΟΣ`.
+  - Text is compared in its compatibility form, so `m2` also finds `m²`, `fi` finds the ligature
+    `ﬁ`, and a full-width `Ａ` finds `A`; every match is replaced, whichever form it was in.
   - A letter and an accent drawn as two glyphs (`e` and U+0301) are compared as the letter
     they make, so `café` finds either spelling, and a match takes the combining marks that
     follow its last letter with it.
