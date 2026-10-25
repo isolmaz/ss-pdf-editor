@@ -2,12 +2,12 @@
  * What becomes of a produced result: the accessibility writers' bytes land in the working
  * document, the scanner's pages and the print dialog's imposed file open as new tabs.
  *
- * The feature's own state is `results-store.ts`. What the shell still holds — the translator
- * and the tab opener — arrives as `ResultsDeps`; the active tab, its handle and the
- * busy gate are read **at call time**.
+ * The feature's own state is `results-store.ts`. What the shell still holds — the translator,
+ * the tab opener and the working-bytes reader — arrives as `ResultsDeps`; the active tab, its
+ * handle and the busy gate are read **at call time**.
  */
 
-import type { OperationNote } from 'pdf-core/ops/types';
+import type { OperationContext, OperationNote } from 'pdf-core/ops/types';
 import { type SessionStore, workingPageCount } from 'pdf-model';
 import type { Translator } from 'pdf-shared';
 import type { ScannedDocument } from 'pdf-ui/scan';
@@ -41,6 +41,8 @@ export interface ResultsDeps {
     signal?: AbortSignal,
     sensitive?: boolean,
   ) => Promise<string | null>;
+  /** The working bytes of the tab in front, unsaved marks written in. */
+  readonly currentBytes: (operation: OperationContext) => Promise<Uint8Array>;
   /** Open the operation dialog `id` (the scanner's OCR offer). */
   readonly openDialog: (id: string) => void;
   /** Say why a mark still staged blocks this, and report that it does. */
@@ -64,6 +66,8 @@ export interface PrintedFile {
 export interface ResultsActions {
   readonly applyAccessibility: (outcome: AccessibilityOutcome) => Promise<void>;
   readonly scanDocument: (result: ScannedDocument) => Promise<string | undefined>;
+  /** The print dialog's reader: the working bytes of the tab in front. */
+  readonly readForPrint: (operation: OperationContext) => Promise<Uint8Array>;
   readonly printProduced: (file: PrintedFile) => Promise<void>;
 }
 
@@ -124,6 +128,10 @@ export function createResultsActions(deps: ResultsDeps): ResultsActions {
     return undefined;
   }
 
+  function readForPrint(operation: OperationContext): Promise<Uint8Array> {
+    return deps.currentBytes(operation);
+  }
+
   /**
    * The print dialog's imposed file (N-up, booklet, duplex sides): opened as a new tab, the
    * place a user can read, save or print it from.
@@ -151,5 +159,5 @@ export function createResultsActions(deps: ResultsDeps): ResultsActions {
     }
   }
 
-  return { applyAccessibility, scanDocument, printProduced };
+  return { applyAccessibility, scanDocument, readForPrint, printProduced };
 }

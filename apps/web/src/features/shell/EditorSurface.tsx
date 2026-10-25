@@ -28,7 +28,7 @@ export interface EditorSurfaceProps {
   readonly dock: DocumentDockProps['actions'];
   readonly viewer: ViewerAreaProps['actions'];
   readonly right: RightDockProps['actions'];
-  readonly results: Pick<ResultsActions, 'printProduced'>;
+  readonly results: Pick<ResultsActions, 'readForPrint' | 'printProduced'>;
 }
 
 export function EditorSurface({
@@ -65,7 +65,12 @@ export function EditorSurface({
           pageNumber={currentPage}
           read={right.currentBytes}
         />
-        <PrintDialogHost t={t} viewer={handle} read={right.currentBytes} onProduced={results.printProduced} />
+        <PrintDialogHost
+          t={t}
+          viewer={handle}
+          read={results.readForPrint}
+          onProduced={results.printProduced}
+        />
       </div>
       <OrganizeSurface session={session} tier={tier} t={t} actions={dock} />
     </>

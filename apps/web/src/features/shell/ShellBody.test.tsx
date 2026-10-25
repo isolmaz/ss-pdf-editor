@@ -193,7 +193,7 @@ let props: {
   dock: Record<string, unknown>;
   viewer: Record<string, unknown>;
   right: Record<string, unknown>;
-  results: { printProduced: Mock; scanDocument: Mock };
+  results: { readForPrint: Mock; printProduced: Mock; scanDocument: Mock };
   startResult: Mock;
 };
 
@@ -250,7 +250,11 @@ beforeEach(() => {
     dock: { marker: 'dock' },
     viewer: { marker: 'viewer' },
     right: { marker: 'right', currentBytes },
-    results: { printProduced: vi.fn(async () => undefined), scanDocument: vi.fn(async () => undefined) },
+    results: {
+      readForPrint: vi.fn(async () => new Uint8Array()),
+      printProduced: vi.fn(async () => undefined),
+      scanDocument: vi.fn(async () => undefined),
+    },
     startResult: vi.fn(async () => undefined),
   };
 });
@@ -360,8 +364,9 @@ describe('ShellBody editor', () => {
     expect(seen('reading').viewer).toBe(viewer);
     expect(seen('reading').viewerRef).toBe(viewerRef);
     expect(seen('printHost').viewer).toBe(viewer);
-    // Print and Snapshot show the working bytes with the unsaved marks written in, the route a Save reads.
-    expect(seen('printHost').read).toBe(currentBytes);
+    // Snapshot shows the working bytes with the unsaved marks written in, the route a Save reads;
+    // Print reads them through the results actions, which note the tab they came from.
+    expect(seen('printHost').read).toBe(props.results.readForPrint);
     expect(seen('reading').read).toBe(currentBytes);
   });
 

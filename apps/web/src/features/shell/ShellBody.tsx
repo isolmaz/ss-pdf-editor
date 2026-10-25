@@ -45,7 +45,7 @@ export interface ShellBodyProps {
   readonly dock: DocumentDockProps['actions'];
   readonly viewer: ViewerAreaProps['actions'];
   readonly right: RightDockProps['actions'];
-  readonly results: Pick<ResultsActions, 'printProduced' | 'scanDocument'>;
+  readonly results: Pick<ResultsActions, 'readForPrint' | 'printProduced' | 'scanDocument'>;
   readonly startResult: (result: OpRunResult) => Promise<void>;
 }
 

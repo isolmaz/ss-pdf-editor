@@ -31,6 +31,7 @@ const openProducedTab =
   vi.fn<
     (name: string, bytes: Uint8Array, signal?: AbortSignal, sensitive?: boolean) => Promise<string | null>
   >();
+const currentBytes = vi.fn(async () => new Uint8Array([7]));
 const openDialog = vi.fn();
 const refuseUnappliedRedactions = vi.fn(() => false);
 
@@ -39,6 +40,7 @@ function actions() {
     session,
     t,
     openProducedTab,
+    currentBytes,
     openDialog,
     refuseUnappliedRedactions,
   });
@@ -256,6 +258,12 @@ describe('printProduced', () => {
     expect(notice()).toBeNull();
     expect(busy()).toBe(false);
     expect(operationRunning()).toBe(false);
+  });
+
+  it('hands the print dialog the working bytes of the tab in front', async () => {
+    const operation = { signal: new AbortController().signal };
+    await expect(actions().readForPrint(operation)).resolves.toEqual(new Uint8Array([7]));
+    expect(currentBytes).toHaveBeenCalledWith(operation);
   });
 
   it('opens the pages imposed from a document opened with its password as sensitive', async () => {
