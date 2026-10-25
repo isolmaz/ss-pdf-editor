@@ -373,6 +373,32 @@ describe('redactDocument', () => {
   });
 });
 
+describe('redactDocument: page boxes written with their corners the other way round', () => {
+  it('erases on a page whose /MediaBox lists the upper corner first', async () => {
+    const source = await build([TWO_LINES], (doc) => {
+      doc.findPage(0).put('MediaBox', [400, 500, 0, 0]);
+    });
+    const outcome = await redactDocument(source, { ...BASE, marks: [SECRET_MARK] }, run);
+    expect(await pageTexts(outcome.bytes)).toEqual(['Public line']);
+    expect(outcome.verification).toEqual({ marksCleared: true, remaining: [], paintText: [] });
+  });
+
+  it('measures the marks from the top and left of a /CropBox that lists the upper corner first', async () => {
+    // The crop box is x 200–350, y 100–400 of the media box: the text sits at its left edge.
+    const lines = [
+      ['Public line', 210, 350],
+      ['Secret 4711', 210, 250],
+    ] as const;
+    const source = await build([{ lines }], (doc) => {
+      doc.findPage(0).put('CropBox', [350, 400, 200, 100]);
+    });
+    expect(await pageTexts(source)).toEqual(['Public line Secret 4711']);
+    // x is the user-space x, y counts down from the top of the crop box (user y 400).
+    const outcome = await redactDocument(source, { ...BASE, marks: [mark([205, 135, 300, 160])] }, run);
+    expect(await pageTexts(outcome.bytes)).toEqual(['Public line']);
+  });
+});
+
 describe('redactDocument: text drawn through a tiling pattern or a soft mask', () => {
   it('refuses a page whose tiling pattern shows text instead of reporting the mark as verified', async () => {
     const source = await build([TWO_LINES], (doc) => {

@@ -63,6 +63,7 @@ async function pdfWith(
   contents: (doc: import('mupdf').PDFDocument) => { stream: string; resources?: Record<string, unknown> },
   rotation: Rotation = 0,
   pageHeight = PH,
+  adjust?: (page: import('mupdf').PDFObject) => void,
 ): Promise<Uint8Array> {
   const mupdf = await loadMupdf();
   const doc = new mupdf.PDFDocument();
@@ -74,10 +75,9 @@ async function pdfWith(
   });
   const { stream, resources } = contents(doc);
   const [width, height] = rotation === 90 || rotation === 270 ? [pageHeight, PW] : [PW, pageHeight];
-  doc.insertPage(
-    0,
-    doc.addPage([0, 0, width, height], rotation, { Font: { F1: font }, ...resources }, stream),
-  );
+  const page = doc.addPage([0, 0, width, height], rotation, { Font: { F1: font }, ...resources }, stream);
+  adjust?.(page);
+  doc.insertPage(0, page);
   const bytes = new Uint8Array(doc.saveToBuffer('').asUint8Array());
   doc.destroy();
   return bytes;
@@ -424,7 +424,30 @@ describe('detectFormFields: how the drawing is read', () => {
   });
 });
 
+/** The flat form on a page cropped to x 20–575, y 30–812, its boxes written as `order` lists their corners. */
+function croppedForm(order: 'ascending' | 'reversed'): Promise<Uint8Array> {
+  const crop = [20, 30, PW - 20, PH - 30] as const;
+  return pdfWith(
+    () => ({ stream: FORM }),
+    0,
+    PH,
+    (page) => {
+      page.put('MediaBox', order === 'reversed' ? [PW, PH, 0, 0] : [0, 0, PW, PH]);
+      page.put('CropBox', order === 'reversed' ? [crop[2], crop[3], crop[0], crop[1]] : [...crop]);
+    },
+  );
+}
+
 describe('detectFormFields: the document around the page', () => {
+  it('reads a page whose boxes list the upper corner first as the page they describe', async () => {
+    const ordered = (await detectFormFields(await croppedForm('ascending'), run)).candidates;
+    const reversed = (await detectFormFields(await croppedForm('reversed'), run)).candidates;
+    expect(reversed.length).toBeGreaterThan(0);
+    expect(reversed.map((candidate) => [candidate.kind, candidate.name, ...candidate.rect])).toEqual(
+      ordered.map((candidate) => [candidate.kind, candidate.name, ...candidate.rect]),
+    );
+  });
+
   it('reads a page with an odd /Rotate without refusing it, where creating a field on it is refused', async () => {
     const mupdf = await loadMupdf();
     const doc = mupdf.PDFDocument.openDocument((await flatForm(0)).slice(), 'application/pdf').asPDF();
@@ -545,6 +568,22 @@ describe('createDetectedFields', () => {
     const again = await detectFormFields(out.bytes, run);
     expect(again.candidates).toEqual([]);
     expect(again.alreadyFields).toBe(candidates.length);
+  });
+
+  it('places fields on a page whose boxes list the upper corner first from the top of its crop box', async () => {
+    const bytes = await croppedForm('reversed');
+    const { candidates } = await detectFormFields(bytes, run);
+    const out = await createDetectedFields(bytes, candidates, run);
+    const widgets = await readFormWidgets(out.bytes);
+    // App y counts down from the crop box's top edge, user y 812.
+    for (const candidate of candidates.filter((entry) => entry.kind !== 'radio')) {
+      const widget = widgets.find((field) => field.name === candidate.name)?.widgets[0];
+      expectClose(
+        widget?.rect ?? [],
+        [candidate.rect[0], PH - 30 - candidate.rect[3], candidate.rect[2], PH - 30 - candidate.rect[1]],
+        0.75,
+      );
+    }
   });
 
   it('places fields on a turned page by its user-space frame and draws them upright with /MK /R', async () => {

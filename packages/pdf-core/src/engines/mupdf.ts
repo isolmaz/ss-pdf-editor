@@ -60,12 +60,17 @@ export function readPageBox(page: PDFPage): UserBox {
 
 type Box4 = readonly [number, number, number, number];
 
-/** The four numbers of a box array, or `null` when the object is not one. */
+/**
+ * A box array as `[x0, y0, x1, y1]` in ascending order, or `null` when the object is not four
+ * numbers. A box may list any two opposite corners (ISO 32000-1 §7.9.5), and MuPDF normalises it
+ * the same way, so the page space it reports is the one this reads.
+ */
 function readBoxArray(object: PDFObject): Box4 | null {
   if (!object.isArray()) return null;
   const [a, b, c, d] = [object.get(0), object.get(1), object.get(2), object.get(3)];
   if (!(a.isNumber() && b.isNumber() && c.isNumber() && d.isNumber())) return null;
-  return [a.asNumber(), b.asNumber(), c.asNumber(), d.asNumber()];
+  const [x, y, u, v] = [a.asNumber(), b.asNumber(), c.asNumber(), d.asNumber()];
+  return [Math.min(x, u), Math.min(y, v), Math.max(x, u), Math.max(y, v)];
 }
 
 /**
